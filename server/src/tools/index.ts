@@ -41,7 +41,7 @@ const Choice = z.union([
 ]);
 const choiceLabel = (c: z.infer<typeof Choice>) => (typeof c === 'string' ? c : c.label);
 
-const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_forget']);
+const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_update', 'memory_forget']);
 
 const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
 
@@ -131,6 +131,7 @@ export type ToolName =
   | 'app_add'
   | 'plan_update'
   | 'memory_write'
+  | 'memory_update'
   | 'memory_forget'
   | 'bots_list'
   | 'open_conversation'
@@ -652,14 +653,14 @@ export class ToolFactory {
       ),
       def(
         'memory_search',
-        { query: z.string().min(1) },
+        { query: z.string().optional() },
         async ({ query }) => {
-          const found = await s.memory.search(bot.id, query);
+          const found = await s.memory.search(bot.id, query?.trim() || undefined);
           if (!found.length) return t('tool.notFound');
           return found
             .map(
               (m) =>
-                `- [${m.id}] (${t(m.scope === 'user' ? 'tool.scopeUser' : 'tool.scopeBot')}) ${m.content}`,
+                `- [${m.id}] (${t(m.scope === 'user' ? 'tool.scopeUser' : 'tool.scopeBot')}${m.site ? ` · ${m.site}` : ''}) ${m.content}`,
             )
             .join('\n');
         },
@@ -673,7 +674,6 @@ export class ToolFactory {
           site: z.string().max(253).optional(),
         },
         async ({ content, scope, site }) => {
-          const proposed = scope === 'user' && !fromUser;
           let host: string | null = null;
           if (site) {
             try {
@@ -686,14 +686,24 @@ export class ToolFactory {
             scope,
             botId: scope === 'bot' ? bot.id : null,
             content,
-            status: proposed ? 'proposed' : 'active',
             source: `bot:${bot.id}`,
             site: host,
           });
-          return t(proposed ? 'tool.memoryProposed' : 'tool.memorySaved', { id: m.id });
+          return t('tool.memorySaved', { id: m.id });
         },
-        // Shared user memory written in the user's own turn is what they just said; other turns only
-        // propose it. Either way it shows in the memory screen, where the user can change it.
+        // The bot keeps its memory itself; everything it writes shows in the memory screen, where the
+        // user can change or delete it.
+        'internal',
+      ),
+      def(
+        'memory_update',
+        { id: z.string(), content: z.string().trim().min(1).max(2000) },
+        async ({ id, content }) => {
+          const m = await s.memory.get(id);
+          if (!s.memory.canEdit(m, bot.id)) return t('tool.memoryNotYours');
+          await s.memory.update(id, { content }, `bot:${bot.id}`);
+          return t('tool.memoryUpdated');
+        },
         'internal',
       ),
       def(
@@ -701,9 +711,7 @@ export class ToolFactory {
         { id: z.string() },
         async ({ id }) => {
           const m = await s.memory.get(id);
-          if (m.scope !== 'bot' || m.botId !== bot.id) {
-            return t('tool.memoryOwnOnly');
-          }
+          if (!s.memory.canEdit(m, bot.id)) return t('tool.memoryNotYours');
           await s.memory.remove(id, `bot:${bot.id}`);
           return t('tool.deleted');
         },

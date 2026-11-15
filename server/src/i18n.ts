@@ -347,7 +347,7 @@ const tr = {
   'prompt.ruleDraft':
     '- Kullanıcı adına bir şey göndereceksen (e-posta, mesaj, paylaşım) önce taslağı göster ve onayını al; rutinin talimatı göndermeni açıkça istiyorsa gönder. Bir ödemeden önce ürünü, fiyatı ve toplamı söyleyip onay iste.',
   'prompt.ruleMemory':
-    '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak.',
+    '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil.',
   'prompt.ruleTryFirst':
     '- Bir işi yapamayacağını söylemeden önce elindekileri dene: bağlı uygulamalar, tarayıcı, becerilerin ve işi bilen başka bir bot. Bir site oturum açmanı istiyorsa durma; oturum açma adımını kullan ya da kullanıcıdan tarayıcıda açmasını iste. Hiçbiri olmazsa ne denediğini ve kullanıcının işi açmak için ne yapabileceğini söyle.',
   'prompt.ruleFiles':
@@ -421,7 +421,8 @@ const tr = {
     'Kendi geçmiş sohbetlerinde (hepsinde, ne kadar eski olursa olsun) bir sözcük ya da ifade ara. Kullanıcı daha önce konuşulan bir şeyi sorduğunda ya da önceki bir işi tekrarlamadan önce kullan. Her sonuç sohbetin ve mesajın kimliğini verir; tamamını message_read ile oku.',
   'tool.message_read':
     'Kendi sohbetlerinden bir mesajın tamamını, öncesindeki ve sonrasındaki birkaç mesajla birlikte oku. message_id conversations_search sonucundan gelir; around kaç mesaj çevresinin gösterileceğini verir.',
-  'tool.memory_search': 'Hafızada ara: kendi hafızan ve kullanıcının ortak hafızası.',
+  'tool.memory_search':
+    'Hafızada ara: kendi hafızan ve kullanıcının ortak hafızası. query vermezsen bütün kayıtları kimlikleriyle listeler.',
   'tool.memoryBadSite': '{site} bir site adresi değil.',
   'tool.skill_read': 'Becerilerinden birinin tam talimatlarını adıyla oku.',
   'tool.skill_save':
@@ -476,8 +477,11 @@ const tr = {
   'tool.planShown': 'Plan sohbette gösterildi.',
   'tool.noSkill': '{name} adında bir becerin yok. Becerilerin: {names}',
   'tool.memory_write':
-    'Kalıcı bir bilgiyi kaydet. scope "bot" yalnızca senin hafızan; "user" bütün botların gördüğü kullanıcı bilgisi (ad, saat dilimi, tercihler). Kullanıcı hafızasına bot ya da rutin kaynaklı yazılar öneri olarak kalır ve kullanıcı onaylar. Bir sitenin nasıl kullanıldığına dair bir not (bir düğmenin yeri, işe yarayan bir adım) için site ver (ör. "ornek.com"): not her turda değil, o siteyi açtığında gelir.',
-  'tool.memory_forget': 'Kendi hafızandan bir kaydı sil (kimliğini memory_search verir).',
+    'Kalıcı bir bilgiyi kaydet. scope "bot" yalnızca senin hafızan; "user" bütün botların gördüğü kullanıcı bilgisi (ad, saat dilimi, tercihler). Bir sitenin nasıl kullanıldığına dair bir not (bir düğmenin yeri, işe yarayan bir adım) için site ver (ör. "ornek.com"): not her turda değil, o siteyi açtığında gelir.',
+  'tool.memory_update':
+    'Hafızadaki bir kaydın metnini değiştir: kendi notun ya da kullanıcının ortak hafızası (kimliğini memory_search verir).',
+  'tool.memory_forget':
+    'Hafızadan bir kaydı sil: kendi notun ya da kullanıcının ortak hafızası (kimliğini memory_search verir).',
   'tool.bots_list': 'Yazabileceğin botları listele.',
   'tool.open_conversation':
     'İşin bir parçasını kendi adına yeni bir sohbette başlat: başlık ve ilk mesaj ver. O sohbette ayrı bir turda çalışırsın, bu konuşma beklemez; kullanıcı yeni sohbeti listesinde görür. Bir turda en çok 5 sohbet.',
@@ -614,9 +618,9 @@ const tr = {
   'tool.fileSent': 'Kullanıcıya gönderildi: {names}. Sohbette dosya kartı olarak görünüyor.',
   'tool.scopeUser': 'kullanıcı',
   'tool.scopeBot': 'bot',
-  'tool.memoryProposed': 'Öneri olarak kaydedildi ({id}); kullanıcı onaylayınca etkin olur.',
   'tool.memorySaved': 'Kaydedildi ({id}).',
-  'tool.memoryOwnOnly': 'Yalnızca kendi bot hafızanı silebilirsin; kullanıcı hafızasını kullanıcı düzenler.',
+  'tool.memoryUpdated': 'Güncellendi.',
+  'tool.memoryNotYours': 'Bu kayıt başka bir botun kendi notu; ona dokunamazsın.',
   'tool.deleted': 'Silindi.',
   'tool.noPeers': 'Yazabileceğin bot yok.',
   'tool.sent': '{to} adlı bota gönderildi (iş {id}). Cevap gelince sana iletilecek.',
@@ -1016,7 +1020,7 @@ const en: Catalog<ServerKey> = {
   'prompt.ruleDraft':
     "- Before you send something for the user (an email, a message, a post), show the draft and get their approval; send right away only when a routine's instruction says to. Before a payment, read back the item, price and total and ask to confirm.",
   'prompt.ruleMemory':
-    "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`.",
+    "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`.",
   'prompt.ruleTryFirst':
     '- Before you say you cannot do a task, try what you have: connected apps, the browser, your skills, and another bot that knows the work. When a site wants you signed in, do not stop; use the sign-in step or ask the user to sign in in the browser. If nothing works, say what you tried and what the user can do to unblock it.',
   'prompt.ruleFiles':
@@ -1090,7 +1094,8 @@ const en: Catalog<ServerKey> = {
     'Search your own past conversations (all of them, however old) for a word or phrase. Use it when the user asks about something discussed before, or before redoing earlier work. Each hit gives the conversation and message ids; read the whole message with message_read.',
   'tool.message_read':
     'Read a whole message from one of your own conversations, with a few messages before and after it. message_id comes from a conversations_search hit; around is how many messages either side to show.',
-  'tool.memory_search': "Search memory: your own memory and the user's shared memory.",
+  'tool.memory_search':
+    "Search memory: your own memory and the user's shared memory. Without a query it lists every entry with its id.",
   'tool.memoryBadSite': '{site} is not a site address.',
   'tool.skill_read': 'Read the full instructions of one of your skills, by its name.',
   'tool.skill_save':
@@ -1144,8 +1149,11 @@ const en: Catalog<ServerKey> = {
   'tool.planShown': 'The plan is shown in the chat.',
   'tool.noSkill': 'You have no skill named {name}. Your skills: {names}',
   'tool.memory_write':
-    'Save a lasting fact. scope "bot" is only your memory; "user" is information about the user that every bot sees (name, time zone, preferences). Writes to user memory from a bot or a routine stay as proposals until the user approves them. For a note on how a site works (where a button is, a step that worked), give site (e.g. "example.com"): the note comes when you open that site, not every turn.',
-  'tool.memory_forget': 'Delete an entry from your own memory (memory_search gives its id).',
+    'Save a lasting fact. scope "bot" is only your memory; "user" is information about the user that every bot sees (name, time zone, preferences). For a note on how a site works (where a button is, a step that worked), give site (e.g. "example.com"): the note comes when you open that site, not every turn.',
+  'tool.memory_update':
+    "Change the text of a memory entry: your own note or the user's shared memory (memory_search gives its id).",
+  'tool.memory_forget':
+    "Delete a memory entry: your own note or the user's shared memory (memory_search gives its id).",
   'tool.bots_list': 'List the bots you can write to.',
   'tool.open_conversation':
     'Start part of the work in a new conversation of your own: give a title and the first message. You work there in a separate turn, and this conversation does not wait; the user sees the new one in their list. At most 5 per turn.',
@@ -1281,9 +1289,9 @@ const en: Catalog<ServerKey> = {
   'tool.fileSent': 'Sent to the user: {names}. It shows in the conversation as a file card.',
   'tool.scopeUser': 'user',
   'tool.scopeBot': 'bot',
-  'tool.memoryProposed': 'Saved as a proposal ({id}); it takes effect once the user approves it.',
   'tool.memorySaved': 'Saved ({id}).',
-  'tool.memoryOwnOnly': "You can only delete your own bot memory; the user edits the user's memory.",
+  'tool.memoryUpdated': 'Updated.',
+  'tool.memoryNotYours': "That entry is another bot's own note; you cannot touch it.",
   'tool.deleted': 'Deleted.',
   'tool.noPeers': 'There are no bots you can write to.',
   'tool.sent': 'Sent to {to} (job {id}). The reply will be passed to you when it arrives.',

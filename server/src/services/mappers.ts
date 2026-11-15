@@ -108,7 +108,7 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   botId: r.botId,
   content: r.content,
   site: r.site,
-  status: r.status,
+  status: 'active',
   source: r.source,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),

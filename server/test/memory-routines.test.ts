@@ -81,16 +81,14 @@ describe('hafıza', () => {
     expect(again.tools.some((x) => x.name === 'memory_write')).toBe(true);
   });
 
-  it('kullanıcının kendi turunda kullanıcı hafızasına sormadan yazar; bot ya da rutin turunda öneri olarak kalır', async () => {
+  it('bot ve rutin hafızaya sormadan yazar; yazdığı hemen istemine girer', async () => {
     const a = await t.bot({ name: 'Ali' });
     const ta = await main(a.id);
     await t.send(ta.id, '[araç:memory_write {"content":"Kahveyi şekersiz içer","scope":"user"}]');
     await t.services.turns.idle();
-    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
-    // Bot-scoped memory needs no card.
     await t.send(ta.id, '[araç:memory_write {"content":"Ali notu","scope":"bot"}]');
     await t.services.turns.idle();
-    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
+    // A routine's turn writes the shared memory straight away too; nothing waits for approval.
     await t.services.turns.enqueue({
       threadId: ta.id,
       botId: a.id,
@@ -98,58 +96,50 @@ describe('hafıza', () => {
       prompt: '[araç:memory_write {"content":"Pazartesi toplantısı var","scope":"user"}]',
     });
     await t.services.turns.idle();
-    const all = (await t.api<Memory[]>('GET', '/api/memory?scope=user')).body;
-    expect(all.find((m) => m.content.startsWith('Kahve'))!.status).toBe('active');
-    const proposed = all.find((m) => m.content.startsWith('Pazartesi'))!;
-    expect(proposed.status).toBe('proposed');
-    // Proposals stay out of prompts until approved.
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
+    const all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(all.map((m) => m.content)).toEqual([
+      'Kahveyi şekersiz içer',
+      'Ali notu',
+      'Pazartesi toplantısı var',
+    ]);
     await t.send(ta.id, 'kontrol');
     await t.services.turns.idle();
-    expect(t.engine.requests.at(-1)!.systemPrompt).not.toContain('Pazartesi');
-    await t.api('PATCH', `/api/memory/${proposed.id}`, { status: 'active' });
-    await t.send(ta.id, 'kontrol 2');
-    await t.services.turns.idle();
     expect(t.engine.requests.at(-1)!.systemPrompt).toContain('Pazartesi');
-    const history = (await t.api<{ action: string }[]>('GET', '/api/memory-history')).body;
-    expect(history.some((h) => h.action === 'approve')).toBe(true);
   });
 
-  it('bekleyen önerilerin hepsi tek seferde onaylanır ya da silinir', async () => {
-    const a = await t.bot({ name: 'Ali' });
-    const kept = (await t.api<Memory>('POST', '/api/memory', { scope: 'bot', botId: a.id, content: 'etkin' }))
-      .body;
-    const propose = (content: string) =>
-      t.db.db
-        .insert(schema.memories)
-        .values({ id: newId(), scope: 'bot', botId: a.id, content, status: 'proposed', source: 'import' });
-    await propose('bir');
-    await propose('iki');
-    const approved = await t.api<{ count: number }>('POST', '/api/memory/proposed/approve', {});
-    expect(approved.body).toEqual({ count: 2 });
-    let all = (await t.api<Memory[]>('GET', '/api/memory')).body;
-    expect(all.map((m) => m.status)).toEqual(['active', 'active', 'active']);
-
-    await propose('üç');
-    await propose('dört');
-    const deleted = await t.api<{ count: number }>('POST', '/api/memory/proposed/delete', {});
-    expect(deleted.body).toEqual({ count: 2 });
-    all = (await t.api<Memory[]>('GET', '/api/memory')).body;
-    // Only proposals go; notes already in use stay.
-    expect(all.map((m) => m.content)).toEqual(['etkin', 'bir', 'iki']);
-    expect(all.some((m) => m.id === kept.id)).toBe(true);
-    const history = (await t.api<{ action: string }[]>('GET', '/api/memory-history')).body;
-    expect(history.filter((h) => h.action === 'approve')).toHaveLength(2);
-    expect(history.filter((h) => h.action === 'delete')).toHaveLength(2);
-  });
-
-  it('bot kullanıcı hafızasını silemez', async () => {
+  it('bot kendi notunu ve ortak hafızayı düzeltir, siler; başka botun notuna dokunamaz', async () => {
     const a = await t.bot({ name: 'Ali', permissionMode: 'auto' });
-    const m = (await t.api<Memory>('POST', '/api/memory', { scope: 'user', content: 'önemli' })).body;
+    const b = await t.bot({ name: 'Ayşe' });
+    const post = async (body: object) => (await t.api<Memory>('POST', '/api/memory', body)).body;
+    const shared = await post({ scope: 'user', content: 'Ofis Kadıköyde' });
+    const own = await post({ scope: 'bot', botId: a.id, content: 'Rapor cuma' });
+    const other = await post({ scope: 'bot', botId: b.id, content: 'Ayşenin notu' });
     const ta = await main(a.id);
-    await t.send(ta.id, `[araç:memory_forget {"id":"${m.id}"}]`);
+
+    // Without a query the search lists everything the bot sees, with ids, and nothing of Ayşe's.
+    await t.send(ta.id, '[araç:memory_search {}]');
     await t.services.turns.idle();
-    expect((await t.messages(ta.id)).at(-1)!.text).toContain('Yalnızca kendi bot hafızanı');
-    expect((await t.api('GET', `/api/memory?scope=user`)).body).toHaveLength(1);
+    const listed = (await t.messages(ta.id)).at(-1)!.text;
+    expect(listed).toContain(shared.id);
+    expect(listed).toContain(own.id);
+    expect(listed).not.toContain(other.id);
+
+    await t.send(ta.id, `[araç:memory_update {"id":"${shared.id}","content":"Ofis Beşiktaşta"}]`);
+    await t.services.turns.idle();
+    await t.send(ta.id, `[araç:memory_forget {"id":"${own.id}"}]`);
+    await t.services.turns.idle();
+    await t.send(ta.id, `[araç:memory_forget {"id":"${other.id}"}]`);
+    await t.services.turns.idle();
+    expect((await t.messages(ta.id)).at(-1)!.text).toContain('başka bir botun kendi notu');
+
+    const all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(all.map((m) => m.content)).toEqual(['Ofis Beşiktaşta', 'Ayşenin notu']);
+    const history = (await t.api<{ action: string; actor: string }[]>('GET', '/api/memory-history')).body;
+    expect(history.filter((h) => h.actor === `bot:${a.id}`).map((h) => h.action)).toEqual([
+      'update',
+      'delete',
+    ]);
   });
 
   it('silinen site notu sitesiyle geri eklenebilir', async () => {

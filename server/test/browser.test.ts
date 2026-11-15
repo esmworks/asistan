@@ -189,7 +189,6 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
       scope: 'bot',
       botId: bot.id,
       content: 'Giriş formu /giris adresinde',
-      status: 'active',
       source: 'user',
       site: '127.0.0.1',
     });

@@ -339,11 +339,8 @@ export const api = {
   memory: () => http.get<Memory[]>('/api/memory'),
   addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
     http.post<Memory>('/api/memory', m),
-  updateMemory: (id: string, p: { content?: string; status?: 'active' }) =>
-    http.patch<Memory>(`/api/memory/${id}`, p),
+  updateMemory: (id: string, p: { content: string }) => http.patch<Memory>(`/api/memory/${id}`, p),
   removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
-  settleProposedMemory: (action: 'approve' | 'delete') =>
-    http.post<{ count: number }>(`/api/memory/proposed/${action}`, {}),
 
   routines: () => http.get<Routine[]>('/api/routines'),
   createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),

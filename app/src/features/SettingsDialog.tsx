@@ -1086,16 +1086,6 @@ function MemoryTab() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
-  const approve = useMutation({
-    mutationFn: (id: string) => api.updateMemory(id, { status: 'active' }),
-    onSuccess: refresh,
-  });
-  const remove = useMutation({ mutationFn: api.removeMemory, onSuccess: refresh });
-  const settle = useMutation({
-    mutationFn: api.settleProposedMemory,
-    onSuccess: refresh,
-    onError: (e) => toast.error((e as Error).message),
-  });
   // A deleted memory can be brought back for a moment, in case the wrong one went.
   const forget = useMutation({
     mutationFn: async (m: Memory) => {
@@ -1117,58 +1107,11 @@ function MemoryTab() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
-  const proposed = memory.filter((m) => m.status === 'proposed');
-  const user = memory.filter((m) => m.scope === 'user' && m.status === 'active');
-  // Proposals are listed once, above; the bots' notes are the ones in use.
-  const botMem = memory.filter((m) => m.scope === 'bot' && m.status === 'active');
+  const user = memory.filter((m) => m.scope === 'user');
+  const botMem = memory.filter((m) => m.scope === 'bot');
   const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
   return (
     <>
-      {proposed.length > 0 && (
-        <Card title={t('memory.proposed')}>
-          {proposed.length > 1 && (
-            <Row label={t('memory.proposedCount', { count: proposed.length })}>
-              <Button
-                size="sm"
-                className="rounded-full"
-                disabled={settle.isPending}
-                onClick={() => settle.mutate('approve')}
-              >
-                {t('memory.approveAll')}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="rounded-full"
-                disabled={settle.isPending}
-                onClick={() =>
-                  confirm(t('memory.deleteAllConfirm', { count: proposed.length })) && settle.mutate('delete')
-                }
-              >
-                {t('memory.deleteAll')}
-              </Button>
-            </Row>
-          )}
-          {proposed.map((m) => (
-            <Row
-              key={m.id}
-              label={m.site ? `${m.site} · ${m.content}` : m.content}
-              hint={
-                m.source === 'import'
-                  ? t('memory.fromImport', { name: botName(m.botId) })
-                  : t('memory.proposedBy', { name: botName(m.source.replace('bot:', '')) })
-              }
-            >
-              <Button size="sm" className="rounded-full" onClick={() => approve.mutate(m.id)}>
-                {t('memory.approve')}
-              </Button>
-              <Button size="sm" variant="ghost" className="rounded-full" onClick={() => remove.mutate(m.id)}>
-                {t('common.delete')}
-              </Button>
-            </Row>
-          ))}
-        </Card>
-      )}
       <form
         className="mb-6 flex gap-2"
         onSubmit={(e) => {

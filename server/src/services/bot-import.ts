@@ -88,8 +88,8 @@ function refOf(name: string, taken: Set<string>): string {
  * Creates bots from an import file. The file was written by a model in another app, so it is
  * treated as untrusted input: nothing existing is changed, permissions, engine and folders are
  * decided here rather than read from it and routines are created disabled (the originals may
- * still be running elsewhere). Memories go in active, as the instructions do: the person read both
- * in the preview and confirmed the import, so asking again for each note only adds clicks.
+ * still be running elsewhere). Memories go straight into the bot's memory, as the instructions do:
+ * the person read both in the preview and confirmed the import.
  */
 export class BotImportService {
   constructor(
@@ -155,7 +155,7 @@ export class BotImportService {
               enabled: r.enabled,
             })),
           memories: memories
-            .filter((m) => m.botId === b.id && m.scope === 'bot' && m.status === 'active' && !m.site)
+            .filter((m) => m.botId === b.id && m.scope === 'bot' && !m.site)
             .slice(0, BOT_IMPORT_LIMITS.memoriesPerBot)
             .map((m) => m.content),
           skills: skills
@@ -263,7 +263,6 @@ export class BotImportService {
             scope: 'bot',
             botId: id,
             content,
-            status: 'active',
             source: ACTOR,
           });
           await tx.insert(schema.auditLog).values({
