@@ -223,7 +223,8 @@ export class PiEngine implements Engine {
       const reply = await (this.opts.complete ?? completeSimple)(
         model,
         { messages: [{ role: 'user', content: 'Reply with OK.', timestamp: Date.now() }] },
-        { apiKey, maxTokens: 64, signal: AbortSignal.timeout(TEST_TIMEOUT) },
+        // A session of its own: some providers (OpenCode) turn away a request that names none.
+        { apiKey, maxTokens: 64, signal: AbortSignal.timeout(TEST_TIMEOUT), sessionId: randomUUID() },
       );
       if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
         return { ok: false, detail: reply.errorMessage || t('engine.testFailed') };

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProviderInfo } from '@yumakbot/shared';
 import {
+  completeSimple,
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
@@ -38,6 +39,7 @@ import {
 import { translator } from '../src/i18n';
 import { CONTEXT_FULL } from '../src/runtime/turns';
 import { endpointUrl, keySafeAt, unlistedModel } from '../src/services/keys';
+import { getModels } from '@earendil-works/pi-ai/compat';
 import type { AppTool, PermissionAsk, PermissionAnswer, TurnRequest } from '../src/engine/types';
 import { testServer, type TestServer } from './helpers';
 
@@ -464,6 +466,23 @@ describe('Pi motoru', () => {
     delete keys.deneme;
     const noKey = await engine().testModel('deneme/m1', 'tr');
     expect(noKey).toMatchObject({ ok: false, detail: expect.stringContaining('deneme') });
+  });
+
+  it('modeli denerken bir oturum kimliği verir; OpenCode onsuz isteği geri çevirir', async () => {
+    const seen: (string | undefined)[] = [];
+    const e = new PiEngine({
+      sessionsDir: join(dir, 'sessions'),
+      apiKey: async (p) => keys[p] ?? null,
+      resolveModel: (p, id) => (p === 'deneme' ? faux.getModel(id) : undefined),
+      complete: (async (_model, _context, options) => {
+        seen.push(options?.sessionId);
+        return fauxAssistantMessage('OK');
+      }) as typeof completeSimple,
+    });
+    expect(await e.testModel('deneme/m1', 'tr')).toEqual({ ok: true });
+    expect(await e.testModel('deneme/m1', 'tr')).toEqual({ ok: true });
+    expect(seen[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(seen[1]).not.toBe(seen[0]);
   });
 
   it('geçmişi kullanıcı mesajında başlayacak şekilde kırpar', () => {
@@ -954,6 +973,31 @@ describe('sağlayıcı anahtarları', () => {
     });
     expect((await t.api('PATCH', '/api/settings', { piModel: 'modelsiz' })).status).toBe(400);
     expect((await t.api('PATCH', '/api/settings', { defaultEngine: 'gpt' })).status).toBe(400);
+  });
+});
+
+describe('OpenCode oturum başlığı', () => {
+  it('oturum kimliği verilen istek x-opencode-session başlığıyla gider', async () => {
+    const headers: (string | string[] | undefined)[] = [];
+    const server = createServer((req, res) => {
+      headers.push(req.headers['x-opencode-session']);
+      res.writeHead(500, { 'content-type': 'application/json' }).end('{}');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const listed = getModels('opencode-go' as never) as Model<string>[];
+      const model = { ...listed[0]!, baseUrl: base };
+      await completeSimple(model, { messages: [{ role: 'user', content: 'OK?', timestamp: Date.now() }] }, {
+        apiKey: 'test-anahtar',
+        maxTokens: 8,
+        sessionId: 'oturum-1',
+        maxRetries: 0,
+      } as never);
+      expect(headers[0]).toBe('oturum-1');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });
 
