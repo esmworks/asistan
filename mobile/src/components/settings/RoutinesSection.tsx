@@ -2,8 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Switch } from 'react-native';
 import { toastError } from '@/components/overlay';
 import { Avatar } from '@/components/Avatar';
-import { Row, Section } from '@/components/page';
-import { Rows, Hint } from './common/controls';
+import { Empty, Row, Section } from '@/components/page';
+import { Rows } from './common/controls';
 import { describeSchedule } from '@/components/panel/schedule';
 import { locale, t } from '@/i18n';
 import { formatters } from '@/lib/format';
@@ -28,7 +28,13 @@ export function RoutinesSection() {
     onError: toastError,
   });
   // Routines are added from a bot's panel, as the empty text says.
-  if (!routines.length) return <Hint>{t('routines.empty')}</Hint>;
+  if (!routines.length) {
+    return (
+      <Section>
+        <Empty icon="clock" text={t('routines.empty')} />
+      </Section>
+    );
+  }
   return (
     <Section>
       <Rows>

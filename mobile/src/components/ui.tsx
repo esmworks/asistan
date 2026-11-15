@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
+import { CARD_AREA, CARD_FIELD, useInCard } from '@/components/card';
 import { CONTROL_HEIGHT, useColors } from '@/lib/theme';
 
 /** A centered, keyboard-aware column for the connect and sign-in forms. */
@@ -60,6 +61,7 @@ export type FieldHandle = ComponentRef<typeof TextInput>;
 
 export function Field(props: TextInputProps & { invalid?: boolean; ref?: Ref<FieldHandle> }) {
   const c = useColors();
+  const inCard = useInCard();
   const { invalid, style, ...rest } = props;
   return (
     <TextInput
@@ -68,6 +70,7 @@ export function Field(props: TextInputProps & { invalid?: boolean; ref?: Ref<Fie
       style={[
         styles.field,
         { backgroundColor: c.card, color: c.foreground, borderColor: invalid ? c.destructive : c.border },
+        inCard && [rest.multiline ? CARD_AREA : CARD_FIELD, { backgroundColor: c.muted }],
         style,
       ]}
     />
@@ -123,14 +126,14 @@ const styles = StyleSheet.create({
   error: { fontSize: 16, paddingHorizontal: 16 },
   field: {
     height: CONTROL_HEIGHT,
-    borderRadius: CONTROL_HEIGHT / 2,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
     fontSize: 17,
   },
   button: {
     height: CONTROL_HEIGHT,
-    borderRadius: CONTROL_HEIGHT / 2,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

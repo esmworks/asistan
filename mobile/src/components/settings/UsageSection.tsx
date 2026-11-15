@@ -25,7 +25,7 @@ export function UsageSection() {
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <View>
+      <View style={styles.head}>
         <Text style={[styles.small, { color: c.mutedForeground }]}>{t('usage.total')}</Text>
         <Text style={[styles.total, { color: c.foreground }]}>{data ? usd(data.total.costUsd) : '–'}</Text>
         <Text style={[styles.small, { color: c.mutedForeground }]}>
@@ -111,7 +111,7 @@ function MonthLimit({ month }: { month?: UsageReport['month'] }) {
                 accessibilityLabel={t('usage.limit')}
                 style={[
                   styles.input,
-                  { color: c.foreground, borderColor: c.border, backgroundColor: c.background },
+                  { color: c.foreground, borderColor: c.border, backgroundColor: c.muted },
                 ]}
               />
             </View>
@@ -208,12 +208,14 @@ const styles = StyleSheet.create({
   limit: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
     width: 84,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     fontSize: 17,
     textAlign: 'right',
   },
-  notes: { gap: 4 },
+  head: { paddingHorizontal: 16 },
+  // Lined up with the section titles; each note adds a little of its own.
+  notes: { gap: 4, paddingHorizontal: 12 },
 });

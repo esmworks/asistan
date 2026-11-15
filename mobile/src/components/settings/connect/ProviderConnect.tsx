@@ -165,7 +165,7 @@ export function ProviderKeyForm() {
         />
       </ChipRow>
       {others.length > 0 ? (
-        <View style={[styles.other, { borderColor: c.border }]}>
+        <View style={[styles.other, { borderColor: c.border, backgroundColor: c.muted }]}>
           <ChoiceRow
             label={t('provider.other')}
             value={others.includes(current) ? current : ''}
@@ -447,7 +447,7 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange: (v
   const suggestions = models.filter((m) => m !== model && m.toLowerCase().includes(typed)).slice(0, 6);
   return (
     <View style={styles.root}>
-      <View style={[styles.other, { borderColor: c.border }]}>
+      <View style={[styles.other, { borderColor: c.border, backgroundColor: c.muted }]}>
         <ChoiceRow
           label={t('provider.provider')}
           value={provider}
@@ -507,8 +507,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingLeft: 16,
+    borderRadius: 12,
+    paddingLeft: 14,
     paddingRight: 6,
     paddingVertical: 8,
   },
@@ -516,10 +516,10 @@ const styles = StyleSheet.create({
   savedText: { flex: 1, gap: 2, marginLeft: 4 },
   title: { fontSize: 17, fontWeight: '500' },
   sub: { fontSize: 15, lineHeight: 20 },
-  other: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  form: { borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
+  other: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
+  form: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 10 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, gap: 8 },
+  found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, padding: 12, gap: 8 },
   foundRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   foundText: { flex: 1, fontSize: 17 },
 });

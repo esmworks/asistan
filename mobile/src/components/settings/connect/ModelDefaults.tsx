@@ -70,7 +70,7 @@ export function ModelDefaults({
               style={({ pressed }) => [
                 styles.card,
                 {
-                  borderColor: on ? c.brand : c.border,
+                  borderColor: on ? c.brand : c.outline,
                   backgroundColor: on ? `${c.brand}1A` : 'transparent',
                 },
                 pressed && { opacity: 0.7 },
@@ -124,8 +124,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
   cardText: { flex: 1, gap: 2 },
