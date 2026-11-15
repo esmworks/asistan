@@ -397,7 +397,7 @@ const askers = new Map<string, Elicit>();
 async function connect(target: ClientTarget): Promise<Client> {
   // Forms only: a server asking to open a web page is declined.
   const client = new Client(
-    { name: 'YumakBot', version: '0.1.0' },
+    { name: 'YumakBot', version: '0.2.0' },
     {
       capabilities: {
         elicitation: { form: {} },

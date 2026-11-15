@@ -31,7 +31,7 @@ export function McpAppView({ m }: { m: Message }) {
       case 'ui/initialize':
         return {
           protocolVersion: typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
-          hostInfo: { name: 'YumakBot', version: '0.1.0' },
+          hostInfo: { name: 'YumakBot', version: '0.2.0' },
           hostCapabilities: { openLinks: {}, serverTools: {} },
           hostContext: {
             theme,

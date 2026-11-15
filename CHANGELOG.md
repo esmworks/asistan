@@ -3,6 +3,47 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## 0.2.0 — 2026-11-16
+
+### Apps
+
+- A phone app for iOS and Android, built with Expo, with every screen of the web app's phone layout: bots, rooms,
+  conversations, Today, search, the editors and every settings section. It is run from source for now; see the README.
+- The product name is written "Yumak Bot", with a space, everywhere a person reads it. Code names, package names,
+  environment variables and the desktop app's install path keep "YumakBot", so an existing installation stays as it is.
+- Larger text, icons and avatars on the web and the phone.
+- A sent message stays in place until the server's copy arrives instead of seeming to land twice.
+- The bot's browser opens as a small card with the actions that fit while there is no picture to show.
+- The icons in the macOS installer window are centered.
+
+### Connections and models
+
+- One card on the connection page holds every AI the bots can use (Claude, each provider with a key, each endpoint)
+  with a single "add a provider"; the model card only chooses. The phone has the same layout.
+- A model a provider does not list yet can be named by hand, for a built-in provider and for an endpoint; its price is
+  unknown and counted as nothing.
+- Model names can be searched as you type, and Claude settings fold away when another provider is chosen.
+- Trying an OpenCode model works; the test request now names a session, as OpenCode requires.
+
+### Memory
+
+- Bots' notes take effect as soon as they are written, without waiting for approval, so a bot can use and tidy notes
+  written by routines, other bots or an import.
+- Bots can correct a note with `memory_update` and delete one with `memory_forget`, for their own notes and the shared
+  memory but not another bot's notes; `memory_search` without a query lists every note the bot sees.
+- Importing bots copies only what the other app saved as memory, and imported notes are saved active.
+- The memory screen groups the bots' notes by bot, archived bots marked, and one bot's notes can be deleted at once.
+
+### Running it
+
+- `docker/apparmor.sh` checks a Linux host and picks the `YUMAKBOT_APPARMOR` value the shell and desktop sandboxes need,
+  loading the AppArmor profile only where it is required.
+
+### Upgrading from 0.1.0
+
+- Notes that were waiting as proposals become active memory the bot can see, and the memory status goes away; no note
+  is lost. The API still reports status `active` on every note for phone builds made before this change.
+
 ## 0.1.0 — 2026-11-15
 
 The first public release.
