@@ -38,7 +38,7 @@ export function AboutSection() {
       detail={hint}
       chevron={false}
       onPress={() => void WebBrowser.openBrowserAsync(href)}
-      right={<Feather name="external-link" size={18} color={c.mutedForeground} />}
+      right={<Feather name="external-link" size={22} color={c.mutedForeground} />}
     />
   );
   return (
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 4 },
   logo: { width: 56, height: 56, borderRadius: 14 },
   headText: { flex: 1, gap: 2 },
-  name: { fontSize: 18, fontWeight: '600' },
-  version: { fontSize: 14 },
-  text: { fontSize: 14, lineHeight: 20 },
+  name: { fontSize: 20, fontWeight: '600' },
+  version: { fontSize: 16 },
+  text: { fontSize: 16, lineHeight: 22 },
 });

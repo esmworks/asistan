@@ -132,7 +132,7 @@ export function ApprovalCard({
   return (
     <View style={[styles.card, { borderColor: `${c.amber}66`, backgroundColor: c.amberSoft }]}>
       <View style={styles.cardHead}>
-        <Feather name="shield" size={20} color={c.amber} style={styles.headIcon} />
+        <Feather name="shield" size={24} color={c.amber} style={styles.headIcon} />
         <View style={styles.headText}>
           <Text style={[styles.body, styles.medium, { color: c.foreground }]}>{action.want}</Text>
           <Text style={[styles.body, { color: c.mutedForeground }]}>{t('approval.question')}</Text>
@@ -201,7 +201,7 @@ function LoginCard({ a }: { a: Approval }) {
   return (
     <View style={[styles.card, { borderColor: `${c.brand}4D`, backgroundColor: c.bubble }]}>
       <View style={styles.cardHead}>
-        <Feather name="key" size={20} color={c.brand} style={styles.headIcon} />
+        <Feather name="key" size={24} color={c.brand} style={styles.headIcon} />
         <View style={styles.headText}>
           <Text style={[styles.body, styles.medium, { color: c.foreground }]}>{a.summary}</Text>
           <Text style={[styles.small, { color: c.mutedForeground }]}>{t('signin.hint')}</Text>
@@ -367,7 +367,7 @@ function QuestionCard({ a, color }: { a: Approval; color: string }) {
                       {String.fromCharCode(65 + r.index)}
                     </Text>
                   ) : (
-                    <Feather name={item.secret ? 'key' : 'edit-2'} size={14} color="#FFFFFF" />
+                    <Feather name={item.secret ? 'key' : 'edit-2'} size={16} color="#FFFFFF" />
                   )}
                 </View>
                 <Text style={[styles.body, styles.flex, { color: c.foreground }]}>{r.label}</Text>
@@ -401,7 +401,7 @@ function QuestionCard({ a, color }: { a: Approval; color: string }) {
             ) : (
               <Pressable accessibilityRole="button" onPress={() => setWriting(true)} style={styles.option}>
                 <View style={[styles.badge, { backgroundColor: c.muted }]}>
-                  <Feather name="edit-2" size={14} color={c.foreground} />
+                  <Feather name="edit-2" size={16} color={c.foreground} />
                 </View>
                 <Text style={[styles.body, styles.flex, { color: c.mutedForeground }]}>
                   {t('question.other')}
@@ -497,7 +497,7 @@ function Connected() {
   const c = useColors();
   return (
     <View style={styles.connected}>
-      <Feather name="check" size={14} color={c.success} />
+      <Feather name="check" size={16} color={c.success} />
       <Text style={[styles.small, { color: c.success }]}>{t('message.appConnected')}</Text>
     </View>
   );
@@ -599,7 +599,7 @@ export function PlanCard({ items }: { items: PlanItem[] }) {
                   ? 'loader'
                   : 'circle'
             }
-            size={16}
+            size={20}
             color={
               item.status === 'completed'
                 ? c.success
@@ -658,7 +658,7 @@ export function OpenedFrom({ threadId }: { threadId: string }) {
       onPress={() => nav.chat(from.botId, isMain ? {} : { threadId: from.id })}
       style={styles.openedFrom}
     >
-      <Feather name="corner-up-left" size={14} color={c.mutedForeground} />
+      <Feather name="corner-up-left" size={16} color={c.mutedForeground} />
       <Text style={[styles.small, { color: c.mutedForeground }]} numberOfLines={1}>
         {t('message.openedFrom', { title: isMain || !from.title ? t('chat.mainThread') : from.title })}
       </Text>
@@ -670,9 +670,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   gap4: { gap: 4 },
   gap8: { gap: 8 },
-  body: { fontSize: 15, lineHeight: 22 },
-  small: { fontSize: 13, lineHeight: 19 },
-  sizeSm: { fontSize: 14, lineHeight: 20 },
+  body: { fontSize: 17, lineHeight: 24 },
+  small: { fontSize: 15, lineHeight: 21 },
+  sizeSm: { fontSize: 16, lineHeight: 22 },
   medium: { fontWeight: '500' },
   strike: { textDecorationLine: 'line-through' },
   // Cards that ask something take the conversation's whole width.
@@ -694,8 +694,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     maxWidth: '92%',
     paddingHorizontal: 8,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 15,
+    lineHeight: 21,
     textAlign: 'right',
   },
   input: {
@@ -703,7 +703,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
-    fontSize: 15,
+    fontSize: 17,
   },
   switchLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   questionWrap: { alignSelf: 'stretch', gap: 8 },
@@ -717,9 +717,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   badge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { fontSize: 12, fontWeight: '600' },
+  badgeText: { fontSize: 13, fontWeight: '600' },
   writeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 4 },
-  writeInput: { flex: 1, height: 38, borderRadius: 19, paddingHorizontal: 16, fontSize: 14 },
+  writeInput: { flex: 1, height: 38, borderRadius: 19, paddingHorizontal: 16, fontSize: 16 },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   dots: { flexDirection: 'row', gap: 6 },
   dot: { width: 6, height: 6, borderRadius: 3 },
@@ -741,6 +741,6 @@ const styles = StyleSheet.create({
   planItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   planIcon: { marginTop: 2 },
   centerRow: { alignItems: 'center', gap: 8, paddingVertical: 4 },
-  note: { fontSize: 14, lineHeight: 20, textAlign: 'center', paddingHorizontal: 24 },
+  note: { fontSize: 16, lineHeight: 22, textAlign: 'center', paddingHorizontal: 24 },
   openedFrom: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

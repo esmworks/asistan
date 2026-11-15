@@ -174,14 +174,14 @@ async function openLink(href: string) {
 
 const styles = StyleSheet.create({
   blocks: { gap: 10 },
-  body: { fontSize: 15, lineHeight: 24 },
-  h1: { fontSize: 18, lineHeight: 26, fontWeight: '600' },
+  body: { fontSize: 17, lineHeight: 26 },
+  h1: { fontSize: 20, lineHeight: 28, fontWeight: '600' },
   h3: { fontWeight: '600' },
   bold: { fontWeight: '600' },
   italic: { fontStyle: 'italic' },
   strike: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },
-  mono: { fontFamily: MONO, fontSize: 13, lineHeight: 20 },
+  mono: { fontFamily: MONO, fontSize: 15, lineHeight: 22 },
   list: { gap: 4 },
   // The marker hangs in the item's left padding, so the text is laid out at the item's own width
   // and a list inside a bubble that fits its text stays inside it.

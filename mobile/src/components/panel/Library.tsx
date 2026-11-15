@@ -35,7 +35,7 @@ export function Library({ bot }: { bot: Bot }) {
         const info = (
           <>
             <View style={[styles.icon, { backgroundColor: c.muted }]}>
-              <Feather name="file-text" size={16} color={c.foreground} />
+              <Feather name="file-text" size={20} color={c.foreground} />
             </View>
             <View style={styles.text}>
               <Text style={[styles.name, { color: c.foreground }]} numberOfLines={1}>
@@ -66,7 +66,7 @@ export function Library({ bot }: { bot: Bot }) {
               onPress={share}
               style={styles.action}
             >
-              <Feather name="download" size={18} color={c.mutedForeground} />
+              <Feather name="download" size={22} color={c.mutedForeground} />
             </Pressable>
           </View>
         );
@@ -77,7 +77,7 @@ export function Library({ bot }: { bot: Bot }) {
 
 const styles = StyleSheet.create({
   list: { gap: 6 },
-  empty: { fontSize: 14, lineHeight: 20 },
+  empty: { fontSize: 16, lineHeight: 22 },
   item: { flexDirection: 'row', alignItems: 'center' },
   main: {
     flex: 1,
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
   },
   icon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, minWidth: 0 },
-  name: { fontSize: 15, fontWeight: '500' },
-  meta: { fontSize: 12, marginTop: 1 },
+  name: { fontSize: 17, fontWeight: '500' },
+  meta: { fontSize: 13, marginTop: 1 },
   action: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 });

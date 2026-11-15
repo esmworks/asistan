@@ -99,9 +99,9 @@ export const SCREEN_RATIO = 1280 / 800;
 
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8, minHeight: 28 },
-  headTitle: { flex: 1, fontSize: 15, fontWeight: '600' },
+  headTitle: { flex: 1, fontSize: 17, fontWeight: '600' },
   headButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headAction: { fontSize: 14, fontWeight: '500' },
+  headAction: { fontSize: 16, fontWeight: '500' },
   block: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
   dot: { width: 8, height: 8, borderRadius: 4 },
 });

@@ -274,7 +274,7 @@ function AnswerInput({
             <Chip
               on={false}
               label={t('onboarding.other')}
-              icon={<Feather name="edit-2" size={14} color={c.foreground} />}
+              icon={<Feather name="edit-2" size={16} color={c.foreground} />}
               onPress={() => setOther(true)}
             />
           )}
@@ -352,7 +352,7 @@ function PersonSays({ children, onEdit }: { children: ReactNode; onEdit: () => v
         hitSlop={8}
         style={styles.edit}
       >
-        <Feather name="edit-2" size={14} color={c.mutedForeground} />
+        <Feather name="edit-2" size={16} color={c.mutedForeground} />
       </Pressable>
       <View style={[styles.personBubble, { backgroundColor: `${c.brand}1F` }]}>
         <Text style={[styles.say, { color: c.foreground }]}>{children}</Text>
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 4,
   },
-  say: { fontSize: 15, lineHeight: 22 },
+  say: { fontSize: 17, lineHeight: 24 },
   ask: { fontWeight: '500' },
   personRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
   personBubble: {

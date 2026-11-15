@@ -77,7 +77,7 @@ function Upcoming({ bot }: { bot: Bot }) {
       <View style={styles.list}>
         {mine.map((r) => (
           <Block key={r.id} style={styles.line}>
-            <Feather name="clock" size={16} color={c.mutedForeground} />
+            <Feather name="clock" size={20} color={c.mutedForeground} />
             <Pressable
               accessibilityRole="button"
               style={styles.grow}
@@ -100,7 +100,7 @@ function Upcoming({ bot }: { bot: Bot }) {
               onPress={() => run.mutate(r)}
               style={styles.play}
             >
-              <Feather name="play" size={16} color={c.foreground} />
+              <Feather name="play" size={20} color={c.foreground} />
             </Pressable>
             <Switch
               value={r.enabled}
@@ -159,7 +159,7 @@ function BotApps({ bot }: { bot: Bot }) {
               </Text>
             ) : null}
           </View>
-          <Feather name="chevron-right" size={18} color={c.mutedForeground} />
+          <Feather name="chevron-right" size={22} color={c.mutedForeground} />
         </Block>
       )}
     </View>
@@ -290,7 +290,7 @@ function Fact({ icon, label, children }: { icon: IconName; label: string; childr
   const c = useColors();
   return (
     <View style={styles.fact}>
-      <Feather name={icon} size={16} color={c.mutedForeground} />
+      <Feather name={icon} size={20} color={c.mutedForeground} />
       <Text style={[styles.factLabel, { color: c.foreground }]} numberOfLines={1}>
         {label}
       </Text>
@@ -317,7 +317,7 @@ function Choice({ value, busy, onPress }: { value: string; busy?: boolean; onPre
       <Text style={[styles.choiceText, { color: c.foreground }]} numberOfLines={1}>
         {value}
       </Text>
-      <Feather name="chevron-down" size={14} color={c.mutedForeground} />
+      <Feather name="chevron-down" size={16} color={c.mutedForeground} />
     </Pressable>
   );
 }
@@ -327,19 +327,19 @@ const styles = StyleSheet.create({
   list: { gap: 8 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   grow: { flex: 1, minWidth: 0 },
-  name: { fontSize: 15, fontWeight: '500' },
+  name: { fontSize: 17, fontWeight: '500' },
   mono: {
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
     fontWeight: '400',
-    fontSize: 14,
+    fontSize: 16,
   },
-  sub: { fontSize: 12, lineHeight: 17, marginTop: 1 },
-  muted: { fontSize: 14, lineHeight: 20 },
+  sub: { fontSize: 13, lineHeight: 18, marginTop: 1 },
+  muted: { fontSize: 16, lineHeight: 22 },
   play: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   logos: { flexDirection: 'row' },
   logo: { borderRadius: 14, borderWidth: 2 },
   fact: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
-  factLabel: { flex: 1, fontSize: 15 },
+  factLabel: { flex: 1, fontSize: 17 },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,5 +349,5 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     paddingHorizontal: 14,
   },
-  choiceText: { fontSize: 14, fontWeight: '500', flexShrink: 1 },
+  choiceText: { fontSize: 16, fontWeight: '500', flexShrink: 1 },
 });

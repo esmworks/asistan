@@ -607,7 +607,7 @@ function QuoteLine({
       onPress={jump}
       style={styles.quote}
     >
-      <Feather name="corner-up-left" size={14} color={c.mutedForeground} style={styles.quoteIcon} />
+      <Feather name="corner-up-left" size={16} color={c.mutedForeground} style={styles.quoteIcon} />
       <Text style={[styles.quoteText, { color: c.mutedForeground }]} numberOfLines={2}>
         {quote.text}
       </Text>
@@ -772,7 +772,7 @@ function ErrorRow({ m, retry }: { m: Message; retry: boolean }) {
           { borderColor: `${c.destructive}4D`, backgroundColor: `${c.destructive}1A` },
         ]}
       >
-        <Feather name="alert-circle" size={20} color={c.destructive} style={styles.errorIcon} />
+        <Feather name="alert-circle" size={24} color={c.destructive} style={styles.errorIcon} />
         <View style={styles.errorBody}>
           <Text style={[styles.plain, { color: c.foreground }]} selectable>
             {m.text}
@@ -914,12 +914,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   action: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  small: { fontSize: 13, lineHeight: 18 },
+  small: { fontSize: 15, lineHeight: 20 },
   underline: { textDecorationLine: 'underline' },
-  plain: { fontSize: 15, lineHeight: 24 },
-  mono: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 13, lineHeight: 20 },
+  plain: { fontSize: 17, lineHeight: 26 },
+  mono: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 15, lineHeight: 22 },
   note: { alignItems: 'center', gap: 8, paddingVertical: 4 },
-  noteText: { fontSize: 14, lineHeight: 20, textAlign: 'center', paddingHorizontal: 24 },
+  noteText: { fontSize: 16, lineHeight: 22, textAlign: 'center', paddingHorizontal: 24 },
   userCol: { alignItems: 'flex-end', gap: 4 },
   user: {
     alignSelf: 'flex-end',
@@ -942,7 +942,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reactionText: { fontSize: 16 },
+  reactionText: { fontSize: 17 },
   userReaction: {
     alignSelf: 'flex-start',
     marginTop: 4,
@@ -962,7 +962,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    fontSize: 15,
+    fontSize: 17,
     textAlignVertical: 'top',
   },
   editButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
@@ -975,7 +975,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   quoteIcon: { marginTop: 3 },
-  quoteText: { flexShrink: 1, fontSize: 14, lineHeight: 20 },
+  quoteText: { flexShrink: 1, fontSize: 16, lineHeight: 22 },
   assistantCol: { alignItems: 'flex-start', gap: 4 },
   assistantFiles: { alignItems: 'flex-start', gap: 8 },
   // A reply may take the conversation's whole width, as on the web page on a phone.
@@ -996,7 +996,7 @@ const styles = StyleSheet.create({
   errorBody: { flexShrink: 1, gap: 12 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   working: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
-  workingText: { fontSize: 14 },
+  workingText: { fontSize: 16 },
   emojis: {
     flexDirection: 'row',
     flexWrap: 'wrap',

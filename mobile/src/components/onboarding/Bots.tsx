@@ -97,7 +97,7 @@ export function BotsStep({
                     on ? { borderColor: c.brand, backgroundColor: c.brand } : { borderColor: c.border },
                   ]}
                 >
-                  {on ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
+                  {on ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
                 </View>
               </Pressable>
             );
@@ -132,10 +132,10 @@ export function BotsStep({
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: { padding: 24, paddingBottom: 32 },
-  title: { fontSize: 24, fontWeight: '600', letterSpacing: -0.4 },
-  body: { fontSize: 14, lineHeight: 20, marginTop: 8 },
+  title: { fontSize: 26, fontWeight: '600', letterSpacing: -0.4 },
+  body: { fontSize: 16, lineHeight: 22, marginTop: 8 },
   warn: { marginTop: 16, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
-  warnText: { fontSize: 14, lineHeight: 20 },
+  warnText: { fontSize: 16, lineHeight: 22 },
   cards: { marginTop: 24, gap: 12 },
   card: {
     flexDirection: 'row',
@@ -146,8 +146,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardText: { flex: 1, gap: 2 },
-  cardName: { fontSize: 16, fontWeight: '500' },
-  cardHint: { fontSize: 14, lineHeight: 20 },
+  cardName: { fontSize: 17, fontWeight: '500' },
+  cardHint: { fontSize: 16, lineHeight: 22 },
   box: {
     width: 22,
     height: 22,

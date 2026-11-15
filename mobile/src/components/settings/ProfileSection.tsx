@@ -117,6 +117,6 @@ export function ProfileSection() {
 
 const styles = StyleSheet.create({
   old: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
-  oldText: { fontSize: 14, lineHeight: 20 },
-  label: { fontSize: 15 },
+  oldText: { fontSize: 16, lineHeight: 22 },
+  label: { fontSize: 17 },
 });

@@ -151,10 +151,10 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   lineText: { flex: 1, gap: 5 },
   nameRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  name: { flexShrink: 1, fontSize: 15 },
-  note: { fontSize: 12, lineHeight: 16 },
-  cost: { fontSize: 15, fontWeight: '500', fontVariant: ['tabular-nums'] },
-  empty: { fontSize: 14, padding: 16 },
+  name: { flexShrink: 1, fontSize: 17 },
+  note: { fontSize: 13, lineHeight: 17 },
+  cost: { fontSize: 17, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  empty: { fontSize: 16, padding: 16 },
   plot: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -172,5 +172,5 @@ const styles = StyleSheet.create({
   },
   bar: { width: '100%', borderTopLeftRadius: 3, borderTopRightRadius: 3 },
   axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  tip: { fontSize: 13, marginTop: 8, fontVariant: ['tabular-nums'] },
+  tip: { fontSize: 15, marginTop: 8, fontVariant: ['tabular-nums'] },
 });

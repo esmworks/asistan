@@ -90,7 +90,7 @@ export function SidebarList({
           onPress={() => nav.search(q)}
           style={({ pressed }) => [styles.searchRow, pressed && { backgroundColor: c.accent }]}
         >
-          <Feather name="search" size={16} color={c.mutedForeground} />
+          <Feather name="search" size={20} color={c.mutedForeground} />
           <Text style={[styles.searchText, { color: c.mutedForeground }]} numberOfLines={1}>
             {t('search.inMessages', { query: q })}
           </Text>
@@ -146,7 +146,7 @@ export function SidebarList({
               >
                 <Feather
                   name={folded ? 'chevron-right' : 'chevron-down'}
-                  size={14}
+                  size={16}
                   color={c.mutedForeground}
                 />
                 <Text style={heading} numberOfLines={1}>
@@ -180,7 +180,7 @@ export function SidebarList({
               hitSlop={8}
               style={styles.smallButton}
             >
-              <Feather name="plus" size={16} color={c.mutedForeground} />
+              <Feather name="plus" size={20} color={c.mutedForeground} />
             </Pressable>
           </View>
           {shownRooms.map((r) => (
@@ -192,7 +192,7 @@ export function SidebarList({
               onPress={() => nav.roomEdit()}
               style={({ pressed }) => [styles.roomHint, pressed && { backgroundColor: c.accent }]}
             >
-              <Feather name="users" size={16} color={c.mutedForeground} />
+              <Feather name="users" size={20} color={c.mutedForeground} />
               <Text style={[styles.hintText, styles.grow, { color: c.mutedForeground, textAlign: 'left' }]}>
                 {t('room.dialogHint')}
               </Text>
@@ -214,7 +214,7 @@ export function SidebarList({
 const styles = StyleSheet.create({
   grow: { flex: 1 },
   section: { marginTop: 4 },
-  heading: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8 },
+  heading: { fontSize: 13, fontWeight: '600', letterSpacing: 0.4 },
   headingLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
   },
-  searchText: { flex: 1, fontSize: 14 },
+  searchText: { flex: 1, fontSize: 16 },
   hint: {
     marginHorizontal: 8,
     marginVertical: 4,
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  hintText: { fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  hintText: { fontSize: 15, lineHeight: 20, textAlign: 'center' },
   smallButton: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   roomHint: {
     flexDirection: 'row',

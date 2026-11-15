@@ -567,8 +567,8 @@ function ApnsForm({
 
 const styles = StyleSheet.create({
   gap2: { gap: 2 },
-  titleBase: { fontSize: 15, fontWeight: '500' },
-  small: { fontSize: 13, lineHeight: 18 },
+  titleBase: { fontSize: 17, fontWeight: '500' },
+  small: { fontSize: 15, lineHeight: 20 },
   tryRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   start: { alignItems: 'flex-start' },
   area: { height: undefined, minHeight: 110, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },

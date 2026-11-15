@@ -78,7 +78,7 @@ function SavedLine({
   return (
     <View style={[styles.saved, { borderColor: c.border }]}>
       <View style={[styles.badge, { backgroundColor: `${c.success}26` }]}>
-        <Feather name={icon} size={16} color={c.success} />
+        <Feather name={icon} size={20} color={c.success} />
       </View>
       <View style={styles.savedText}>
         <Text style={[styles.title, { color: c.foreground }]} numberOfLines={2}>
@@ -363,7 +363,7 @@ export function EndpointForm() {
           <Text style={[styles.sub, { color: c.mutedForeground }]}>{t('provider.found')}</Text>
           {found.map((f) => (
             <View key={f.baseUrl} style={styles.foundRow}>
-              <Feather name="server" size={16} color={c.mutedForeground} />
+              <Feather name="server" size={20} color={c.mutedForeground} />
               <Text style={[styles.foundText, { color: c.foreground }]} numberOfLines={2}>
                 {f.name}{' '}
                 <Text style={[styles.sub, { color: c.mutedForeground }]}>
@@ -514,12 +514,12 @@ const styles = StyleSheet.create({
   },
   badge: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   savedText: { flex: 1, gap: 2, marginLeft: 4 },
-  title: { fontSize: 15, fontWeight: '500' },
-  sub: { fontSize: 13, lineHeight: 18 },
+  title: { fontSize: 17, fontWeight: '500' },
+  sub: { fontSize: 15, lineHeight: 20 },
   other: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   form: { borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, gap: 8 },
   foundRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  foundText: { flex: 1, fontSize: 15 },
+  foundText: { flex: 1, fontSize: 17 },
 });

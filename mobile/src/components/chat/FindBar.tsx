@@ -81,7 +81,7 @@ export function FindBar({
 
   return (
     <View style={[styles.bar, { borderColor: c.border, backgroundColor: c.card }]}>
-      <Feather name="search" size={16} color={c.mutedForeground} />
+      <Feather name="search" size={20} color={c.mutedForeground} />
       <TextInput
         ref={input}
         value={query}
@@ -131,7 +131,7 @@ function Step({
       hitSlop={4}
       style={[styles.step, disabled && { opacity: 0.3 }]}
     >
-      <Feather name={icon} size={18} color={c.foreground} />
+      <Feather name={icon} size={22} color={c.foreground} />
     </Pressable>
   );
 }
@@ -149,8 +149,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
   },
-  input: { flex: 1, fontSize: 15, paddingHorizontal: 6, height: 40 },
+  input: { flex: 1, fontSize: 17, paddingHorizontal: 6, height: 40 },
   count: { minWidth: 24, alignItems: 'center' },
-  countText: { fontSize: 12, fontVariant: ['tabular-nums'] },
+  countText: { fontSize: 13, fontVariant: ['tabular-nums'] },
   step: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 });

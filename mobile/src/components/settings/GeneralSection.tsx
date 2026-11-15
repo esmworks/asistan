@@ -164,6 +164,6 @@ export function GeneralSection() {
 
 const styles = StyleSheet.create({
   matches: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  label: { fontSize: 15 },
-  use: { fontSize: 13, paddingHorizontal: 4 },
+  label: { fontSize: 17 },
+  use: { fontSize: 15, paddingHorizontal: 4 },
 });

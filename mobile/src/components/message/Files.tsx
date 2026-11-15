@@ -56,7 +56,7 @@ export function MessageFiles({
             ]}
           >
             <View style={[styles.icon, { backgroundColor: c.muted }]}>
-              <Feather name="file-text" size={16} color={c.foreground} />
+              <Feather name="file-text" size={20} color={c.foreground} />
             </View>
             <View style={styles.chipText}>
               <Text style={[styles.name, { color: c.foreground }]} numberOfLines={1}>
@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
   },
   icon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   chipText: { flexShrink: 1 },
-  name: { fontSize: 14, fontWeight: '500' },
-  size: { fontSize: 12 },
+  name: { fontSize: 16, fontWeight: '500' },
+  size: { fontSize: 13 },
 });

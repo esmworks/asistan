@@ -118,15 +118,15 @@ const styles = StyleSheet.create({
   formContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   formColumn: { width: '100%', maxWidth: 384, alignSelf: 'center', gap: 12 },
   mark: { alignSelf: 'center', marginBottom: 8 },
-  title: { fontSize: 24, fontWeight: '600', textAlign: 'center' },
-  hint: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 4 },
-  error: { fontSize: 14, paddingHorizontal: 16 },
+  title: { fontSize: 26, fontWeight: '600', textAlign: 'center' },
+  hint: { fontSize: 16, lineHeight: 22, textAlign: 'center', marginBottom: 4 },
+  error: { fontSize: 16, paddingHorizontal: 16 },
   field: {
     height: CONTROL_HEIGHT,
     borderRadius: CONTROL_HEIGHT / 2,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
-    fontSize: 16,
+    fontSize: 17,
   },
   button: {
     height: CONTROL_HEIGHT,
@@ -137,6 +137,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 20,
   },
-  buttonText: { fontSize: 16, fontWeight: '600' },
-  ghostText: { fontSize: 14, fontWeight: '500' },
+  buttonText: { fontSize: 17, fontWeight: '600' },
+  ghostText: { fontSize: 16, fontWeight: '500' },
 });

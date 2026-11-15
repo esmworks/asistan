@@ -41,5 +41,5 @@ export function BotSwitches({
 const styles = StyleSheet.create({
   box: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  name: { flex: 1, fontSize: 15 },
+  name: { flex: 1, fontSize: 17 },
 });

@@ -40,7 +40,7 @@ export default function PanelScreen() {
         >
           <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={72} />
           <View style={[styles.pencil, { backgroundColor: c.background, borderColor: c.border }]}>
-            <Feather name="edit-2" size={14} color={c.foreground} />
+            <Feather name="edit-2" size={16} color={c.foreground} />
           </View>
         </Pressable>
         <Text style={[styles.name, { color: c.foreground }]}>{bot.name}</Text>
@@ -74,6 +74,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  name: { fontSize: 20, fontWeight: '600', marginTop: 8 },
-  description: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  name: { fontSize: 22, fontWeight: '600', marginTop: 8 },
+  description: { fontSize: 16, lineHeight: 22, textAlign: 'center' },
 });

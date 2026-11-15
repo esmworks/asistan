@@ -126,7 +126,7 @@ function DesktopCard({ bot }: { bot: Bot }) {
 
 const styles = StyleSheet.create({
   status: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  statusText: { fontSize: 12 },
+  statusText: { fontSize: 13 },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   screen: { width: '100%', aspectRatio: SCREEN_RATIO },
   placeholder: {
@@ -136,6 +136,6 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
   },
-  hint: { fontSize: 12, textAlign: 'center' },
-  url: { fontSize: 12, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  hint: { fontSize: 13, textAlign: 'center' },
+  url: { fontSize: 13, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
 });

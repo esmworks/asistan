@@ -153,7 +153,7 @@ export function BotPage({
           onPress={() => void shareFile(api.fileUrl(botId, path), name)}
           style={styles.link}
         >
-          <Feather name="download" size={14} color={c.mutedForeground} />
+          <Feather name="download" size={16} color={c.mutedForeground} />
           <Text style={[styles.linkText, { color: c.mutedForeground }]} numberOfLines={1}>
             {name}
           </Text>
@@ -245,10 +245,10 @@ export function McpAppView({ m }: { m: Message }) {
 const styles = StyleSheet.create({
   card: { alignSelf: 'stretch', gap: 8 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
-  title: { flex: 1, fontSize: 14, fontWeight: '500' },
+  title: { flex: 1, fontSize: 16, fontWeight: '500' },
   link: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '45%' },
-  linkText: { fontSize: 12, flexShrink: 1 },
-  caption: { fontSize: 14, paddingHorizontal: 4 },
+  linkText: { fontSize: 13, flexShrink: 1 },
+  caption: { fontSize: 16, paddingHorizontal: 4 },
   frame: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', backgroundColor: '#FFFFFF' },
   web: { flex: 1, backgroundColor: 'transparent' },
 });

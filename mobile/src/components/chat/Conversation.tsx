@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   message: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
-  hint: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  hint: { fontSize: 16, lineHeight: 22, textAlign: 'center' },
   // Toward the top, so the keyboard coming up leaves it in view.
   empty: {
     flex: 1,
@@ -533,11 +533,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 12,
   },
-  emptyName: { fontSize: 20, fontWeight: '600' },
+  emptyName: { fontSize: 22, fontWeight: '600' },
   // The list is upside down, so the end is the top: a short conversation starts there.
   listContent: { paddingHorizontal: 12, paddingVertical: 12, flexGrow: 1, justifyContent: 'flex-end' },
   gap: { height: 16 },
-  divider: { fontSize: 12, textAlign: 'center', paddingVertical: 8 },
+  divider: { fontSize: 13, textAlign: 'center', paddingVertical: 8 },
   older: { alignItems: 'center', paddingBottom: 16 },
   olderButton: {
     flexDirection: 'row',
@@ -547,9 +547,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 17,
   },
-  olderText: { fontSize: 14, fontWeight: '500' },
+  olderText: { fontSize: 16, fontWeight: '500' },
   newSince: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   newLine: { flex: 1, height: StyleSheet.hairlineWidth * 2, backgroundColor: 'rgba(14,165,233,0.45)' },
-  newText: { fontSize: 12, fontWeight: '500', color: '#0284C7' },
+  newText: { fontSize: 13, fontWeight: '500', color: '#0284C7' },
   sending: { opacity: 0.7 },
 });

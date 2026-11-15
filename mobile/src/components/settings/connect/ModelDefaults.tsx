@@ -82,7 +82,7 @@ export function ModelDefaults({
                   <Text style={[styles.description, { color: c.mutedForeground }]}>{m.description}</Text>
                 ) : null}
               </View>
-              {on ? <Feather name="check" size={16} color={c.brand} /> : null}
+              {on ? <Feather name="check" size={20} color={c.brand} /> : null}
             </Pressable>
           );
         })}
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   cardText: { flex: 1, gap: 2 },
-  name: { fontSize: 15, fontWeight: '500' },
-  description: { fontSize: 13, lineHeight: 18 },
+  name: { fontSize: 17, fontWeight: '500' },
+  description: { fontSize: 15, lineHeight: 20 },
   effort: { gap: 12 },
 });

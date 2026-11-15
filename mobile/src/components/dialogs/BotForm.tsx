@@ -287,7 +287,7 @@ function BotFormPage({ bot }: { bot?: Bot }) {
                 onPress={() => set('color', col)}
                 style={[styles.color, { backgroundColor: col }]}
               >
-                {col === v.color ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+                {col === v.color ? <Feather name="check" size={20} color="#FFFFFF" /> : null}
               </Pressable>
             ))}
           </View>
@@ -387,7 +387,7 @@ function BotFormPage({ bot }: { bot?: Bot }) {
           onPress={() => setAdvanced((a) => !a)}
           chevron={false}
           right={
-            <Feather name={advanced ? 'chevron-up' : 'chevron-down'} size={18} color={c.mutedForeground} />
+            <Feather name={advanced ? 'chevron-up' : 'chevron-down'} size={22} color={c.mutedForeground} />
           }
         />
         {advanced ? (
@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     height: 36,
   },
-  starterText: { fontSize: 14 },
+  starterText: { fontSize: 16 },
   preview: { alignItems: 'center' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
   shape: {
@@ -472,5 +472,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   color: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  sectionLabel: { fontSize: 15, fontWeight: '500' },
+  sectionLabel: { fontSize: 17, fontWeight: '500' },
 });

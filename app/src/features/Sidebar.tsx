@@ -331,7 +331,7 @@ function SidebarPanel({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{userName}</span>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               <span className={cn('size-1.5 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')} />
               {connected ? t('sidebar.connected') : t('sidebar.connecting')}
             </span>
@@ -360,7 +360,7 @@ function SidebarPanel({
 const SEARCH_KEYS = /mac|iphone|ipad/i.test(navigator.userAgent) ? '⌘K' : 'Ctrl K';
 
 const heading =
-  'px-4 pt-2.5 pb-0.5 text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase';
+  'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
 
 /** Highlights a bot while its menu is open. */
 const menuOpen = 'data-[state=open]:[&>button]:bg-accent/60';
@@ -473,7 +473,7 @@ function RoundButton({
         <Button
           variant={variant}
           size="icon"
-          className="size-10 rounded-full"
+          className="size-10 rounded-full [&_svg:not([class*='size-'])]:size-5"
           onClick={onClick}
           aria-label={label}
         >
@@ -613,7 +613,7 @@ function PinnedTile({ bot, summary }: { bot: Bot; summary?: BotSummary }) {
             motion={selected ? 'always' : 'hover'}
             badge={<Badges bot={bot} summary={summary} />}
           />
-          <span className="-mt-1 w-full truncate text-center text-[13px] font-medium">{bot.name}</span>
+          <span className="-mt-1 w-full truncate text-center text-sm font-medium">{bot.name}</span>
         </button>
       </div>
     </BotMenu>
@@ -675,7 +675,7 @@ function BotRow({ bot, summary }: { bot: Bot; summary?: BotSummary }) {
               {summary?.previewAt && (
                 <span
                   className={cn(
-                    'ml-auto shrink-0 text-xs text-muted-foreground',
+                    'ml-auto shrink-0 text-[13px] text-muted-foreground',
                     unread && 'font-semibold text-foreground',
                   )}
                 >

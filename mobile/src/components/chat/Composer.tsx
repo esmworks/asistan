@@ -303,7 +303,7 @@ export function Composer({
                   </>
                 ) : (
                   <>
-                    <Feather name="zap" size={14} color={c.mutedForeground} />
+                    <Feather name="zap" size={16} color={c.mutedForeground} />
                     <Text style={[styles.optionText, { color: c.foreground }]} numberOfLines={1}>
                       <Text style={styles.optionName}>{o.tag ? `$${o.name}` : o.name}</Text>
                       {o.description ? (
@@ -321,7 +321,7 @@ export function Composer({
       <View style={[styles.card, { borderColor: c.border, backgroundColor: c.card }]}>
         {replyTo ? (
           <View style={[styles.reply, { backgroundColor: c.muted }]}>
-            <Feather name="corner-up-left" size={16} color={c.mutedForeground} />
+            <Feather name="corner-up-left" size={20} color={c.mutedForeground} />
             <Text style={[styles.replyText, { color: c.mutedForeground }]} numberOfLines={1}>
               {replyExcerpt(replyTo)}
             </Text>
@@ -332,7 +332,7 @@ export function Composer({
               hitSlop={8}
               style={styles.replyClose}
             >
-              <Feather name="x" size={16} color={c.mutedForeground} />
+              <Feather name="x" size={20} color={c.mutedForeground} />
             </Pressable>
           </View>
         ) : null}
@@ -351,7 +351,7 @@ export function Composer({
               onPress={() => setAttachOpen(true)}
               style={styles.round}
             >
-              <Feather name="paperclip" size={20} color={c.mutedForeground} />
+              <Feather name="paperclip" size={24} color={c.mutedForeground} />
             </Pressable>
           ) : null}
           <TextInput
@@ -383,7 +383,7 @@ export function Composer({
             {stopping ? (
               <View style={[styles.stopSquare, { backgroundColor: c.foreground }]} />
             ) : (
-              <Feather name="arrow-up" size={20} color={color ? '#FFFFFF' : c.primaryForeground} />
+              <Feather name="arrow-up" size={24} color={color ? '#FFFFFF' : c.primaryForeground} />
             )}
           </Pressable>
         </View>
@@ -424,7 +424,7 @@ function Chip({ item, onRemove }: { item: Attachment; onRemove: () => void }) {
         ) : item.preview ? (
           <Image source={{ uri: item.preview }} style={styles.thumbImage} contentFit="cover" />
         ) : (
-          <Feather name="file-text" size={16} color={c.mutedForeground} />
+          <Feather name="file-text" size={20} color={c.mutedForeground} />
         )}
       </View>
       <Text style={[styles.chipName, { color: c.foreground }]} numberOfLines={1}>
@@ -437,7 +437,7 @@ function Chip({ item, onRemove }: { item: Attachment; onRemove: () => void }) {
         hitSlop={8}
         style={styles.chipRemove}
       >
-        <Feather name="x" size={14} color={c.mutedForeground} />
+        <Feather name="x" size={16} color={c.mutedForeground} />
       </Pressable>
     </View>
   );
@@ -466,12 +466,12 @@ function useKeyboardShown(): boolean {
 
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 12, paddingTop: 4, gap: 6 },
-  error: { fontSize: 13, textAlign: 'center' },
+  error: { fontSize: 15, textAlign: 'center' },
   menu: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   menuScroll: { maxHeight: 232 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 14 },
-  optionTag: { width: 78, fontSize: 13, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) },
-  optionText: { flex: 1, fontSize: 15 },
+  optionTag: { width: 78, fontSize: 15, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) },
+  optionText: { flex: 1, fontSize: 17 },
   optionName: { fontWeight: '600' },
   card: {
     borderWidth: 1,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     paddingRight: 6,
     borderRadius: 16,
   },
-  replyText: { flex: 1, fontSize: 14 },
+  replyText: { flex: 1, fontSize: 16 },
   replyClose: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   chips: { gap: 8, paddingHorizontal: 8, paddingTop: 6, paddingBottom: 2 },
   chip: {
@@ -515,14 +515,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   thumbImage: { width: 32, height: 32 },
-  chipName: { flexShrink: 1, fontSize: 14 },
+  chipName: { flexShrink: 1, fontSize: 16 },
   chipRemove: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'flex-end' },
   round: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   input: {
     flex: 1,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 17,
+    lineHeight: 23,
     maxHeight: 160,
     paddingHorizontal: 8,
     paddingTop: 7,

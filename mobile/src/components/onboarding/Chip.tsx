@@ -62,5 +62,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: { fontSize: 15, flexShrink: 1 },
+  text: { fontSize: 17, flexShrink: 1 },
 });

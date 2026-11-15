@@ -99,9 +99,9 @@ export function BringIn({
 const styles = StyleSheet.create({
   box: { gap: 14 },
   title: { fontSize: 17, fontWeight: '600' },
-  hint: { fontSize: 13, lineHeight: 18 },
+  hint: { fontSize: 15, lineHeight: 20 },
   group: { gap: 8 },
-  label: { fontSize: 14, fontWeight: '500', paddingHorizontal: 4 },
+  label: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
   item: {
     gap: 6,
     borderWidth: StyleSheet.hairlineWidth,

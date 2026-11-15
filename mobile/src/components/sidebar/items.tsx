@@ -106,7 +106,7 @@ export function PinnedTile({
       delayLongPress={350}
       style={({ pressed }) => [styles.tile, pressed && { backgroundColor: c.accent }]}
     >
-      <AvatarWithBadges bot={bot} summary={summary} size={64} unread={unread} />
+      <AvatarWithBadges bot={bot} summary={summary} size={80} unread={unread} />
       <Text style={[styles.tileName, { color: c.foreground }]} numberOfLines={1}>
         {bot.name}
       </Text>
@@ -140,7 +140,7 @@ export function BotRow({
       delayLongPress={350}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.accent }]}
     >
-      <AvatarWithBadges bot={bot} summary={summary} size={38} />
+      <AvatarWithBadges bot={bot} summary={summary} size={48} />
       <View style={styles.rowText}>
         <View style={styles.line}>
           <Text style={[styles.name, { color: c.foreground }]} numberOfLines={1}>
@@ -149,7 +149,7 @@ export function BotRow({
           {muted ? (
             <Feather
               name="bell-off"
-              size={13}
+              size={15}
               color={c.mutedForeground}
               accessibilityLabel={t('sidebar.muted')}
             />
@@ -214,7 +214,7 @@ export function RoomRow({
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.accent }]}
     >
       <View style={styles.roomFace}>
-        <RoomFace members={members} size={24} />
+        <RoomFace members={members} size={30} />
         {busy ? (
           <View style={[styles.running, { backgroundColor: c.success, borderColor: c.sidebar }]} />
         ) : null}
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    minHeight: 56,
+    minHeight: 68,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -247,11 +247,11 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, minWidth: 0 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   grow: { flex: 1 },
-  name: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '600' },
-  time: { fontSize: 12 },
+  name: { flex: 1, fontSize: 17, lineHeight: 22, fontWeight: '600' },
+  time: { fontSize: 13 },
   bold: { fontWeight: '600' },
   medium: { fontWeight: '500' },
-  preview: { fontSize: 14, lineHeight: 20 },
+  preview: { fontSize: 16, lineHeight: 22 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   unreadCorner: {
     position: 'absolute',
@@ -296,13 +296,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tile: {
-    width: 96,
+    width: 104,
     alignItems: 'center',
     gap: 6,
     borderRadius: 16,
     paddingHorizontal: 6,
     paddingVertical: 8,
   },
-  tileName: { width: '100%', fontSize: 13, fontWeight: '500', textAlign: 'center' },
-  roomFace: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  tileName: { width: '100%', fontSize: 15, fontWeight: '500', textAlign: 'center' },
+  roomFace: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
 });

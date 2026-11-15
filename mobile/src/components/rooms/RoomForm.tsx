@@ -221,13 +221,13 @@ export function RoomForm({ room, bots, title }: { room?: Room; bots: Bot[]; titl
 const styles = StyleSheet.create({
   form: { gap: 16 },
   group: { gap: 6 },
-  label: { fontSize: 15, fontWeight: '600' },
-  hint: { fontSize: 13, lineHeight: 18 },
+  label: { fontSize: 17, fontWeight: '600' },
+  hint: { fontSize: 15, lineHeight: 20 },
   list: { borderWidth: 1, borderRadius: 16, padding: 4, gap: 2 },
   bot: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, padding: 8 },
   botText: { flex: 1, gap: 1 },
-  botName: { fontSize: 15, fontWeight: '500' },
-  botHint: { fontSize: 13 },
+  botName: { fontSize: 17, fontWeight: '500' },
+  botHint: { fontSize: 15 },
   badge: {
     width: 22,
     height: 22,
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { fontSize: 12, fontWeight: '600' },
+  badgeText: { fontSize: 13, fontWeight: '600' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   spacer: { flex: 1 },
 });

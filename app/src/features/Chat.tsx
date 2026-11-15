@@ -372,13 +372,13 @@ function Header({
                 avatar={bot.avatar}
                 color={bot.color}
                 seed={bot.id}
-                size={26}
+                size={28}
                 activity={activity}
                 motion="always"
               />
-              <span className="truncate text-sm font-semibold">{bot.name}</span>
+              <span className="truncate text-[15px] font-semibold">{bot.name}</span>
               {title && (
-                <span className="truncate text-sm text-muted-foreground">
+                <span className="truncate text-[15px] text-muted-foreground">
                   · {thread?.icon ? `${thread.icon} ` : ''}
                   {title}
                 </span>
@@ -537,7 +537,7 @@ function Header({
                 onClick={() => setFindOpen(!findOpen)}
                 aria-label={t('find.open')}
               >
-                <Search />
+                <Search className="size-5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t('find.open')}</TooltipContent>
@@ -552,7 +552,7 @@ function Header({
                 onClick={() => (panelBeside ? togglePanel() : togglePanelSheet())}
                 aria-label={t('chat.togglePanel')}
               >
-                <PanelRight />
+                <PanelRight className="size-5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{panelOpen ? t('chat.closePanel') : t('chat.openPanel')}</TooltipContent>
