@@ -12,6 +12,7 @@ import {
   Brain,
   ChartColumn,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -199,6 +200,12 @@ export function SettingsDialog() {
       <DialogContent
         // A phone would put its keyboard over the list for the search box; there it waits for a tap.
         onOpenAutoFocus={(e) => phone && e.preventDefault()}
+        // Escape in an open list (the model search) closes the list, not the whole settings.
+        onEscapeKeyDown={(e) => {
+          const el = e.target as HTMLElement | null;
+          if (el?.getAttribute('role') === 'combobox' && el.getAttribute('aria-expanded') === 'true')
+            e.preventDefault();
+        }}
         className="screen-edges sidebar-top flex h-[min(720px,90vh)] gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-4xl phone:flex-col phone:h-dvh phone:max-h-none phone:max-w-full phone:rounded-none phone:border-0"
       >
         {(!phone || listing) && (
@@ -712,21 +719,44 @@ function ModelCard() {
   const t = useT();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
+  const [picked, setPicked] = useState<'claude' | 'pi' | null>(null);
+  const [claudeOpen, setClaudeOpen] = useState(false);
   if (settings?.defaultModel === undefined) return null;
+  const kind = picked ?? settings.defaultEngine ?? 'claude';
+  // Bots already on Claude keep using this setting, so it stays reachable, folded out of the way.
+  const folded = kind === 'pi' && !claudeOpen;
   return (
     <Card title={t('model.title')}>
-      {settings.defaultEngine !== undefined && <NewBotEngine />}
+      {settings.defaultEngine !== undefined && <NewBotEngine kind={kind} onPick={setPicked} />}
       <div className="space-y-3 px-4 py-4">
         {settings.defaultEngine !== undefined && (
-          <div>
-            <div className="text-sm font-medium">{t('model.claudeBots')}</div>
-            <div className="text-xs text-muted-foreground">{t('model.claudeBotsHint')}</div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">{t('model.claudeBots')}</div>
+              <div className="text-xs text-muted-foreground">
+                {kind === 'pi' ? t('model.claudeBotsFoldedHint') : t('model.claudeBotsHint')}
+              </div>
+            </div>
+            {kind === 'pi' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 rounded-full text-muted-foreground"
+                aria-expanded={!folded}
+                onClick={() => setClaudeOpen(!claudeOpen)}
+              >
+                {folded ? t('model.show') : t('model.hide')}
+                <ChevronDown className={cn('transition-transform', !folded && 'rotate-180')} />
+              </Button>
+            )}
           </div>
         )}
-        <ModelDefaults
-          value={{ model: settings.defaultModel, effort: settings.effort ?? '' }}
-          onChange={(v) => save.mutate({ defaultModel: v.model, effort: v.effort })}
-        />
+        {!folded && (
+          <ModelDefaults
+            value={{ model: settings.defaultModel, effort: settings.effort ?? '' }}
+            onChange={(v) => save.mutate({ defaultModel: v.model, effort: v.effort })}
+          />
+        )}
       </div>
       {settings.backupModel !== undefined && <BackupModel />}
     </Card>
@@ -789,16 +819,17 @@ function BackupModel() {
   );
 }
 
-/** Which AI new bots start with: Claude, or a model of a provider with a stored key. */
-function NewBotEngine() {
+/**
+ * Which AI new bots start with: Claude, or a model of a provider with a stored key. The choice
+ * is held by the card, which folds the Claude settings away while another provider is picked.
+ */
+function NewBotEngine({ kind, onPick }: { kind: 'claude' | 'pi'; onPick(kind: 'claude' | 'pi'): void }) {
   const t = useT();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
-  const [picked, setPicked] = useState<'claude' | 'pi' | null>(null);
   const [ref, setRef] = useState<string | null>(null);
   const pi = useSavePiModel(() => setRef(null));
   const hasProvider = useHasProvider();
-  const kind = picked ?? settings?.defaultEngine ?? 'claude';
   const value = ref ?? settings?.piModel ?? '';
   const saved = settings?.defaultEngine === 'pi' && settings.piModel === value;
   return (
@@ -811,13 +842,13 @@ function NewBotEngine() {
         <Chip
           on={kind === 'claude'}
           onClick={() => {
-            setPicked('claude');
+            onPick('claude');
             if (settings?.defaultEngine !== 'claude') save.mutate({ defaultEngine: 'claude' });
           }}
         >
           {t('ai.claude')}
         </Chip>
-        <Chip on={kind === 'pi'} onClick={() => setPicked('pi')}>
+        <Chip on={kind === 'pi'} onClick={() => onPick('pi')}>
           {t('ai.other')}
         </Chip>
       </div>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, Pencil, RefreshCw, Server, X } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Pencil, RefreshCw, Server, X } from 'lucide-react';
 import type { ProviderInfo } from '@yumakbot/shared';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -499,7 +499,6 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange(v: 
   const model = provider === parts.provider ? parts.model : '';
   const { data: models = [] } = useProviderModels(provider || null);
   if (!configured.length) return <ProviderKeyForm />;
-  const listId = 'pi-model-options';
   return (
     <div className="flex flex-wrap gap-2">
       <Select value={provider} onValueChange={(p) => onChange(`${p}/`)}>
@@ -514,20 +513,123 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange(v: 
           ))}
         </SelectContent>
       </Select>
+      <ModelSearch value={model} models={models} onChange={(m) => onChange(`${provider}/${m}`)} />
+    </div>
+  );
+}
+
+/**
+ * A model name field with the provider's models below it, narrowed to those holding what is
+ * typed. A name off the list stays allowed: the provider may serve models its list leaves out.
+ * The list opens under the field and scrolls on its own, so a long one stays inside the window.
+ */
+function ModelSearch({
+  value,
+  models,
+  onChange,
+}: {
+  value: string;
+  models: string[];
+  onChange(model: string): void;
+}) {
+  const t = useT();
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  // What was typed since the field took focus; until then every model is shown.
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const list = useRef<HTMLUListElement>(null);
+  const q = query.toLowerCase();
+  const shown = q ? models.filter((m) => m.toLowerCase().includes(q)) : models;
+  useEffect(() => {
+    list.current?.children[active]?.scrollIntoView({ block: 'nearest' });
+  }, [active, open]);
+  const pick = (m: string) => {
+    onChange(m);
+    setQuery('');
+    setOpen(false);
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) return setOpen(true);
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((i) => (shown.length ? (i + step + shown.length) % shown.length : 0));
+    } else if (e.key === 'Enter' && open && shown[active]) {
+      e.preventDefault();
+      pick(shown[active]);
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
+  return (
+    <div className="relative min-w-56 flex-1">
       <Input
-        list={listId}
-        value={model}
-        onChange={(e) => onChange(`${provider}/${e.target.value.trim()}`)}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        value={value}
+        onFocus={(e) => {
+          // Selected, so typing searches afresh instead of adding to the saved name. Deferred:
+          // the click that focused the field would place the cursor and undo the selection.
+          const field = e.currentTarget;
+          setTimeout(() => field.select());
+          setQuery('');
+          setActive(Math.max(0, models.indexOf(value)));
+          setOpen(true);
+        }}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen(true)}
+        onChange={(e) => {
+          const typed = e.target.value.trim();
+          onChange(typed);
+          setQuery(typed);
+          setActive(0);
+          setOpen(true);
+        }}
+        onKeyDown={onKeyDown}
         aria-label={t('provider.model')}
         placeholder={models[0] ?? t('provider.model')}
         spellCheck={false}
-        className="h-10 min-w-56 flex-1 rounded-full px-4 font-mono"
+        autoComplete="off"
+        className="h-10 rounded-full px-4 pr-9 font-mono"
       />
-      <datalist id={listId}>
-        {models.map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      {open && (shown.length > 0 || q) && (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-lg">
+          {shown.length > 0 ? (
+            <ul ref={list} id={listId} role="listbox" className="max-h-64 overflow-y-auto p-1">
+              {shown.map((m, i) => (
+                <li
+                  key={m}
+                  role="option"
+                  aria-selected={m === value}
+                  // Keeps the focus in the field, so the list does not close before the pick.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(m);
+                  }}
+                  onMouseMove={() => setActive(i)}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2 truncate rounded-xl px-3 py-1.5 font-mono text-sm',
+                    i === active && 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{m}</span>
+                  {m === value && <Check className="size-4 shrink-0 text-muted-foreground" />}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p id={listId} className="px-4 py-2.5 text-xs text-muted-foreground">
+              {t('provider.modelUnlisted')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1134,6 +1134,7 @@ export const en: Catalog<MessageKey> = {
   'provider.noKey': "Save a provider's API key first.",
   'provider.provider': 'Provider',
   'provider.model': 'Model',
+  'provider.modelUnlisted': 'Not on the list; the model you typed is tried as it is.',
   'provider.modelTitle': 'Model',
   'provider.modelBody':
     "New bots start with this model; you can change each bot's model on its own. Continuing tries the model with one short request.",
@@ -1142,6 +1143,10 @@ export const en: Catalog<MessageKey> = {
   'provider.failed': 'Could not try the model: {detail}',
   'model.claudeBots': 'Claude bots',
   'model.claudeBotsHint': "Model and effort for Claude bots that don't name their own model.",
+  'model.claudeBotsFoldedHint':
+    'New bots start with another provider; bots already on Claude keep using this setting.',
+  'model.show': 'Show',
+  'model.hide': 'Hide',
   'model.newBots': 'New bots',
   'model.newBotsHint': 'The AI newly created bots start with. Existing bots do not change.',
   'model.backup': 'Backup model',
