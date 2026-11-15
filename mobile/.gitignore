@@ -1,0 +1,23 @@
+# Expo
+.expo/
+expo-env.d.ts
+web-build/
+
+# Native projects, generated from app.json by `expo prebuild` / `expo run`
+/ios
+/android
+.kotlin/
+
+# Signing material
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+
+# Metro
+.metro-health-check*
+
+.env*.local
+*.tsbuildinfo

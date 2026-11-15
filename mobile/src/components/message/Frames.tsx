@@ -1,0 +1,254 @@
+import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import type { Message } from '@yumakbot/shared';
+import Feather from '@expo/vector-icons/Feather';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { shareFile } from '@/components/panel/files';
+import { locale, t } from '@/i18n';
+import { useApi, useServer } from '@/lib/server';
+import { useColors, useIsDark } from '@/lib/theme';
+
+export interface FrameMessage {
+  jsonrpc: '2.0';
+  id?: string | number;
+  method?: string;
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Inside the web view the page is the top window, so what it sends to `parent` lands on its own
+ * `postMessage`; that is handed to the app instead.
+ */
+const BRIDGE = `(function(){window.postMessage=function(m){window.ReactNativeWebView.postMessage(JSON.stringify(m))};})();true;`;
+
+/**
+ * A page that runs its own scripts inside the conversation (see shared/frame). Requests from the
+ * page (messages with an id) go to `onRequest`, whose answer or error goes back; other messages to
+ * `onNotify`. The session cookie goes along, so the server can serve the page.
+ */
+export function LiveFrame({
+  src,
+  initialHeight = 360,
+  maxHeight = 900,
+  onRequest,
+  onNotify,
+  postRef,
+}: {
+  /** The frame document's absolute address on the server. */
+  src: string;
+  initialHeight?: number;
+  maxHeight?: number;
+  onRequest?(method: string, params: Record<string, unknown>): Promise<unknown>;
+  onNotify?(method: string, params: Record<string, unknown>): void;
+  /** Filled with a function that sends a message to the page. */
+  postRef?: RefObject<((m: FrameMessage) => void) | null>;
+}) {
+  const c = useColors();
+  const view = useRef<WebView<object>>(null);
+  const [height, setHeight] = useState(initialHeight);
+  const handlers = useRef({ onRequest, onNotify });
+  useEffect(() => {
+    handlers.current = { onRequest, onNotify };
+  });
+  const send = useRef((m: FrameMessage) => {
+    view.current?.injectJavaScript(
+      `window.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(m)},source:window}));true;`,
+    );
+  });
+  useEffect(() => {
+    const fn = send.current;
+    if (postRef) postRef.current = fn;
+    return () => {
+      if (postRef) postRef.current = null;
+    };
+  }, [postRef]);
+
+  const onMessage = (e: WebViewMessageEvent) => {
+    let m: FrameMessage | null;
+    try {
+      m = JSON.parse(e.nativeEvent.data) as FrameMessage | null;
+    } catch {
+      return;
+    }
+    if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return;
+    const params = (m.params && typeof m.params === 'object' ? m.params : {}) as Record<string, unknown>;
+    if (m.method === 'ui/notifications/size-changed') {
+      const h = Number(params.height);
+      if (Number.isFinite(h) && h > 0) setHeight(Math.min(Math.max(Math.ceil(h), 60), maxHeight));
+      return;
+    }
+    if (m.id === undefined) return handlers.current.onNotify?.(m.method, params);
+    const ask = handlers.current.onRequest;
+    const id = m.id;
+    if (!ask) {
+      return send.current({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32601, message: 'Method not found' },
+      } as never);
+    }
+    ask(m.method, params).then(
+      (result) => send.current({ jsonrpc: '2.0', id, result } as never),
+      (err: Error) =>
+        send.current({ jsonrpc: '2.0', id, error: { code: -32000, message: err.message } } as never),
+    );
+  };
+
+  return (
+    <View style={[styles.frame, { height, borderColor: c.border }]}>
+      <WebView<object>
+        ref={view}
+        source={{ uri: src }}
+        originWhitelist={['*']}
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled
+        injectedJavaScriptBeforeContentLoaded={BRIDGE}
+        onMessage={onMessage}
+        scrollEnabled={false}
+        nestedScrollEnabled
+        // Links the page offers open in the browser, so the conversation never navigates away.
+        onShouldStartLoadWithRequest={(req) => {
+          if (req.url === src || req.url.startsWith('about:') || req.isTopFrame === false) return true;
+          if (/^https?:\/\//i.test(req.url)) void WebBrowser.openBrowserAsync(req.url);
+          return false;
+        }}
+        style={styles.web}
+      />
+    </View>
+  );
+}
+
+/**
+ * A page a bot made (show_page), running in the conversation. It is read fresh from the bot's
+ * folder, so the card shows the file as it is now.
+ */
+export function BotPage({
+  botId,
+  path,
+  name,
+  title,
+  height,
+}: {
+  botId: string;
+  path: string;
+  name: string;
+  title: string;
+  /** The height the bot asked for, for a page laid out to the window (a map, a canvas). */
+  height?: number;
+}) {
+  const api = useApi();
+  const c = useColors();
+  return (
+    <View style={styles.card}>
+      <View style={styles.head}>
+        <Text style={[styles.title, { color: c.foreground }]} numberOfLines={1}>
+          {title || name}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('message.download', { name })}
+          hitSlop={8}
+          onPress={() => void shareFile(api.fileUrl(botId, path), name)}
+          style={styles.link}
+        >
+          <Feather name="download" size={14} color={c.mutedForeground} />
+          <Text style={[styles.linkText, { color: c.mutedForeground }]} numberOfLines={1}>
+            {name}
+          </Text>
+        </Pressable>
+      </View>
+      <LiveFrame src={api.pageUrl(botId, path, height)} initialHeight={height ?? 360} />
+    </View>
+  );
+}
+
+interface AppProps {
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+}
+
+/** The protocol version this host speaks; an app asking for another is answered with its own. */
+const PROTOCOL = '2026-01-26';
+
+/**
+ * A connected app's own view of a tool call (an MCP app). It is told the call's input and result
+ * once it is ready; the tools it calls go through the server to its own connection only, as the bot
+ * that showed it may.
+ */
+export function McpAppView({ m }: { m: Message }) {
+  const api = useApi();
+  const { origin } = useServer();
+  const c = useColors();
+  const app = m.props.app as AppProps;
+  const post = useRef<((msg: FrameMessage) => void) | null>(null);
+  const theme = useIsDark() ? 'dark' : 'light';
+  useEffect(() => {
+    post.current?.({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme } });
+  }, [theme]);
+  const onRequest = async (method: string, params: Record<string, unknown>) => {
+    switch (method) {
+      case 'ui/initialize':
+        return {
+          protocolVersion: typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
+          hostInfo: { name: 'YumakBot', version: '0.1.0' },
+          hostCapabilities: { openLinks: {}, serverTools: {} },
+          hostContext: {
+            theme,
+            displayMode: 'inline',
+            availableDisplayModes: ['inline'],
+            locale: INTL_LOCALE[locale],
+            platform: 'mobile',
+          },
+        };
+      case 'tools/call':
+        return api.appCall(
+          m.id,
+          String(params.name ?? ''),
+          (params.arguments ?? {}) as Record<string, unknown>,
+        );
+      case 'ui/open-link': {
+        const url = String(params.url ?? '');
+        if (/^https?:\/\//i.test(url)) void WebBrowser.openBrowserAsync(url);
+        return {};
+      }
+      case 'ping':
+        return {};
+      default:
+        throw new Error(`${method} is not supported`);
+    }
+  };
+  const onNotify = (method: string) => {
+    if (method !== 'ui/notifications/initialized') return;
+    post.current?.({
+      jsonrpc: '2.0',
+      method: 'ui/notifications/tool-input',
+      params: { arguments: app.input },
+    });
+    post.current?.({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: app.result });
+  };
+  return (
+    <View style={styles.card}>
+      <Text style={[styles.caption, { color: c.mutedForeground }]}>{m.text}</Text>
+      <LiveFrame
+        src={`${origin}/api/apps/${m.id}/frame`}
+        initialHeight={320}
+        postRef={post}
+        onRequest={onRequest}
+        onNotify={onNotify}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { alignSelf: 'stretch', gap: 8 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
+  title: { flex: 1, fontSize: 14, fontWeight: '500' },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '45%' },
+  linkText: { fontSize: 12, flexShrink: 1 },
+  caption: { fontSize: 14, paddingHorizontal: 4 },
+  frame: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', backgroundColor: '#FFFFFF' },
+  web: { flex: 1, backgroundColor: 'transparent' },
+});

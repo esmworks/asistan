@@ -11,7 +11,7 @@ import { LOCALES } from './i18n';
  * JSX (between tags or in attributes people see). Tests and the catalogs themselves are skipped.
  */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PACKAGES = ['app/src', 'server/src', 'shared/src', 'desktop/src', 'computer/src'];
+const PACKAGES = ['app/src', 'server/src', 'shared/src', 'desktop/src', 'computer/src', 'mobile/src'];
 
 /** Files that hold the catalogs, or text no person reads. Each needs its reason. */
 const ALLOWED = new Map<string, string>([
@@ -19,6 +19,15 @@ const ALLOWED = new Map<string, string>([
   ['app/src/i18n/en.ts', 'English catalog'],
   ['server/src/i18n.ts', 'server catalogs'],
   ['desktop/src/i18n.ts', 'desktop catalogs'],
+  ['mobile/src/i18n/tr.ts', 'Turkish catalog of the phone app'],
+  ['mobile/src/i18n/en.ts', 'English catalog of the phone app'],
+  ['mobile/src/i18n/parts/sidebar.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/chat.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/message.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/panel.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/dialogs.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/settings.ts', 'part of the phone app catalogs'],
+  ['mobile/src/i18n/parts/apps.ts', 'part of the phone app catalogs'],
   ['server/src/engine/fake.ts', 'test engine: its directives and replies are Turkish test input'],
   [
     'shared/src/actions.ts',
@@ -30,6 +39,8 @@ const ALLOWED = new Map<string, string>([
 const ALLOWED_TEXT: { file: string; text: string; reason: string }[] = [
   { file: 'app/src/features/Login.tsx', text: 'YumakBot', reason: 'product name' },
   { file: 'app/src/features/Sidebar.tsx', text: 'YumakBot', reason: 'product name' },
+  { file: 'mobile/src/app/login.tsx', text: 'YumakBot', reason: 'product name' },
+  { file: 'mobile/src/app/bots.tsx', text: 'YumakBot', reason: 'product name' },
   { file: 'app/src/features/SettingsDialog.tsx', text: 'YumakBot', reason: 'product name' },
   {
     file: 'app/src/features/SettingsDialog.tsx',

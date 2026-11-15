@@ -8,6 +8,9 @@ data
 !.env.example
 desktop/*
 !desktop/package.json
+mobile/ios
+mobile/android
+mobile/.expo
 PRD.md
 TASKS.md
 .claude

@@ -1,0 +1,73 @@
+import { useColorScheme } from 'react-native';
+import { useStored } from './stored';
+
+/** The web app's color tokens in sRGB, so both apps look alike in light and dark. */
+const light = {
+  background: '#FAFAFA',
+  foreground: '#121212',
+  card: '#FFFFFF',
+  primary: '#161616',
+  primaryForeground: '#FAFAFA',
+  muted: '#F0F0F0',
+  mutedForeground: '#636363',
+  border: '#E1E1E1',
+  destructive: '#DC2626',
+  brand: '#4F6BED',
+  /** The bot list and the bot's replies sit on this. */
+  sidebar: '#F5F5F5',
+  /** A pressed row. */
+  accent: '#EBEBEB',
+  bubble: '#F5F5F5',
+  unread: '#0EA5E9',
+  /** Cards that wait for the person, and their counts. */
+  amber: '#D97706',
+  amberSoft: 'rgba(245,158,11,0.10)',
+  /** Behind the words a search found. */
+  mark: 'rgba(252,211,77,0.6)',
+  success: '#059669',
+};
+
+export type Colors = typeof light;
+
+const dark: Colors = {
+  background: '#070707',
+  foreground: '#EEEEEE',
+  card: '#121212',
+  primary: '#EEEEEE',
+  primaryForeground: '#0B0B0B',
+  muted: '#1B1B1B',
+  mutedForeground: '#8F8F8F',
+  border: '#1D1D1D',
+  destructive: '#EF4444',
+  brand: '#4F6BED',
+  sidebar: '#040404',
+  accent: '#1F1F1F',
+  bubble: '#161616',
+  unread: '#0EA5E9',
+  amber: '#F59E0B',
+  amberSoft: 'rgba(245,158,11,0.12)',
+  mark: 'rgba(252,211,77,0.6)',
+  success: '#34D399',
+};
+
+export type ThemeChoice = 'system' | 'light' | 'dark';
+export const THEME_KEY = 'yumakbot.theme';
+
+/** The theme picked in the settings, or the phone's own. */
+export function useTheme(): [ThemeChoice, (v: ThemeChoice) => void] {
+  const [choice, set] = useStored<ThemeChoice>(THEME_KEY, 'system');
+  return [choice, set];
+}
+
+export function useIsDark(): boolean {
+  const scheme = useColorScheme();
+  const [choice] = useTheme();
+  return choice === 'system' ? scheme === 'dark' : choice === 'dark';
+}
+
+export function useColors(): Colors {
+  return useIsDark() ? dark : light;
+}
+
+/** Heights and corner radii shared by inputs and buttons. */
+export const CONTROL_HEIGHT = 48;

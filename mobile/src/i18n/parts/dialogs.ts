@@ -1,0 +1,26 @@
+/** Words only the phone app's dialogs screens use; the rest come from the web app's catalog. */
+export const tr = {
+  'dialogs.discard': 'Değişiklikleri sil',
+  'dialogs.botNotFound': 'Bot bulunamadı.',
+  'dialogs.routineNotFound': 'Rutin bulunamadı.',
+  'dialogs.routineBotRequired': 'Bir bot seç',
+  'dialogs.routineEnabled': 'Açık',
+  'dialogs.routineEnabledHint': 'Kapalıyken zamanı gelse de çalışmaz.',
+  'dialogs.routineDeleteConfirm': 'Bu rutin silinsin mi?',
+  'dialogs.routineNoRuns': 'Henüz çalışmadı.',
+  'dialogs.timeHint': '24 saat, örn. 09:30',
+  'dialogs.dateHint': 'Yıl-ay-gün, örn. 2026-01-31',
+};
+
+export const en: Record<keyof typeof tr, string> = {
+  'dialogs.discard': 'Discard changes',
+  'dialogs.botNotFound': 'Bot not found.',
+  'dialogs.routineNotFound': 'Routine not found.',
+  'dialogs.routineBotRequired': 'Choose a bot',
+  'dialogs.routineEnabled': 'On',
+  'dialogs.routineEnabledHint': 'While off, it does not run when its time comes.',
+  'dialogs.routineDeleteConfirm': 'Delete this routine?',
+  'dialogs.routineNoRuns': 'It has not run yet.',
+  'dialogs.timeHint': '24-hour, e.g. 09:30',
+  'dialogs.dateHint': 'Year-month-day, e.g. 2026-01-31',
+};
