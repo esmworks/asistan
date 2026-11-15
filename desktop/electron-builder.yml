@@ -49,3 +49,19 @@ nsis:
   artifactName: ${productName}-${version}-Setup.${ext}
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # The stock background is 380 high with the icons at y 220, which leaves an empty band above
+  # them. This one is shorter and puts the icons and the arrow in the middle of what Finder shows
+  # (the window's height includes its title bar, so about 30 at the bottom of the image is hidden).
+  # The window takes the image's size; background@2x.png next to it is used on Retina screens.
+  # The PNGs are drawn from background.svg:
+  #   rsvg-convert -w 540 -h 280 dmg/background.svg -o dmg/background.png
+  #   rsvg-convert -w 1080 -h 560 dmg/background.svg -o dmg/background@2x.png
+  background: dmg/background.png
+  contents:
+    - x: 130
+      y: 110
+      type: file
+    - x: 410
+      y: 110
+      type: link
+      path: /Applications
