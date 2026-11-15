@@ -396,7 +396,8 @@ export const Memory = z.object({
   content: z.string(),
   /** The site the note is about (`example.com`); it reaches the bot when it opens that site. */
   site: z.string().nullable(),
-  status: z.enum(['active', 'proposed']),
+  /** Always `active`: every note is in use. Kept for phone builds made when notes could wait for approval. */
+  status: z.literal('active'),
   source: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -410,8 +411,7 @@ export const MemoryCreate = z.object({
   site: z.string().trim().max(253).nullable().optional(),
 });
 export const MemoryUpdate = z.object({
-  content: z.string().trim().min(1).max(2000).optional(),
-  status: z.enum(['active']).optional(),
+  content: z.string().trim().min(1).max(2000),
 });
 
 export const AccessRequest = z.object({ key: z.string().min(1).max(500) });

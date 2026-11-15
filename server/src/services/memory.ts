@@ -9,11 +9,10 @@ import { siteMatches } from './vault';
 export class MemoryService {
   constructor(private ctx: Ctx) {}
 
-  async list(opts: { scope?: MemoryScope; botId?: string | null; status?: Memory['status'] } = {}) {
+  async list(opts: { scope?: MemoryScope; botId?: string | null } = {}) {
     const conds = [];
     if (opts.scope) conds.push(eq(schema.memories.scope, opts.scope));
     if (opts.botId) conds.push(eq(schema.memories.botId, opts.botId));
-    if (opts.status) conds.push(eq(schema.memories.status, opts.status));
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -22,14 +21,13 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** The active notes a bot has about the site of `host`, its own and the shared ones. */
+  /** The notes a bot has about the site of `host`, its own and the shared ones. */
   async forSite(botId: string, host: string): Promise<Memory[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
         and(
-          eq(schema.memories.status, 'active'),
           isNotNull(schema.memories.site),
           or(
             eq(schema.memories.scope, 'user'),
@@ -41,14 +39,13 @@ export class MemoryService {
     return rows.map(toMemory).filter((m) => siteMatches(host, m.site!));
   }
 
-  /** What a bot sees: its own memories and the shared user memory (active only). */
+  /** What a bot sees: its own memories and the shared user memory. */
   async visibleTo(botId: string): Promise<{ user: Memory[]; bot: Memory[] }> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
         and(
-          eq(schema.memories.status, 'active'),
           // Notes about a site come with that site, not with every turn.
           isNull(schema.memories.site),
           or(
@@ -62,24 +59,30 @@ export class MemoryService {
     return { user: all.filter((m) => m.scope === 'user'), bot: all.filter((m) => m.scope === 'bot') };
   }
 
-  async search(botId: string, query: string): Promise<Memory[]> {
+  /** Notes the bot can see whose text holds `query`, or every one of them when there is no query. */
+  async search(botId: string, query?: string): Promise<Memory[]> {
+    const visible = or(
+      eq(schema.memories.scope, 'user'),
+      and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
+    );
     // ı and İ read as i on both sides, as the message search does.
-    const q = `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    const q = query && `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
-        and(
-          eq(schema.memories.status, 'active'),
-          sql`translate(${schema.memories.content}, ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${q}`,
-          or(
-            eq(schema.memories.scope, 'user'),
-            and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
-          ),
-        ),
+        q
+          ? and(visible, sql`translate(${schema.memories.content}, ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${q}`)
+          : visible,
       )
-      .limit(50);
+      .orderBy(asc(schema.memories.createdAt))
+      .limit(q ? 50 : 500);
     return rows.map(toMemory);
+  }
+
+  /** Whether a bot may change or delete the note: the shared ones and its own, not another bot's. */
+  canEdit(m: Memory, botId: string) {
+    return m.scope === 'user' || m.botId === botId;
   }
 
   async get(id: string): Promise<Memory> {
@@ -92,7 +95,6 @@ export class MemoryService {
     scope: MemoryScope;
     botId: string | null;
     content: string;
-    status: Memory['status'];
     source: string;
     site?: string | null;
   }): Promise<Memory> {
@@ -105,7 +107,6 @@ export class MemoryService {
         botId: input.scope === 'bot' ? input.botId : null,
         content: input.content,
         site: input.site ?? null,
-        status: input.status,
         source: input.source,
       })
       .returning();
@@ -114,20 +115,14 @@ export class MemoryService {
     return toMemory(row!);
   }
 
-  async update(id: string, patch: { content?: string; status?: 'active' }, actor: string): Promise<Memory> {
+  async update(id: string, patch: { content: string }, actor: string): Promise<Memory> {
     const before = await this.get(id);
     const [row] = await this.ctx.db
       .update(schema.memories)
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(schema.memories.id, id))
       .returning();
-    await this.log(
-      id,
-      patch.status === 'active' && before.status === 'proposed' ? 'approve' : 'update',
-      before.content,
-      row!.content,
-      actor,
-    );
+    await this.log(id, 'update', before.content, row!.content, actor);
     this.ctx.bus.refresh({ scope: 'memory' });
     return toMemory(row!);
   }
@@ -137,41 +132,6 @@ export class MemoryService {
     await this.ctx.db.delete(schema.memories).where(eq(schema.memories.id, id));
     await this.log(id, 'delete', before.content, null, actor);
     this.ctx.bus.refresh({ scope: 'memory' });
-  }
-
-  /**
-   * Approves or deletes every waiting proposal at once, so a long list (an import from before
-   * imports came in active) is one click rather than one per note. Each note still gets its own
-   * line in the history.
-   */
-  async settleProposed(action: 'approve' | 'delete', actor: string): Promise<{ count: number }> {
-    const rows = await this.ctx.db.transaction(async (tx) => {
-      const where = eq(schema.memories.status, 'proposed');
-      const done =
-        action === 'approve'
-          ? await tx
-              .update(schema.memories)
-              .set({ status: 'active', updatedAt: new Date() })
-              .where(where)
-              .returning()
-          : await tx.delete(schema.memories).where(where).returning();
-      if (done.length) {
-        await tx.insert(schema.auditLog).values(
-          done.map((m) => ({
-            id: newId(),
-            actor,
-            action,
-            targetType: 'memory',
-            targetId: m.id,
-            before: m.content,
-            after: action === 'approve' ? m.content : null,
-          })),
-        );
-      }
-      return done;
-    });
-    if (rows.length) this.ctx.bus.refresh({ scope: 'memory' });
-    return { count: rows.length };
   }
 
   async history(limit = 100) {

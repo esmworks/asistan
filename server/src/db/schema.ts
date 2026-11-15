@@ -242,7 +242,6 @@ export const memories = pgTable(
     content: text('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
-    status: text('status', { enum: ['active', 'proposed'] }).notNull(),
     source: text('source').notNull().default('user'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
