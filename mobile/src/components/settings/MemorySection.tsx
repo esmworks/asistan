@@ -1,8 +1,8 @@
-import type { Memory } from '@yumakbot/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { botNoteGroups, type BotNoteGroup, type Memory } from '@yumakbot/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { toast, toastError } from '@/components/overlay';
+import { confirm, toast, toastError } from '@/components/overlay';
 import { IconButton, PillButton, Row, Section } from '@/components/page';
 import { Field } from '@/components/ui';
 import { Hint, Pad, Rows } from './common/controls';
@@ -16,6 +16,11 @@ export function MemorySection() {
   const { origin } = useServer();
   const { data: memory = [] } = useMemory();
   const { data: bots = [] } = useBots();
+  // Notes of an archived bot stay until deleted; its name tells them apart.
+  const { data: archived = [] } = useQuery({
+    queryKey: ['bots', origin, 'archived'],
+    queryFn: api.archivedBots,
+  });
   const qc = useQueryClient();
   const [text, setText] = useState('');
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory', origin] });
@@ -25,6 +30,11 @@ export function MemorySection() {
       setText('');
       void refresh();
     },
+    onError: toastError,
+  });
+  const clearBot = useMutation({
+    mutationFn: api.removeBotMemory,
+    onSuccess: refresh,
     onError: toastError,
   });
   // A deleted memory can be brought back for a moment, in case the wrong one went.
@@ -49,8 +59,18 @@ export function MemorySection() {
     onError: toastError,
   });
   const user = memory.filter((m) => m.scope === 'user');
-  const botMem = memory.filter((m) => m.scope === 'bot');
-  const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
+  const groups = botNoteGroups(memory, bots, archived);
+  const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
+  const title = (g: BotNoteGroup) =>
+    t('memory.botNotes', { name: g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g) });
+  const clear = async (g: BotNoteGroup) => {
+    const ok = await confirm({
+      title: t('memory.deleteAllConfirm', { name: name(g), count: g.notes.length }),
+      destructive: true,
+      confirmLabel: t('common.delete'),
+    });
+    if (ok) clearBot.mutate(g.botId);
+  };
   const label = (m: Memory) => (m.site ? `${m.site} · ${m.content}` : m.content);
   const trash = (m: Memory) => (
     <IconButton icon="trash-2" size={18} label={t('common.delete')} onPress={() => forget.mutate(m)} />
@@ -89,18 +109,27 @@ export function MemorySection() {
           ))}
         </Rows>
       </Section>
-      <Section title={t('memory.bots')}>
-        <Rows>
-          {botMem.length === 0 ? (
+      {groups.length === 0 ? (
+        <Section title={t('memory.bots')}>
+          <Rows>
             <Pad>
               <Hint>{t('memory.empty')}</Hint>
             </Pad>
-          ) : null}
-          {botMem.map((m) => (
-            <Row key={m.id} label={label(m)} detail={botName(m.botId)} right={trash(m)} />
-          ))}
-        </Rows>
-      </Section>
+          </Rows>
+        </Section>
+      ) : null}
+      {groups.map((g) => (
+        <Section key={g.botId} title={title(g)}>
+          <Rows>
+            {g.notes.map((m) => (
+              <Row key={m.id} label={label(m)} right={trash(m)} />
+            ))}
+            {g.notes.length > 1 ? (
+              <Row label={t('memory.deleteAll')} destructive onPress={() => void clear(g)} />
+            ) : null}
+          </Rows>
+        </Section>
+      ))}
     </>
   );
 }
