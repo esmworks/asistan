@@ -140,7 +140,7 @@ export function useUnreadTracking() {
 
   const count = summaries?.filter((s) => isUnread(s, seen)).length ?? 0;
   useEffect(() => {
-    document.title = titleWithCount('YumakBot', count);
+    document.title = titleWithCount('Yumak Bot', count);
     void desktop?.setUnread?.(badgeCount(count));
   }, [count]);
 }

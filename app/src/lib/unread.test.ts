@@ -27,7 +27,7 @@ describe('okunmamış yanıtlar', () => {
     expect(badgeCount(2.7)).toBe(2);
     expect(badgeCount(5000)).toBe(999);
     expect(badgeCount(Number.NaN)).toBe(0);
-    expect(titleWithCount('YumakBot', 0)).toBe('YumakBot');
-    expect(titleWithCount('YumakBot', 3)).toBe('(3) YumakBot');
+    expect(titleWithCount('Yumak Bot', 0)).toBe('Yumak Bot');
+    expect(titleWithCount('Yumak Bot', 3)).toBe('(3) Yumak Bot');
   });
 });

@@ -66,8 +66,11 @@ function heldByRunningApp(dir: string): boolean {
   }
 }
 
-// Own data folder, separate from any earlier installation.
+// Own data folder, separate from any earlier installation. The internal name stays YumakBot:
+// what Electron keys to it, such as the keychain entry for the saved server key, would otherwise
+// be looked up under a new name. The About panel shows the product name people see.
 app.setName('YumakBot');
+app.setAboutPanelOptions({ applicationName: 'Yumak Bot' });
 app.setPath(
   'userData',
   process.env.YUMAKBOT_DESKTOP_DATA ?? adoptRenamedData(join(app.getPath('appData'), 'esmworks-yumakbot')),
@@ -190,7 +193,7 @@ function showWindow() {
     ...restored.bounds,
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
-    title: 'YumakBot',
+    title: 'Yumak Bot',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
     show: false,
     // On macOS the page draws to the top edge; the window buttons sit in the
@@ -436,7 +439,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(join(assets(), 'trayTemplate.png'));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('YumakBot');
+  tray.setToolTip('Yumak Bot');
   tray.on('click', () => tray?.popUpContextMenu());
   rebuildMenu();
 }
@@ -460,7 +463,7 @@ function buildAppMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: 'YumakBot',
+        label: 'Yumak Bot',
         submenu: [
           { role: 'about', label: t('menu.about') },
           { type: 'separator' },

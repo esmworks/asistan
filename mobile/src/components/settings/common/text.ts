@@ -1,11 +1,11 @@
 import type { T } from '@/i18n';
 
-/** YumakBot's own tools, under the server name every engine gives them. */
+/** Yumak Bot's own tools, under the server name every engine gives them. */
 const OWN = 'yumakbot';
 
 /**
  * A permission rule as a person reads it. A connection's tool is named by its service and tool
- * (`mcp__service__create_page` becomes a service name and the tool), and YumakBot's own tools lose
+ * (`mcp__service__create_page` becomes a service name and the tool), and Yumak Bot's own tools lose
  * the server prefix. Null when the pattern reads plainly as it is.
  */
 export function ruleLabel(pattern: string, t: T, apps: ReadonlyMap<string, string>): string | null {
@@ -38,7 +38,7 @@ export function deviceName(ua: string | null): { app: string | null; os: string 
   // The desktop app's window is Electron and the phone app adds its own mark; both are checked
   // first, as they also say Chrome or Safari.
   const app = /Electron\/|YumakBotMobile\//.test(ua)
-    ? 'YumakBot'
+    ? 'Yumak Bot'
     : /Edg\//.test(ua)
       ? 'Edge'
       : /OPR\//.test(ua)

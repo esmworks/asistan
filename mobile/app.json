@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "YumakBot",
+    "name": "Yumak Bot",
     "slug": "yumakbot",
     "scheme": "yumakbot",
     "version": "0.1.0",
@@ -53,8 +53,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "YumakBot opens your photos so you can attach them to a message.",
-          "cameraPermission": "YumakBot uses the camera so you can take a photo to attach to a message.",
+          "photosPermission": "Yumak Bot opens your photos so you can attach them to a message.",
+          "cameraPermission": "Yumak Bot uses the camera so you can take a photo to attach to a message.",
           "microphonePermission": false
         }
       ],

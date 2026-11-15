@@ -20,12 +20,12 @@ export const en: Record<OwnKey, string> = {
 
   'connect.title': 'Connect to your server',
   'connect.intro':
-    'The bots run on your own server; this phone is only the window. Type the address of YumakBot on your computer or server.',
+    'The bots run on your own server; this phone is only the window. Type the address of Yumak Bot on your computer or server.',
   'connect.url': 'Server address',
   'connect.urlPlaceholder': '192.168.1.20:4319',
   'connect.submit': 'Connect',
   'connect.invalid': 'This is not an address',
-  'connect.notYumakBot': 'No YumakBot server answered at this address',
+  'connect.notYumakBot': 'No Yumak Bot server answered at this address',
 
   'offline.title': 'Could not reach the server',
   'offline.text':

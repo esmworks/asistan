@@ -294,7 +294,7 @@ describe('rutinler', () => {
       const a = await local.bot({ name: 'Ali' });
       const p = await promptOf(local, a.id);
       expect(p).toContain('Sana tanımlı bir rutin yok.');
-      expect(p).toContain('yalnızca bilgisayar açık ve YumakBot çalışırken');
+      expect(p).toContain('yalnızca bilgisayar açık ve Yumak Bot çalışırken');
       expect(p).not.toContain('kapalıyken de');
     } finally {
       await local.dispose();

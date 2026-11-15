@@ -1,4 +1,4 @@
-# YumakBot server image. Bots run inside this container; see docker/README.md for the host setup.
+# Yumak Bot server image. Bots run inside this container; see docker/README.md for the host setup.
 FROM node:22-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=1
 RUN corepack enable

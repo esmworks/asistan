@@ -253,7 +253,7 @@ describe('bot içe aktarma', () => {
     expect((await send('{ nope', true)).status).toBe(400);
     const foreign = await send<{ error: string }>({ format: 'chat-export', version: 1, bots: [] }, true);
     expect(foreign.status).toBe(400);
-    expect(foreign.body.error).toContain('YumakBot');
+    expect(foreign.body.error).toContain('Yumak Bot');
     const longName = await send<{ error: string }>(doc({ bots: [{ ref: 'x', name: 'n'.repeat(61) }] }), true);
     expect(longName.body.error).toContain('bots.0.name');
     const badRef = await send<{ error: string }>(doc({ bots: [{ ref: 'Has Spaces', name: 'X' }] }), true);

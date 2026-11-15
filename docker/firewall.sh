@@ -1,5 +1,5 @@
 #!/bin/sh
-# Blocks traffic from the YumakBot container network to private and link-local addresses
+# Blocks traffic from the Yumak Bot container network to private and link-local addresses
 # (home/office network, cloud metadata), IPv4 and IPv6. Run on the Linux host as root
 # after `docker compose up` created the yumakbot0 bridge; rerun after reboots.
 set -eu
@@ -19,4 +19,4 @@ done
 for net in fc00::/7 fe80::/10 ::1/128 ff00::/8; do
   ip6tables -A YUMAKBOT-EGRESS -d "$net" -j REJECT
 done
-echo "YumakBot çıkış kuralları kuruldu ($BRIDGE)."
+echo "Yumak Bot çıkış kuralları kuruldu ($BRIDGE)."
