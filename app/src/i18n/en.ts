@@ -807,6 +807,8 @@ export const en: Catalog<MessageKey> = {
   'general.timezoneHint': 'The clock routines and bots use.',
 
   'connection.claude': 'Claude',
+  'connection.environment': 'Where bots work',
+  'connection.ai': 'AI',
   'connection.subscription': 'Subscription login',
   'connection.status.ok': 'Signed in',
   'connection.status.logged-out': 'Not signed in',
@@ -1116,6 +1118,9 @@ export const en: Catalog<MessageKey> = {
   'provider.other': 'Other',
   'provider.keyFor': '{provider} API key',
   'provider.saved': '{provider} key saved ({hint})',
+  'provider.keySaved': 'API key saved ({hint})',
+  'provider.add': 'Add a provider',
+  'provider.noneYet': 'No provider connected yet.',
   'provider.addCustom': 'Add an OpenAI-compatible endpoint',
   'provider.found': 'Found on this computer',
   'provider.foundModels': { one: '1 model', other: '{count} models' },

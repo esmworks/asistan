@@ -807,6 +807,8 @@ export const tr = {
   'general.timezoneHint': 'Rutinlerin ve botların kullandığı saat.',
 
   'connection.claude': 'Claude',
+  'connection.environment': 'Botların çalışma ortamı',
+  'connection.ai': 'Yapay zekâ',
   'connection.subscription': 'Abonelik girişi',
   'connection.status.ok': 'Giriş yapılmış',
   'connection.status.logged-out': 'Giriş yapılmamış',
@@ -1119,6 +1121,9 @@ export const tr = {
   'provider.other': 'Diğer',
   'provider.keyFor': '{provider} API anahtarı',
   'provider.saved': '{provider} anahtarı kayıtlı ({hint})',
+  'provider.keySaved': 'API anahtarı kayıtlı ({hint})',
+  'provider.add': 'Sağlayıcı ekle',
+  'provider.noneYet': 'Henüz bağlı bir sağlayıcı yok.',
   'provider.addCustom': 'OpenAI uyumlu uç nokta ekle',
   'provider.found': 'Bu bilgisayarda bulundu',
   'provider.foundModels': '{count} model',

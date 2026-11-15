@@ -25,6 +25,7 @@ import {
   Link2,
   Loader2,
   LogOut,
+  Plus,
   RefreshCw,
   Shield,
   Sparkles,
@@ -33,7 +34,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
@@ -93,7 +94,14 @@ import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
 import { ApnsCard } from './PhoneSettings';
 import { Chip } from './onboarding/Chip';
-import { isPiModel, PiModelPicker, ProviderKeyForm, useHasProvider, useSavePiModel } from './ProviderConnect';
+import {
+  AddProviderForm,
+  isPiModel,
+  PiModelPicker,
+  ProviderRows,
+  useHasProvider,
+  useSavePiModel,
+} from './ProviderConnect';
 
 const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'profile', icon: <UserRound /> },
@@ -554,6 +562,13 @@ function Connection() {
   });
   const logout = useMutation({ mutationFn: api.logout, onSettled: () => setAuthed(false) });
   const { data: claudeAuth } = useClaudeAuth();
+  // Opened from the model card too, when another provider is picked before any is connected.
+  const [adding, setAdding] = useState(false);
+  const addAnchor = useRef<HTMLDivElement>(null);
+  const addProvider = () => {
+    setAdding(true);
+    requestAnimationFrame(() => addAnchor.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  };
   const status = info?.claude.status ?? 'unknown';
   const claude = info?.claude;
   const hint =
@@ -566,9 +581,9 @@ function Connection() {
           : (claude?.detail ?? t('connection.defaultHint'));
   return (
     <>
-      <Card title={t('connection.claude')}>
+      <Card title={t('connection.ai')}>
         {claudeAuth === null ? (
-          <Row label={t('connection.subscription')} hint={hint}>
+          <Row label={t('connection.claude')} hint={hint}>
             <span
               className={cn(
                 'flex items-center gap-1.5 text-sm',
@@ -610,11 +625,14 @@ function Connection() {
             </Button>
           </div>
         )}
+        <ProviderRows plain />
+        <AddProvider open={adding} onOpenChange={setAdding} anchor={addAnchor} />
+      </Card>
+      <ModelCard onAddProvider={addProvider} />
+      <Card title={t('connection.environment')}>
         <ShellSandboxRow sandbox={info?.shellSandbox} />
         <BrowserRow browser={info?.browser} />
       </Card>
-      <ModelCard />
-      <ApiKeys />
       <Card title={t('connection.server')}>
         <Row label={t('connection.address')} hint={window.location.origin} />
         <DesktopServerRow />
@@ -715,7 +733,7 @@ function Devices() {
 }
 
 /** Default model and effort for Claude bots; hidden on servers that cannot store them. */
-function ModelCard() {
+function ModelCard({ onAddProvider }: { onAddProvider(): void }) {
   const t = useT();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
@@ -727,7 +745,9 @@ function ModelCard() {
   const folded = kind === 'pi' && !claudeOpen;
   return (
     <Card title={t('model.title')}>
-      {settings.defaultEngine !== undefined && <NewBotEngine kind={kind} onPick={setPicked} />}
+      {settings.defaultEngine !== undefined && (
+        <NewBotEngine kind={kind} onPick={setPicked} onAddProvider={onAddProvider} />
+      )}
       <div className="space-y-3 px-4 py-4">
         {settings.defaultEngine !== undefined && (
           <div className="flex items-center justify-between gap-3">
@@ -758,13 +778,13 @@ function ModelCard() {
           />
         )}
       </div>
-      {settings.backupModel !== undefined && <BackupModel />}
+      {settings.backupModel !== undefined && <BackupModel onAddProvider={onAddProvider} />}
     </Card>
   );
 }
 
 /** The model that carries the work once the usage limit is spent, instead of waiting for it. */
-function BackupModel() {
+function BackupModel({ onAddProvider }: { onAddProvider(): void }) {
   const t = useT();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
@@ -793,7 +813,7 @@ function BackupModel() {
       </div>
       {open && (
         <div className="space-y-2">
-          <PiModelPicker value={value} onChange={setRef} />
+          <PiModelPicker value={value} onChange={setRef} empty={<NoProvider onAdd={onAddProvider} />} />
           {hasProvider && (
             <div className="flex items-center gap-3">
               <Button
@@ -823,7 +843,15 @@ function BackupModel() {
  * Which AI new bots start with: Claude, or a model of a provider with a stored key. The choice
  * is held by the card, which folds the Claude settings away while another provider is picked.
  */
-function NewBotEngine({ kind, onPick }: { kind: 'claude' | 'pi'; onPick(kind: 'claude' | 'pi'): void }) {
+function NewBotEngine({
+  kind,
+  onPick,
+  onAddProvider,
+}: {
+  kind: 'claude' | 'pi';
+  onPick(kind: 'claude' | 'pi'): void;
+  onAddProvider(): void;
+}) {
   const t = useT();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
@@ -854,7 +882,7 @@ function NewBotEngine({ kind, onPick }: { kind: 'claude' | 'pi'; onPick(kind: 'c
       </div>
       {kind === 'pi' && (
         <div className="space-y-2">
-          <PiModelPicker value={value} onChange={setRef} />
+          <PiModelPicker value={value} onChange={setRef} empty={<NoProvider onAdd={onAddProvider} />} />
           {hasProvider && (
             <div className="flex items-center gap-3">
               <Button
@@ -911,19 +939,57 @@ function DesktopServerRow() {
 }
 
 /**
- * API keys for models outside the Claude subscription, and the person's own endpoints. The same
- * form as setup: product names, the popular providers first, model servers found on this computer.
- * Keys are write-only from here.
+ * Adds a provider other than Claude: folded to one button once some provider is connected, open
+ * while none is, since then it is the way on.
  */
-function ApiKeys() {
+function AddProvider({
+  open,
+  onOpenChange,
+  anchor,
+}: {
+  open: boolean;
+  onOpenChange(open: boolean): void;
+  anchor: React.RefObject<HTMLDivElement | null>;
+}) {
+  const t = useT();
+  const hasProvider = useHasProvider();
+  const shown = open || !hasProvider;
+  return (
+    <div ref={anchor} className="px-4 py-4">
+      {shown ? (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{t('keys.hint')}</p>
+          <AddProviderForm onAdded={() => onOpenChange(false)} />
+          {hasProvider && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full text-muted-foreground"
+              onClick={() => onOpenChange(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <Button variant="secondary" size="sm" className="rounded-full" onClick={() => onOpenChange(true)}>
+          <Plus /> {t('provider.add')}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** In the model card while no provider is connected: says so and opens the form above. */
+function NoProvider({ onAdd }: { onAdd(): void }) {
   const t = useT();
   return (
-    <Card title={t('keys.title')}>
-      <p className="px-4 pt-3 text-xs text-muted-foreground">{t('keys.hint')}</p>
-      <div className="px-4 py-3">
-        <ProviderKeyForm />
-      </div>
-    </Card>
+    <div className="flex flex-wrap items-center gap-3">
+      <p className="text-sm text-muted-foreground">{t('provider.noneYet')}</p>
+      <Button variant="secondary" size="sm" className="rounded-full" onClick={onAdd}>
+        <Plus /> {t('provider.add')}
+      </Button>
+    </div>
   );
 }
 
