@@ -1137,6 +1137,7 @@ export const tr = {
   'provider.noKey': 'Önce bir sağlayıcının API anahtarını kaydedin.',
   'provider.provider': 'Sağlayıcı',
   'provider.model': 'Model',
+  'provider.modelUnlisted': 'Listede yok; yazdığın model olduğu gibi denenir.',
   'provider.modelTitle': 'Model',
   'provider.modelBody':
     'Yeni botlar bu modelle başlar; her botun modelini ayrıca değiştirebilirsiniz. Devam edince model kısa bir istekle denenir.',
@@ -1145,6 +1146,10 @@ export const tr = {
   'provider.failed': 'Model denenemedi: {detail}',
   'model.claudeBots': 'Claude botları',
   'model.claudeBotsHint': 'Kendine ayrı model seçilmeyen Claude botlarının modeli ve effort ayarı.',
+  'model.claudeBotsFoldedHint':
+    'Yeni botlar başka bir sağlayıcıyla başlar; var olan Claude botları bu ayarı kullanmaya devam eder.',
+  'model.show': 'Göster',
+  'model.hide': 'Gizle',
   'model.newBots': 'Yeni botlar',
   'model.newBotsHint': 'Yeni oluşturulan botların başladığı yapay zekâ. Var olan botlar değişmez.',
   'model.backup': 'Yedek model',
