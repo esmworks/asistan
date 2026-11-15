@@ -510,7 +510,6 @@ export const tr = {
   'computer.openWindow': 'Pencerede aç',
   'computer.openWindowHint':
     'Programla kullanılan tarayıcıda girişe izin vermeyen siteler için: botun tarayıcısı bilgisayarında normal bir pencere olarak açılır.',
-  'computer.windowHint': 'Bilgisayarında ayrı pencerede açık; bot bekliyor.',
   'computer.windowNote':
     "Botun tarayıcısı bilgisayarında ayrı bir pencerede açık. Orada giriş yap, bitince Bitti'ye bas: bot aynı oturumla devam eder.",
   'computer.windowDone': 'Bitti',
