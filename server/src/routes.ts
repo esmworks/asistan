@@ -948,6 +948,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.patch('/api/memory/:id', async (req) =>
     s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), 'user'),
   );
+  // Every note one bot keeps for itself.
+  app.delete('/api/bots/:id/memory', async (req) =>
+    s.memory.removeForBot(IdParams.parse(req.params).id, 'user'),
+  );
   app.delete('/api/memory/:id', async (req) => {
     await s.memory.remove(IdParams.parse(req.params).id, 'user');
     return { ok: true };

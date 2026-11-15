@@ -1,8 +1,10 @@
 import {
+  botNoteGroups,
   describeSchedule,
   INTL_LOCALE,
   LOCALE_NAMES,
   LOCALES,
+  type BotNoteGroup,
   type Locale,
   type Memory,
   type ServerInfo,
@@ -347,10 +349,24 @@ function Notifications() {
   );
 }
 
-export function Card({ title, children }: { title?: string; children: React.ReactNode }) {
+export function Card({
+  title,
+  action,
+  children,
+}: {
+  title?: string;
+  /** A control beside the title that acts on the whole card. */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <section className="mb-6">
-      {title && <h3 className="mb-2 px-1 text-sm font-medium text-muted-foreground">{title}</h3>}
+      {(title || action) && (
+        <div className="mb-2 flex min-h-7 items-center justify-between gap-2 px-1">
+          {title && <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>}
+          {action}
+        </div>
+      )}
       <div className="divide-y rounded-2xl border bg-card/50">{children}</div>
     </section>
   );
@@ -1075,9 +1091,16 @@ function MemoryTab() {
   const t = useT();
   const { data: memory = [] } = useMemory();
   const { data: bots = [] } = useBots();
+  // Notes of an archived bot stay until deleted; its name tells them apart.
+  const { data: archived = [] } = useQuery({ queryKey: ['bots', 'archived'], queryFn: api.archivedBots });
   const qc = useQueryClient();
   const [text, setText] = useState('');
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory'] });
+  const clearBot = useMutation({
+    mutationFn: api.removeBotMemory,
+    onSuccess: refresh,
+    onError: (e) => toast.error((e as Error).message),
+  });
   const add = useMutation({
     mutationFn: () => api.addMemory({ scope: 'user', content: text }),
     onSuccess: () => {
@@ -1108,8 +1131,10 @@ function MemoryTab() {
     onError: (e) => toast.error((e as Error).message),
   });
   const user = memory.filter((m) => m.scope === 'user');
-  const botMem = memory.filter((m) => m.scope === 'bot');
-  const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
+  const groups = botNoteGroups(memory, bots, archived);
+  const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
+  const title = (g: BotNoteGroup) =>
+    t('memory.botNotes', { name: g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g) });
   return (
     <>
       <form
@@ -1147,24 +1172,48 @@ function MemoryTab() {
           </Row>
         ))}
       </Card>
-      <Card title={t('memory.bots')}>
-        {botMem.length === 0 && (
+      {groups.length === 0 && (
+        <Card title={t('memory.bots')}>
           <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>
-        )}
-        {botMem.map((m) => (
-          <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content} hint={botName(m.botId)}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 rounded-full"
-              onClick={() => forget.mutate(m)}
-              aria-label={t('common.delete')}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </Row>
-        ))}
-      </Card>
+        </Card>
+      )}
+      {groups.map((g) => (
+        <Card
+          key={g.botId}
+          title={title(g)}
+          action={
+            g.notes.length > 1 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 rounded-full"
+                disabled={clearBot.isPending}
+                onClick={() =>
+                  confirm(
+                    t('memory.deleteAllConfirm', { name: g.name ?? t('common.bot'), count: g.notes.length }),
+                  ) && clearBot.mutate(g.botId)
+                }
+              >
+                {t('memory.deleteAll')}
+              </Button>
+            )
+          }
+        >
+          {g.notes.map((m) => (
+            <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-full"
+                onClick={() => forget.mutate(m)}
+                aria-label={t('common.delete')}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </Row>
+          ))}
+        </Card>
+      ))}
     </>
   );
 }

@@ -380,6 +380,8 @@ export function apiFor(origin: string) {
       http.post<Memory>('/api/memory', m),
     updateMemory: (id: string, p: { content: string }) => http.patch<Memory>(`/api/memory/${id}`, p),
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
+    /** Deletes every note the bot keeps for itself. */
+    removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),
 
     routines: () => http.get<Routine[]>('/api/routines'),
     createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),

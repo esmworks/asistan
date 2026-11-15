@@ -134,6 +134,36 @@ export class MemoryService {
     this.ctx.bus.refresh({ scope: 'memory' });
   }
 
+  /**
+   * Deletes every note a bot keeps for itself, in one go. Notes of an archived bot reach no other
+   * bot, so this is how a long list left behind (an import, say) goes away. Each note still gets
+   * its own line in the history.
+   */
+  async removeForBot(botId: string, actor: string): Promise<{ count: number }> {
+    const rows = await this.ctx.db.transaction(async (tx) => {
+      const gone = await tx
+        .delete(schema.memories)
+        .where(and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)))
+        .returning();
+      if (gone.length) {
+        await tx.insert(schema.auditLog).values(
+          gone.map((m) => ({
+            id: newId(),
+            actor,
+            action: 'delete',
+            targetType: 'memory',
+            targetId: m.id,
+            before: m.content,
+            after: null,
+          })),
+        );
+      }
+      return gone;
+    });
+    if (rows.length) this.ctx.bus.refresh({ scope: 'memory' });
+    return { count: rows.length };
+  }
+
   async history(limit = 100) {
     return this.ctx.db
       .select()

@@ -865,6 +865,10 @@ export const tr = {
   'memory.user': 'Sizin hakkınızda (bütün botlar görür)',
   'memory.bots': 'Botların kendi notları',
   'memory.empty': 'Henüz kayıt yok.',
+  'memory.archivedBot': '{name} (arşivde)',
+  'memory.botNotes': '{name} botunun kendi notları',
+  'memory.deleteAll': 'Hepsini sil',
+  'memory.deleteAllConfirm': '{name} botunun {count} notunun hepsi silinsin mi? Geri alınamaz.',
 
   'routines.empty': 'Rutin yok. Bir botun sağ panelinden ekleyebilirsiniz.',
   'routines.lastRun': 'son {when}',

@@ -142,6 +142,22 @@ describe('hafıza', () => {
     ]);
   });
 
+  it('bir botun kendi notlarının hepsi tek seferde silinir; ortak hafıza ve başka botlar kalır', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const b = await t.bot({ name: 'Ayşe' });
+    const post = (body: object) => t.api('POST', '/api/memory', body);
+    await post({ scope: 'bot', botId: a.id, content: 'bir' });
+    await post({ scope: 'bot', botId: a.id, content: 'iki' });
+    await post({ scope: 'bot', botId: b.id, content: 'Ayşenin' });
+    await post({ scope: 'user', content: 'ortak' });
+    const r = await t.api<{ count: number }>('DELETE', `/api/bots/${a.id}/memory`);
+    expect(r.body).toEqual({ count: 2 });
+    const all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(all.map((m) => m.content)).toEqual(['Ayşenin', 'ortak']);
+    const history = (await t.api<{ action: string }[]>('GET', '/api/memory-history')).body;
+    expect(history.filter((h) => h.action === 'delete')).toHaveLength(2);
+  });
+
   it('silinen site notu sitesiyle geri eklenebilir', async () => {
     const bot = await t.bot();
     const r = await t.api<Memory>('POST', '/api/memory', {

@@ -864,6 +864,10 @@ export const en: Catalog<MessageKey> = {
   'memory.user': 'About you (every bot sees this)',
   'memory.bots': "The bots' own notes",
   'memory.empty': 'Nothing yet.',
+  'memory.archivedBot': '{name} (archived)',
+  'memory.botNotes': "{name}'s own notes",
+  'memory.deleteAll': 'Delete all',
+  'memory.deleteAllConfirm': "Delete all {count} of {name}'s notes? This cannot be undone.",
 
   'routines.empty': "No routines. You can add one from a bot's right panel.",
   'routines.lastRun': 'last {when}',
