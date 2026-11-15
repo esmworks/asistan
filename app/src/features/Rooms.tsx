@@ -418,6 +418,9 @@ export function RoomView({ room }: { room: Room }) {
   const stick = useRef(true);
 
   const shown = pending.filter((p) => !messages.some((m) => m.clientId === p.clientId));
+  // A sent message stays one row, keyed by its clientId, until the server's copy replaces it.
+  const rows = shown.length ? [...messages, ...shown] : messages;
+  const waiting = new Set(shown.map((m) => m.clientId));
   const streamDone = stream && messages.some((m) => m.turnId === stream.turnId && m.role === 'assistant');
 
   useLayoutEffect(() => {
@@ -463,17 +466,17 @@ export function RoomView({ room }: { room: Room }) {
           {!isLoading && messages.length === 0 && shown.length === 0 && (
             <RoomEmpty room={room} members={members} />
           )}
-          {messages.map((m, i) => {
+          {rows.map((m, i) => {
             const who = speakerOf(m);
-            const before = messages
+            const before = rows
               .slice(0, i)
               .reverse()
               .map(speakerOf)
               .find((s) => s !== null);
             const bot = who && who !== 'user' ? botMap.get(who) : undefined;
             return (
-              <Fragment key={m.id}>
-                {needsDivider(messages[i - 1], m) && (
+              <Fragment key={m.clientId ?? m.id}>
+                {needsDivider(rows[i - 1], m) && (
                   <div className="py-2 text-center text-xs text-muted-foreground">
                     {dayLabel(m.createdAt)}
                   </div>
@@ -484,13 +487,11 @@ export function RoomView({ room }: { room: Room }) {
                   bots={botMap}
                   botId={bot?.id}
                   onReply={m.role === 'assistant' ? setReplyTo : undefined}
+                  pending={waiting.has(m.clientId)}
                 />
               </Fragment>
             );
           })}
-          {shown.map((m) => (
-            <MessageItem key={m.clientId} m={m} bots={botMap} pending />
-          ))}
           {stream && !streamDone && stream.text && (
             <>
               {speaker && speaker.id !== lastSpeaker && <SpeakerLine bot={speaker} />}

@@ -112,11 +112,7 @@ export function MessageItem({
                 : t('message.routine')}
             </span>
           )}
-          {files.length > 0 && (
-            <div className={cn(pending && 'opacity-60')}>
-              <MessageFiles files={files} botId={pending ? undefined : botId} />
-            </div>
-          )}
+          {files.length > 0 && <MessageFiles files={files} botId={pending ? undefined : botId} />}
           {m.props.queued === true && !pending ? (
             <QueuedMessage m={m} tint={tint} hasFiles={files.length > 0} />
           ) : (
@@ -125,7 +121,6 @@ export function MessageItem({
                 className={cn(
                   'relative max-w-[80%] rounded-3xl px-4 py-2.5 text-[15px] [overflow-wrap:anywhere]',
                   tint ? 'text-white' : 'bg-secondary',
-                  pending && 'opacity-60',
                   typeof m.props.reaction === 'string' && 'mb-4',
                 )}
                 style={tint ? { background: `color-mix(in oklab, ${tint} 82%, black)` } : undefined}
@@ -139,7 +134,12 @@ export function MessageItem({
               </div>
             )
           )}
-          {!pending && m.author === 'user' && !m.props.queued && <OwnMessageActions m={m} />}
+          {/* While it is on its way the row keeps the actions' room, so nothing below it moves when they come. */}
+          {pending ? (
+            <div className="h-7" aria-hidden />
+          ) : (
+            m.author === 'user' && !m.props.queued && <OwnMessageActions m={m} />
+          )}
         </div>
       );
     case 'assistant':
