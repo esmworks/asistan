@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { toastError } from '@/components/overlay';
+import { useInCard } from '@/components/card';
 import { PillButton } from '@/components/page';
 import { Field } from '@/components/ui';
 import { t } from '@/i18n';
@@ -53,6 +54,7 @@ export function ClaudeConnect({
   onConnected?: () => void;
 }) {
   const c = useColors();
+  const inCard = useInCard();
   const api = useApi();
   const { origin } = useServer();
   const qc = useQueryClient();
@@ -111,7 +113,8 @@ export function ClaudeConnect({
 
   return (
     <View style={styles.root}>
-      <View style={[styles.status, { borderColor: c.border }]}>
+      {/* On a settings card the card is the frame; on its own the status gets one. */}
+      <View style={[styles.status, inCard ? styles.statusBare : { borderColor: c.border }]}>
         <View style={[styles.badge, { backgroundColor: `${tone}26` }]}>
           {checking ? (
             <ActivityIndicator size="small" color={tone} />
@@ -247,6 +250,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  statusBare: { borderWidth: 0, paddingHorizontal: 0, paddingVertical: 0 },
   badge: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { flex: 1, gap: 2 },

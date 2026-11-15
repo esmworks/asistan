@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { useRef, useState, type ComponentRef, type RefObject } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { toast, toastError } from '@/components/overlay';
-import { PillButton, Row, Section, SwitchRow, usePageScroll } from '@/components/page';
+import { PillButton, Row, Section, Segments, SwitchRow, usePageScroll } from '@/components/page';
 import { Field } from '@/components/ui';
-import { Chip, ChipRow, Hint, Pad, Rows, Status, useSaveSettings } from './common/controls';
+import { Hint, Pad, Rows, Status, useSaveSettings } from './common/controls';
 import { deviceName } from './common/text';
 import { AccountForm } from './connect/AccountSetup';
 import { ClaudeConnect } from './connect/ClaudeConnect';
@@ -117,19 +117,16 @@ export function ConnectionSection() {
       <Section title={t('connection.server')}>
         <Rows>
           <Row label={t('connection.address')} detail={origin} />
-          <Row
-            label={t('connection.connectedTo')}
-            detail={origin}
-            right={
-              <PillButton label={t('connection.connectOther')} onPress={() => router.push('/connect')} />
-            }
-          />
-          <Row label={t('connection.version')} detail={info?.version ?? '…'} />
+          <Row label={t('connection.version')} value={info?.version ?? '…'} />
           <AccountRow />
+          <Row icon="repeat" label={t('connection.connectOther')} onPress={() => router.push('/connect')} />
           <Row
             icon="log-out"
             label={t('connection.logoutHere')}
-            right={<PillButton label={t('connection.logout')} onPress={() => void logout()} busy={leaving} />}
+            destructive
+            chevron={false}
+            busy={leaving}
+            onPress={() => void logout()}
           />
         </Rows>
       </Section>
@@ -330,17 +327,18 @@ function NewBotEngine({
         <Text style={[styles.titleBase, { color: c.foreground }]}>{t('model.newBots')}</Text>
         <Hint>{t('model.newBotsHint')}</Hint>
       </View>
-      <ChipRow>
-        <Chip
-          on={kind === 'claude'}
-          label={t('ai.claude')}
-          onPress={() => {
-            onPick('claude');
-            if (settings?.defaultEngine !== 'claude') save.mutate({ defaultEngine: 'claude' });
-          }}
-        />
-        <Chip on={kind === 'pi'} label={t('ai.other')} onPress={() => onPick('pi')} />
-      </ChipRow>
+      <Segments
+        value={kind}
+        options={[
+          { value: 'claude', label: t('ai.claude') },
+          { value: 'pi', label: t('ai.other') },
+        ]}
+        onChange={(v) => {
+          onPick(v);
+          if (v === 'claude' && settings?.defaultEngine !== 'claude')
+            save.mutate({ defaultEngine: 'claude' });
+        }}
+      />
       {kind === 'pi' ? (
         <>
           <PiModelPicker value={value} onChange={setRef} empty={<NoProvider onAdd={onAddProvider} />} />
@@ -420,13 +418,9 @@ function AccountRow() {
     <View>
       <Row
         label={t('account.title')}
-        detail={data.username ?? t('account.none')}
-        right={
-          <PillButton
-            label={data.username ? t('account.change') : t('account.create')}
-            onPress={() => setOpen((v) => !v)}
-          />
-        }
+        value={data.username}
+        detail={data.username ? null : t('account.none')}
+        onPress={() => setOpen((v) => !v)}
       />
       {open ? (
         <Pad>
@@ -459,7 +453,7 @@ function Devices() {
   if (!sessions?.length) return null;
   const others = sessions.filter((s) => !s.current).length;
   return (
-    <Section title={t('devices.title')}>
+    <Section title={t('devices.title')} footer={t('devices.othersHint')}>
       <Rows>
         {sessions.map((s) => {
           const { app, os } = deviceName(s.userAgent);
@@ -473,29 +467,30 @@ function Devices() {
                 s.current ? (
                   <Text style={[styles.small, { color: c.mutedForeground }]}>{t('devices.this')}</Text>
                 ) : (
-                  <PillButton
-                    variant="ghost"
-                    label={t('devices.signOut')}
+                  <Pressable
+                    accessibilityRole="button"
+                    hitSlop={10}
                     onPress={() => end.mutate(s.id)}
                     disabled={end.isPending}
-                  />
+                    style={({ pressed }) => pressed && { opacity: 0.6 }}
+                  >
+                    <Text style={[styles.small, { color: c.destructive }]}>{t('devices.signOut')}</Text>
+                  </Pressable>
                 )
               }
             />
           );
         })}
-        <Row
-          label={t('devices.othersHint')}
-          right={
-            others > 1 ? (
-              <PillButton
-                label={t('devices.signOutOthers')}
-                onPress={() => end.mutate('others')}
-                disabled={end.isPending}
-              />
-            ) : undefined
-          }
-        />
+        {others > 1 ? (
+          <Row
+            icon="log-out"
+            label={t('devices.signOutOthers')}
+            destructive
+            chevron={false}
+            disabled={end.isPending}
+            onPress={() => end.mutate('others')}
+          />
+        ) : null}
       </Rows>
     </Section>
   );
@@ -539,22 +534,21 @@ function ApnsCard() {
           }
         />
         {!editing ? (
-          <Pad>
-            <View style={styles.tryRow}>
-              <PillButton
-                label={apns.configured ? t('apns.change') : t('apns.add')}
-                onPress={() => setEditing(true)}
-              />
-              {apns.configured ? (
-                <PillButton
-                  variant="ghost"
-                  label={t('apns.remove')}
-                  onPress={() => clear.mutate()}
-                  busy={clear.isPending}
-                />
-              ) : null}
-            </View>
-          </Pad>
+          <Row
+            icon={apns.configured ? 'edit-2' : 'plus'}
+            label={apns.configured ? t('apns.change') : t('apns.add')}
+            onPress={() => setEditing(true)}
+          />
+        ) : null}
+        {!editing && apns.configured ? (
+          <Row
+            icon="trash-2"
+            label={t('apns.remove')}
+            destructive
+            chevron={false}
+            busy={clear.isPending}
+            onPress={() => clear.mutate()}
+          />
         ) : null}
         {editing ? (
           <ApnsForm
@@ -653,5 +647,5 @@ const styles = StyleSheet.create({
   small: { fontSize: 15, lineHeight: 20 },
   tryRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   start: { alignItems: 'flex-start' },
-  area: { height: undefined, minHeight: 110, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
+  area: { height: undefined, minHeight: 110, paddingTop: 12, textAlignVertical: 'top' },
 });

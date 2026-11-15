@@ -949,6 +949,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.patch('/api/memory/:id', async (req) =>
     s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), 'user'),
   );
+  // Every waiting proposal at once: `approve` keeps them all, `delete` drops them all.
+  app.post('/api/memory/proposed/:action', async (req) => {
+    const { action } = z.object({ action: z.enum(['approve', 'delete']) }).parse(req.params);
+    return s.memory.settleProposed(action, 'user');
+  });
   app.delete('/api/memory/:id', async (req) => {
     await s.memory.remove(IdParams.parse(req.params).id, 'user');
     return { ok: true };

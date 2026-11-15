@@ -139,6 +139,41 @@ export class MemoryService {
     this.ctx.bus.refresh({ scope: 'memory' });
   }
 
+  /**
+   * Approves or deletes every waiting proposal at once, so a long list (an import from before
+   * imports came in active) is one click rather than one per note. Each note still gets its own
+   * line in the history.
+   */
+  async settleProposed(action: 'approve' | 'delete', actor: string): Promise<{ count: number }> {
+    const rows = await this.ctx.db.transaction(async (tx) => {
+      const where = eq(schema.memories.status, 'proposed');
+      const done =
+        action === 'approve'
+          ? await tx
+              .update(schema.memories)
+              .set({ status: 'active', updatedAt: new Date() })
+              .where(where)
+              .returning()
+          : await tx.delete(schema.memories).where(where).returning();
+      if (done.length) {
+        await tx.insert(schema.auditLog).values(
+          done.map((m) => ({
+            id: newId(),
+            actor,
+            action,
+            targetType: 'memory',
+            targetId: m.id,
+            before: m.content,
+            after: action === 'approve' ? m.content : null,
+          })),
+        );
+      }
+      return done;
+    });
+    if (rows.length) this.ctx.bus.refresh({ scope: 'memory' });
+    return { count: rows.length };
+  }
+
   async history(limit = 100) {
     return this.ctx.db
       .select()

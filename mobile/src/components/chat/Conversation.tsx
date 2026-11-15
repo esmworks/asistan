@@ -21,6 +21,7 @@ import { toast, toastError } from '@/components/overlay';
 import { Button } from '@/components/ui';
 import { locale, t } from '@/i18n';
 import { ApiError } from '@/lib/api';
+import { useTapToDismiss } from '@/lib/dismiss';
 import { formatters, needsDivider } from '@/lib/format';
 import { nav } from '@/lib/nav';
 import { useMessages } from '@/lib/queries';
@@ -93,6 +94,7 @@ export function Conversation({
   const [pending, setPending] = useState<Message[]>([]);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const listRef = useRef<FlatList<Row>>(null);
+  const tapToDismiss = useTapToDismiss();
 
   const signedOut = messagesQ.error instanceof ApiError && messagesQ.error.status === 401;
   useEffect(() => {
@@ -391,6 +393,7 @@ export function Conversation({
             renderItem={renderItem}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            {...tapToDismiss}
             contentContainerStyle={styles.listContent}
             ItemSeparatorComponent={Gap}
             onScroll={onScroll}

@@ -4,7 +4,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { confirm, toastError } from '@/components/overlay';
-import { Empty, IconButton, Loading, Note, PillButton, Row, Section, SwitchRow } from '@/components/page';
+import { Empty, IconButton, Loading, PillButton, Row, Section, SwitchRow } from '@/components/page';
+import { InCard } from '@/components/card';
 import { Field } from '@/components/ui';
 import { BotSwitches } from './more/BotSwitches';
 import { Pad, Rows } from './common/controls';
@@ -46,10 +47,16 @@ export function VaultSection() {
           accessibilityLabel={t('vault.search')}
           style={[styles.grow, styles.searchField]}
         />
-        <PillButton variant="primary" icon="plus" label={t('common.add')} onPress={() => setEditing('new')} />
+        <PillButton
+          variant="primary"
+          size="large"
+          icon="plus"
+          label={t('common.add')}
+          onPress={() => setEditing('new')}
+        />
       </View>
       {editing === 'new' ? <LoginForm onDone={() => setEditing(null)} /> : null}
-      <Section>
+      <Section footer={t('vault.note')}>
         {isPending ? (
           <Loading />
         ) : shown.length === 0 ? (
@@ -104,7 +111,6 @@ export function VaultSection() {
           </Rows>
         )}
       </Section>
-      <Note>{t('vault.note')}</Note>
     </>
   );
 }
@@ -141,87 +147,90 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone: () => void }
     onError: toastError,
   });
   const ready = !!site.trim() && (!!login || !!password) && !save.isPending;
+  // The new-login form draws its own card; its fields take the in-card look like an edited row's.
   return (
-    <View
-      style={[
-        styles.form,
-        !login && {
-          backgroundColor: c.card,
-          borderColor: c.border,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderRadius: 16,
-          padding: 16,
-        },
-      ]}
-    >
-      <Field
-        value={site}
-        onChangeText={setSite}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        placeholder={t('vault.site')}
-        accessibilityLabel={t('vault.site')}
-      />
-      <Field
-        value={username}
-        onChangeText={setUsername}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder={t('vault.username')}
-        accessibilityLabel={t('vault.username')}
-      />
-      <Field
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
-        textContentType="newPassword"
-        placeholder={login ? t('vault.newPassword') : t('vault.password')}
-        accessibilityLabel={t('vault.password')}
-      />
-      <Field
-        value={totp}
-        onChangeText={setTotp}
-        secureTextEntry
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder={login?.hasTotp && !clearTotp ? t('vault.totpKept') : t('vault.totp')}
-        accessibilityLabel={t('vault.totp')}
-      />
-      {login?.hasTotp ? (
-        <View style={[styles.box, { borderColor: c.border }]}>
-          <SwitchRow label={t('vault.totpRemove')} value={clearTotp} onChange={setClearTotp} />
+    <InCard.Provider value>
+      <View
+        style={[
+          styles.form,
+          !login && {
+            backgroundColor: c.card,
+            borderColor: c.border,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderRadius: 16,
+            padding: 16,
+          },
+        ]}
+      >
+        <Field
+          value={site}
+          onChangeText={setSite}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          placeholder={t('vault.site')}
+          accessibilityLabel={t('vault.site')}
+        />
+        <Field
+          value={username}
+          onChangeText={setUsername}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder={t('vault.username')}
+          accessibilityLabel={t('vault.username')}
+        />
+        <Field
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="newPassword"
+          placeholder={login ? t('vault.newPassword') : t('vault.password')}
+          accessibilityLabel={t('vault.password')}
+        />
+        <Field
+          value={totp}
+          onChangeText={setTotp}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder={login?.hasTotp && !clearTotp ? t('vault.totpKept') : t('vault.totp')}
+          accessibilityLabel={t('vault.totp')}
+        />
+        {login?.hasTotp ? (
+          <View style={[styles.box, { borderColor: c.border, backgroundColor: c.muted }]}>
+            <SwitchRow label={t('vault.totpRemove')} value={clearTotp} onChange={setClearTotp} />
+          </View>
+        ) : null}
+        <View style={[styles.box, { borderColor: c.border, backgroundColor: c.muted }]}>
+          <SwitchRow
+            label={t('vault.allBots')}
+            value={botIds === null}
+            onChange={(on) => setBotIds(on ? null : [])}
+          />
         </View>
-      ) : null}
-      <View style={[styles.box, { borderColor: c.border }]}>
-        <SwitchRow
-          label={t('vault.allBots')}
-          value={botIds === null}
-          onChange={(on) => setBotIds(on ? null : [])}
-        />
+        {botIds !== null && bots.length > 0 ? (
+          <BotSwitches
+            bots={bots}
+            on={(id) => botIds.includes(id)}
+            onChange={(id, on) =>
+              setBotIds((ids) => (on ? [...(ids ?? []), id] : (ids ?? []).filter((x) => x !== id)))
+            }
+          />
+        ) : null}
+        <View style={styles.buttons}>
+          <PillButton variant="ghost" label={t('common.cancel')} onPress={onDone} />
+          <PillButton
+            variant="primary"
+            label={t('common.save')}
+            onPress={() => save.mutate()}
+            busy={save.isPending}
+            disabled={!ready}
+          />
+        </View>
       </View>
-      {botIds !== null && bots.length > 0 ? (
-        <BotSwitches
-          bots={bots}
-          on={(id) => botIds.includes(id)}
-          onChange={(id, on) =>
-            setBotIds((ids) => (on ? [...(ids ?? []), id] : (ids ?? []).filter((x) => x !== id)))
-          }
-        />
-      ) : null}
-      <View style={styles.buttons}>
-        <PillButton variant="ghost" label={t('common.cancel')} onPress={onDone} />
-        <PillButton
-          variant="primary"
-          label={t('common.save')}
-          onPress={() => save.mutate()}
-          busy={save.isPending}
-          disabled={!ready}
-        />
-      </View>
-    </View>
+    </InCard.Provider>
   );
 }
 
@@ -232,6 +241,6 @@ const styles = StyleSheet.create({
   searchField: { paddingLeft: 38 },
   actions: { flexDirection: 'row' },
   form: { gap: 10 },
-  box: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, overflow: 'hidden' },
+  box: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
 });

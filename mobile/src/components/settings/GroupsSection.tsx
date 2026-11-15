@@ -40,7 +40,6 @@ export function GroupsSection() {
   });
   return (
     <>
-      <Hint>{t('groups.hint')}</Hint>
       <View style={styles.form}>
         <Field
           value={name}
@@ -53,13 +52,14 @@ export function GroupsSection() {
         />
         <PillButton
           variant="primary"
+          size="large"
           label={t('common.add')}
           onPress={() => add.mutate()}
           busy={add.isPending}
           disabled={!name.trim()}
         />
       </View>
-      <Section>
+      <Section footer={t('groups.hint')}>
         <Rows>
           {groups.length === 0 ? (
             <Pad>

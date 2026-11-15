@@ -129,7 +129,7 @@ export function GeneralSection() {
   if (!settings) return <Loading />;
   return (
     <>
-      <Section title={t('general.appearance')}>
+      <Section title={t('general.appearance')} footer={t('settings.languageHint')}>
         <Rows>
           <ChoiceRow<ThemeChoice>
             icon="moon"
@@ -145,7 +145,6 @@ export function GeneralSection() {
           <ChoiceRow<Locale>
             icon="globe"
             label={t('common.language')}
-            detail={t('settings.languageHint')}
             value={settings.language ?? locale}
             options={LOCALES.map((l) => ({ value: l, label: LOCALE_NAMES[l] }))}
             onChange={(language) => save.mutate({ language })}
@@ -163,7 +162,7 @@ export function GeneralSection() {
 }
 
 const styles = StyleSheet.create({
-  matches: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  matches: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
   label: { fontSize: 17 },
   use: { fontSize: 15, paddingHorizontal: 4 },
 });

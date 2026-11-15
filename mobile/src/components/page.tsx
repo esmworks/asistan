@@ -25,8 +25,10 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CARD_AREA, CARD_FIELD, InCard, useInCard } from '@/components/card';
 import { t } from '@/i18n';
-import { useColors } from '@/lib/theme';
+import { useTapToDismiss } from '@/lib/dismiss';
+import { CONTROL_HEIGHT, useColors } from '@/lib/theme';
 
 export type IconName = ComponentProps<typeof Feather>['name'];
 
@@ -118,6 +120,7 @@ export function Page({
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const contentRef = useRef<ComponentRef<typeof View>>(null);
   const pageScroll = useMemo(() => ({ scroll: scrollRef, content: contentRef }), []);
+  const tapToDismiss = useTapToDismiss();
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.background }]} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
@@ -139,6 +142,7 @@ export function Page({
             contentContainerStyle={styles.pageContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
+            {...tapToDismiss}
           >
             <PageScroll.Provider value={pageScroll}>{children}</PageScroll.Provider>
           </ScrollView>
@@ -164,7 +168,9 @@ export function Section({
   return (
     <View style={styles.section}>
       {title ? <Text style={[styles.sectionTitle, { color: c.mutedForeground }]}>{title}</Text> : null}
-      <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>{children}</View>
+      <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+        <InCard.Provider value>{children}</InCard.Provider>
+      </View>
       {footer ? <Text style={[styles.sectionFooter, { color: c.mutedForeground }]}>{footer}</Text> : null}
     </View>
   );
@@ -199,6 +205,17 @@ export function Row({
 }) {
   const c = useColors();
   const tint = destructive ? c.destructive : c.foreground;
+  const trailing = (
+    <>
+      {value ? (
+        <Text style={[styles.rowValue, { color: c.mutedForeground }]} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      {busy ? <ActivityIndicator size="small" color={c.mutedForeground} /> : right}
+      {chevron && !busy ? <Feather name="chevron-right" size={22} color={c.mutedForeground} /> : null}
+    </>
+  );
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
@@ -211,28 +228,39 @@ export function Row({
       ]}
     >
       {icon ? (
-        <Feather name={icon} size={22} color={destructive ? c.destructive : c.mutedForeground} />
+        <Feather
+          name={icon}
+          size={22}
+          color={destructive ? c.destructive : c.mutedForeground}
+          // Beside a label with a detail under it, the icon stays on the label's line.
+          style={detail ? styles.rowIconTop : undefined}
+        />
       ) : null}
-      <View style={styles.rowText}>
-        <Text style={[styles.rowLabel, { color: tint }]} numberOfLines={2}>
-          {label}
-        </Text>
-        {detail ? (
+      {detail ? (
+        // The value, state or button sits on the label's line; the detail runs under both, at the
+        // row's full width, so a long explanation never squeezes what is beside the label.
+        <View style={styles.rowText}>
+          <View style={styles.rowLine}>
+            <Text style={[styles.rowLabel, styles.rowLabelGrow, { color: tint }]} numberOfLines={2}>
+              {label}
+            </Text>
+            {trailing}
+          </View>
           <Text
             style={[styles.rowDetail, { color: c.mutedForeground }]}
             numberOfLines={detailLines || undefined}
           >
             {detail}
           </Text>
-        ) : null}
-      </View>
-      {value ? (
-        <Text style={[styles.rowValue, { color: c.mutedForeground }]} numberOfLines={1}>
-          {value}
-        </Text>
-      ) : null}
-      {busy ? <ActivityIndicator size="small" color={c.mutedForeground} /> : right}
-      {chevron && !busy ? <Feather name="chevron-right" size={22} color={c.mutedForeground} /> : null}
+        </View>
+      ) : (
+        <>
+          <Text style={[styles.rowLabel, styles.rowLabelGrow, { color: tint }]} numberOfLines={2}>
+            {label}
+          </Text>
+          {trailing}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -282,6 +310,7 @@ export function LabeledInput({
   ...rest
 }: TextInputProps & { label: string; hint?: string }) {
   const c = useColors();
+  const inCard = useInCard();
   return (
     <View style={styles.labeled}>
       <Text style={[styles.inputLabel, { color: c.foreground }]}>{label}</Text>
@@ -293,6 +322,7 @@ export function LabeledInput({
         style={[
           multiline ? styles.textArea : styles.input,
           { backgroundColor: c.card, color: c.foreground, borderColor: c.border },
+          inCard && [multiline ? CARD_AREA : CARD_FIELD, styles.filled, { backgroundColor: c.muted }],
           style,
         ]}
       />
@@ -322,7 +352,7 @@ export function Segments<V extends string>({
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
             onPress={() => onChange(o.value)}
-            style={[styles.segment, on && { backgroundColor: c.card }]}
+            style={[styles.segment, on && { backgroundColor: c.raised }]}
           >
             <Text
               style={[styles.segmentText, { color: on ? c.foreground : c.mutedForeground }]}
@@ -345,6 +375,7 @@ export function PillButton({
   variant = 'secondary',
   busy,
   disabled,
+  size = 'regular',
 }: {
   label: string;
   onPress: () => void;
@@ -352,6 +383,8 @@ export function PillButton({
   variant?: 'primary' | 'secondary' | 'ghost' | 'destructive';
   busy?: boolean;
   disabled?: boolean;
+  /** `large` matches a field's height, for a button that sits beside one. */
+  size?: 'regular' | 'large';
 }) {
   const c = useColors();
   const bg =
@@ -371,6 +404,7 @@ export function PillButton({
       disabled={busy || disabled}
       style={({ pressed }) => [
         styles.pill,
+        size === 'large' && styles.pillLarge,
         { backgroundColor: bg, opacity: pressed || busy ? 0.7 : disabled ? 0.4 : 1 },
       ]}
     >
@@ -509,10 +543,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   rowText: { flex: 1, gap: 2 },
+  rowIconTop: { alignSelf: 'flex-start' },
+  rowLine: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 22 },
+  rowLabelGrow: { flex: 1 },
   rowLabel: { fontSize: 17, lineHeight: 22 },
   rowDetail: { fontSize: 15, lineHeight: 20 },
   rowValue: { fontSize: 17, maxWidth: '45%' },
   labeled: { gap: 6 },
+  filled: { borderWidth: StyleSheet.hairlineWidth },
   inputLabel: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
   inputHint: { fontSize: 15, lineHeight: 20, paddingHorizontal: 4 },
   input: { height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 20, fontSize: 17 },
@@ -527,11 +565,11 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     textAlignVertical: 'top',
   },
-  segments: { flexDirection: 'row', borderRadius: 20, padding: 3 },
+  segments: { flexDirection: 'row', borderRadius: 12, padding: 3 },
   segment: {
     flex: 1,
-    height: 34,
-    borderRadius: 17,
+    height: 36,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
@@ -542,10 +580,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 36,
-    borderRadius: 18,
-    paddingHorizontal: 16,
+    height: 38,
+    borderRadius: 10,
+    paddingHorizontal: 14,
   },
+  pillLarge: { height: CONTROL_HEIGHT, borderRadius: 12, paddingHorizontal: 16 },
   pillText: { fontSize: 16, fontWeight: '500' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: {

@@ -381,6 +381,8 @@ export function apiFor(origin: string) {
     updateMemory: (id: string, p: { content?: string; status?: 'active' }) =>
       http.patch<Memory>(`/api/memory/${id}`, p),
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
+    settleProposedMemory: (action: 'approve' | 'delete') =>
+      http.post<{ count: number }>(`/api/memory/proposed/${action}`, {}),
 
     routines: () => http.get<Routine[]>('/api/routines'),
     createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),

@@ -226,7 +226,7 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
         />
       </ChipRow>
       {others.length > 0 ? (
-        <View style={[styles.other, { borderColor: c.border }]}>
+        <View style={[styles.other, { borderColor: c.border, backgroundColor: c.muted }]}>
           <ChoiceRow
             label={t('provider.other')}
             value={others.includes(current) ? current : ''}
@@ -548,7 +548,7 @@ export function PiModelPicker({
   if (!configured.length) return <>{empty ?? <ProviderKeyForm />}</>;
   return (
     <View style={styles.root}>
-      <View style={[styles.other, { borderColor: c.border }]}>
+      <View style={[styles.other, { borderColor: c.border, backgroundColor: c.muted }]}>
         <ChoiceRow
           label={t('provider.provider')}
           value={provider}
@@ -679,8 +679,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingLeft: 16,
+    borderRadius: 12,
+    paddingLeft: 14,
     paddingRight: 6,
     paddingVertical: 8,
   },
@@ -688,18 +688,18 @@ const styles = StyleSheet.create({
   savedText: { flex: 1, gap: 2, marginLeft: 4 },
   title: { fontSize: 17, fontWeight: '500' },
   sub: { fontSize: 15, lineHeight: 20 },
-  other: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  form: { borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
+  other: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden' },
+  form: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 10 },
   formPlain: { borderWidth: 0, borderRadius: 0, padding: 16 },
-  area: { height: undefined, minHeight: 72, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
+  area: { height: undefined, minHeight: 72, borderRadius: 12, paddingTop: 12, textAlignVertical: 'top' },
   start: { alignItems: 'flex-start' },
   search: { gap: 6 },
-  list: { borderWidth: 1, borderRadius: 16, overflow: 'hidden', paddingVertical: 4 },
+  list: { borderWidth: 1, borderRadius: 12, overflow: 'hidden', paddingVertical: 4 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   optionText: { flex: 1, fontSize: 15 },
   listNote: { fontSize: 15, lineHeight: 20, paddingHorizontal: 16, paddingVertical: 8 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, gap: 8 },
+  found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, padding: 12, gap: 8 },
   foundRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   foundText: { flex: 1, fontSize: 17 },
 });

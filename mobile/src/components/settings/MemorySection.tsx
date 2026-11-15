@@ -2,7 +2,7 @@ import type { Memory } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { toast, toastError } from '@/components/overlay';
+import { confirm, toast, toastError } from '@/components/overlay';
 import { IconButton, PillButton, Row, Section } from '@/components/page';
 import { Field } from '@/components/ui';
 import { Hint, Pad, Rows } from './common/controls';
@@ -37,6 +37,11 @@ export function MemorySection() {
     onSuccess: refresh,
     onError: toastError,
   });
+  const settle = useMutation({
+    mutationFn: api.settleProposedMemory,
+    onSuccess: refresh,
+    onError: toastError,
+  });
   // A deleted memory can be brought back for a moment, in case the wrong one went.
   const forget = useMutation({
     mutationFn: async (m: Memory) => {
@@ -60,7 +65,8 @@ export function MemorySection() {
   });
   const proposed = memory.filter((m) => m.status === 'proposed');
   const user = memory.filter((m) => m.scope === 'user' && m.status === 'active');
-  const botMem = memory.filter((m) => m.scope === 'bot');
+  // Proposals are listed once, above; the bots' notes are the ones in use.
+  const botMem = memory.filter((m) => m.scope === 'bot' && m.status === 'active');
   const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
   const label = (m: Memory) => (m.site ? `${m.site} · ${m.content}` : m.content);
   const trash = (m: Memory) => (
@@ -71,6 +77,35 @@ export function MemorySection() {
       {proposed.length > 0 ? (
         <Section title={t('memory.proposed')}>
           <Rows>
+            {proposed.length > 1 ? (
+              <Row
+                label={t('memory.proposedCount', { count: proposed.length })}
+                right={
+                  <View style={styles.actions}>
+                    <PillButton
+                      label={t('memory.approveAll')}
+                      variant="primary"
+                      disabled={settle.isPending}
+                      onPress={() => settle.mutate('approve')}
+                    />
+                    <PillButton
+                      label={t('memory.deleteAll')}
+                      disabled={settle.isPending}
+                      onPress={async () => {
+                        if (
+                          await confirm({
+                            title: t('memory.deleteAllConfirm', { count: proposed.length }),
+                            destructive: true,
+                            confirmLabel: t('common.delete'),
+                          })
+                        )
+                          settle.mutate('delete');
+                      }}
+                    />
+                  </View>
+                }
+              />
+            ) : null}
             {proposed.map((m) => (
               <Row
                 key={m.id}
@@ -113,6 +148,7 @@ export function MemorySection() {
         />
         <PillButton
           variant="primary"
+          size="large"
           label={t('common.add')}
           onPress={() => add.mutate()}
           busy={add.isPending}

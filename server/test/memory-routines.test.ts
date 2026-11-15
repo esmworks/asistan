@@ -114,6 +114,34 @@ describe('hafıza', () => {
     expect(history.some((h) => h.action === 'approve')).toBe(true);
   });
 
+  it('bekleyen önerilerin hepsi tek seferde onaylanır ya da silinir', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const kept = (await t.api<Memory>('POST', '/api/memory', { scope: 'bot', botId: a.id, content: 'etkin' }))
+      .body;
+    const propose = (content: string) =>
+      t.db.db
+        .insert(schema.memories)
+        .values({ id: newId(), scope: 'bot', botId: a.id, content, status: 'proposed', source: 'import' });
+    await propose('bir');
+    await propose('iki');
+    const approved = await t.api<{ count: number }>('POST', '/api/memory/proposed/approve', {});
+    expect(approved.body).toEqual({ count: 2 });
+    let all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(all.map((m) => m.status)).toEqual(['active', 'active', 'active']);
+
+    await propose('üç');
+    await propose('dört');
+    const deleted = await t.api<{ count: number }>('POST', '/api/memory/proposed/delete', {});
+    expect(deleted.body).toEqual({ count: 2 });
+    all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    // Only proposals go; notes already in use stay.
+    expect(all.map((m) => m.content)).toEqual(['etkin', 'bir', 'iki']);
+    expect(all.some((m) => m.id === kept.id)).toBe(true);
+    const history = (await t.api<{ action: string }[]>('GET', '/api/memory-history')).body;
+    expect(history.filter((h) => h.action === 'approve')).toHaveLength(2);
+    expect(history.filter((h) => h.action === 'delete')).toHaveLength(2);
+  });
+
   it('bot kullanıcı hafızasını silemez', async () => {
     const a = await t.bot({ name: 'Ali', permissionMode: 'auto' });
     const m = (await t.api<Memory>('POST', '/api/memory', { scope: 'user', content: 'önemli' })).body;

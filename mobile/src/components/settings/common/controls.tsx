@@ -23,10 +23,8 @@ export function Rows({ children }: { children: ReactNode }) {
   return (
     <>
       {items.map((item, i) => (
-        <View
-          key={i}
-          style={i > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderColor: c.border } : undefined}
-        >
+        <View key={i}>
+          {i > 0 ? <View style={[styles.divider, { backgroundColor: c.border }]} /> : null}
           {item}
         </View>
       ))}
@@ -37,6 +35,12 @@ export function Rows({ children }: { children: ReactNode }) {
 /** Free-form content inside a card, with the card's usual padding. */
 export function Pad({ children, gap = 12 }: { children: ReactNode; gap?: number }) {
   return <View style={{ padding: 16, gap }}>{children}</View>;
+}
+
+/** Muted text on the page itself, outside any card, lined up with the section titles. */
+export function Lead({ children }: { children: ReactNode }) {
+  const c = useColors();
+  return <Text style={[styles.hint, styles.lead, { color: c.mutedForeground }]}>{children}</Text>;
 }
 
 /** A line of small muted text, for hints inside a card. */
@@ -67,7 +71,7 @@ export function Chip({
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
-        { borderColor: on ? c.brand : c.border, backgroundColor: on ? `${c.brand}1A` : 'transparent' },
+        { borderColor: on ? c.brand : c.outline, backgroundColor: on ? `${c.brand}1A` : 'transparent' },
         pressed && { opacity: 0.7 },
       ]}
     >
@@ -75,7 +79,7 @@ export function Chip({
         <View
           style={[
             styles.tick,
-            { borderColor: on ? c.brand : c.border, backgroundColor: on ? c.brand : 'transparent' },
+            { borderColor: on ? c.brand : c.outline, backgroundColor: on ? c.brand : 'transparent' },
           ]}
         >
           {on ? <Feather name="check" size={11} color="#FFFFFF" /> : null}
@@ -85,6 +89,38 @@ export function Chip({
       <Text style={[styles.chipText, { color: c.foreground }]}>{label}</Text>
     </Pressable>
   );
+}
+
+/**
+ * A question with several answers, as rows on the card: each answer on its own line with a tick
+ * at its end when chosen. Spread inside `Rows` keeps the dividers between the answers.
+ */
+export function CheckRow({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) {
+  const c = useColors();
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: on }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.checkRow, pressed && { backgroundColor: c.accent }]}
+    >
+      <Text style={[styles.checkLabel, { color: c.foreground }]}>{label}</Text>
+      <View
+        style={[
+          styles.checkBox,
+          { borderColor: on ? c.brand : c.outline, backgroundColor: on ? c.brand : 'transparent' },
+        ]}
+      >
+        {on ? <Feather name="check" size={15} color="#FFFFFF" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** A label heading the rows under it on a card, such as the question a `CheckRow` list answers. */
+export function RowsLabel({ children }: { children: ReactNode }) {
+  const c = useColors();
+  return <Text style={[styles.rowsLabel, { color: c.foreground }]}>{children}</Text>;
 }
 
 /** Chips that wrap onto more lines. */
@@ -226,24 +262,44 @@ export function useSaveSettings() {
 }
 
 const styles = StyleSheet.create({
+  lead: { paddingHorizontal: 16 },
   hint: { fontSize: 15, lineHeight: 20 },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 50,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  checkLabel: { flex: 1, fontSize: 17, lineHeight: 22 },
+  checkBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowsLabel: { fontSize: 17, fontWeight: '600', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    minHeight: 36,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 40,
     maxWidth: '100%',
   },
   // A long label wraps inside the chip instead of running past the card.
-  chipText: { fontSize: 16, flexShrink: 1, textAlign: 'center' },
+  chipText: { fontSize: 16, lineHeight: 21, flexShrink: 1 },
   tick: {
-    width: 16,
-    height: 16,
+    width: 18,
+    height: 18,
     borderRadius: 5,
     borderWidth: 1,
     alignItems: 'center',
@@ -253,5 +309,5 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 16 },
   saved: { gap: 6 },
   savedLabel: { fontSize: 17 },
-  area: { height: undefined, minHeight: 110, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
+  area: { height: undefined, minHeight: 110, paddingTop: 12, textAlignVertical: 'top' },
 });
