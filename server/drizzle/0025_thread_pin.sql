@@ -1,0 +1,1 @@
+ALTER TABLE "threads" ADD COLUMN "pinned_message_id" text;

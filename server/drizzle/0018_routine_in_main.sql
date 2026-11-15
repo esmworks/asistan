@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "in_main" boolean DEFAULT false NOT NULL;

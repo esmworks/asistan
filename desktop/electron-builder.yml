@@ -1,0 +1,51 @@
+# Packaging settings. The server and app are built first (pnpm build at the root).
+appId: com.esmworks.yumakbot
+productName: YumakBot
+copyright: Copyright (C) 2026 esmworks (Erhan Erbaş)
+directories:
+  output: out
+# Where releases live. The release workflow uploads the installers itself (--publish never), but
+# electron-builder still writes update information for this target and stops without one.
+publish:
+  provider: github
+  owner: esmworks
+  repo: yumakbot
+files:
+  - dist/**
+  - package.json
+# The server (bundle plus production node_modules, from `pnpm stage`) is copied by
+# after-pack.cjs: extraResources would leave node_modules out.
+afterPack: ./after-pack.cjs
+extraResources:
+  - from: ../app/dist
+    to: app
+  - from: assets
+    to: assets
+mac:
+  # An Icon Composer icon: a gradient tile and the plush as its own layer, so macOS draws the light
+  # rim of glass round it as on its own icons. electron-builder compiles it with Xcode 26's actool
+  # and makes the .icns earlier macOS versions read from it.
+  icon: assets/icon.icon
+  category: public.app-category.productivity
+  target: dmg
+  extendInfo:
+    LSUIElement: false
+  # Signed with the Developer ID in the keychain, or the one in CSC_LINK / CSC_KEY_PASSWORD on CI,
+  # and sent to Apple for notarization when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID
+  # are set, so the downloaded app opens without the "unidentified developer" warning. Without
+  # them the build still succeeds, unsigned or not notarized.
+  hardenedRuntime: true
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  notarize: true
+win:
+  icon: assets/icon.png
+  target: nsis
+nsis:
+  # A per-user install needs no administrator rights; the user still picks the folder.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-Setup.${ext}
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}

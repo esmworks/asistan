@@ -1,0 +1,716 @@
+import {
+  plainText,
+  type BotSummary,
+  type Message,
+  type MessageRole,
+  type SearchHit,
+  type Thread,
+  type TurnState,
+  quoteExcerpt,
+} from '@yumakbot/shared';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import type { Ctx } from '../context';
+import { schema } from '../db';
+import type { T } from '../i18n';
+import { DOTTED_AND_DOTLESS_I, isUniqueViolation, newId, notFound, truncate } from '../util';
+import { toMessage, toThread } from './mappers';
+
+type ThreadRow = typeof schema.threads.$inferSelect;
+
+export interface NewMessage {
+  threadId: string;
+  role: MessageRole;
+  author: string;
+  text: string;
+  props?: Record<string, unknown>;
+  clientId?: string | null;
+  turnId?: string | null;
+}
+
+/** How many messages a conversation opens with, and how many each "load older" adds. */
+export const MESSAGE_PAGE = 500;
+export class ThreadService {
+  constructor(private ctx: Ctx) {}
+
+  private async states(threadIds: string[]): Promise<Map<string, TurnState>> {
+    const map = new Map<string, TurnState>();
+    if (!threadIds.length) return map;
+    const active = await this.ctx.db
+      .select({ threadId: schema.turns.threadId, status: schema.turns.status })
+      .from(schema.turns)
+      .where(
+        and(inArray(schema.turns.threadId, threadIds), inArray(schema.turns.status, ['queued', 'running'])),
+      );
+    for (const t of active) {
+      if (t.status === 'running') map.set(t.threadId, 'running');
+      else if (!map.has(t.threadId)) map.set(t.threadId, 'queued');
+    }
+    const waiting = await this.ctx.db
+      .select({ threadId: schema.approvals.threadId })
+      .from(schema.approvals)
+      .where(and(inArray(schema.approvals.threadId, threadIds), eq(schema.approvals.status, 'pending')));
+    for (const w of waiting) map.set(w.threadId, 'waiting');
+    return map;
+  }
+
+  async state(threadId: string): Promise<TurnState> {
+    return (await this.states([threadId])).get(threadId) ?? 'idle';
+  }
+
+  private async previews(threadIds: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (!threadIds.length) return map;
+    const rows = await this.ctx.db
+      .selectDistinctOn([schema.messages.threadId], {
+        threadId: schema.messages.threadId,
+        text: schema.messages.text,
+        props: schema.messages.props,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          inArray(schema.messages.threadId, threadIds),
+          inArray(schema.messages.role, ['user', 'assistant']),
+        ),
+      )
+      .orderBy(schema.messages.threadId, desc(schema.messages.createdAt));
+    for (const r of rows) {
+      // A message with only attachments is previewed by its file names.
+      const files = (r.props as { files?: { name: string }[] }).files ?? [];
+      // The sidebar shows words, not Markdown marks.
+      const text = plainText(r.text) || files.map((f) => f.name).join(', ');
+      map.set(r.threadId, truncate(text, 140));
+    }
+    return map;
+  }
+
+  /** When each conversation last got a message from its bot. */
+  private async lastReplies(threadIds: string[]): Promise<Map<string, Date>> {
+    if (!threadIds.length) return new Map();
+    const rows = await this.ctx.db
+      .selectDistinctOn([schema.messages.threadId], {
+        threadId: schema.messages.threadId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(and(inArray(schema.messages.threadId, threadIds), eq(schema.messages.role, 'assistant')))
+      .orderBy(schema.messages.threadId, desc(schema.messages.createdAt));
+    return new Map(rows.map((r) => [r.threadId, r.createdAt]));
+  }
+
+  async list(botId: string): Promise<Thread[]> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.threads)
+      // A room is listed apart, not among the conversations of its first member.
+      .where(and(eq(schema.threads.botId, botId), ne(schema.threads.kind, 'room')))
+      .orderBy(desc(schema.threads.updatedAt));
+    const ids = rows.map((r) => r.id);
+    const [states, previews] = await Promise.all([this.states(ids), this.previews(ids)]);
+    return Promise.all(
+      rows.map(async (r) => ({
+        ...toThread(r, states.get(r.id) ?? 'idle', previews.get(r.id) ?? null),
+        pinned: await this.pinned(r),
+      })),
+    );
+  }
+
+  async row(id: string): Promise<ThreadRow> {
+    const [row] = await this.ctx.db.select().from(schema.threads).where(eq(schema.threads.id, id)).limit(1);
+    if (!row) throw notFound('thread');
+    return row;
+  }
+
+  async get(id: string): Promise<Thread> {
+    const row = await this.row(id);
+    const [states, previews] = await Promise.all([this.states([id]), this.previews([id])]);
+    return {
+      ...toThread(row, states.get(id) ?? 'idle', previews.get(id) ?? null),
+      pinned: await this.pinned(row),
+    };
+  }
+
+  /** The pinned message of a conversation, with the start of its text; null when it has none. */
+  private async pinned(row: ThreadRow): Promise<Thread['pinned']> {
+    if (!row.pinnedMessageId) return null;
+    const [m] = await this.ctx.db
+      .select({ id: schema.messages.id, text: schema.messages.text, threadId: schema.messages.threadId })
+      .from(schema.messages)
+      .where(eq(schema.messages.id, row.pinnedMessageId))
+      .limit(1);
+    return m && m.threadId === row.id ? { id: m.id, text: quoteExcerpt(m.text, 160) } : null;
+  }
+
+  /** Pins a message of the conversation above it, or with null takes the pin away. */
+  async pin(threadId: string, messageId: string | null) {
+    const row = await this.row(threadId);
+    if (messageId) {
+      const m = await this.message(messageId);
+      if (m.threadId !== threadId) throw notFound('message');
+    }
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ pinnedMessageId: messageId })
+      .where(eq(schema.threads.id, threadId));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  async create(botId: string, opts: { title?: string; kind?: ThreadRow['kind'] } = {}): Promise<Thread> {
+    const [row] = await this.ctx.db
+      .insert(schema.threads)
+      .values({ id: newId(), botId, title: opts.title ?? '', kind: opts.kind ?? 'user' })
+      .returning();
+    this.ctx.bus.refresh({ scope: 'threads', botId });
+    return toThread(row!, 'idle');
+  }
+
+  /** The bot's most recent user thread, created if missing. */
+  async main(botId: string): Promise<Thread> {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.threads)
+      .where(and(eq(schema.threads.botId, botId), eq(schema.threads.kind, 'user')))
+      // An archived or snoozed conversation is the main one only when every one is put away.
+      .orderBy(
+        sql`${schema.threads.archivedAt} is not null`,
+        sql`coalesce(${schema.threads.snoozedUntil} > now(), false)`,
+        desc(schema.threads.updatedAt),
+      )
+      .limit(1);
+    if (row) return this.get(row.id);
+    return this.create(botId);
+  }
+
+  /** The thread in `botId` where messages from `peerBotId` land; one per pair. */
+  async peerThread(botId: string, peerBotId: string): Promise<ThreadRow> {
+    const find = async () => {
+      const [row] = await this.ctx.db
+        .select()
+        .from(schema.threads)
+        .where(
+          and(
+            eq(schema.threads.botId, botId),
+            eq(schema.threads.peerBotId, peerBotId),
+            eq(schema.threads.kind, 'bot'),
+          ),
+        )
+        .limit(1);
+      return row;
+    };
+    const existing = await find();
+    if (existing) return existing;
+    try {
+      const [row] = await this.ctx.db
+        .insert(schema.threads)
+        .values({ id: newId(), botId, peerBotId, kind: 'bot', title: '' })
+        .returning();
+      this.ctx.bus.refresh({ scope: 'threads', botId });
+      return row!;
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      return (await find())!;
+    }
+  }
+
+  /** The thread a routine's runs post into (one per routine). */
+  async routineThread(botId: string, routineName: string, existingId: string | null): Promise<ThreadRow> {
+    if (existingId) {
+      const [row] = await this.ctx.db
+        .select()
+        .from(schema.threads)
+        .where(eq(schema.threads.id, existingId))
+        .limit(1);
+      if (row) return row;
+    }
+    const [row] = await this.ctx.db
+      .insert(schema.threads)
+      .values({ id: newId(), botId, kind: 'routine', title: routineName })
+      .returning();
+    this.ctx.bus.refresh({ scope: 'threads', botId });
+    return row!;
+  }
+
+  /**
+   * A new conversation that starts as a copy of another up to and including one of its messages:
+   * the person's and the bot's messages, in their order and with their times. It has no engine
+   * session, so its first turn hands the bot the copied exchange.
+   */
+  async fork(messageId: string, title: string): Promise<Thread> {
+    const at = await this.message(messageId);
+    const source = await this.row(at.threadId);
+    const created = await this.create(source.botId, { title });
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, source.id),
+          inArray(schema.messages.role, ['user', 'assistant']),
+          lte(schema.messages.createdAt, new Date(at.createdAt)),
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id));
+    if (rows.length) {
+      await this.ctx.db.insert(schema.messages).values(
+        rows.map((r) => ({
+          ...r,
+          id: newId(),
+          threadId: created.id,
+          clientId: null,
+          turnId: null,
+          props: { ...r.props, forkedFrom: r.id },
+        })),
+      );
+    }
+    this.ctx.bus.refresh({ scope: 'threads', botId: source.botId });
+    return this.get(created.id);
+  }
+
+  async archive(id: string, archived: boolean) {
+    const row = await this.row(id);
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ archivedAt: archived ? new Date() : null })
+      .where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  /** Takes a conversation out of the list until `until`, or until a new message; null brings it back. */
+  async snooze(id: string, until: Date | null) {
+    const row = await this.row(id);
+    await this.ctx.db.update(schema.threads).set({ snoozedUntil: until }).where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  /** Keeps a conversation at the top of the list, or lets it take its place by date again. */
+  async pinInList(id: string, pinned: boolean) {
+    const row = await this.row(id);
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ pinnedAt: pinned ? new Date() : null })
+      .where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  /** The emoji that marks the conversation in the list; '' takes it off. */
+  async setIcon(id: string, icon: string) {
+    const row = await this.row(id);
+    await this.ctx.db.update(schema.threads).set({ icon }).where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  async setGoal(id: string, goal: string) {
+    const row = await this.row(id);
+    await this.ctx.db.update(schema.threads).set({ goal }).where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  async rename(id: string, title: string) {
+    const row = await this.row(id);
+    await this.ctx.db.update(schema.threads).set({ title }).where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  async remove(id: string) {
+    const row = await this.row(id);
+    await this.ctx.db.delete(schema.threads).where(eq(schema.threads.id, id));
+    this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
+  }
+
+  /**
+   * Starts the conversation afresh for the bot: its next turn opens a new session and is handed
+   * nothing from before this point. The messages stay on screen, under a line that says so.
+   */
+  async resetContext(id: string, t: T) {
+    const thread = await this.row(id);
+    await this.setSession(id, null);
+    await this.addMessage({
+      threadId: thread.id,
+      role: 'system',
+      author: 'system',
+      text: t('thread.contextReset'),
+      props: { kind: 'contextReset' },
+    });
+  }
+
+  async setSession(id: string, sessionId: string | null) {
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ engineSessionId: sessionId, ...(sessionId === null && { engineSessionCostUsd: null }) })
+      .where(eq(schema.threads.id, id));
+  }
+
+  /** What the thread's engine session had cost by its last run. */
+  async setSessionCost(id: string, costUsd: number) {
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ engineSessionCostUsd: costUsd })
+      .where(eq(schema.threads.id, id));
+  }
+
+  /** The latest `limit` messages, oldest first; with `before`, the ones just older than that message. */
+  async messages(threadId: string, opts: { limit?: number; before?: string } = {}): Promise<Message[]> {
+    const limit = opts.limit ?? MESSAGE_PAGE;
+    const edge = opts.before ? await this.message(opts.before) : null;
+    if (edge && edge.threadId !== threadId) throw notFound('message');
+    const at = edge ? new Date(edge.createdAt) : null;
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, threadId),
+          at && edge
+            ? or(
+                lt(schema.messages.createdAt, at),
+                and(eq(schema.messages.createdAt, at), lt(schema.messages.id, edge.id)),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(schema.messages.createdAt), desc(schema.messages.id))
+      .limit(limit);
+    return rows.reverse().map(toMessage);
+  }
+
+  /** Up to `limit` messages right after `id` in its conversation, oldest first. */
+  async messagesAfter(threadId: string, id: string, limit: number): Promise<Message[]> {
+    if (limit <= 0) return [];
+    const edge = await this.message(id);
+    const at = new Date(edge.createdAt);
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, threadId),
+          or(
+            gt(schema.messages.createdAt, at),
+            and(eq(schema.messages.createdAt, at), gt(schema.messages.id, edge.id)),
+          ),
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id))
+      .limit(limit);
+    return rows.map(toMessage);
+  }
+
+  async message(id: string): Promise<Message> {
+    const [row] = await this.ctx.db.select().from(schema.messages).where(eq(schema.messages.id, id)).limit(1);
+    if (!row) throw notFound('message');
+    return toMessage(row);
+  }
+
+  /**
+   * Messages of the person and the bots that hold `query`, newest first, with the text around the
+   * match. Archived bots are left out.
+   */
+  /** Messages that contain `query`, newest first; with `threadId`, only that conversation's. */
+  async search(
+    query: string,
+    opts: { threadId?: string; botId?: string; limit?: number } = {},
+  ): Promise<SearchHit[]> {
+    const limit = opts.limit ?? 30;
+    // A phrase the text breaks over two lines is still found: spaces and line breaks count as one.
+    const q = query.trim().replace(/\s+/g, ' ');
+    if (q.length < 2) return [];
+    // The database folds case for most letters but reads I as i, never as the dotless ı: both
+    // sides take ı and İ as i, so "ığdır" finds "Iğdır".
+    const pattern = `%${q.replace(/[ıİ]/g, 'i').replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const rows = await this.ctx.db
+      .select({
+        id: schema.messages.id,
+        threadId: schema.messages.threadId,
+        role: schema.messages.role,
+        author: schema.messages.author,
+        text: schema.messages.text,
+        createdAt: schema.messages.createdAt,
+        botId: schema.threads.botId,
+        title: schema.threads.title,
+        kind: schema.threads.kind,
+      })
+      .from(schema.messages)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.messages.threadId))
+      .innerJoin(schema.bots, eq(schema.bots.id, schema.threads.botId))
+      .where(
+        and(
+          inArray(schema.messages.role, ['user', 'assistant']),
+          isNull(schema.bots.archivedAt),
+          opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
+          opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
+          sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
+        ),
+      )
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(limit);
+    return rows.map((r) => ({
+      messageId: r.id,
+      threadId: r.threadId,
+      botId: r.botId,
+      threadTitle: r.title,
+      threadKind: r.kind,
+      role: r.role as 'user' | 'assistant',
+      author: r.author,
+      excerpt: excerptAround(r.text, q),
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /** The message the client already sent under this id, if any. */
+  async byClientId(threadId: string, clientId: string): Promise<Message | null> {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(and(eq(schema.messages.threadId, threadId), eq(schema.messages.clientId, clientId)))
+      .limit(1);
+    return row ? toMessage(row) : null;
+  }
+
+  /** Insert a message. With a clientId, a repeat insert returns the existing message (idempotent send). */
+  async addMessage(m: NewMessage): Promise<{ message: Message; created: boolean }> {
+    if (m.clientId) {
+      const [existing] = await this.ctx.db
+        .select()
+        .from(schema.messages)
+        .where(and(eq(schema.messages.threadId, m.threadId), eq(schema.messages.clientId, m.clientId)))
+        .limit(1);
+      if (existing) return { message: toMessage(existing), created: false };
+    }
+    try {
+      const [row] = await this.ctx.db
+        .insert(schema.messages)
+        .values({
+          id: newId(),
+          threadId: m.threadId,
+          role: m.role,
+          author: m.author,
+          text: m.text,
+          props: m.props ?? {},
+          clientId: m.clientId ?? null,
+          turnId: m.turnId ?? null,
+          // Distinct, ordered timestamps even within one millisecond.
+          createdAt: sql`clock_timestamp()`,
+        })
+        .returning();
+      const thread = await this.row(m.threadId);
+      // What the person writes brings an archived conversation back to the list; a bot's reply or
+      // a routine's run there leaves it archived until the person unarchives it.
+      await this.ctx.db
+        .update(schema.threads)
+        // Any new message wakes a snoozed conversation.
+        .set({ updatedAt: new Date(), snoozedUntil: null, ...(m.role === 'user' && { archivedAt: null }) })
+        .where(eq(schema.threads.id, m.threadId));
+      this.ctx.bus.refresh({ scope: 'thread', threadId: m.threadId, botId: thread.botId });
+      return { message: toMessage(row!), created: true };
+    } catch (err) {
+      if (m.clientId && isUniqueViolation(err)) {
+        const [existing] = await this.ctx.db
+          .select()
+          .from(schema.messages)
+          .where(and(eq(schema.messages.threadId, m.threadId), eq(schema.messages.clientId, m.clientId)))
+          .limit(1);
+        if (existing) return { message: toMessage(existing), created: false };
+      }
+      throw err;
+    }
+  }
+
+  /** The person's message a turn answers is no longer waiting once the turn starts. */
+  async startedOn(turnId: string, threadId: string) {
+    const rows = await this.ctx.db
+      .update(schema.messages)
+      .set({ props: sql`${schema.messages.props} - 'queued'` })
+      .where(
+        and(
+          eq(schema.messages.threadId, threadId),
+          eq(schema.messages.turnId, turnId),
+          sql`${schema.messages.props} ? 'queued'`,
+        ),
+      )
+      .returning({ id: schema.messages.id });
+    if (!rows.length) return;
+    const thread = await this.row(threadId);
+    this.ctx.bus.refresh({ scope: 'thread', threadId, botId: thread.botId });
+  }
+
+  /** Marks a waiting message as being handed to the running turn, or no longer. */
+  async markSteering(id: string, on: boolean) {
+    const [row] = await this.ctx.db
+      .update(schema.messages)
+      .set({
+        props: on
+          ? sql`${schema.messages.props} || '{"steering":true}'::jsonb`
+          : sql`${schema.messages.props} - 'steering'`,
+      })
+      .where(eq(schema.messages.id, id))
+      .returning({ threadId: schema.messages.threadId });
+    if (!row) return;
+    const thread = await this.row(row.threadId);
+    this.ctx.bus.refresh({ scope: 'thread', threadId: row.threadId, botId: thread.botId });
+  }
+
+  /** New text for the person's message, marked as edited; its other props stay as they are now. */
+  async editText(id: string, text: string) {
+    const [row] = await this.ctx.db
+      .update(schema.messages)
+      .set({ text, props: sql`${schema.messages.props} || '{"edited":true}'::jsonb` })
+      .where(eq(schema.messages.id, id))
+      .returning();
+    if (!row) return;
+    const thread = await this.row(row.threadId);
+    this.ctx.bus.refresh({ scope: 'thread', threadId: row.threadId, botId: thread.botId });
+  }
+
+  async removeMessage(id: string) {
+    const [row] = await this.ctx.db.delete(schema.messages).where(eq(schema.messages.id, id)).returning();
+    if (!row) return;
+    const thread = await this.row(row.threadId);
+    this.ctx.bus.refresh({ scope: 'thread', threadId: row.threadId, botId: thread.botId });
+  }
+
+  async updateMessage(
+    id: string,
+    patch: { text?: string; props?: Record<string, unknown>; turnId?: string | null },
+  ) {
+    const [row] = await this.ctx.db
+      .update(schema.messages)
+      .set(patch)
+      .where(eq(schema.messages.id, id))
+      .returning();
+    if (!row) return;
+    const thread = await this.row(row.threadId);
+    this.ctx.bus.refresh({ scope: 'thread', threadId: row.threadId, botId: thread.botId });
+  }
+
+  /**
+   * Puts an emoji on the user's latest message sent no later than `before`, replacing any earlier one.
+   * Returns null when there is no such message.
+   */
+  async react(threadId: string, before: Date, emoji: string): Promise<Message | null> {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, threadId),
+          eq(schema.messages.role, 'user'),
+          eq(schema.messages.author, 'user'),
+          lte(schema.messages.createdAt, before),
+        ),
+      )
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(1);
+    if (!row) return null;
+    const props = { ...row.props, reaction: emoji };
+    await this.updateMessage(row.id, { props });
+    return toMessage({ ...row, props });
+  }
+
+  /**
+   * The person's emoji on a bot message, or none when null. Kept apart from `reaction`, which is
+   * the bot's emoji on the person's message.
+   */
+  async setReaction(id: string, emoji: string | null): Promise<Message> {
+    const [row] = await this.ctx.db.select().from(schema.messages).where(eq(schema.messages.id, id)).limit(1);
+    if (!row) throw notFound('message');
+    const { userReaction: _, ...rest } = row.props;
+    const props = emoji ? { ...rest, userReaction: emoji } : rest;
+    await this.updateMessage(id, { props });
+    return toMessage({ ...row, props });
+  }
+
+  /** Adds fields to a message's props, read fresh so a change made meanwhile is kept. */
+  async mergeProps(id: string, patch: Record<string, unknown>) {
+    const [row] = await this.ctx.db.select().from(schema.messages).where(eq(schema.messages.id, id)).limit(1);
+    if (!row) throw notFound('message');
+    await this.updateMessage(id, { props: { ...row.props, ...patch } });
+  }
+
+  /** Sidebar summary for every active bot. */
+  async summaries(): Promise<BotSummary[]> {
+    const bots = await this.ctx.db
+      .select({ id: schema.bots.id })
+      .from(schema.bots)
+      .where(isNull(schema.bots.archivedAt))
+      .orderBy(asc(schema.bots.createdAt));
+    const threads = await this.ctx.db
+      .select()
+      .from(schema.threads)
+      .where(inArray(schema.threads.kind, ['user', 'routine', 'bot', 'api']))
+      .orderBy(desc(schema.threads.updatedAt));
+    const ids = threads.map((t) => t.id);
+    const [states, previews, replies] = await Promise.all([
+      this.states(ids),
+      this.previews(ids),
+      this.lastReplies(ids),
+    ]);
+    const pending = await this.ctx.db
+      .select({
+        botId: schema.approvals.botId,
+        threadId: schema.approvals.threadId,
+        kind: schema.approvals.kind,
+        summary: schema.approvals.summary,
+      })
+      .from(schema.approvals)
+      .where(eq(schema.approvals.status, 'pending'))
+      .orderBy(asc(schema.approvals.createdAt));
+    const pendingBy = new Map<string, number>();
+    const waitingBy = new Map<string, BotSummary['waiting']>();
+    for (const p of pending) {
+      pendingBy.set(p.botId, (pendingBy.get(p.botId) ?? 0) + 1);
+      if (!waitingBy.has(p.botId)) {
+        waitingBy.set(p.botId, {
+          kind: p.kind,
+          summary: truncate(plainText(p.summary), 200),
+          threadId: p.threadId,
+        });
+      }
+    }
+    // Each enabled routine's latest finished run; a failed one marks its bot until a run succeeds.
+    const latestRuns = await this.ctx.db
+      .selectDistinctOn([schema.routineRuns.routineId], {
+        botId: schema.routines.botId,
+        name: schema.routines.name,
+        status: schema.routineRuns.status,
+      })
+      .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(and(eq(schema.routines.enabled, true), inArray(schema.routineRuns.status, ['done', 'error'])))
+      .orderBy(schema.routineRuns.routineId, desc(schema.routineRuns.startedAt));
+    const failedBy = new Map(latestRuns.filter((r) => r.status === 'error').map((r) => [r.botId, r.name]));
+    return bots.map(({ id }) => {
+      const own = threads.filter((t) => t.botId === id);
+      const userThread = own.find((t) => t.kind === 'user') ?? null;
+      const latest = own.find((t) => previews.has(t.id)) ?? null;
+      const busy = own.map((t) => states.get(t.id)).find((s) => s && s !== 'idle');
+      // A bot answering another bot is not something the person has to read.
+      const replied = own
+        .filter((t) => t.kind !== 'bot')
+        .map((t) => replies.get(t.id))
+        .reduce<Date | null>((a, b) => (b && (!a || b > a) ? b : a), null);
+      return {
+        botId: id,
+        threadId: userThread?.id ?? null,
+        preview: latest ? (previews.get(latest.id) ?? null) : null,
+        previewAt: latest ? latest.updatedAt.toISOString() : null,
+        repliedAt: replied?.toISOString() ?? null,
+        state: busy ?? 'idle',
+        pendingApprovals: pendingBy.get(id) ?? 0,
+        failedRoutine: failedBy.get(id) ?? null,
+        waiting: waitingBy.get(id) ?? null,
+      };
+    });
+  }
+}
+
+/** Up to `width` characters of `text` around the first match of `query`, on one line. */
+export function excerptAround(text: string, query: string, width = 160): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  // Turkish casing first (İ/ı keep their length), then the default rules.
+  const find = (locale?: string) => flat.toLocaleLowerCase(locale).indexOf(query.toLocaleLowerCase(locale));
+  const tr = find('tr');
+  const at = tr >= 0 ? tr : find();
+  if (at < 0 || flat.length <= width) return flat.slice(0, width);
+  const start = Math.max(0, Math.min(at - Math.floor((width - query.length) / 2), flat.length - width));
+  return `${start > 0 ? '…' : ''}${flat.slice(start, start + width)}${start + width < flat.length ? '…' : ''}`;
+}

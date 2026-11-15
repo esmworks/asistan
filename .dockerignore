@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/out
+data
+.git
+.env
+.env.*
+!.env.example
+desktop/*
+!desktop/package.json
+PRD.md
+TASKS.md
+.claude

@@ -1,0 +1,372 @@
+import { MAX_MESSAGE_FILES, MAX_UPLOAD_BYTES, type MessageFile } from '@yumakbot/shared';
+import { Download, FileText, Loader2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { create } from 'zustand';
+import { useT } from '@/i18n';
+import { api } from '@/lib/api';
+import { useFormat } from '@/lib/format';
+import { previewKind } from '@/lib/preview';
+import { usePreview } from './FilePreview';
+import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+
+/** An upload waiting on the server for its message; sending moves it into the conversation folder. */
+export interface StagedFile {
+  name: string;
+  size: number;
+}
+
+/** A file in the composer: uploading, or waiting on the server. */
+export interface Attachment {
+  key: string;
+  name: string;
+  size: number;
+  /** Local preview for images, until the message is sent. */
+  preview: string | null;
+  saved: StagedFile | null;
+  /** When it was added; the server removes uploads left unsent for a day. */
+  addedAt: number;
+}
+
+const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
+export const isImage = (name: string) => IMAGE.test(name);
+
+/**
+ * The composer's files, per conversation. They live outside the composer so that, like the
+ * typed draft, they are still there after visiting another conversation and coming back.
+ */
+const useComposerFiles = create<{ byThread: Record<string, Attachment[]> }>(() => ({ byThread: {} }));
+const EMPTY: Attachment[] = [];
+
+const filesOf = (threadId: string) => useComposerFiles.getState().byThread[threadId] ?? EMPTY;
+const setFiles = (threadId: string, change: (list: Attachment[]) => Attachment[]) =>
+  useComposerFiles.setState((s) => {
+    const list = change(s.byThread[threadId] ?? EMPTY);
+    const byThread = { ...s.byThread };
+    if (list.length) byThread[threadId] = list;
+    else delete byThread[threadId];
+    return { byThread };
+  });
+
+/** Files left in a composer are dropped well before the server's sweep would take them away. */
+const KEEP_MS = 20 * 60 * 60 * 1000;
+
+const revoke = (url: string | null) => {
+  if (url) URL.revokeObjectURL(url);
+};
+const discard = (threadId: string, name: string, keepalive = false) =>
+  void api.removeFile(threadId, name, { keepalive }).catch(() => {});
+
+// Closing or reloading the page: files never sent are removed, and the request must outlive it.
+if (typeof window !== 'undefined')
+  window.addEventListener('pagehide', (e) => {
+    // Kept for the back-forward cache: the page may come back as it was.
+    if (e.persisted) return;
+    for (const [threadId, list] of Object.entries(useComposerFiles.getState().byThread))
+      for (const a of list) if (a.saved) discard(threadId, a.saved.name, true);
+  });
+
+/**
+ * Files attached in the composer of one conversation. Each is uploaded as soon as it is added,
+ * so sending only names files already on the server. Files never sent stay with the conversation
+ * until they are taken off or the page closes (the server sweeps what is missed).
+ */
+export function useAttachments(threadId: string) {
+  const t = useT();
+  const items = useComposerFiles((s) => s.byThread[threadId] ?? EMPTY);
+
+  // Files left too long ago may already be gone from the server.
+  useEffect(() => {
+    const old = filesOf(threadId).filter((a) => a.saved && Date.now() - a.addedAt > KEEP_MS);
+    if (!old.length) return;
+    for (const a of old) {
+      revoke(a.preview);
+      discard(threadId, a.saved!.name);
+    }
+    setFiles(threadId, (list) => list.filter((a) => !old.includes(a)));
+  }, [threadId]);
+
+  const add = (files: File[]) => {
+    const room = MAX_MESSAGE_FILES - filesOf(threadId).length;
+    if (files.length > room) toast.error(t('chat.tooManyFiles', { max: MAX_MESSAGE_FILES }));
+    for (const file of files.slice(0, Math.max(room, 0))) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error(t('chat.fileTooLarge', { name: file.name, max: MAX_UPLOAD_BYTES / 1024 / 1024 }));
+        continue;
+      }
+      const key = crypto.randomUUID();
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      const item = { key, name: file.name, size: file.size, preview, saved: null, addedAt: Date.now() };
+      setFiles(threadId, (list) => [...list, item]);
+      api.uploadFile(threadId, file).then(
+        (saved) => {
+          // Taken off while it was uploading.
+          if (!filesOf(threadId).some((a) => a.key === key)) return discard(threadId, saved.name);
+          setFiles(threadId, (list) =>
+            list.map((a) => (a.key === key ? { ...a, saved, name: saved.name, addedAt: Date.now() } : a)),
+          );
+        },
+        (e: Error) => {
+          // Taken off already: nothing left to undo.
+          if (!filesOf(threadId).some((a) => a.key === key)) return;
+          revoke(preview);
+          setFiles(threadId, (list) => list.filter((a) => a.key !== key));
+          toast.error(t('chat.uploadFailed', { name: file.name, error: e.message }));
+        },
+      );
+    }
+  };
+
+  const remove = (a: Attachment) => {
+    revoke(a.preview);
+    setFiles(threadId, (list) => list.filter((x) => x.key !== a.key));
+    // Still uploading: removed from the server once the upload ends.
+    if (a.saved) discard(threadId, a.saved.name);
+  };
+
+  /** Hands the uploaded files to a message and empties the composer. */
+  const take = (): StagedFile[] => {
+    const list = filesOf(threadId);
+    for (const a of list) revoke(a.preview);
+    setFiles(threadId, () => EMPTY);
+    return list.flatMap((a) => (a.saved ? [a.saved] : []));
+  };
+
+  /** Puts files back after a failed send; they are still on the server. */
+  const restore = (files: StagedFile[]) => {
+    const now = Date.now();
+    setFiles(threadId, (list) => [
+      ...files.map((f) => ({
+        key: crypto.randomUUID(),
+        name: f.name,
+        size: f.size,
+        preview: null,
+        saved: f,
+        addedAt: now,
+      })),
+      ...list,
+    ]);
+  };
+
+  return { items, uploading: items.some((a) => !a.saved), add, remove, take, restore };
+}
+
+/** Whether any conversation has files waiting in its composer. */
+export const useAnyAttachments = () => useComposerFiles((s) => Object.keys(s.byThread).length > 0);
+
+export function AttachmentChips({ items, onRemove }: { items: Attachment[]; onRemove(a: Attachment): void }) {
+  const t = useT();
+  const { fileSize } = useFormat();
+  // A picture about to be sent, seen at full size before sending.
+  const [looking, setLooking] = useState<Attachment | null>(null);
+  if (!items.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 px-2 pt-2">
+      <Dialog open={!!looking} onOpenChange={(o) => !o && setLooking(null)}>
+        <DialogContent className="flex max-h-[90vh] w-auto max-w-[min(1100px,96vw)] items-center justify-center rounded-3xl p-3 sm:max-w-[min(1100px,96vw)]">
+          <DialogTitle className="sr-only">{looking?.name}</DialogTitle>
+          {looking?.preview && (
+            <img
+              src={looking.preview}
+              alt={looking.name}
+              className="max-h-[85vh] max-w-full rounded-2xl object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+      {items.map((a) => (
+        <div
+          key={a.key}
+          className={cn(
+            'flex max-w-60 items-center gap-2 rounded-xl border bg-background py-1.5 pr-1.5 pl-1.5 text-sm',
+            !a.saved && 'opacity-70',
+          )}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
+            {!a.saved ? (
+              <Loader2 className="size-4 animate-spin" aria-label={t('chat.uploading')} />
+            ) : a.preview ? (
+              <button
+                type="button"
+                onClick={() => setLooking(a)}
+                title={t('preview.open', { name: a.name })}
+                className="size-full cursor-zoom-in"
+              >
+                <img src={a.preview} alt="" className="size-full object-cover" />
+              </button>
+            ) : (
+              <FileText className="size-4" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate font-medium">{a.name}</span>
+            <span className="block text-xs text-muted-foreground">{fileSize(a.size)}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemove(a)}
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={t('chat.removeFile', { name: a.name })}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Files on a sent message: images as pictures, the rest as cards. One the app can show opens in
+ * the preview, where it can also be downloaded; any other file downloads.
+ */
+export function MessageFiles({
+  files,
+  botId,
+  align = 'end',
+}: {
+  files: MessageFile[];
+  botId?: string;
+  /** The person's files sit on the right, a bot's on the left. */
+  align?: 'start' | 'end';
+}) {
+  const t = useT();
+  const { fileSize } = useFormat();
+  const preview = usePreview((s) => s.open);
+  // Three or more saved files can also come down as one archive.
+  const saved = botId ? files.filter((f) => f.path) : [];
+  // The preview steps through the message's other files it can show.
+  const viewable = saved
+    .filter((f) => previewKind(f.name))
+    .map((f) => ({ botId: botId!, path: f.path, name: f.name, size: f.size }));
+  return (
+    <div
+      className={cn('flex max-w-[80%] flex-wrap gap-2', align === 'end' ? 'justify-end' : 'justify-start')}
+    >
+      {saved.length >= 3 && (
+        <a
+          href={api.zipUrl(
+            botId!,
+            saved.map((f) => f.path),
+            t('message.zipName'),
+          )}
+          download
+          title={t('message.downloadAll')}
+          className="flex items-center gap-2 rounded-2xl border border-dashed px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Download className="size-4" />
+          {t('message.downloadAll')}
+        </a>
+      )}
+      {files.map((f) => {
+        const href = botId ? api.fileUrl(botId, f.path) : undefined;
+        const label = t('message.download', { name: f.name });
+        // A message still being sent has no saved path yet: nothing to show until it has one.
+        const open =
+          botId && f.path && previewKind(f.name)
+            ? () => preview({ botId, path: f.path, name: f.name, size: f.size }, viewable)
+            : null;
+        // Sound and video play where they are; the name above still opens the preview.
+        const media = href ? previewKind(f.name) : null;
+        if (href && (media === 'audio' || media === 'video')) {
+          const src = api.fileUrl(botId!, f.path, { inline: true });
+          return (
+            <div
+              key={f.path || f.name}
+              className="flex w-72 max-w-full min-w-0 flex-col gap-1.5 rounded-2xl border bg-card p-2"
+            >
+              <button
+                type="button"
+                onClick={open ?? undefined}
+                title={t('preview.open', { name: f.name })}
+                className="truncate px-1 text-left text-xs text-muted-foreground hover:text-foreground"
+              >
+                {f.name} · {fileSize(f.size)}
+              </button>
+              {media === 'audio' ? (
+                <audio src={src} controls preload="metadata" className="w-full" />
+              ) : (
+                <video
+                  src={src}
+                  controls
+                  preload="metadata"
+                  className="max-h-64 w-full rounded-xl bg-black"
+                />
+              )}
+            </div>
+          );
+        }
+        if (href && isImage(f.name)) {
+          const picture = (
+            <img
+              src={api.fileUrl(botId!, f.path, { inline: true })}
+              alt={f.name}
+              className="max-h-56 max-w-full rounded-2xl border object-cover"
+            />
+          );
+          return open ? (
+            <button
+              key={f.path || f.name}
+              type="button"
+              onClick={open}
+              title={t('preview.open', { name: f.name })}
+              className="block max-w-64 min-w-0 cursor-zoom-in"
+            >
+              {picture}
+            </button>
+          ) : (
+            <a
+              key={f.path || f.name}
+              href={href}
+              download={f.name}
+              title={label}
+              className="block max-w-64 min-w-0"
+            >
+              {picture}
+            </a>
+          );
+        }
+        const card = (
+          <>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+              <FileText className="size-4" />
+            </span>
+            <span className="min-w-0 text-left leading-tight">
+              <span className="block truncate text-sm font-medium">{f.name}</span>
+              <span className="block text-xs text-muted-foreground">{fileSize(f.size)}</span>
+            </span>
+          </>
+        );
+        const cardClass =
+          'flex max-w-64 min-w-0 items-center gap-3 rounded-2xl border bg-card px-3 py-2 transition-colors hover:bg-accent';
+        return open ? (
+          <button
+            key={f.path || f.name}
+            type="button"
+            onClick={open}
+            title={t('preview.open', { name: f.name })}
+            className={cardClass}
+          >
+            {card}
+          </button>
+        ) : (
+          <a key={f.path || f.name} href={href} download={f.name} title={label} className={cardClass}>
+            {card}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Files from a paste or a drop. Text copied from an office app comes as plain text, HTML and a
+ * picture of it: the text wins then. A file copied in the file manager may carry its name as
+ * plain text, and a copied image may carry HTML alone; both paste as files.
+ */
+export function filesFrom(data: DataTransfer | null, { paste = false } = {}): File[] {
+  if (!data) return [];
+  if (paste && data.types.includes('text/plain') && data.types.includes('text/html')) return [];
+  return [...data.files];
+}

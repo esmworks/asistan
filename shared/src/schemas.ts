@@ -1,0 +1,693 @@
+import { z } from 'zod';
+import { patchOf } from './patch';
+
+export const Id = z.string().min(1).max(64);
+
+export const EngineKind = z.enum(['claude', 'pi']);
+export type EngineKind = z.infer<typeof EngineKind>;
+
+/**
+ * How freely a bot acts. `review`: like `ask`, but a small model first looks at each request and
+ * lets the clearly safe ones run; the rest still come to the person as cards.
+ */
+export const PermissionMode = z.enum(['ask', 'review', 'auto', 'readonly']);
+/** From the strictest to the freest, as the app lists them. */
+export const PERMISSION_MODES = ['readonly', 'ask', 'review', 'auto'] as const;
+export type PermissionMode = z.infer<typeof PermissionMode>;
+
+export const Group = z.object({
+  id: Id,
+  name: z.string(),
+  createdAt: z.string(),
+});
+export type Group = z.infer<typeof Group>;
+
+export const Bot = z.object({
+  id: Id,
+  name: z.string(),
+  description: z.string(),
+  instructions: z.string(),
+  engine: EngineKind,
+  model: z.string(),
+  isManager: z.boolean(),
+  /** Shown at the top of the sidebar; a place in the list, not a permission. */
+  pinned: z.boolean(),
+  /** Order within its sidebar section. */
+  position: z.number().int(),
+  groupId: Id.nullable(),
+  color: z.string(),
+  avatar: z.string(),
+  permissionMode: PermissionMode,
+  /** Whether the bot may reach the internet: web search, reading pages, its browser and desktop. */
+  internet: z.boolean(),
+  projectDir: z.string().nullable(),
+  /** Whether the bot reads and keeps memory; off, it sees none and gets no memory tools. */
+  memory: z.boolean(),
+  /** Effort for this Claude bot; empty uses the setting for all bots. */
+  effort: z.string(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Bot = z.infer<typeof Bot>;
+
+const botName = z.string().trim().min(1).max(60);
+
+/** Built-in avatar shapes offered for new bots; drawn by the app. `blob` is the circle. */
+export const AVATAR_SHAPES = [
+  'blob',
+  'pebble',
+  'squircle',
+  'capsule',
+  'drop',
+  'square',
+  'diamond',
+  'hexagon',
+  'pentagon',
+  'triangle',
+  'cloud',
+] as const;
+/** Shapes no longer offered; bots that have one keep it and are drawn with the nearest shape. */
+export const OLD_AVATAR_SHAPES = ['clover', 'star', 'shield', 'leaf', 'bolt', 'moon'] as const;
+export type AvatarShape = (typeof AVATAR_SHAPES)[number] | (typeof OLD_AVATAR_SHAPES)[number];
+const KNOWN_SHAPES: readonly string[] = [...AVATAR_SHAPES, ...OLD_AVATAR_SHAPES];
+
+/** `shape:<name>` or an uploaded raster image as a data URL (SVG is not accepted). */
+export const Avatar = z
+  .string()
+  .max(400_000)
+  .refine(
+    (v) =>
+      (v.startsWith('shape:') && KNOWN_SHAPES.includes(v.slice(6))) ||
+      /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v),
+    'validation.avatar',
+  );
+export const BotCreate = z.object({
+  name: botName,
+  description: z.string().max(500).default(''),
+  instructions: z.string().max(20_000).default(''),
+  engine: EngineKind.default('claude'),
+  model: z.string().max(100).default(''),
+  isManager: z.boolean().default(false),
+  groupId: Id.nullable().default(null),
+  color: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .default('#4f6bed'),
+  avatar: Avatar.default('shape:blob'),
+  permissionMode: PermissionMode.default('ask'),
+  internet: z.boolean().default(true),
+  projectDir: z.string().max(1000).nullable().default(null),
+  memory: z.boolean().default(true),
+  effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
+});
+export type BotCreate = z.infer<typeof BotCreate>;
+
+export const BotUpdate = patchOf(BotCreate);
+export type BotUpdate = z.infer<typeof BotUpdate>;
+
+/**
+ * Moves a bot in the sidebar: to the pinned bots at the top, or into a group (null:
+ * ungrouped), before `beforeId` or at the end. Pinning keeps the bot's group.
+ */
+export const BotMove = z.object({
+  pinned: z.boolean(),
+  groupId: Id.nullable(),
+  beforeId: Id.nullable(),
+});
+export type BotMove = z.infer<typeof BotMove>;
+
+export const GroupCreate = z.object({ name: z.string().trim().min(1).max(60) });
+
+/** Moves a group in the sidebar, before `beforeId` or to the end. */
+export const GroupMove = z.object({ beforeId: Id.nullable() });
+export type GroupMove = z.infer<typeof GroupMove>;
+
+/** `api`: messages sent to the bot from a script or another app through its API. */
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room']);
+export type ThreadKind = z.infer<typeof ThreadKind>;
+
+export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);
+export type TurnState = z.infer<typeof TurnState>;
+
+export const Thread = z.object({
+  id: Id,
+  botId: Id,
+  title: z.string(),
+  kind: ThreadKind,
+  peerBotId: Id.nullable(),
+  /** What the conversation is for, set by the person; empty when none. Missing on older servers. */
+  goal: z.string().optional(),
+  /** The message pinned above the conversation, with its start; missing or null for none. */
+  pinned: z.object({ id: Id, text: z.string() }).nullable().optional(),
+  /** When it was put away from the list; null while it is listed. Missing on older servers. */
+  archivedAt: z.string().nullable().optional(),
+  /** Out of the list until then, or until a new message in it; null when not. Missing on older servers. */
+  snoozedUntil: z.string().nullable().optional(),
+  /** Kept at the top of the list since then; null when not. Missing on older servers. */
+  pinnedAt: z.string().nullable().optional(),
+  /** An emoji the person gave it; '' when none. Missing on older servers. */
+  icon: z.string().optional(),
+  state: TurnState,
+  preview: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Thread = z.infer<typeof Thread>;
+
+/** Sidebar line for a bot: latest user-thread preview and activity. */
+export const BotSummary = z.object({
+  botId: Id,
+  threadId: Id.nullable(),
+  preview: z.string().nullable(),
+  previewAt: z.string().nullable(),
+  /** When the bot last wrote in any of its conversations; the app marks it unread after that. */
+  repliedAt: z.string().nullable(),
+  state: TurnState,
+  pendingApprovals: z.number(),
+  /** A routine of the bot whose latest run failed, by name; null when none did. */
+  failedRoutine: z.string().nullable(),
+  /** The oldest card the bot waits on the person for, if any. */
+  waiting: z
+    .object({ kind: z.enum(['tool', 'question', 'login']), summary: z.string(), threadId: Id })
+    .nullable(),
+});
+export type BotSummary = z.infer<typeof BotSummary>;
+
+export const MessageRole = z.enum(['user', 'assistant', 'system', 'marker', 'approval', 'error']);
+export type MessageRole = z.infer<typeof MessageRole>;
+
+/** Author of a message: the human user, a bot (`bot:<id>`), a routine (`routine:<id>`) or the system. */
+export const Message = z.object({
+  id: Id,
+  threadId: Id,
+  role: MessageRole,
+  author: z.string(),
+  text: z.string(),
+  props: z.record(z.string(), z.unknown()),
+  clientId: z.string().nullable(),
+  /** Turn that produced the message; lets the client drop its streaming buffer. */
+  turnId: Id.nullable(),
+  createdAt: z.string(),
+});
+export type Message = z.infer<typeof Message>;
+
+/** Largest file the person can attach to a message. */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const MAX_MESSAGE_FILES = 20;
+
+/** A file name as stored in a conversation's folder: one plain name, no folders. */
+export const FileName = z
+  .string()
+  .min(1)
+  .max(200)
+  .refine((v) => v !== '.' && v !== '..' && !/[/\\\0]/.test(v), 'validation.fileName');
+
+/** A file the person attached; `path` is relative to the workspaces root, as the library lists it. */
+export const MessageFile = z.object({ name: FileName, size: z.number().int().min(0), path: z.string() });
+export type MessageFile = z.infer<typeof MessageFile>;
+
+export const SendMessage = z
+  .object({
+    clientId: z.string().min(8).max(64),
+    text: z.string().trim().max(100_000).default(''),
+    /** Files uploaded to the conversation's folder beforehand. */
+    files: z.array(FileName).max(MAX_MESSAGE_FILES).default([]),
+    /** The id of an earlier message in the same conversation this one answers. */
+    replyTo: z.string().min(1).max(64).optional(),
+  })
+  .refine((m) => m.text.length > 0 || m.files.length > 0, {
+    message: 'validation.emptyMessage',
+    path: ['text'],
+  });
+export type SendMessage = z.infer<typeof SendMessage>;
+
+/** The person's emoji on a bot message; null takes it off. The server checks it is one emoji. */
+export const MessageReaction = z.object({ emoji: z.string().trim().min(1).max(32).nullable() });
+
+/** What a reply keeps of the message it answers, to show above it. */
+export interface ReplyQuote {
+  id: string;
+  text: string;
+}
+
+export const ThreadCreate = z.object({ title: z.string().trim().max(120).optional() });
+
+/** Most bots in one room, and most rounds they may talk among themselves after answering. */
+export const MAX_ROOM_MEMBERS = 12;
+export const MAX_ROOM_ROUNDS = 5;
+
+/** Who answers a message in a room that names no one: every member in turn, or nobody. */
+export const RoomResponders = z.enum(['everyone', 'mentions']);
+export type RoomResponders = z.infer<typeof RoomResponders>;
+
+/** A conversation of the person with several bots. Its id is also its thread's id. */
+export const Room = z.object({
+  id: Id,
+  title: z.string(),
+  /** What the room is for (its thread's goal); empty when none. */
+  goal: z.string(),
+  /** Member bot ids in speaking order. */
+  members: z.array(Id),
+  responders: RoomResponders,
+  rounds: z.number().int(),
+  state: TurnState,
+  /** The bot speaking now, if any. */
+  speakerId: Id.nullable(),
+  preview: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Room = z.infer<typeof Room>;
+
+export const RoomCreate = z.object({
+  title: z.string().trim().min(1).max(120),
+  botIds: z.array(Id).min(1).max(MAX_ROOM_MEMBERS),
+  goal: z.string().trim().max(4000).optional(),
+  responders: RoomResponders.optional(),
+  rounds: z.number().int().min(0).max(MAX_ROOM_ROUNDS).optional(),
+});
+export type RoomCreate = z.infer<typeof RoomCreate>;
+
+export const RoomUpdate = RoomCreate.partial();
+export type RoomUpdate = z.infer<typeof RoomUpdate>;
+
+export const RoomSend = z.object({
+  clientId: z.string().min(8).max(64),
+  text: z.string().trim().min(1, 'validation.emptyMessage').max(100_000),
+  replyTo: z.string().min(1).max(64).optional(),
+});
+export type RoomSend = z.infer<typeof RoomSend>;
+
+export const ApprovalStatus = z.enum(['pending', 'allowed', 'denied', 'expired']);
+/** The answer of an `expired` card that no one answered while the person was away. */
+export const APPROVAL_TIMED_OUT = 'timeout';
+export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
+
+export const Approval = z.object({
+  id: Id,
+  threadId: Id,
+  botId: Id,
+  kind: z.enum(['tool', 'question', 'login']),
+  toolName: z.string(),
+  summary: z.string(),
+  input: z.record(z.string(), z.unknown()),
+  options: z.array(z.string()),
+  status: ApprovalStatus,
+  answer: z.string().nullable(),
+  /** Allowed with "Hep izin ver": a rule now lets the tool run without asking. */
+  remembered: z.boolean(),
+  createdAt: z.string(),
+  decidedAt: z.string().nullable(),
+});
+export type Approval = z.infer<typeof Approval>;
+
+export const ApprovalDecision = z.object({
+  decision: z.enum(['allow', 'deny']),
+  /** For question cards: the chosen option or free text. */
+  answer: z.string().max(10_000).optional(),
+  /** For cards with several questions: one answer per question, in order. */
+  answers: z.array(z.string().max(5_000)).max(6).optional(),
+  /** Add a "Sormadan izin ver" rule for this tool. */
+  remember: z.boolean().default(false),
+  /** For sign-in cards: what the server types into the site; the bot never sees the password. */
+  login: z
+    .object({
+      username: z.string().trim().max(500),
+      password: z.string().min(1).max(500),
+      save: z.boolean().default(true),
+      /** Save it for the exact address only, not the whole site. */
+      exact: z.boolean().default(false),
+    })
+    .optional(),
+});
+export type ApprovalDecision = z.infer<typeof ApprovalDecision>;
+
+/** A domain like facebook.com: a full address is accepted and cut down to its host. */
+export const VaultSite = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((v) => {
+    try {
+      return new URL(/^[a-z][a-z0-9+.-]*:\/\//.test(v) ? v : `https://${v}`).hostname.replace(/^www\./, '');
+    } catch {
+      return v;
+    }
+  })
+  .pipe(z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'validation.domain'));
+
+/** A saved sign-in as the app sees it: never the password. */
+export const VaultLogin = z.object({
+  id: Id,
+  site: z.string(),
+  username: z.string(),
+  /** Whether it keeps an authenticator secret for two-step codes (the secret never leaves). */
+  hasTotp: z.boolean(),
+  /** The bots that may use it; null lets every bot. */
+  botIds: z.array(Id).nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type VaultLogin = z.infer<typeof VaultLogin>;
+
+export const VaultLoginCreate = z.object({
+  site: VaultSite,
+  username: z.string().trim().max(500),
+  password: z.string().min(1).max(500),
+  /** The base32 text or `otpauth://` link of the site's authenticator setup. */
+  totp: z.string().trim().max(1000).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type VaultLoginCreate = z.input<typeof VaultLoginCreate>;
+
+export const VaultLoginUpdate = z.object({
+  site: VaultSite.optional(),
+  username: z.string().trim().max(500).optional(),
+  password: z.string().min(1).max(500).optional(),
+  /** A new authenticator secret; empty removes it. */
+  totp: z.string().trim().max(1000).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
+
+export const RuleList = z.enum(['ask', 'allow']);
+export const PermissionRule = z.object({
+  id: Id,
+  list: RuleList,
+  pattern: z.string(),
+  note: z.string(),
+  createdAt: z.string(),
+});
+export type PermissionRule = z.infer<typeof PermissionRule>;
+export const PermissionRuleCreate = z.object({
+  list: RuleList,
+  pattern: z.string().trim().min(1).max(200),
+  note: z.string().max(200).default(''),
+});
+
+export const MemoryScope = z.enum(['bot', 'user']);
+export type MemoryScope = z.infer<typeof MemoryScope>;
+export const Memory = z.object({
+  id: Id,
+  scope: MemoryScope,
+  botId: Id.nullable(),
+  content: z.string(),
+  /** The site the note is about (`example.com`); it reaches the bot when it opens that site. */
+  site: z.string().nullable(),
+  status: z.enum(['active', 'proposed']),
+  source: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Memory = z.infer<typeof Memory>;
+export const MemoryCreate = z.object({
+  scope: MemoryScope,
+  botId: Id.nullable().default(null),
+  content: z.string().trim().min(1).max(2000),
+  /** The site a note is about (`example.com`), when it is a site note. */
+  site: z.string().trim().max(253).nullable().optional(),
+});
+export const MemoryUpdate = z.object({
+  content: z.string().trim().min(1).max(2000).optional(),
+  status: z.enum(['active']).optional(),
+});
+
+export const AccessRequest = z.object({ key: z.string().min(1).max(500) });
+export const LoginRequest = z.object({
+  username: z.string().trim().min(1).max(100),
+  password: z.string().min(1).max(200),
+});
+/** Makes the account, or changes it; a change needs the current password or the access key. */
+export const AccountSet = z.object({
+  username: z.string().trim().min(1).max(100),
+  password: z.string().min(1).max(200),
+  current: z.string().max(500).optional(),
+});
+export type AccountSet = z.infer<typeof AccountSet>;
+
+/** A device signed in to the server. */
+export const SessionInfo = z.object({
+  id: z.string(),
+  userAgent: z.string().nullable(),
+  createdAt: z.string(),
+  lastSeenAt: z.string(),
+  /** The device asking. */
+  current: z.boolean(),
+});
+export type SessionInfo = z.infer<typeof SessionInfo>;
+
+export const ServerInfo = z.object({
+  name: z.literal('yumakbot'),
+  version: z.string(),
+  bootId: z.string(),
+  /** Changes when a new version is deployed; null without a built web app, missing on older servers. */
+  buildId: z.string().nullable().optional(),
+  claude: z.object({
+    status: z.enum(['unknown', 'ok', 'logged-out', 'error']),
+    /** A known cause, worded by the app in its own language; `detail` then holds the specifics. */
+    reason: z.enum(['api-key', 'timeout']).optional(),
+    detail: z.string().nullable(),
+    /** How the server signs in to Claude; missing on older servers. */
+    auth: z.enum(['login', 'token', 'apiKey']).optional(),
+  }),
+  /** Whether Claude bots can run Bash here: their commands only run inside the OS sandbox. */
+  shellSandbox: z.object({
+    status: z.enum(['unknown', 'ok', 'unavailable']),
+    reason: z.enum(['platform', 'no-socat', 'no-bwrap', 'bwrap-failed']).optional(),
+    detail: z.string().nullable(),
+  }),
+  /** Whether bots get their own browser: a Chrome, Edge or Chromium must be found on the server. */
+  browser: z.object({
+    status: z.enum(['ok', 'unavailable']),
+    /** The browser program in use. */
+    detail: z.string().nullable(),
+    /** Whether it can open as an ordinary window on this computer; missing on older servers. */
+    window: z.boolean().optional(),
+  }),
+  /**
+   * Whether bots get their own desktop (a computer service next to the server). `off`: none is
+   * configured, so bots use the server's own shell and browser.
+   */
+  computer: z.object({
+    status: z.enum(['ok', 'off', 'unreachable']),
+    detail: z.string().nullable(),
+  }),
+  /** The address set for other services to reach the server at; null or missing when none is. */
+  publicUrl: z.string().nullable().optional(),
+});
+export type ServerInfo = z.infer<typeof ServerInfo>;
+
+/** Where a viewer's pointer is, as a fraction of the browser view (0–1), so any screen size works. */
+const fraction = z.number().min(0).max(1);
+const MouseButton = z.enum(['left', 'right', 'middle']);
+
+/** What a person does in a bot's browser after taking control. */
+export const BrowserInput = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('mouse'),
+    action: z.enum(['move', 'down', 'up']),
+    x: fraction,
+    y: fraction,
+    button: MouseButton.default('left'),
+  }),
+  z.object({
+    type: z.literal('wheel'),
+    x: fraction,
+    y: fraction,
+    dx: z.number().min(-5000).max(5000),
+    dy: z.number().min(-5000).max(5000),
+  }),
+  z.object({ type: z.literal('key'), action: z.enum(['down', 'up']), key: z.string().min(1).max(32) }),
+  z.object({ type: z.literal('text'), text: z.string().min(1).max(5000) }),
+  z.object({ type: z.literal('nav'), action: z.enum(['back', 'forward', 'reload']) }),
+  z.object({ type: z.literal('open'), url: z.string().trim().min(1).max(2000) }),
+]);
+/** As sent: optional fields (the mouse button) may be left out. */
+export type BrowserInput = z.input<typeof BrowserInput>;
+
+export const BrowserInputEvent = z.object({ botId: Id, input: BrowserInput });
+export const BrowserControlEvent = z.object({ botId: Id, on: z.boolean() });
+
+/** An API-key provider for the Pi engine; the key itself never leaves the server. */
+export const ProviderInfo = z.object({
+  id: z.string(),
+  configured: z.boolean(),
+  hint: z.string().nullable(),
+  /** Set for the person's own OpenAI-compatible endpoints. */
+  custom: z.object({ name: z.string(), baseUrl: z.string() }).optional(),
+});
+export type ProviderInfo = z.infer<typeof ProviderInfo>;
+export const ProviderKeyInput = z.object({ key: z.string().min(1).max(1000) });
+
+/** An OpenAI-compatible endpoint; its models are asked from it unless named here. */
+export const CustomEndpointCreate = z.object({
+  name: z.string().trim().min(1).max(60),
+  baseUrl: z.string().trim().min(1).max(500),
+  key: z.string().max(1000).optional(),
+  models: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
+});
+export type CustomEndpointCreate = z.infer<typeof CustomEndpointCreate>;
+/** A change to a saved endpoint; an empty or missing key keeps the saved one. */
+export const CustomEndpointUpdate = CustomEndpointCreate.omit({ models: true }).partial();
+export type CustomEndpointUpdate = z.infer<typeof CustomEndpointUpdate>;
+
+/** How the person mostly uses the assistant; asked when YumakBot is first opened. */
+export const PROFILE_FOCUS = ['work', 'personal', 'both'] as const;
+export type ProfileFocus = (typeof PROFILE_FOCUS)[number];
+
+/** Kinds of work the person wants help with; each one suggests a starter bot. */
+export const PROFILE_HELP = [
+  'research',
+  'writing',
+  'documents',
+  'web',
+  'planning',
+  'code',
+  'learning',
+] as const;
+export type ProfileHelp = (typeof PROFILE_HELP)[number];
+
+/** How much effort Claude puts into a reply, lowest first. */
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
+
+/** How the server signs in to Claude: the machine's Claude login, a subscription token, or an API key. */
+export const CLAUDE_AUTH_KINDS = ['login', 'token', 'apiKey'] as const;
+export type ClaudeAuthKind = (typeof CLAUDE_AUTH_KINDS)[number];
+
+export const ClaudeAuthSet = z.object({
+  kind: z.enum(['token', 'apiKey']),
+  value: z.string().min(1).max(500),
+  /** With an API key: an Anthropic-compatible gateway (LiteLLM, a company proxy) to send it to. */
+  baseUrl: z.string().trim().max(500).optional(),
+});
+export type ClaudeAuthSet = z.infer<typeof ClaudeAuthSet>;
+
+export interface ClaudeAuthStatus {
+  kind: ClaudeAuthKind;
+  /** The last characters of a saved token or key; the value itself never leaves the server. */
+  hint: string | null;
+  /** The gateway an API key is sent to, when one was given. */
+  baseUrl?: string | null;
+}
+
+/** A Claude model the server can use, with the effort levels it accepts. */
+export interface ClaudeModel {
+  value: string;
+  name: string;
+  description: string;
+  efforts: Effort[];
+}
+
+/** How far back the usage report looks, in days. */
+export const USAGE_RANGES = [7, 30, 90] as const;
+export type UsageRange = (typeof USAGE_RANGES)[number];
+
+/** Spending and work over a period, from the finished turns. */
+const UsageTotals = z.object({
+  /** Engine-reported cost in US dollars; for a Claude subscription an estimate at API prices. */
+  costUsd: z.number(),
+  turns: z.number().int(),
+  /** Turns with no cost reported: stopped or failed ones, or an engine that does not tell. */
+  unpriced: z.number().int(),
+});
+
+export const UsageReport = z.object({
+  days: z.number().int(),
+  timezone: z.string(),
+  total: UsageTotals,
+  /** Busiest first; archived bots stay in, so past spending adds up. */
+  bots: z.array(UsageTotals.extend({ botId: Id, name: z.string(), archived: z.boolean() })),
+  /**
+   * Costliest first. `model` is null for turns from before the model was recorded, and for turns
+   * that never started.
+   */
+  models: z.array(
+    UsageTotals.extend({ engine: z.enum(['claude', 'pi']).nullable(), model: z.string().nullable() }),
+  ),
+  /** What each routine's runs cost, costliest first; missing on older servers. */
+  routines: z.array(UsageTotals.extend({ routineId: Id, name: z.string(), botId: Id.nullable() })).optional(),
+  /** One entry per day in the bot owner's time zone, oldest first, quiet days included. */
+  daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
+  /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
+  month: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
+});
+export type UsageReport = z.infer<typeof UsageReport>;
+
+/** What happened today, in the bot owner's time zone: what each bot did and what its routines ran. */
+export const TodayReport = z.object({
+  date: z.string(),
+  costUsd: z.number(),
+  bots: z.array(
+    z.object({
+      botId: Id,
+      name: z.string(),
+      /** Turns finished today. */
+      turns: z.number().int(),
+      /** Of those, the ones that ended in an error. */
+      failed: z.number().int(),
+      costUsd: z.number(),
+    }),
+  ),
+  runs: z.array(
+    z.object({
+      routineId: Id,
+      name: z.string(),
+      botId: Id,
+      status: z.enum(['running', 'done', 'error', 'skipped', 'waiting']),
+      threadId: Id.nullable(),
+      startedAt: z.string(),
+    }),
+  ),
+});
+export type TodayReport = z.infer<typeof TodayReport>;
+
+/** A skill's name: what the bot asks for it by, in lower case with dashes (`weekly-report`). */
+export const SkillName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'validation.skillName');
+
+export const Skill = z.object({
+  id: Id,
+  name: z.string(),
+  /** When the skill applies; the bot sees this before it decides to read the rest. */
+  description: z.string(),
+  body: z.string(),
+  /** Bots that have it on. */
+  botIds: z.array(Id),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Skill = z.infer<typeof Skill>;
+
+export const SkillCreate = z.object({
+  name: SkillName,
+  description: z.string().trim().min(1).max(1024),
+  body: z.string().max(50_000).default(''),
+  /** Bots to turn it on for at once. */
+  botIds: z.array(Id).max(500).optional(),
+});
+export type SkillCreate = z.input<typeof SkillCreate>;
+export const SkillUpdate = SkillCreate.omit({ botIds: true }).partial();
+export type SkillUpdate = z.infer<typeof SkillUpdate>;
+export const SkillBot = z.object({ on: z.boolean() });
+
+/** A message found by the search, with where it is. */
+export const SearchHit = z.object({
+  messageId: Id,
+  threadId: Id,
+  botId: Id,
+  threadTitle: z.string(),
+  threadKind: ThreadKind,
+  role: z.enum(['user', 'assistant']),
+  author: z.string(),
+  /** The text around the first match. */
+  excerpt: z.string(),
+  createdAt: z.string(),
+});
+export type SearchHit = z.infer<typeof SearchHit>;

@@ -1,0 +1,439 @@
+import { DEFAULT_LOCALE, type Locale } from './i18n';
+import { describeSchedule, Schedule } from './schedule';
+
+/** A routine's schedule as the card says it, when the input holds a valid one. */
+function scheduleText(raw: unknown, locale: Locale): string | null {
+  const parsed = Schedule.safeParse(raw);
+  return parsed.success ? describeSchedule(parsed.data, locale) : null;
+}
+
+/**
+ * Plain-language wording for a tool a bot wants to use, for approval cards and the one-line
+ * note left after the answer. No tool names or arguments: those stay behind the detail toggle.
+ * Every field is a whole sentence naming the bot, because word order differs by language.
+ */
+export interface ActionText {
+  /** "Katip bilgisayarda bir komut çalıştırmak istiyor." / "Katip wants to run a command on the computer." */
+  want: string;
+  /** "Katip bu seferlik …" / "Katip can … this time" */
+  once: string;
+  /** "Katip artık sormadan …" / "Katip can now … without asking" */
+  always: string;
+  /** "Katip bu komutu çalıştırmayacak" / "Katip won't run this command" */
+  wont: string;
+  /** What exactly: the command, file or address. Shown only when asked for. */
+  detail: string | null;
+}
+
+const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const fileName = (p: string | null) => (p ? (p.split('/').filter(Boolean).at(-1) ?? p) : null);
+const host = (u: string | null) => {
+  if (!u) return null;
+  try {
+    return new URL(u).host;
+  } catch {
+    return u;
+  }
+};
+
+/** Turkish verb forms: infinitive, "can", "will not". */
+type Verb = [string, string, string];
+const RUN: Verb = ['çalıştırmak', 'çalıştırabilir', 'çalıştırmayacak'];
+const WRITE: Verb = ['yazmak', 'yazabilir', 'yazmayacak'];
+const CHANGE: Verb = ['değiştirmek', 'değiştirebilir', 'değiştirmeyecek'];
+const OPEN: Verb = ['açmak', 'açabilir', 'açmayacak'];
+const DO: Verb = ['yapmak', 'yapabilir', 'yapmayacak'];
+const SAVE: Verb = ['kaydetmek', 'kaydedebilir', 'kaydetmeyecek'];
+const SET_UP: Verb = ['kurmak', 'kurabilir', 'kurmayacak'];
+const ARCHIVE: Verb = ['arşivlemek', 'arşivleyebilir', 'arşivlemeyecek'];
+const SEND: Verb = ['göndermek', 'gönderebilir', 'göndermeyecek'];
+const STOP: Verb = ['durdurmak', 'durdurabilir', 'durdurmayacak'];
+const USE: Verb = ['kullanmak', 'kullanabilir', 'kullanmayacak'];
+const UPLOAD: Verb = ['yüklemek', 'yükleyebilir', 'yüklemeyecek'];
+const TURN_OFF: Verb = ['kapatmak', 'kapatabilir', 'kapatmayacak'];
+const DELETE: Verb = ['silmek', 'silebilir', 'silmeyecek'];
+
+/** One action in both languages, before the bot's name is put in. */
+interface Phrase {
+  /** Turkish object before the verb, as first asked ("bir komut") and once known ("komut"). */
+  tr: [object: string, sameObject: string, verb: Verb];
+  /** English verb phrases: as first asked, once known ("run this command"), in general. */
+  en: [want: string, same: string, general?: string];
+}
+
+function phraseFor(name: string, input: Record<string, unknown>): Phrase {
+  const file = fileName(str(input.file_path) ?? str(input.path) ?? str(input.notebook_path));
+  const trFile = file ? `"${file}" dosyasını` : null;
+  const bot = str(input.bot) ?? str(input.name);
+  switch (name) {
+    case 'Bash':
+      return {
+        tr: ['bilgisayarda bir komut', 'bilgisayarda komut', RUN],
+        en: ['run a command on the computer', 'run this command', 'run commands on the computer'],
+      };
+    case 'Write':
+      return {
+        tr: [trFile ?? 'bir dosyayı', trFile ?? 'bu dosyayı', WRITE],
+        en: file
+          ? [`write "${file}"`, `write "${file}"`]
+          : ['write a file', 'write this file', 'write files'],
+      };
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return {
+        tr: [trFile ?? 'bir dosyayı', trFile ?? 'bu dosyayı', CHANGE],
+        en: file
+          ? [`change "${file}"`, `change "${file}"`]
+          : ['change a file', 'change this file', 'change files'],
+      };
+    case 'WebFetch': {
+      const h = host(str(input.url));
+      return {
+        tr: [h ? `${h} sayfasını` : 'bir web sayfasını', h ? `${h} sayfasını` : 'bu sayfayı', OPEN],
+        en: h ? [`open ${h}`, `open ${h}`] : ['open a web page', 'open this page', 'open web pages'],
+      };
+    }
+    case 'WebSearch':
+      return { tr: ['internette arama', 'internette arama', DO], en: ['search the web', 'search the web'] };
+    case 'browser_open':
+    case 'browser_tabs': {
+      const h = host(str(input.url));
+      return {
+        tr: [
+          h ? `tarayıcıda ${h} sitesini` : 'tarayıcıda bir siteyi',
+          h ? `tarayıcıda ${h} sitesini` : 'tarayıcıda siteleri',
+          OPEN,
+        ],
+        en: h
+          ? [`open ${h} in the browser`, `open ${h}`, 'open sites in the browser']
+          : ['open a site in the browser', 'open this site', 'open sites in the browser'],
+      };
+    }
+    case 'browser_click':
+    case 'browser_type':
+    case 'browser_press':
+    case 'browser_dialog': {
+      const what = str(input.element) ?? str(input.question);
+      return {
+        tr: [what ? `tarayıcıda "${what}" ile bir şey` : 'tarayıcıda bir şey', 'tarayıcıda bir şey', SEND],
+        en: what
+          ? [
+              `send something with "${what}" in the browser`,
+              `send this with "${what}"`,
+              'send things in the browser',
+            ]
+          : ['send something in the browser', 'send this', 'send things in the browser'],
+      };
+    }
+    case 'browser_upload': {
+      const names = Array.isArray(input.paths)
+        ? input.paths.map((p) => fileName(str(p))).filter(Boolean)
+        : [];
+      const one = names.length === 1 ? names[0] : null;
+      return {
+        tr: [
+          one ? `"${one}" dosyasını tarayıcıdaki siteye` : 'dosyaları tarayıcıdaki siteye',
+          one ? `"${one}" dosyasını` : 'bu dosyaları',
+          UPLOAD,
+        ],
+        en: one
+          ? [`upload "${one}" to a site in the browser`, `upload "${one}"`, 'upload files to sites']
+          : ['upload files to a site in the browser', 'upload these files', 'upload files to sites'],
+      };
+    }
+    case 'Task':
+    case 'Agent':
+      return {
+        tr: ['yardımcı bir ajan', 'yardımcı ajan', RUN],
+        en: ['run a helper agent', 'run the helper agent', 'run helper agents'],
+      };
+    case 'KillShell':
+    case 'KillBash':
+      return {
+        tr: ['çalışan bir komutu', 'bu komutu', STOP],
+        en: ['stop a running command', 'stop this command', 'stop running commands'],
+      };
+    case 'memory_write':
+      return {
+        tr: ['bir bilgiyi hafızaya', 'bu bilgiyi hafızaya', SAVE],
+        en: ['save something to memory', 'save this to memory', 'save things to memory'],
+      };
+    case 'bot_create':
+      return {
+        tr: [
+          bot ? `"${bot}" adında yeni bir bot` : 'yeni bir bot',
+          bot ? `"${bot}" botunu` : 'yeni botu',
+          SET_UP,
+        ],
+        en: bot
+          ? [`set up a new bot named "${bot}"`, `set up "${bot}"`, 'set up new bots']
+          : ['set up a new bot', 'set up the new bot', 'set up new bots'],
+      };
+    case 'bot_update':
+      return {
+        tr: [
+          bot ? `"${bot}" botunun ayarlarını` : 'bir botun ayarlarını',
+          bot ? `"${bot}" botunun ayarlarını` : 'bu ayarları',
+          CHANGE,
+        ],
+        en: bot
+          ? [`change the settings of "${bot}"`, `change the settings of "${bot}"`]
+          : ["change a bot's settings", 'change these settings', "change bots' settings"],
+      };
+    case 'skill_save':
+      return {
+        tr: [bot ? `"${bot}" becerisini` : 'bir beceriyi', bot ? `"${bot}" becerisini` : 'bu beceriyi', SAVE],
+        en: bot
+          ? [`save the skill "${bot}"`, `save the skill "${bot}"`, 'save skills']
+          : ['save a skill', 'save this skill', 'save skills'],
+      };
+    case 'app_add':
+      return {
+        tr: [
+          bot ? `"${bot}" adında yeni bir bağlantı` : 'yeni bir bağlantı',
+          bot ? `"${bot}" bağlantısını` : 'bu bağlantıyı',
+          SET_UP,
+        ],
+        en: bot
+          ? [`connect a new server named "${bot}"`, `connect "${bot}"`, 'connect new servers']
+          : ['connect a new server', 'connect this server', 'connect new servers'],
+      };
+    case 'routine_create':
+      return {
+        tr: [
+          bot ? `"${bot}" adında bir rutin` : 'bir rutin',
+          bot ? `"${bot}" rutinini` : 'bu rutini',
+          SET_UP,
+        ],
+        en: bot
+          ? [`set up a routine named "${bot}"`, `set up the routine "${bot}"`, 'set up routines']
+          : ['set up a routine', 'set up this routine', 'set up routines'],
+      };
+    case 'routine_update':
+    case 'routine_delete': {
+      const routine = str(input.routine);
+      const owner = str(input.bot);
+      // Turning a routine on or off reads as that; any other change as a change.
+      const onOff =
+        name === 'routine_update' &&
+        typeof input.enabled === 'boolean' &&
+        Object.keys(input).every((k) => ['routine', 'bot', 'enabled'].includes(k))
+          ? input.enabled
+          : null;
+      const [verb, en, enAll]: [Verb, string, string] =
+        name === 'routine_delete'
+          ? [DELETE, 'delete', 'delete routines']
+          : onOff === false
+            ? [TURN_OFF, 'turn off', 'turn off routines']
+            : onOff === true
+              ? [OPEN, 'turn on', 'turn on routines']
+              : [CHANGE, 'change', 'change routines'];
+      const trOwner = owner ? `"${owner}" botunun ` : '';
+      const enOwner = owner ? ` of "${owner}"` : '';
+      return {
+        tr: [
+          routine ? `${trOwner}"${routine}" rutinini` : 'bir rutini',
+          routine ? `${trOwner}"${routine}" rutinini` : 'bu rutini',
+          verb,
+        ],
+        en: routine
+          ? [`${en} the routine "${routine}"${enOwner}`, `${en} the routine "${routine}"${enOwner}`, enAll]
+          : [`${en} a routine`, `${en} this routine`, enAll],
+      };
+    }
+    case 'bot_archive':
+      return {
+        tr: [bot ? `"${bot}" botunu` : 'bir botu', bot ? `"${bot}" botunu` : 'bu botu', ARCHIVE],
+        en: bot
+          ? [`archive "${bot}"`, `archive "${bot}"`]
+          : ['archive a bot', 'archive this bot', 'archive bots'],
+      };
+    case 'bot_send':
+      return {
+        tr: [
+          bot ? `"${bot}" botuna bir iş` : 'başka bir bota iş',
+          bot ? `"${bot}" botuna iş` : 'bu işi',
+          SEND,
+        ],
+        en: bot
+          ? [`send a task to "${bot}"`, `send the task to "${bot}"`, `send tasks to "${bot}"`]
+          : ['send a task to another bot', 'send this task', 'send tasks to other bots'],
+      };
+    default:
+      return { tr: ['bir araç', 'bu aracı', USE], en: ['use a tool', 'use this tool', 'use tools'] };
+  }
+}
+
+function detailFor(name: string, input: Record<string, unknown>, locale: Locale): string | null {
+  switch (name) {
+    case 'Bash':
+      return str(input.command);
+    case 'Write':
+      return str(input.file_path) ?? str(input.path);
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return str(input.file_path) ?? str(input.notebook_path);
+    case 'WebFetch':
+      return str(input.url);
+    case 'WebSearch':
+      return str(input.query);
+    case 'browser_open':
+    case 'browser_tabs':
+      return str(input.url);
+    case 'browser_click':
+      return str(input.element);
+    case 'browser_type':
+      return [str(input.element), str(input.text)].filter(Boolean).join(': ') || null;
+    case 'browser_press':
+      return str(input.key);
+    case 'browser_dialog':
+      return str(input.question);
+    case 'browser_upload':
+      return Array.isArray(input.paths)
+        ? input.paths.filter((p) => typeof p === 'string').join('\n') || null
+        : null;
+    case 'Task':
+    case 'Agent':
+      return str(input.description);
+    case 'memory_write':
+      return str(input.content);
+    case 'bot_create':
+      return str(input.description);
+    case 'bot_send':
+      return str(input.text) ?? str(input.message);
+    case 'app_add':
+      return str(input.url);
+    case 'skill_save':
+      return [str(input.description), str(input.body)].filter(Boolean).join('\n\n') || null;
+    case 'routine_create': {
+      const when = scheduleText(input.schedule, locale);
+      return [when, str(input.prompt)].filter(Boolean).join('\n') || null;
+    }
+    case 'routine_update': {
+      const rename = str(input.name);
+      const when = scheduleText(input.schedule, locale);
+      return [rename && `→ ${rename}`, when, str(input.prompt)].filter(Boolean).join('\n') || null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** A connection's tool (`mcp__<connection>__<tool>`): the connection's part and the tool's. */
+export function connectionToolParts(toolName: string): { server: string; tool: string } | null {
+  const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(toolName);
+  if (!m || m[1] === 'yumakbot') return null;
+  return { server: m[1]!, tool: m[2]! };
+}
+
+/**
+ * "Always allow" covers one tool of a connection, not the whole service, so the card names the
+ * tool: otherwise two different tools of the same service read as the same request.
+ */
+function connectionPhrase(service: string, tool: string): Phrase {
+  return {
+    tr: [`“${tool}” adlı bir ${service} aracı`, `“${tool}” adlı ${service} aracını`, USE],
+    en: [`use the ${service} tool “${tool}”`, `use the ${service} tool “${tool}”`],
+  };
+}
+
+export function describeAction(
+  toolName: string,
+  input: Record<string, unknown>,
+  opts: {
+    bot: string;
+    locale?: Locale;
+    /** The connection's name, for a connection's tool. */
+    service?: string;
+  },
+): ActionText {
+  const name = toolName.startsWith('mcp__yumakbot__') ? toolName.slice('mcp__yumakbot__'.length) : toolName;
+  // Only a known connection's tool is named by its service; any other stays a plain "tool".
+  const remote = opts.service ? connectionToolParts(toolName) : null;
+  const phrase =
+    remote && opts.service ? connectionPhrase(opts.service, remote.tool) : phraseFor(name, input);
+  const shown = JSON.stringify(input);
+  // The tool is named in the sentence already; the detail shows what it is sent.
+  const detail = remote
+    ? shown && shown !== '{}'
+      ? shown.length > 600
+        ? `${shown.slice(0, 599)}…`
+        : shown
+      : null
+    : detailFor(name, input, opts.locale ?? DEFAULT_LOCALE);
+  const { bot } = opts;
+  if ((opts.locale ?? DEFAULT_LOCALE) === 'en') {
+    const [want, same, general = same] = phrase.en;
+    return {
+      want: `${bot} wants to ${want}.`,
+      once: `${bot} can ${same} this time`,
+      always: `${bot} can now ${general} without asking`,
+      wont: `${bot} won't ${same}`,
+      detail,
+    };
+  }
+  const [object, sameObject, [inf, can, wont]] = phrase.tr;
+  return {
+    want: `${bot} ${object} ${inf} istiyor.`,
+    once: `${bot} bu seferlik ${sameObject} ${can}`,
+    always: `${bot} artık sormadan ${sameObject} ${can}`,
+    wont: `${bot} ${sameObject} ${wont}`,
+    detail,
+  };
+}
+
+export interface QuestionItem {
+  question: string;
+  /** A line under the question: why it is asked, or what the options mean. */
+  context?: string;
+  options: string[];
+  /** Its answer goes to the waiting bot only: the card keeps it blank (see `hideSecretAnswers`). */
+  secret: boolean;
+}
+
+/** The questions on a question card: several from `ask_user`, or one from the card itself. */
+export function questionItems(a: { input: Record<string, unknown>; summary: string; options: string[] }): {
+  title: string | null;
+  items: QuestionItem[];
+} {
+  const title = typeof a.input.title === 'string' && a.input.title.trim() ? a.input.title.trim() : null;
+  const raw = Array.isArray(a.input.questions) ? a.input.questions : null;
+  const items = (raw ?? [])
+    .map((q) => q as { question?: unknown; context?: unknown; options?: unknown; secret?: unknown })
+    .filter((q) => typeof q.question === 'string' && q.question.trim())
+    .map((q) => ({
+      question: String(q.question),
+      ...(typeof q.context === 'string' && q.context.trim() ? { context: q.context.trim() } : {}),
+      options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string') : [],
+      secret: q.secret === true,
+    }));
+  return items.length
+    ? { title, items }
+    : { title, items: [{ question: a.summary, options: a.options, secret: false }] };
+}
+
+/**
+ * The answer as the card keeps it: secret answers left blank. Written the same way as the answer
+ * itself, a JSON list when there are several questions.
+ */
+export function hideSecretAnswers(items: readonly QuestionItem[], answers: readonly string[]): string | null {
+  const kept = items.map((q, i) => (q.secret ? '' : (answers[i] ?? '')));
+  if (items.length > 1) return JSON.stringify(kept);
+  return kept[0] || null;
+}
+
+/** Answers kept on a card: one per question (stored as a JSON list when there are several). */
+export function parseAnswers(answer: string | null, count: number): string[] {
+  if (answer === null) return [];
+  if (count > 1) {
+    try {
+      const list = JSON.parse(answer) as unknown;
+      if (Array.isArray(list)) return list.map((x) => (typeof x === 'string' ? x : ''));
+    } catch {
+      // A single free-text answer.
+    }
+  }
+  return [answer];
+}

@@ -1,0 +1,553 @@
+import { existsSync, lstatSync, readFileSync, readlinkSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  powerSaveBlocker,
+  safeStorage,
+  screen,
+  session,
+  shell,
+  Tray,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import log from 'electron-log/main';
+import {
+  normalizeRemoteUrl,
+  readDesktopConfig,
+  writeDesktopConfig,
+  type DesktopConfig,
+} from './desktop-config';
+import { isLocale } from '@yumakbot/shared/i18n';
+import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
+import { ServerProcess } from './server-process';
+import { MIN_SIZE, readWindowState, resolveWindowState, writeWindowState } from './window-state';
+
+/**
+ * The app was called Asistan before, and its bots, chats and settings live in a folder named after
+ * it. Moved once to the new name so an earlier installation keeps its data.
+ */
+function adoptRenamedData(dir: string): string {
+  const before = join(dirname(dir), 'esmworks-asistan');
+  if (existsSync(dir) || !existsSync(before)) return dir;
+  // Moving the folder under a running copy of the old app would pull its database away mid-write,
+  // and starting here would make an empty folder that stops the move for good. So stop and ask.
+  if (heldByRunningApp(before)) {
+    loadLocale(before, app.getPreferredSystemLanguages());
+    dialog.showErrorBox(t('error.oldAppTitle'), t('error.oldAppRunning'));
+    app.exit(0);
+    return dir;
+  }
+  try {
+    renameSync(before, dir);
+  } catch {
+    // Left where it is; the app starts with an empty folder instead.
+  }
+  return dir;
+}
+
+/** Chromium's lock in a data folder links to `host-pid` of the app using it, and stays after a crash. */
+function heldByRunningApp(dir: string): boolean {
+  try {
+    const lock = join(dir, 'SingletonLock');
+    if (!lstatSync(lock).isSymbolicLink()) return false;
+    const pid = Number(readlinkSync(lock).split('-').pop());
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+// Own data folder, separate from any earlier installation.
+app.setName('YumakBot');
+app.setPath(
+  'userData',
+  process.env.YUMAKBOT_DESKTOP_DATA ?? adoptRenamedData(join(app.getPath('appData'), 'esmworks-yumakbot')),
+);
+log.initialize();
+log.transports.file.resolvePathFn = () => join(app.getPath('userData'), 'logs', 'main.log');
+log.transports.file.level = 'info';
+
+const DEFAULT_PORT = 4319;
+const userData = app.getPath('userData');
+const dataDir = join(userData, 'data');
+
+let win: BrowserWindow | null = null;
+let connectWin: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let server: ServerProcess | null = null;
+let config: DesktopConfig = { mode: 'local' };
+/** Origin of the page the main window shows; the only origin that may ask for the key. */
+let origin: string | null = null;
+let accessKey: string | null = null;
+/** Tray status line, kept as a key so it follows a language change. */
+let status: { key: DesktopKey; params?: Record<string, string> } = { key: 'status.starting' };
+let quitting = false;
+let stopped = false;
+/** Bots with replies the person has not read, as the page last reported. */
+let unread = 0;
+/** Keeps the computer from sleeping while a bot works; null while none does. */
+let awake: number | null = null;
+
+const resources = () => (app.isPackaged ? process.resourcesPath : join(app.getAppPath(), '..'));
+const serverEntry = () => join(resources(), 'server', 'dist', 'index.mjs');
+const appDir = () => (app.isPackaged ? join(resources(), 'app') : join(resources(), 'app', 'dist'));
+const assets = () => (app.isPackaged ? join(resources(), 'assets') : join(app.getAppPath(), 'assets'));
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showWindow());
+  void app.whenReady().then(boot);
+}
+
+async function boot() {
+  // A packaged app takes its Dock icon from the bundle; one run from source would show Electron's.
+  // icon.png is assets/icon.icon as macOS draws it, glass included.
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(assets(), 'icon.png'));
+  loadLocale(userData, app.getPreferredSystemLanguages());
+  hardenSessions();
+  registerIpc();
+  createTray();
+  config = readDesktopConfig(userData, safeStorage);
+  await connect();
+}
+
+async function connect() {
+  if (config.mode === 'remote') {
+    origin = config.url;
+    accessKey = config.key;
+    setStatus('status.remote', { host: new URL(config.url).host });
+    showWindow();
+    return;
+  }
+  setStatus('status.serverStarting');
+  server = new ServerProcess({
+    entry: serverEntry(),
+    execPath: process.execPath,
+    dataDir,
+    appDir: appDir(),
+    port: DEFAULT_PORT,
+    log: (level, line) => log[level](`[sunucu] ${line}`),
+    // Development only: run the server with the offline test engine.
+    env:
+      !app.isPackaged && process.env.YUMAKBOT_ENGINE ? { YUMAKBOT_ENGINE: process.env.YUMAKBOT_ENGINE } : {},
+  });
+  server.on('restarted', (url: string) => {
+    origin = url;
+    setStatus('status.running');
+    void win?.loadURL(url);
+  });
+  server.on('exit', (e: { expected: boolean }) => {
+    if (!e.expected) setStatus('status.restarting');
+  });
+  server.on('gave-up', () => {
+    setStatus('status.stopped');
+    void dialog.showMessageBox({
+      type: 'error',
+      message: t('dialog.gaveUp'),
+      detail: t('dialog.gaveUpDetail'),
+    });
+  });
+  try {
+    origin = await server.start();
+    accessKey = readFileSync(join(dataDir, 'access-key'), 'utf8').trim();
+    setStatus('status.running');
+    showWindow();
+  } catch (err) {
+    log.error('server failed to start', err);
+    setStatus('status.failed');
+    await dialog.showMessageBox({
+      type: 'error',
+      message: t('dialog.failed'),
+      detail: (err as Error).message,
+    });
+  }
+}
+
+function showWindow() {
+  if (!origin) return;
+  if (win && !win.isDestroyed()) {
+    win.show();
+    win.focus();
+    return;
+  }
+  const primary = screen.getPrimaryDisplay();
+  const screens = [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)];
+  const restored = resolveWindowState(
+    readWindowState(userData),
+    screens.map((d) => d.workArea),
+  );
+  win = new BrowserWindow({
+    ...restored.bounds,
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
+    title: 'YumakBot',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
+    show: false,
+    // On macOS the page draws to the top edge; the window buttons sit in the
+    // sidebar's top row, centred on its buttons, and the page marks drag areas.
+    ...(process.platform === 'darwin' && {
+      titleBarStyle: 'hidden' as const,
+      trafficLightPosition: { x: 20, y: 17 },
+    }),
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+  if (restored.maximized) win.maximize();
+  rememberWindowState(win);
+  showUnread();
+  win.once('ready-to-show', () => win?.show());
+  win.webContents.on('context-menu', (_e, params) => showContextMenu(win!, params));
+  // Closing the window keeps the bots running; only "Quit" stops the server.
+  win.on('close', (e) => {
+    if (!quitting) {
+      e.preventDefault();
+      win?.hide();
+    }
+  });
+  void win.loadURL(origin);
+}
+
+/** Saves the window's place and size as it changes, so the next start opens it there. */
+function rememberWindowState(target: BrowserWindow) {
+  let timer: NodeJS.Timeout | null = null;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (target.isDestroyed()) return;
+    writeWindowState(userData, { bounds: target.getNormalBounds(), maximized: target.isMaximized() });
+  };
+  const later = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, 300);
+  };
+  for (const event of ['resize', 'move', 'maximize', 'unmaximize'] as const)
+    target.on(event as 'resize', later);
+  target.on('close', flush);
+}
+
+/** The unread count on the Dock icon (macOS), the launcher (Linux) or the taskbar button (Windows). */
+function showUnread() {
+  if (process.platform === 'win32') {
+    if (!win || win.isDestroyed()) return;
+    const icon =
+      unread > 0 ? nativeImage.createFromPath(join(assets(), 'icon.png')).resize({ width: 16 }) : null;
+    win.setOverlayIcon(icon && !icon.isEmpty() ? icon : null, unread > 0 ? String(unread) : '');
+    return;
+  }
+  app.setBadgeCount(unread);
+}
+
+/**
+ * The right-click menu a page gets in a browser: edit actions where text can be edited or is
+ * selected, and copying a link's address or an image. Electron shows none by itself.
+ */
+function showContextMenu(target: BrowserWindow, params: Electron.ContextMenuParams) {
+  const items: Electron.MenuItemConstructorOptions[] = [];
+  const { editFlags } = params;
+  if (params.isEditable) {
+    items.push(
+      { role: 'undo', label: t('edit.undo'), enabled: editFlags.canUndo },
+      { role: 'redo', label: t('edit.redo'), enabled: editFlags.canRedo },
+      { type: 'separator' },
+      { role: 'cut', label: t('edit.cut'), enabled: editFlags.canCut },
+      { role: 'copy', label: t('edit.copy'), enabled: editFlags.canCopy },
+      { role: 'paste', label: t('edit.paste'), enabled: editFlags.canPaste },
+      { role: 'selectAll', label: t('edit.selectAll') },
+    );
+  } else if (params.selectionText.trim()) {
+    items.push({ role: 'copy', label: t('edit.copy') });
+  }
+  if (params.linkURL && /^https?:/i.test(params.linkURL)) {
+    if (items.length) items.push({ type: 'separator' });
+    items.push({ label: t('edit.copyLink'), click: () => clipboard.writeText(params.linkURL) });
+  }
+  if (params.mediaType === 'image') {
+    if (items.length) items.push({ type: 'separator' });
+    items.push({
+      label: t('edit.copyImage'),
+      click: () => target.webContents.copyImageAt(params.x, params.y),
+    });
+  }
+  if (items.length) Menu.buildFromTemplate(items).popup({ window: target });
+}
+
+function openConnectWindow() {
+  if (connectWin && !connectWin.isDestroyed()) return connectWin.focus();
+  connectWin = new BrowserWindow({
+    width: 460,
+    height: 420,
+    resizable: false,
+    title: t('connect.title'),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  void connectWin.loadFile(join(assets(), 'connect.html'), { query: { lang: locale() } });
+}
+
+function isAppOrigin(url: string) {
+  try {
+    return !!origin && new URL(url).origin === new URL(origin).origin;
+  } catch {
+    return false;
+  }
+}
+
+function fromMainPage(e: IpcMainInvokeEvent) {
+  try {
+    return !!origin && new URL(e.senderFrame?.url ?? '').origin === origin;
+  } catch {
+    return false;
+  }
+}
+function fromConnectPage(e: IpcMainInvokeEvent) {
+  return !!connectWin && e.sender === connectWin.webContents;
+}
+
+function registerIpc() {
+  ipcMain.handle('yumakbot:access-key', (e) => (fromMainPage(e) ? accessKey : null));
+  // Which server the window shows, so the page can offer to switch.
+  ipcMain.handle('yumakbot:server', (e) =>
+    fromMainPage(e) ? { mode: config.mode, url: config.mode === 'remote' ? config.url : null } : null,
+  );
+  ipcMain.handle('yumakbot:open-connect', (e) => {
+    if (fromMainPage(e)) openConnectWindow();
+  });
+  ipcMain.handle('yumakbot:connect-remote', async (e, rawUrl: string, key: string) => {
+    if (!fromConnectPage(e)) return { ok: false, error: t('connect.noPermission') };
+    try {
+      const url = normalizeRemoteUrl(String(rawUrl));
+      const res = await session.defaultSession.fetch(`${url}/api/health`);
+      if (!res.ok) throw new Error(t('connect.noResponse', { status: String(res.status) }));
+      writeDesktopConfig(userData, { mode: 'remote', url, key: String(key).trim() }, safeStorage);
+      await switchTo(readDesktopConfig(userData, safeStorage));
+      connectWin?.close();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+  // The app reports its language so the menu and windows match it.
+  ipcMain.handle('yumakbot:set-locale', (e, next: unknown) => {
+    if (!fromMainPage(e) || !isLocale(next) || next === locale()) return;
+    setLocale(next);
+    try {
+      saveLocale(userData, next);
+    } catch (err) {
+      log.warn('dil kaydedilemedi', err);
+    }
+    if (connectWin && !connectWin.isDestroyed()) connectWin.setTitle(t('connect.title'));
+    rebuildMenu();
+  });
+  ipcMain.handle('yumakbot:set-unread', (e, count: unknown) => {
+    if (!fromMainPage(e)) return;
+    const n =
+      typeof count === 'number' && Number.isFinite(count) ? Math.min(999, Math.max(0, Math.trunc(count))) : 0;
+    if (n === unread) return;
+    unread = n;
+    showUnread();
+  });
+  // While a bot works on this computer, the computer stays awake (the screen may still turn off),
+  // so a routine or a long reply is not cut short by sleep.
+  ipcMain.handle('yumakbot:set-busy', (e, busy: unknown) => {
+    if (!fromMainPage(e) || config.mode !== 'local') return;
+    if (busy === true && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension');
+    if (busy !== true && awake !== null) {
+      powerSaveBlocker.stop(awake);
+      awake = null;
+    }
+  });
+  ipcMain.handle('yumakbot:open-at-login', (e, on?: unknown) => {
+    if (!fromMainPage(e)) return null;
+    if (typeof on === 'boolean') {
+      app.setLoginItemSettings({ openAtLogin: on });
+      rebuildMenu();
+    }
+    return app.getLoginItemSettings().openAtLogin;
+  });
+  ipcMain.handle('yumakbot:show-logs', (e) => {
+    if (fromMainPage(e)) shell.showItemInFolder(log.transports.file.getFile().path);
+  });
+  ipcMain.handle('yumakbot:use-local', async (e) => {
+    if (!fromConnectPage(e) && !fromMainPage(e)) return;
+    writeDesktopConfig(userData, { mode: 'local' }, safeStorage);
+    await switchTo({ mode: 'local' });
+    connectWin?.close();
+  });
+}
+
+async function switchTo(next: DesktopConfig) {
+  if (awake !== null) powerSaveBlocker.stop(awake);
+  awake = null;
+  await server?.stop();
+  server = null;
+  config = next;
+  // The old page belongs to another origin; start fresh.
+  if (win && !win.isDestroyed()) {
+    quitting = true;
+    win.close();
+    quitting = false;
+    win = null;
+  }
+  await connect();
+}
+
+function hardenSessions() {
+  // Everything is refused except writing to the clipboard from the app's own page; copying a
+  // picture has no other route there.
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) =>
+    cb(perm === 'clipboard-sanitized-write' && isAppOrigin(details.requestingUrl)),
+  );
+  app.on('web-contents-created', (_e, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (e, url) => {
+      const allowed = url.startsWith('file://') || (!!origin && url.startsWith(origin));
+      if (!allowed) {
+        e.preventDefault();
+        if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+      }
+    });
+  });
+}
+
+function createTray() {
+  const icon = nativeImage.createFromPath(join(assets(), 'trayTemplate.png'));
+  icon.setTemplateImage(true);
+  tray = new Tray(icon);
+  tray.setToolTip('YumakBot');
+  tray.on('click', () => tray?.popUpContextMenu());
+  rebuildMenu();
+}
+
+function setStatus(key: DesktopKey, params?: Record<string, string>) {
+  status = { key, params };
+  log.info(`durum: ${key}`);
+  rebuildMenu();
+}
+
+/**
+ * The macOS menu bar: the app menu with Settings (⌘,), and the usual Edit, View and Window menus,
+ * so the standard shortcuts keep working. Other systems keep the default menu.
+ */
+function buildAppMenu() {
+  if (process.platform !== 'darwin') return;
+  const openSettings = () => {
+    showWindow();
+    win?.webContents.send('yumakbot:open-settings');
+  };
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'YumakBot',
+        submenu: [
+          { role: 'about', label: t('menu.about') },
+          { type: 'separator' },
+          {
+            label: t('menu.settings'),
+            accelerator: 'CommandOrControl+,',
+            click: openSettings,
+            enabled: !!origin,
+          },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit', label: t('menu.quit') },
+        ],
+      },
+      {
+        label: t('menu.edit'),
+        submenu: [
+          { role: 'undo', label: t('edit.undo') },
+          { role: 'redo', label: t('edit.redo') },
+          { type: 'separator' },
+          { role: 'cut', label: t('edit.cut') },
+          { role: 'copy', label: t('edit.copy') },
+          { role: 'paste', label: t('edit.paste') },
+          { role: 'selectAll', label: t('edit.selectAll') },
+        ],
+      },
+      {
+        label: t('menu.view'),
+        submenu: [
+          { role: 'reload' },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { role: 'resetZoom' },
+          { role: 'zoomIn' },
+          { role: 'zoomOut' },
+          { type: 'separator' },
+          { role: 'togglefullscreen' },
+        ],
+      },
+      { role: 'windowMenu', label: t('menu.window') },
+    ]),
+  );
+}
+
+function rebuildMenu() {
+  buildAppMenu();
+  if (!tray) return;
+  const openAtLogin = app.getLoginItemSettings().openAtLogin;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: t('menu.open'), click: () => showWindow(), enabled: !!origin },
+      { type: 'separator' },
+      { label: t(status.key, status.params), enabled: false },
+      config.mode === 'local'
+        ? { label: t('menu.connectRemote'), click: () => openConnectWindow() }
+        : { label: t('menu.useLocal'), click: () => void switchTo({ mode: 'local' }) },
+      { type: 'separator' },
+      {
+        label: t('menu.openAtLogin'),
+        type: 'checkbox',
+        checked: openAtLogin,
+        click: (item) => {
+          app.setLoginItemSettings({ openAtLogin: item.checked });
+          rebuildMenu();
+        },
+      },
+      { label: t('menu.showLogs'), click: () => shell.showItemInFolder(log.transports.file.getFile().path) },
+      { type: 'separator' },
+      { label: t('menu.quit'), role: 'quit' },
+    ]),
+  );
+}
+
+app.on('activate', () => showWindow());
+// Keep running in the menu bar when every window is closed.
+app.on('window-all-closed', () => {});
+app.on('before-quit', (e) => {
+  quitting = true;
+  if (server?.running && !stopped) {
+    e.preventDefault();
+    setStatus('status.quitting');
+    void server.stop().finally(() => {
+      stopped = true;
+      app.quit();
+    });
+  }
+});

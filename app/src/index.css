@@ -1,0 +1,379 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+@custom-variant frameless (&:where(.frameless *));
+
+/*
+ * A phone: a narrow screen, or a touch screen too short to fit the list beside the chat (a phone
+ * held sideways). Keep in step with PHONE in lib/media.ts. `roomy` is everything else.
+ */
+@custom-variant phone {
+  @media (max-width: 767px), (max-height: 499px) and (pointer: coarse) {
+    @slot;
+  }
+}
+@custom-variant roomy {
+  @media (min-width: 768px) and (min-height: 500px),
+    (min-width: 768px) and (pointer: fine),
+    (min-width: 768px) and (pointer: none) {
+    @slot;
+  }
+}
+
+/* In a window without a title bar these areas move the window; controls inside stay clickable. */
+@utility window-drag {
+  .frameless & {
+    -webkit-app-region: drag;
+  }
+  .frameless & :is(button, a, input, textarea, select, [role='button']) {
+    -webkit-app-region: no-drag;
+  }
+}
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.18 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0 0);
+  --primary: oklch(0.2 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.2 0 0);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.91 0 0);
+  --input: oklch(0.91 0 0);
+  --ring: oklch(0.7 0 0);
+  --bubble: var(--sidebar);
+  --sidebar: oklch(0.97 0 0);
+  /* The conversation's column and a bot message's width; wider ones are chosen in Settings. */
+  --chat-width: 860px;
+  --bubble-width: 730px;
+  --brand: #4f6bed;
+}
+
+.dark {
+  --background: oklch(0.13 0 0);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.2 0 0);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary: oklch(0.95 0 0);
+  --primary-foreground: oklch(0.15 0 0);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.24 0 0);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.55 0 0);
+  --bubble: oklch(0.2 0 0);
+  --sidebar: oklch(0.11 0 0);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-bubble: var(--bubble);
+  --color-sidebar: var(--sidebar);
+  --color-brand: var(--brand);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    @apply h-full;
+  }
+  /* The visible height: on a phone the browser's bars come and go, and the composer must stay above them. */
+  #root {
+    @apply h-dvh;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--brand) 35%, transparent);
+  }
+}
+
+/* Thin scrollbars that fit both themes. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--foreground) 18%, transparent) transparent;
+}
+
+.prose-chat p {
+  margin: 0.4em 0;
+}
+.prose-chat p:first-child {
+  margin-top: 0;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+.prose-chat pre {
+  @apply my-2 overflow-x-auto rounded-xl bg-black/30 p-3 text-[13px] leading-relaxed;
+  /* Long lines wrap, so a draft or a long command reads without scrolling sideways. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Coloured code: the dark theme's colour in dark mode; the person's own bubble keeps its text colour. */
+.dark .prose-chat [data-tok] {
+  color: var(--shiki-dark) !important;
+}
+.prose-mine [data-tok],
+.dark .prose-mine [data-tok] {
+  color: inherit !important;
+}
+
+.prose-chat th[data-sort]::after {
+  content: ' ' attr(data-sort);
+  font-size: 0.7em;
+  opacity: 0.6;
+}
+.prose-chat pre[data-language] {
+  /* Room for the language name above the code. */
+  padding-top: 1.75rem;
+}
+.prose-chat code:not(pre code) {
+  @apply rounded-md bg-black/20 px-1.5 py-0.5 text-[0.9em];
+  /* A long path or address in code breaks rather than leaving the bubble. */
+  overflow-wrap: anywhere;
+}
+/* The person's own bubble: code on a lighter ground against its deep colour. */
+.prose-mine pre {
+  @apply bg-black/25;
+}
+.prose-chat ul {
+  @apply my-1 list-disc pl-5;
+}
+.prose-chat ol {
+  @apply my-1 list-decimal pl-5;
+}
+.prose-chat a {
+  @apply underline underline-offset-2;
+}
+/* A wide table scrolls on its own instead of widening the conversation on a narrow screen. */
+.prose-chat table {
+  @apply my-2 block max-w-full overflow-x-auto;
+}
+/* Cells get room between columns; the first column lines up with the text around the table. */
+.prose-chat th,
+.prose-chat td {
+  @apply px-3 py-1.5 text-left align-top;
+  font-variant-numeric: tabular-nums;
+}
+.prose-chat th:first-child,
+.prose-chat td:first-child {
+  @apply pl-0;
+}
+.prose-chat th:last-child,
+.prose-chat td:last-child {
+  @apply pr-0;
+}
+.prose-chat th {
+  @apply font-semibold;
+}
+/* Thin lines under the header and between rows keep long rows readable. */
+.prose-chat thead th {
+  border-bottom: 1px solid color-mix(in oklab, var(--foreground) 15%, transparent);
+}
+.prose-chat tbody tr + tr td {
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+/*
+ * Uploaded photo avatars at work. A photo has no face to move, so the picture itself does: it
+ * turns a little each way while thinking, bobs while writing, tilts while browsing, wiggles when it
+ * needs someone and sways in the queue. Shape avatars are plush and move their own eyes.
+ */
+.av-img {
+  transform-origin: 50% 100%;
+}
+/* Moves start quickly and settle without overshooting. */
+:root {
+  --av-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.av-img.av-thinking {
+  transform-origin: 50% 50%;
+  animation: av-ponder 4.8s infinite;
+}
+.av-img.av-writing {
+  animation: av-bob 0.7s ease-in-out infinite;
+}
+.av-img.av-browsing {
+  animation: av-tilt 2.4s ease-in-out infinite;
+}
+.av-img.av-waiting {
+  animation: av-wiggle 2.2s ease-in-out infinite;
+}
+.av-img.av-queued {
+  animation: av-sway 3.2s ease-in-out infinite;
+}
+@keyframes av-ponder {
+  0%,
+  100% {
+    transform: perspective(200px) rotateY(0deg);
+    animation-timing-function: var(--av-out);
+  }
+  12%,
+  40% {
+    transform: perspective(200px) rotateY(-24deg);
+    animation-timing-function: var(--av-out);
+  }
+  52%,
+  80% {
+    transform: perspective(200px) rotateY(24deg);
+    animation-timing-function: var(--av-out);
+  }
+  92% {
+    transform: perspective(200px) rotateY(0deg);
+  }
+}
+@keyframes av-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  35% {
+    transform: translateY(-7%) scale(0.97, 1.03);
+  }
+  65% {
+    transform: translateY(0) scale(1.04, 0.95);
+  }
+  80% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+@keyframes av-tilt {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes av-wiggle {
+  0%,
+  55%,
+  100% {
+    transform: rotate(0deg);
+  }
+  63% {
+    transform: rotate(-9deg);
+  }
+  71% {
+    transform: rotate(8deg);
+  }
+  79% {
+    transform: rotate(-5deg);
+  }
+  87% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes av-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-img {
+    animation: none !important;
+  }
+}
+
+/* A message the search led to. */
+::highlight(chat-find) {
+  background-color: color-mix(in oklab, #facc15 55%, transparent);
+  color: inherit;
+}
+
+.message-found {
+  border-radius: 1.5rem;
+  animation: message-found 2s ease-out;
+}
+@keyframes message-found {
+  0%,
+  40% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--brand) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+/*
+ * A phone's own edges: the notch or island at the top, the home bar at the bottom, the sides when
+ * held sideways. The page reaches under them (viewport-fit=cover) and keeps its content clear.
+ * Every inset is zero on a screen without them. Left outside the layers so the utilities that
+ * take borders and padding off full-screen dialogs on phones cannot undo it.
+ */
+#root {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+/* The workspace's panes keep clear of the edges themselves, so each edge takes its pane's colour. */
+#root:has(> .workspace) {
+  padding: 0;
+}
+.safe-pane {
+  border-style: solid;
+  border-color: transparent;
+  border-width: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+/* A dialog or panel that covers the whole phone screen: a clear border as wide as each edge. */
+@media (max-width: 767px), (max-height: 499px) and (pointer: coarse) {
+  .screen-edges {
+    border-style: solid;
+    border-color: transparent;
+    border-width: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
+  /* Its top strip takes the colour of what sits under it, when that is not the page colour. */
+  .screen-edges.sidebar-top {
+    border-top-color: var(--sidebar);
+  }
+}

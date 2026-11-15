@@ -1,0 +1,5 @@
+[Default Applications]
+text/html=yumakbot-browser.desktop
+x-scheme-handler/http=yumakbot-browser.desktop
+x-scheme-handler/https=yumakbot-browser.desktop
+x-scheme-handler/about=yumakbot-browser.desktop

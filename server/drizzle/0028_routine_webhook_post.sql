@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "webhook_post" boolean DEFAULT false NOT NULL;

@@ -1,0 +1,6 @@
+#!/bin/sh
+# The browser of a desktop session. Chromium runs once per session, started by the session helper
+# with a DevTools pipe, so the person and the bot share one browser and one profile. This asks the
+# helper to open the URL (starting Chromium if needed); it never starts a browser itself.
+exec curl -fsS --unix-socket /run/ctl/helper.sock -X POST \
+  --data-urlencode "url=${1:-}" http://localhost/browser/open >/dev/null

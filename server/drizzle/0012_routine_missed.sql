@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "missed" text DEFAULT 'run' NOT NULL;

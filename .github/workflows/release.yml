@@ -1,0 +1,90 @@
+name: Release
+
+# Builds the desktop installers for a version tag and attaches them to that tag's GitHub release,
+# so people download the app instead of building it. A new tag gets a draft release, published by
+# hand once the notes are written; an existing release just gets its installers replaced.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  release:
+    name: Prepare the release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a draft release unless one exists
+        run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "YumakBot ${TAG#v}" --generate-notes
+
+  installer:
+    name: Installer (${{ matrix.os }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Xcode 26 compiles the Icon Composer icon; this image has it as the default.
+          - os: macos-26
+            files: desktop/out/*.dmg
+          - os: windows-latest
+            files: desktop/out/*.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      # The pnpm version is read from the packageManager field in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check the tag matches the app version
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match the desktop app version $version"
+            exit 1
+          fi
+      - run: pnpm build
+      - name: Package
+        # Signing opens every file of the server's node_modules inside the app at once, more than
+        # the macOS runner's per-process open-file limit, so the limit is raised for this step.
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144
+            ulimit -n 262144
+          fi
+          pnpm --filter @yumakbot/desktop dist --publish never
+        env:
+          # macOS only: the Developer ID certificate (a base64 .p12) and the Apple account that
+          # notarizes the app. Missing secrets give an unsigned or un-notarized app, not a failure.
+          # Kept off Windows, where electron-builder would try the Apple certificate on the .exe.
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' }}
+      - name: Attach to the release
+        run: gh release upload "$TAG" ${{ matrix.files }} --clobber

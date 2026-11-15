@@ -1,0 +1,721 @@
+import { homedir } from 'node:os';
+import {
+  createSdkMcpServer,
+  query,
+  tool,
+  type McpSdkServerConfigWithInstance,
+  type Options,
+  type SDKMessage,
+  type SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk';
+import { EFFORTS, type ClaudeModel, type Effort } from '@yumakbot/shared';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { translator } from '../i18n';
+import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
+import { parseVerdict, reviewPrompt } from './review';
+import {
+  APP_SERVER,
+  planItems,
+  resultImages,
+  resultText,
+  type AccountStatus,
+  type AppTool,
+  type Engine,
+  type ReviewRequest,
+  type ReviewVerdict,
+  type Sandbox,
+  type TurnOutcome,
+  type TurnRequest,
+  OVERLOADED,
+  providerTrouble,
+  runCost,
+  withContext,
+} from './types';
+
+/** The most model steps one turn may take. */
+const MAX_TURNS = 50;
+
+/** What the CLI says when asked to resume a session it has no transcript for. */
+const LOST_SESSION = /No conversation found with session ID/i;
+
+/**
+ * Settings every CLI run gets. Transcripts are what a thread resumes from, so the CLI keeps them
+ * instead of deleting them after its default 30 days.
+ */
+const CLI_SETTINGS = { disableClaudeAiConnectors: true, cleanupPeriodDays: 3650 } as const;
+
+export { BASH_MAX_TIMEOUT_MS };
+
+/** How long a stopped turn's CLI gets to answer the interrupt before it is closed. */
+export const STOP_GRACE_MS = 3_000;
+
+const TIMED_OUT = /\bCommand timed out after\b/;
+/** `find /`, `sudo find / -name …`: a search rooted at the disk root. */
+const DISK_SCAN = /(?:^|[;&|(]\s*|\bsudo\s+)find\s+\/(?:\s|$)/m;
+
+/**
+ * What the bot is told after a shell command was stopped at its time limit, or null for any other
+ * failure: the command's output is lost, and without a word the model runs it again into the same
+ * wall.
+ */
+export function shellTimeoutHint(toolName: string, toolInput: unknown, error: string): string | null {
+  if (toolName !== 'Bash' || !TIMED_OUT.test(error)) return null;
+  const command =
+    toolInput && typeof toolInput === 'object' ? (toolInput as { command?: unknown }).command : undefined;
+  const scan = typeof command === 'string' && DISK_SCAN.test(command);
+  return [
+    'That command hit the shell time limit and its output was lost. Do not rerun it the same way.',
+    scan
+      ? 'Do not search the whole disk: search a specific folder (your workspace, home) with -maxdepth, or by name with mdfind on macOS.'
+      : `If it needs longer, rerun it with a larger \`timeout\` (in milliseconds, up to ${BASH_MAX_TIMEOUT_MS}) and keep it in the foreground until it exits, or split the work into shorter pieces: a detached job may be stopped when the call ends.`,
+  ].join(' ');
+}
+
+/** How many times in a row the same call may fail the same way before the bot is told to stop. */
+export const FAILURE_STREAK = 3;
+
+/**
+ * Counts the same tool call failing the same way back to back, and says so to the bot once that
+ * happens {@link FAILURE_STREAK} times: a model retrying an unchanged call rarely gets another
+ * answer. A call that works, or a different call, starts the count again; a poll that keeps
+ * succeeding with the same output is never counted.
+ */
+export function failureStreak() {
+  let last = '';
+  let count = 0;
+  return {
+    reset() {
+      last = '';
+      count = 0;
+    },
+    note(toolName: string, toolInput: unknown, error: string): string | null {
+      const key = JSON.stringify([toolName, toolInput, error.slice(0, 2000)]);
+      count = key === last ? count + 1 : 1;
+      last = key;
+      if (count < FAILURE_STREAK) return null;
+      return `This call has failed the same way ${count} times in a row. Do not run it again unchanged: change the approach, or tell the person what is in the way.`;
+    },
+  };
+}
+
+/**
+ * Environment for the Claude Code process, built from scratch: nothing from the server's own
+ * environment leaks in. An ANTHROPIC_API_KEY of the server's would switch to pay-per-use billing
+ * without anyone choosing it; a key chosen in Settings comes in through `extra` instead.
+ */
+export function engineEnv(extra: Record<string, string | undefined> = {}): Record<string, string> {
+  const keep = ['PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'SHELL', 'TZ'];
+  const env: Record<string, string> = {};
+  for (const k of keep) {
+    const v = process.env[k];
+    if (v) env[k] = v;
+  }
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = 'yumakbot/0.1.0';
+  for (const [k, v] of Object.entries(extra)) if (v) env[k] = v;
+  return env;
+}
+
+/**
+ * Folder limits: file tools stay in the working directories; Bash runs in the OS sandbox.
+ * `hidden` are folders shell commands may not read (home, the server's data, the Claude login);
+ * the bot's own folders inside them are opened again by `allowRead`.
+ */
+export function sandboxOptions(
+  sb: Sandbox,
+  hidden: string[],
+): Pick<Options, 'settings' | 'sandbox' | 'additionalDirectories' | 'cwd'> {
+  return {
+    cwd: sb.cwd,
+    additionalDirectories: sb.additionalDirectories,
+    settings: {
+      ...CLI_SETTINGS,
+      permissions: {
+        blockReadsOutsideWorkingDirectories: true,
+        blockWritesOutsideWorkingDirectories: true,
+      },
+    },
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      // Sandboxed Bash still goes through canUseTool so "Her zaman sor" rules apply.
+      autoAllowBashIfSandboxed: false,
+      allowUnsandboxedCommands: false,
+      filesystem: {
+        denyRead: [...new Set(hidden)],
+        allowRead: [sb.cwd, ...sb.additionalDirectories],
+        allowWrite: sb.writable,
+      },
+      // No host is let through ahead: each one a command reaches comes to canUseTool as
+      // SandboxNetworkAccess, where the turn decides by the bot's internet switch.
+      network: {
+        allowedDomains: [],
+      },
+    },
+  };
+}
+
+function inbox() {
+  const queue: SDKUserMessage[] = [];
+  let wake: (() => void) | null = null;
+  let closed = false;
+  return {
+    push(text: string) {
+      queue.push({
+        type: 'user',
+        message: { role: 'user', content: text },
+        parent_tool_use_id: null,
+      } as SDKUserMessage);
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> {
+      for (;;) {
+        while (queue.length) yield queue.shift()!;
+        if (closed) return;
+        await new Promise<void>((r) => (wake = r));
+        wake = null;
+      }
+    },
+  };
+}
+
+const toContent = (r: Awaited<ReturnType<AppTool['handler']>>) => [
+  { type: 'text' as const, text: resultText(r) },
+  ...resultImages(r).map((i) => ({ type: 'image' as const, data: i.data, mimeType: i.mimeType })),
+];
+
+/**
+ * A connection's tools as an in-process MCP server named after the connection. Their input comes
+ * as the JSON Schema the connection's server gave, so this answers the listing itself instead of
+ * describing each input in Zod.
+ */
+function connectionServer(name: string, tools: AppTool[]): McpSdkServerConfigWithInstance {
+  const server = new McpServer({ name, version: '0.1.0' }, { capabilities: { tools: {} } });
+  const byName = new Map(tools.map((t) => [t.name, t]));
+  server.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: { type: 'object' as const, ...(t.jsonSchema ?? {}) },
+      annotations: { readOnlyHint: t.readOnly },
+    })),
+  }));
+  server.server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const t = byName.get(req.params.name);
+    if (!t) return { content: [{ type: 'text' as const, text: req.params.name }], isError: true };
+    return { content: toContent(await t.handler((req.params.arguments ?? {}) as Record<string, unknown>)) };
+  });
+  // The SDK only connects the instance to its transport; the two packages' types differ in name only.
+  return { type: 'sdk', name, instance: server as unknown as McpSdkServerConfigWithInstance['instance'] };
+}
+
+/** The app's own tools under `yumakbot`, and each connection's under its own name. */
+export function mcpServers(tools: AppTool[]): Record<string, McpSdkServerConfigWithInstance> {
+  const groups = new Map<string, AppTool[]>();
+  for (const t of tools) {
+    const key = t.server ?? APP_SERVER;
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+  const out: Record<string, McpSdkServerConfigWithInstance> = {
+    [APP_SERVER]: mcpServer(groups.get(APP_SERVER) ?? []),
+  };
+  for (const [name, list] of groups) if (name !== APP_SERVER) out[name] = connectionServer(name, list);
+  return out;
+}
+
+function mcpServer(tools: AppTool[]) {
+  return createSdkMcpServer({
+    name: APP_SERVER,
+    version: '0.1.0',
+    tools: tools.map((t) =>
+      tool(t.name, t.description, t.input, async (args) => ({
+        content: toContent(await t.handler(args as Record<string, unknown>)),
+      })),
+    ),
+  });
+}
+
+/** A subscription token from `claude setup-token`, or an Anthropic API key. */
+export interface ClaudeCredential {
+  kind: 'token' | 'apiKey';
+  value: string;
+  /** With an API key: the Anthropic-compatible gateway it goes to instead of Anthropic. */
+  baseUrl?: string;
+}
+
+export interface ClaudeEngineOptions {
+  /** Per-account Claude config dir; unset = the default ~/.claude login. */
+  configDir?: string | null;
+  /** The token or key saved in Settings, read for every run; null uses the machine's login. */
+  credential?: () => Promise<ClaudeCredential | null>;
+  /** Further variables for the CLI process. */
+  env?: Record<string, string>;
+  executable?: string | null;
+  home?: string;
+  /** Further folders shell commands may not read, e.g. the server's data folder. */
+  hidden?: string[];
+}
+
+/** A limit's reset time as the CLI reports it: seconds since the epoch (milliseconds tolerated). */
+export function resetTime(at: number | undefined): Date | null {
+  if (!at || !Number.isFinite(at)) return null;
+  return new Date(at < 1e12 ? at * 1000 : at);
+}
+
+export class ClaudeEngine implements Engine {
+  readonly kind = 'claude';
+  constructor(private opts: ClaudeEngineOptions = {}) {}
+
+  private async baseOptions(): Promise<{ options: Partial<Options>; credential: ClaudeCredential | null }> {
+    const credential = (await this.opts.credential?.()) ?? null;
+    const options: Partial<Options> = {
+      settingSources: [],
+      env: engineEnv({
+        ...this.opts.env,
+        CLAUDE_CONFIG_DIR: this.opts.configDir ?? undefined,
+        // The CLI then removes Anthropic credentials from the environment of every command it
+        // starts, so a bot's shell cannot read the token or key below.
+        CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1',
+        // A bot's memory is the app's. The CLI's own, one folder per working folder, would split notes
+        // by conversation and put a per-conversation path in the prompt, voiding its cache.
+        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+        // A command or helper agent sent to the background would die quietly when the turn ends and
+        // closes the CLI; each step's work stays inside its turn instead.
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+        // A bot may raise a long command's own timeout up to ten minutes; the default stays two.
+        BASH_MAX_TIMEOUT_MS: String(BASH_MAX_TIMEOUT_MS),
+        CLAUDE_CODE_OAUTH_TOKEN: credential?.kind === 'token' ? credential.value : undefined,
+        ANTHROPIC_API_KEY: credential?.kind === 'apiKey' ? credential.value : undefined,
+        ANTHROPIC_BASE_URL: credential?.kind === 'apiKey' ? credential.baseUrl : undefined,
+      }),
+      ...(this.opts.executable ? { pathToClaudeCodeExecutable: this.opts.executable } : {}),
+    };
+    return { options, credential };
+  }
+
+  async run(req: TurnRequest): Promise<TurnOutcome> {
+    const t = translator(req.locale);
+    const input = inbox();
+    const home = this.opts.home ?? homedir();
+    const hidden = [home, ...(this.opts.hidden ?? [])];
+    if (this.opts.configDir) hidden.push(this.opts.configDir);
+    const failures = failureStreak();
+    const options: Options = {
+      ...(await this.baseOptions()).options,
+      ...sandboxOptions(req.sandbox, hidden),
+      ...(req.model ? { model: req.model } : {}),
+      ...(req.effort ? { effort: req.effort } : {}),
+      ...(req.sessionId ? { resume: req.sessionId } : {}),
+      // Not snapshotted: memory and routines in the prompt must be current on every resume.
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: req.systemPrompt, snapshot: false },
+      includePartialMessages: true,
+      permissionMode: 'default',
+      disallowedTools: [
+        'AskUserQuestion',
+        'EnterWorktree',
+        'ExitWorktree',
+        'CronCreate',
+        'CronDelete',
+        'CronList',
+        // They work only in Claude Code's own terminal or app, and their descriptions ride every call.
+        'Workflow',
+        'ScheduleWakeup',
+        'ReportFindings',
+        'ListAgents',
+        // Commands go to the bot's desktop through run_command.
+        ...(req.shell === 'computer' ? ['Bash', 'BashOutput', 'KillShell', 'KillBash'] : []),
+        ...(req.sandbox.internet ? [] : ['WebFetch', 'WebSearch']),
+      ],
+      mcpServers: mcpServers(req.tools),
+      maxTurns: MAX_TURNS,
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === 'PreToolUse') {
+                  req.onActivity?.({ id: input.tool_use_id, name: input.tool_name, running: true });
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === 'PostToolUse') {
+                  req.onActivity?.({ id: input.tool_use_id, name: input.tool_name, running: false });
+                }
+                // Any call that works ends a run of identical failures.
+                failures.reset();
+                return {};
+              },
+            ],
+          },
+        ],
+        PostToolUseFailure: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === 'PostToolUseFailure') {
+                  req.onActivity?.({ id: input.tool_use_id, name: input.tool_name, running: false });
+                }
+                const hint =
+                  input.hook_event_name === 'PostToolUseFailure'
+                    ? [
+                        shellTimeoutHint(input.tool_name, input.tool_input, input.error),
+                        failures.note(input.tool_name, input.tool_input, input.error),
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || null
+                    : null;
+                return hint
+                  ? {
+                      hookSpecificOutput: {
+                        hookEventName: 'PostToolUseFailure' as const,
+                        additionalContext: hint,
+                      },
+                    }
+                  : {};
+              },
+            ],
+          },
+        ],
+        ...(req.steering && {
+          PostToolBatch: [
+            {
+              hooks: [
+                async () => {
+                  const added = req.steering?.() ?? [];
+                  return added.length
+                    ? {
+                        hookSpecificOutput: {
+                          hookEventName: 'PostToolBatch' as const,
+                          additionalContext: added.join('\n\n'),
+                        },
+                      }
+                    : {};
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      canUseTool: async (toolName, toolInput, { signal }) => {
+        if (signal.aborted) return { behavior: 'deny', message: t('engine.stopped') };
+        const answer = await req.canUseTool({ toolName, input: toolInput });
+        return answer.behavior === 'allow'
+          ? { behavior: 'allow', updatedInput: answer.updatedInput ?? toolInput }
+          : { behavior: 'deny', message: answer.message };
+      },
+    };
+
+    const q = query({ prompt: input, options });
+    // A CLI that does not answer the interrupt is closed after a moment, so a stopped turn ends.
+    let closer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      void q.interrupt().catch(() => {});
+      closer = setTimeout(() => q.close?.(), STOP_GRACE_MS);
+      closer.unref?.();
+    };
+    req.signal.addEventListener('abort', onAbort, { once: true });
+    input.push(withContext(req));
+
+    let text = '';
+    let sessionId: string | null = req.sessionId;
+    // The session's running cost: a resumed session goes on from the total its transcript kept.
+    let total: number | null = null;
+    let authFailed = false;
+    let errorMessage: string | null = null;
+    let finished = false;
+    let outOfSteps = false;
+    // Set once the account's usage limit refuses the turn: when it lifts, or null when unknown.
+    let limited: { resetsAt: Date | null } | null = null;
+    // What a failed API call said, when the CLI reported one.
+    let apiError: string | null = null;
+    try {
+      for await (const m of q as AsyncIterable<SDKMessage>) {
+        req.onActivity?.();
+        if (m.type === 'rate_limit_event') {
+          const info = m.rate_limit_info;
+          if (info.status === 'rejected') limited = { resetsAt: resetTime(info.resetsAt) };
+          else if (info.status === 'allowed_warning') {
+            req.onLimitNear?.({ used: info.utilization ?? null, resetsAt: resetTime(info.resetsAt) });
+          }
+        } else if (m.type === 'system' && m.subtype === 'compact_boundary') {
+          req.onCompacted?.();
+        } else if (m.type === 'system' && m.subtype === 'init') {
+          sessionId = m.session_id;
+          req.onSession(m.session_id);
+        } else if (m.type === 'stream_event') {
+          const ev = m.event as { type: string; delta?: { type: string; text?: string } };
+          if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
+            req.onText(ev.delta.text);
+          }
+        } else if (m.type === 'user' && Array.isArray(m.message.content)) {
+          // A tool's result, a refused call's too, ends that call.
+          for (const c of m.message.content) {
+            if (c.type === 'tool_result') req.onActivity?.({ id: c.tool_use_id, name: '', running: false });
+          }
+        } else if (m.type === 'assistant') {
+          const err = (m as { error?: string }).error;
+          if (err === 'authentication_failed') authFailed = true;
+          if (err === 'rate_limit') limited ??= { resetsAt: null };
+          // The CLI reports a failed API call as an assistant message carrying the error's text:
+          // that text is the cause of the failure, not the bot's reply.
+          if (err) {
+            apiError = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('') || err;
+            continue;
+          }
+          for (const c of m.message.content) {
+            if (c.type === 'tool_use' && c.name === 'TodoWrite') {
+              const plan = planItems(c.input);
+              if (plan) req.onPlan?.(plan);
+            }
+          }
+          // Keep the text of the last assistant message; earlier ones were interim steps.
+          const parts = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : []));
+          if (parts.length) text = parts.join('');
+        } else if (m.type === 'result') {
+          finished = true;
+          total = m.total_cost_usd ?? null;
+          if (m.subtype === 'error_max_turns') outOfSteps = true;
+          if (m.subtype === 'success' && !m.is_error) {
+            if (m.result) text = m.result;
+          } else {
+            errorMessage =
+              m.subtype === 'success'
+                ? m.result || apiError || t('engine.error')
+                : m.errors?.length
+                  ? m.errors.join('; ')
+                  : m.subtype === 'error_max_turns'
+                    ? t('engine.stepLimit', { max: MAX_TURNS })
+                    : apiError || t('engine.unfinished');
+          }
+          input.close();
+        }
+      }
+    } catch (err) {
+      errorMessage = errorMessage ?? apiError ?? (err as Error).message;
+      if (/not logged in|\/login/i.test(errorMessage)) authFailed = true;
+    } finally {
+      clearTimeout(closer);
+      req.signal.removeEventListener('abort', onAbort);
+      input.close();
+    }
+    const costUsd = runCost(total, req.sessionId ? req.sessionCostUsd : null);
+    const sessionCostUsd = total;
+    if (req.signal.aborted) {
+      return {
+        ok: false,
+        kind: 'interrupted',
+        message: t('engine.stopped'),
+        text,
+        sessionId,
+        costUsd,
+        sessionCostUsd,
+      };
+    }
+    if (authFailed) {
+      return { ok: false, kind: 'auth', message: t('engine.noClaudeLogin'), text: '', sessionId };
+    }
+    // The CLI deletes old transcripts after a while; the thread's session may have gone with them.
+    if (req.sessionId && errorMessage && LOST_SESSION.test(errorMessage)) {
+      return { ok: false, kind: 'lostSession', message: errorMessage, text: '', sessionId: null };
+    }
+    if (limited && (errorMessage || !finished)) {
+      return {
+        ok: false,
+        kind: 'limit',
+        message: errorMessage ?? t('engine.unfinished'),
+        text,
+        sessionId,
+        resetsAt: limited.resetsAt,
+        costUsd,
+        sessionCostUsd,
+      };
+    }
+    if (errorMessage || !finished) {
+      // An API failure in words the person can act on: an empty balance, an overloaded server.
+      const cause = errorMessage ?? apiError;
+      const said = apiError && cause ? providerTrouble(cause, 'Claude', t) : null;
+      return {
+        ok: false,
+        kind: 'engine',
+        message: said?.message ?? cause ?? t('engine.unfinished'),
+        text,
+        sessionId,
+        ...(((cause && OVERLOADED.test(cause)) || said?.transient) && { transient: true }),
+        ...(outOfSteps && { stepLimit: true }),
+        costUsd,
+        sessionCostUsd,
+      };
+    }
+    return { ok: true, text, sessionId, costUsd, sessionCostUsd };
+  }
+
+  /** Starts a CLI without tools, runs `ask` against it and closes it. */
+  private async withCli<T>(ask: (q: ReturnType<typeof query>) => Promise<T>, ms = 20_000): Promise<T> {
+    const input = inbox();
+    const { options } = await this.baseOptions();
+    const q = query({
+      prompt: input,
+      options: { ...options, settings: CLI_SETTINGS, tools: [] },
+    });
+    try {
+      return await Promise.race([ask(q), new Promise<never>((_, rej) => setTimeout(() => rej(TIMEOUT), ms))]);
+    } finally {
+      input.close();
+      q.close?.();
+    }
+  }
+
+  /** Login check without reading tokens: ask the CLI who is signed in. */
+  async account(): Promise<AccountStatus> {
+    const credential = (await this.opts.credential?.()) ?? null;
+    try {
+      const info = await this.withCli((q) => q.accountInfo());
+      if (info.tokenSource === 'none' && !info.apiKeySource?.length)
+        return { status: 'logged-out', detail: null };
+      if (info.apiKeySource && info.apiKeySource !== 'none') {
+        // A key chosen in Settings is expected; any other key would bill per use unasked.
+        if (credential?.kind === 'apiKey' && info.apiKeySource === 'ANTHROPIC_API_KEY')
+          return { status: 'ok', detail: null };
+        return { status: 'error', reason: 'api-key', detail: info.apiKeySource };
+      }
+      return { status: 'ok', detail: info.subscriptionType ?? null };
+    } catch (err) {
+      if (err === TIMEOUT) return { status: 'error', reason: 'timeout', detail: null };
+      return { status: 'error', detail: (err as Error).message };
+    }
+  }
+
+  /**
+   * The login check, then one short reply from the cheapest model: a token or key the CLI accepts
+   * locally can still be refused by Anthropic, and only a request shows that.
+   */
+  async probe(): Promise<AccountStatus> {
+    const account = await this.account();
+    if (account.status !== 'ok') return account;
+    const input = inbox();
+    const { options } = await this.baseOptions();
+    const q = query({
+      prompt: input,
+      options: {
+        ...options,
+        settings: CLI_SETTINGS,
+        tools: [],
+        model: 'haiku',
+        maxTurns: 1,
+      },
+    });
+    input.push('Reply with the single word: ok');
+    let error: string | null = null;
+    let auth = false;
+    const run = async () => {
+      for await (const m of q as AsyncIterable<SDKMessage>) {
+        if (m.type === 'assistant') {
+          const e = (m as { error?: string }).error;
+          if (e) {
+            error = e;
+            if (e === 'authentication_failed') auth = true;
+          }
+        } else if (m.type === 'result') {
+          if (m.is_error || m.subtype !== 'success')
+            error = error ?? (m.subtype === 'success' ? (m.result ?? 'error') : m.subtype);
+          break;
+        }
+      }
+    };
+    try {
+      await Promise.race([run(), new Promise<never>((_, rej) => setTimeout(() => rej(TIMEOUT), 60_000))]);
+    } catch (err) {
+      if (err === TIMEOUT) return { status: 'error', reason: 'timeout', detail: null };
+      error = (err as Error).message;
+    } finally {
+      input.close();
+      q.close?.();
+    }
+    if (auth) return { status: 'logged-out', detail: null };
+    return error ? { status: 'error', detail: error } : account;
+  }
+
+  /**
+   * The `review` mode: the cheapest model, without tools, looks at one permission request.
+   * A failure, a timeout or an unclear answer is "ask".
+   */
+  async review(req: ReviewRequest): Promise<ReviewVerdict> {
+    const { system, user } = reviewPrompt(req);
+    const input = inbox();
+    const { options } = await this.baseOptions();
+    const q = query({
+      prompt: input,
+      options: {
+        ...options,
+        settings: CLI_SETTINGS,
+        tools: [],
+        model: 'haiku',
+        maxTurns: 1,
+        systemPrompt: system,
+      },
+    });
+    const onAbort = () => void q.interrupt().catch(() => {});
+    req.signal.addEventListener('abort', onAbort, { once: true });
+    input.push(user);
+    let text = '';
+    const run = async () => {
+      for await (const m of q as AsyncIterable<SDKMessage>) {
+        if (m.type === 'assistant') {
+          const parts = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : []));
+          if (parts.length) text = parts.join('');
+        } else if (m.type === 'result') {
+          if (m.subtype === 'success' && !m.is_error && m.result) text = m.result;
+          break;
+        }
+      }
+    };
+    try {
+      await Promise.race([run(), new Promise<never>((_, rej) => setTimeout(() => rej(TIMEOUT), 30_000))]);
+    } catch (err) {
+      // A reviewer that cannot answer hands every request to the person; say so in the log.
+      if (!req.signal.aborted)
+        console.warn(
+          `Review failed, asking instead: ${err === TIMEOUT ? 'timeout' : (err as Error).message}`,
+        );
+      return { decision: 'ask', reason: '' };
+    } finally {
+      req.signal.removeEventListener('abort', onAbort);
+      input.close();
+      q.close?.();
+    }
+    return req.signal.aborted ? { decision: 'ask', reason: '' } : parseVerdict(text);
+  }
+
+  /** The models this login can use and their effort levels. */
+  async models(): Promise<ClaudeModel[]> {
+    const list = await this.withCli((q) => q.supportedModels());
+    return list.map((m) => ({
+      value: m.value,
+      name: m.displayName,
+      description: m.description,
+      efforts: m.supportsEffort
+        ? (m.supportedEffortLevels ?? []).filter((e): e is Effort => EFFORTS.includes(e))
+        : [],
+    }));
+  }
+}
+
+const TIMEOUT = new Error('timeout');
+
+/** Shown when the CLI cannot list models, e.g. before any login works. */
+export const FALLBACK_MODELS: ClaudeModel[] = [
+  { value: 'sonnet', name: 'Sonnet', description: '', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { value: 'opus', name: 'Opus', description: '', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { value: 'haiku', name: 'Haiku', description: '', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+];

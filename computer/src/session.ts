@@ -1,0 +1,255 @@
+// The helper that runs inside one bot's sandbox. The controller reaches it over unix sockets in the
+// session's control directory:
+//   helper.sock  HTTP: GET /ping, POST /exec, /screenshot, /action, /browser/open
+//   cdp.sock     raw stream to the session's Chromium (Chrome DevTools Protocol, NUL-framed)
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, chmodSync } from 'node:fs';
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer as createNetServer, type Socket } from 'node:net';
+import type { Writable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
+import { join } from 'node:path';
+import { DESKTOP_SIZE, DesktopAction, DesktopExec, DesktopJobQuery, DesktopJobStart } from '@yumakbot/shared';
+import { isOpenableUrl, Jobs, pngSize, TailBuffer, xdotoolArgs } from './lib';
+
+const CTL = process.env.YUMAKBOT_CTL ?? '/run/ctl';
+const HOME = process.env.HOME ?? '/tmp';
+const CHROMIUM = process.env.YUMAKBOT_CHROMIUM ?? 'chromium';
+const MAX_OUTPUT = 100_000;
+const MAX_BODY = 1024 * 1024;
+
+const chromiumArgs = [
+  '--user-data-dir=' + join(HOME, '.config', 'chromium'),
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-session-crashed-bubble',
+  '--start-maximized',
+];
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) });
+  res.end(json);
+}
+
+const fail = (res: ServerResponse, status: number, code: string, error: string) =>
+  send(res, status, { error, code });
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        reject(new Error('body too large'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+// ---- exec ----------------------------------------------------------------------------------
+
+function runCommand(command: string, cwd: string, timeoutMs: number) {
+  return new Promise<{ exitCode: number | null; output: string; truncated: boolean; timedOut: boolean }>(
+    (resolve) => {
+      const tail = new TailBuffer(MAX_OUTPUT);
+      const child = spawn('bash', ['-lc', command], {
+        cwd,
+        detached: true, // its own process group, so a timeout can kill everything it started
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      // Separate decoders: a character split across chunks must not be joined with the other pipe's.
+      const out = new StringDecoder('utf8');
+      const err = new StringDecoder('utf8');
+      child.stdout.on('data', (c: Buffer) => tail.push(out.write(c)));
+      child.stderr.on('data', (c: Buffer) => tail.push(err.write(c)));
+      let timedOut = false;
+      let done = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }, timeoutMs);
+      const finish = (exitCode: number | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        tail.push(out.end() + err.end());
+        child.stdout.destroy();
+        child.stderr.destroy();
+        resolve({ exitCode, ...tail.result(), timedOut });
+      };
+      child.on('error', (e) => {
+        tail.push(`${e.message}\n`);
+        finish(null);
+      });
+      // A background process that keeps the pipes open must not hold the answer back.
+      child.on('exit', (code) => setTimeout(() => finish(code), 150));
+      child.on('close', (code) => finish(code));
+    },
+  );
+}
+
+/** Commands left running in the background, for builds and installs longer than one call. */
+const jobs = new Jobs((command, cwd) =>
+  spawn('bash', ['-lc', command], {
+    cwd,
+    detached: true, // its own process group, so the whole job can be stopped
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }),
+);
+process.on('exit', () => jobs.stopAll());
+
+// ---- desktop tools -------------------------------------------------------------------------
+
+const run = (file: string, args: string[], timeout = 15_000) =>
+  new Promise<void>((resolve, reject) =>
+    execFile(file, args, { timeout }, (err, _out, stderr) =>
+      err ? reject(new Error(stderr.trim() || err.message)) : resolve(),
+    ),
+  );
+
+async function screenshot() {
+  const dir = mkdtempSync('/tmp/shot-');
+  const file = join(dir, 's.png');
+  try {
+    await run('scrot', ['-o', file]);
+    const png = readFileSync(file);
+    const size = pngSize(png) ?? DESKTOP_SIZE;
+    return { png: png.toString('base64'), width: size.width, height: size.height };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- Chromium ------------------------------------------------------------------------------
+
+let chromium: ChildProcess | null = null;
+let toBrowser: Writable | null = null;
+let cdpClient: Socket | null = null;
+
+/** Starts the one Chromium of this session (with the DevTools pipe) unless it is running. */
+function ensureChromium(url?: string): boolean {
+  if (chromium && chromium.exitCode === null) return false;
+  const args = ['--remote-debugging-pipe', ...chromiumArgs, ...(url ? ['--', url] : [])];
+  // fd 3: Chromium reads our commands; fd 4: Chromium writes its answers and events.
+  const child = spawn(CHROMIUM, args, { stdio: ['ignore', 'inherit', 'inherit', 'pipe', 'pipe'] });
+  chromium = child;
+  toBrowser = child.stdio[3] as Writable;
+  toBrowser.on('error', () => {});
+  const fromBrowser = child.stdio[4]!;
+  // Always drain: events pile up in the pipe even when nobody listens.
+  fromBrowser.on('data', (d: Buffer) => cdpClient?.write(d));
+  fromBrowser.on('error', () => {});
+  child.on('error', (e) => console.error('chromium:', e.message));
+  child.on('exit', () => {
+    if (chromium === child) {
+      chromium = null;
+      toBrowser = null;
+      cdpClient?.destroy();
+    }
+  });
+  return true;
+}
+
+/** Opens a URL in the session's Chromium, starting it first if needed. */
+function openInBrowser(url: string): void {
+  if (ensureChromium(url || undefined)) return;
+  // Already running: a second launch on the same profile hands the URL to the running one and
+  // exits. This avoids sharing the single DevTools pipe with a client that may be connected.
+  const args = [...chromiumArgs, ...(url ? ['--', url] : [])];
+  spawn(CHROMIUM, args, { stdio: 'ignore', detached: true })
+    .on('error', () => {})
+    .unref();
+}
+
+// ---- servers -------------------------------------------------------------------------------
+
+const http = createHttpServer(async (req, res) => {
+  try {
+    const path = (req.url ?? '').split('?')[0];
+    if (req.method === 'GET' && path === '/ping') return send(res, 200, { ok: true });
+    if (req.method !== 'POST') return fail(res, 404, 'badRequest', 'not found');
+    const raw = await readBody(req);
+
+    if (path === '/browser/open') {
+      const url = (new URLSearchParams(raw).get('url') ?? '').trim();
+      if (!isOpenableUrl(url)) return fail(res, 400, 'badRequest', 'url not allowed');
+      openInBrowser(url);
+      return send(res, 200, { ok: true });
+    }
+
+    let json: unknown = {};
+    if (raw) {
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        return fail(res, 400, 'badRequest', 'invalid JSON');
+      }
+    }
+    if (path === '/exec') {
+      const p = DesktopExec.safeParse(json);
+      if (!p.success) return fail(res, 400, 'badRequest', p.error.message);
+      return send(res, 200, await runCommand(p.data.command, p.data.cwd, p.data.timeoutMs));
+    }
+    if (path === '/jobs/start') {
+      const p = DesktopJobStart.safeParse(json);
+      if (!p.success) return fail(res, 400, 'badRequest', p.error.message);
+      try {
+        return send(res, 200, await jobs.status(jobs.run(p.data.command, p.data.cwd)));
+      } catch (e) {
+        return fail(res, 409, 'failed', e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (path === '/jobs/status') {
+      const p = DesktopJobQuery.safeParse(json);
+      if (!p.success) return fail(res, 400, 'badRequest', p.error.message);
+      const job = await jobs.status(p.data.id, p.data.waitMs);
+      return job ? send(res, 200, job) : fail(res, 404, 'badRequest', 'no such job');
+    }
+    if (path === '/screenshot') return send(res, 200, await screenshot());
+    if (path === '/action') {
+      const p = DesktopAction.safeParse(json);
+      if (!p.success) return fail(res, 400, 'badRequest', p.error.message);
+      await run('xdotool', xdotoolArgs(p.data));
+      return send(res, 200, { ok: true });
+    }
+    return fail(res, 404, 'badRequest', 'not found');
+  } catch (e) {
+    fail(res, 500, 'failed', e instanceof Error ? e.message : String(e));
+  }
+});
+
+// One CDP client at a time: a second connection is closed at once.
+const cdp = createNetServer((sock) => {
+  if (cdpClient) return void sock.destroy();
+  ensureChromium();
+  cdpClient = sock;
+  sock.on('data', (d) => toBrowser?.write(d));
+  sock.on('error', () => {});
+  sock.on('close', () => {
+    if (cdpClient === sock) cdpClient = null;
+  });
+});
+
+function listen(server: ReturnType<typeof createNetServer> | typeof http, path: string): void {
+  rmSync(path, { force: true });
+  server.listen(path, () => chmodSync(path, 0o600));
+}
+
+listen(cdp, join(CTL, 'cdp.sock'));
+listen(http, join(CTL, 'helper.sock'));
+
+const stop = () => {
+  chromium?.kill('SIGTERM');
+  process.exit(0);
+};
+process.on('SIGTERM', stop);
+process.on('SIGINT', stop);

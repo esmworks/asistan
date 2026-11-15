@@ -1,0 +1,19 @@
+{
+  "name": "@yumakbot/computer",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@yumakbot/shared": "workspace:*",
+    "ws": "8.22.2"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2"
+  }
+}

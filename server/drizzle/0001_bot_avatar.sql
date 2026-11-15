@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ADD COLUMN "avatar" text DEFAULT 'shape:blob' NOT NULL;

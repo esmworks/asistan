@@ -1,0 +1,33 @@
+{
+  "name": "yumakbot",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter @yumakbot/server dev",
+    "dev:app": "pnpm --filter @yumakbot/app dev",
+    "build": "pnpm --filter @yumakbot/app build && pnpm --filter @yumakbot/server build && pnpm --filter @yumakbot/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "pnpm build && pnpm --filter @yumakbot/desktop exec electron ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "26.6.6",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,118 @@
+# Production-style setup: YumakBot server + PostgreSQL.
+#   cp docker/.env.example docker/.env   (fill in the values)
+#   docker compose -f docker/compose.yml up -d --build
+name: yumakbot
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yumakbot
+      POSTGRES_DB: yumakbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yumakbot']
+      interval: 5s
+      retries: 20
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 512m
+
+  yumakbot:
+    build: { context: .., dockerfile: Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      # The name exists only on the `computer` network; plain `computer` could resolve to its address
+      # on `egress`, where containers cannot reach each other.
+      YUMAKBOT_COMPUTER_URL: http://computer-api:4320
+      YUMAKBOT_COMPUTER_TOKEN: ${YUMAKBOT_COMPUTER_TOKEN:?YUMAKBOT_COMPUTER_TOKEN gerekli}
+      DATABASE_URL: postgres://yumakbot:${POSTGRES_PASSWORD}@db:5432/yumakbot
+      YUMAKBOT_ACCESS_KEY: ${YUMAKBOT_ACCESS_KEY:?YUMAKBOT_ACCESS_KEY gerekli}
+      YUMAKBOT_ALLOWED_HOSTS: ${YUMAKBOT_ALLOWED_HOSTS:-}
+      YUMAKBOT_SECURE_COOKIES: ${YUMAKBOT_SECURE_COOKIES:-0}
+      YUMAKBOT_PUBLIC_URL: ${YUMAKBOT_PUBLIC_URL:-}
+    # Only on the host's loopback; put a TLS reverse proxy in front for remote use.
+    ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
+    volumes:
+      - data:/data
+    networks: [internal, egress, computer]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      # Chromium keeps its crash reports and some state under home.
+      - /home/yumakbot:size=256m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt:
+      - 'no-new-privileges:true'
+      # Claude runs each Bash command in its own sandbox (bubblewrap), which needs user namespaces
+      # and a fresh /proc. seccomp.json is Docker's default plus those calls; systempaths lets
+      # bubblewrap mount /proc. See "Bash yalıtımı" in docker/README.md.
+      - 'seccomp=./seccomp.json'
+      - 'systempaths=unconfined'
+      # Hosts that restrict user namespaces through AppArmor (Ubuntu 23.10 and later) need the
+      # yumakbot-userns profile; see "AppArmor" in docker/README.md.
+      - 'apparmor=${YUMAKBOT_APPARMOR:-docker-default}'
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 2
+    pids_limit: 512
+
+  # The bots' desktops. Each bot gets its own sandboxed session in here; see "Botların bilgisayarı"
+  # in docker/README.md. Not on the database network.
+  computer:
+    build: { context: .., dockerfile: computer/Dockerfile }
+    restart: unless-stopped
+    # The server creates the bots' folder on the data volume, which this service mounts.
+    depends_on:
+      yumakbot: { condition: service_healthy }
+    environment:
+      YUMAKBOT_COMPUTER_TOKEN: ${YUMAKBOT_COMPUTER_TOKEN:?YUMAKBOT_COMPUTER_TOKEN gerekli}
+    volumes:
+      # Only the bots' folders, at the same path the server sees. `subpath` needs Docker Engine 26+.
+      - type: volume
+        source: data
+        target: /data/workspaces
+        volume: { subpath: workspaces }
+    networks:
+      egress: {}
+      computer: { aliases: [computer-api] }
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      # Control directories of the running desktops (cookies, sockets, logs).
+      - /run/computer:size=64m,mode=0700,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt:
+      - 'no-new-privileges:true'
+      # Same as the server: each desktop is a bubblewrap sandbox. The profile also allows chroot,
+      # which Chromium's own sandbox needs inside it.
+      - 'seccomp=./seccomp.json'
+      - 'systempaths=unconfined'
+      - 'apparmor=${YUMAKBOT_APPARMOR:-docker-default}'
+    mem_limit: 6g
+    memswap_limit: 6g
+    cpus: 3
+    pids_limit: 2048
+    # Chromium and office programs use shared memory.
+    shm_size: 512m
+
+networks:
+  # Database traffic only; no route to the internet.
+  internal:
+    internal: true
+  # Internet access for the server; see docker/firewall.sh to block private ranges.
+  egress:
+    driver_opts:
+      com.docker.network.bridge.name: yumakbot0
+      com.docker.network.bridge.enable_icc: 'false'
+  # Server to computer service only; no route out.
+  computer:
+    internal: true
+
+volumes:
+  db:
+  data:

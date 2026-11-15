@@ -1,0 +1,139 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { describe, expect, it } from 'vitest';
+import { LOCALES } from './i18n';
+
+/**
+ * Every text a person reads comes from a language catalog. This scans the source of every
+ * package for text written straight into the code: strings with Turkish letters, and words in
+ * JSX (between tags or in attributes people see). Tests and the catalogs themselves are skipped.
+ */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PACKAGES = ['app/src', 'server/src', 'shared/src', 'desktop/src', 'computer/src'];
+
+/** Files that hold the catalogs, or text no person reads. Each needs its reason. */
+const ALLOWED = new Map<string, string>([
+  ['app/src/i18n/tr.ts', 'Turkish catalog'],
+  ['app/src/i18n/en.ts', 'English catalog'],
+  ['server/src/i18n.ts', 'server catalogs'],
+  ['desktop/src/i18n.ts', 'desktop catalogs'],
+  ['server/src/engine/fake.ts', 'test engine: its directives and replies are Turkish test input'],
+  [
+    'shared/src/actions.ts',
+    'approval sentences are built per language with its own grammar (Turkish verb forms), which a keyed catalog cannot express',
+  ],
+]);
+
+/** Single texts that are not translated, such as names. Each needs its reason. */
+const ALLOWED_TEXT: { file: string; text: string; reason: string }[] = [
+  { file: 'app/src/features/Login.tsx', text: 'YumakBot', reason: 'product name' },
+  { file: 'app/src/features/Sidebar.tsx', text: 'YumakBot', reason: 'product name' },
+  { file: 'app/src/features/SettingsDialog.tsx', text: 'YumakBot', reason: 'product name' },
+  {
+    file: 'app/src/features/SettingsDialog.tsx',
+    text: 'Copyright © 2026 esmworks (Erhan Erbaş)',
+    reason: 'copyright notice, the same in every language',
+  },
+];
+
+const TURKISH = /[çğıöşüÇĞİÖŞÜ]/;
+/** Attributes whose value is shown or read out to people. */
+const VISIBLE_ATTRS = new Set(['placeholder', 'title', 'alt', 'aria-label', 'aria-description', 'label']);
+/** A JSX text worth flagging has at least two letters in a row (not "·", "/", "×" or "x"). */
+const WORDS = /\p{L}{2,}/u;
+
+function sources(dir: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.flatMap((e) => {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) return e.name === 'node_modules' ? [] : sources(full);
+    if (!/\.(ts|tsx)$/.test(e.name) || /\.(test|real\.test)\.tsx?$/.test(e.name) || e.name.endsWith('.d.ts'))
+      return [];
+    return [full];
+  });
+}
+
+interface Finding {
+  file: string;
+  line: number;
+  text: string;
+}
+
+export function findHardcodedText(file: string, code: string): Omit<Finding, 'file'>[] {
+  const sf = ts.createSourceFile(
+    file,
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const out: Omit<Finding, 'file'>[] = [];
+  const add = (node: ts.Node, text: string) =>
+    out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: text.trim() });
+
+  const visit = (node: ts.Node) => {
+    // A value keyed by language (`{ tr: …, en: … }`) is a small catalog of its own.
+    if (ts.isPropertyAssignment(node) && (LOCALES as readonly string[]).includes(node.name.getText(sf)))
+      return;
+    // Commands and keys are typed as they are, in any language.
+    if (ts.isJsxElement(node) && ['code', 'kbd'].includes(node.openingElement.tagName.getText(sf))) return;
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      if (TURKISH.test(node.text)) add(node, node.text);
+    } else if (ts.isJsxText(node)) {
+      if (WORDS.test(node.text)) add(node, node.text);
+    } else if (ts.isJsxAttribute(node) && node.initializer && ts.isStringLiteral(node.initializer)) {
+      const name = node.name.getText(sf);
+      if (VISIBLE_ATTRS.has(name) && WORDS.test(node.initializer.text))
+        add(node, `${name}="${node.initializer.text}"`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+describe('sabit metin', () => {
+  it('denetim yakalaması gerekenleri yakalar, gerisine dokunmaz', () => {
+    const code = `
+      const a = 'Kaydedildi';            // no Turkish letter: not caught by the string rule
+      const b = 'Dosya yüklenemedi';     // caught
+      const c = \`\${n} dosya seçildi\`;  // caught
+      const d = 'application/json';
+      // Yorumdaki Türkçe sayılmaz
+      const e = <div title="Kapat" aria-label={t('x')}>Gönder · {t('y')} ×</div>;
+      const f = <span className="text-sm">·</span>;
+      const g = { tr: 'Çarşamba', en: 'Wednesday' };
+      const h = <code>claude setup-token</code>;
+    `;
+    const found = findHardcodedText('x.tsx', code).map((f) => f.text);
+    expect(found).toEqual(['Dosya yüklenemedi', 'dosya seçildi', 'title="Kapat"', 'Gönder ·']);
+  });
+
+  it('arayüzde, sunucuda ve masaüstünde kullanıcıya görünen metin kataloglardan gelir', () => {
+    const findings: Finding[] = [];
+    for (const pkg of PACKAGES) {
+      for (const full of sources(join(ROOT, pkg))) {
+        const file = relative(ROOT, full);
+        if (ALLOWED.has(file)) continue;
+        for (const f of findHardcodedText(file, readFileSync(full, 'utf8'))) {
+          if (!ALLOWED_TEXT.some((a) => a.file === file && a.text === f.text)) findings.push({ file, ...f });
+        }
+      }
+    }
+    // Shown as `file:line text` so each one is easy to find.
+    expect(findings.map((f) => `${f.file}:${f.line} ${f.text}`)).toEqual([]);
+  });
+});

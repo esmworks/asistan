@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ADD COLUMN "internet" boolean DEFAULT true NOT NULL;

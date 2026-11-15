@@ -1,0 +1,581 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fastifyCookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
+import {
+  BrowserControlEvent,
+  BrowserInputEvent,
+  pickLocale,
+  type Bot,
+  type ClaudeAuthKind,
+  type ClaudeAuthSet,
+  type ClaudeModel,
+  type ClientToServerEvents,
+  type ServerInfo,
+  type ServerToClientEvents,
+} from '@yumakbot/shared';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { Server as IOServer } from 'socket.io';
+import { ZodError } from 'zod';
+import { Auth, checkHostOrigin, loadAccessKey, parseCookie, SESSION_COOKIE } from './auth';
+import { BrowserManager } from './browser/manager';
+import { browserErrorText } from './browser/text';
+import { Bus } from './bus';
+import { ComputerService } from './computer/service';
+import { RfbClientFilter } from './computer/rfb-filter';
+import { computerErrorText } from './tools/computer';
+import type { Config } from './config';
+import { appPolicy } from './csp';
+import type { Ctx } from './context';
+import { openDb, type DbHandle } from './db';
+import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
+import { FakeEngine } from './engine/fake';
+import { PiEngine } from './engine/pi';
+import type { AccountStatus, Engine, ModelTest } from './engine/types';
+import { registerMcpServer } from './mcp-server';
+import { registerRoutes, WEBHOOK_PATH } from './routes';
+import { OAUTH_CALLBACK_PATH } from './services/connections';
+import { dropAllClients, setToolCallTimeout } from './connections/client';
+import { Services } from './services';
+import { probeShellSandbox } from './shell-sandbox';
+import { isServerKey, translator, type T } from './i18n';
+import { serverLocale } from './services/settings';
+import { sweepUploads } from './uploads';
+import { HttpError } from './util';
+
+export interface ServerOptions {
+  /** Replace every engine (tests). */
+  engine?: Engine;
+  clock?: () => Date;
+  logger?: boolean;
+}
+
+export interface YumakBotServer {
+  app: FastifyInstance;
+  io: IOServer<ClientToServerEvents, ServerToClientEvents>;
+  services: Services;
+  auth: Auth;
+  db: DbHandle;
+  bootId: string;
+  accessKey: string;
+  info(): ServerInfo;
+  checkClaude(): Promise<AccountStatus>;
+  listen(): Promise<string>;
+  close(): Promise<void>;
+}
+
+/** How often, and how long after its last try, a failed app connection is tried again. */
+const CONNECTION_RETRY_MS = 5 * 60_000;
+
+const PUBLIC_API = new Set(['/api/health', '/api/access', '/api/login', '/api/session', OAUTH_CALLBACK_PATH]);
+
+export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
+  const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
+  const bus = new Bus();
+  // Each bot's desktop, when a computer service runs next to this server. Its folders are the
+  // bot's workspace, which both containers see at the same path.
+  // The computer service mounts this folder; it must exist before that container starts.
+  if (config.computer) mkdirSync(join(config.dataDir, 'workspaces'), { recursive: true, mode: 0o700 });
+  const computer = config.computer
+    ? new ComputerService({
+        ...config.computer,
+        idleMs: config.computerIdleMs,
+        prepare: async (botId) => {
+          const bot = await services.bots.get(botId);
+          const root = join(config.dataDir, 'workspaces');
+          const own = join(root, 'bots', bot.id);
+          const home = join(own, 'home');
+          const files = join(own, 'files');
+          const group = bot.groupId ? join(root, 'groups', bot.groupId, 'files') : null;
+          for (const d of [home, files, group]) if (d) mkdirSync(d, { recursive: true, mode: 0o700 });
+          return {
+            // The desktop's browser needs the internet; each command still asks per the bot's rules.
+            internet: true,
+            locale: await serverLocale(ctx),
+            home,
+            workdir: files,
+            // A read-only bot's folders are read-only on its desktop too (its home stays writable
+            // for the programs' own settings). Takes effect the next time the desktop starts.
+            folders: [own, ...(group ? [group] : [])].map((path) => ({
+              path,
+              writable: bot.permissionMode !== 'readonly',
+            })),
+          };
+        },
+      })
+    : null;
+  const browser = new BrowserManager({
+    executable: config.browserPath,
+    profileDir: (botId) => join(config.dataDir, 'browsers', botId),
+    sandbox: config.browserSandbox,
+    max: config.maxBrowsers,
+    idleMs: config.browserIdleMs,
+    callMs: config.browserCallMs,
+    localHosts: config.browserLocalHosts,
+    windows: config.onUserComputer,
+    ...(computer && {
+      connect: async (botId: string) => {
+        await computer.ensure(botId);
+        return computer.client.socketUrl(botId, 'cdp');
+      },
+      blocked: (botId: string) => computer.userHasControl(botId),
+      hold: (botId: string) => computer.hold(botId),
+    }),
+  });
+  const ctx: Ctx = { db: db.db, bus, config, browser, computer };
+  const accessKey = loadAccessKey(config);
+  setToolCallTimeout(config.mcpCallTimeoutMs);
+  const auth = new Auth(db.db, accessKey);
+  const bootId = randomUUID();
+  const buildId = readBuildId(config.appDir);
+
+  const fake = config.engine === 'fake' ? new FakeEngine() : null;
+  // In a container the data folder is outside home; the Claude login may be too.
+  const claude = new ClaudeEngine({
+    // The engine passes only a short list of variables to the CLI; without this it would look
+    // for the login in the home folder instead of where the container keeps it.
+    configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
+    hidden: [config.dataDir, process.env.CLAUDE_CONFIG_DIR].filter((d): d is string => !!d),
+    // Created before the services it reads from; only called once a turn runs.
+    credential: () => services.claudeAuth.credential(),
+  });
+  // Created before the services it reads keys from; only called once a turn runs.
+  const pi = new PiEngine({
+    sessionsDir: join(config.dataDir, 'pi-sessions'),
+    apiKey: (provider) => services.keys.credential(provider),
+    customModel: (provider, id) => services.keys.customModel(provider, id),
+    takesTools: (provider, id) => services.keys.takesTools(provider, id),
+  });
+  const engineFor = (bot: Bot): Engine => opts.engine ?? fake ?? (bot.engine === 'pi' ? pi : claude);
+  const services: Services = new Services(ctx, engineFor, opts.clock, () => opts.engine ?? fake ?? claude);
+
+  let claudeStatus: ServerInfo['claude'] = { status: 'unknown', detail: null };
+  const claudeEngine = (): Engine => opts.engine ?? fake ?? claude;
+  const checkClaude = async (probe = false): Promise<AccountStatus & { auth: ClaudeAuthKind }> => {
+    const engine = claudeEngine();
+    const r: AccountStatus =
+      probe && engine.probe
+        ? await engine.probe()
+        : engine.account
+          ? await engine.account()
+          : { status: 'ok', detail: null };
+    const status = { ...r, auth: (await services.claudeAuth.status()).kind };
+    claudeStatus = status;
+    bus.refresh({ scope: 'info' });
+    return status;
+  };
+  // Listing models starts a CLI; a list from a working login is kept until the login changes.
+  let models: { list: ClaudeModel[]; at: number } | null = null;
+  const claudeModels = async (): Promise<ClaudeModel[]> => {
+    if (models && Date.now() - models.at < 30 * 60_000) return models.list;
+    const list = await (claudeEngine().models?.() ?? Promise.resolve([])).catch(() => []);
+    if (!list.length) return FALLBACK_MODELS;
+    models = { list, at: Date.now() };
+    return list;
+  };
+  // Fake and test engines answer for every engine, so they stand in for Pi here too.
+  const testModel = async (provider: string, model: string): Promise<ModelTest> => {
+    if (!(await services.keys.models(provider)).includes(model))
+      throw new HttpError(400, 'error.unknownModel');
+    if (!(await services.keys.credential(provider))) throw new HttpError(400, 'error.noProviderKey');
+    const engine = opts.engine ?? fake ?? pi;
+    if (!engine.testModel) return { ok: true };
+    return engine.testModel(`${provider}/${model}`, await services.settings.locale());
+  };
+  const claudeAuth = {
+    status: () => services.claudeAuth.status(),
+    async set(input: ClaudeAuthSet) {
+      await services.claudeAuth.set(input);
+      models = null;
+      return checkClaude(true);
+    },
+    async clear() {
+      await services.claudeAuth.clear();
+      models = null;
+      return checkClaude();
+    },
+    models: claudeModels,
+  };
+  // A failed turn for lack of login updates the status without polling the CLI.
+  services.turns.onFinished(async (_t, o) => {
+    if (!o.ok && o.kind === 'auth') {
+      claudeStatus = { status: 'logged-out', detail: null };
+      bus.refresh({ scope: 'info' });
+    }
+  });
+
+  let shellSandbox: ServerInfo['shellSandbox'] = { status: 'unknown', detail: null };
+  if (!opts.engine && !fake) {
+    void probeShellSandbox().then((r) => {
+      shellSandbox = r;
+      if (r.status !== 'ok')
+        console.warn(`Bash sandbox unavailable: ${r.reason}${r.detail ? ` (${r.detail})` : ''}`);
+      bus.refresh({ scope: 'info' });
+    });
+  }
+
+  let computerStatus: ServerInfo['computer'] = computer
+    ? { status: 'unreachable', detail: config.computer!.url }
+    : { status: 'off', detail: null };
+  const checkComputer = async () => {
+    if (!computer) return;
+    const ok = await computer.client.health();
+    const next = ok ? 'ok' : 'unreachable';
+    if (next !== computerStatus.status) {
+      // Reachable again (or for the first time): desktops left running are taken over.
+      if (ok) await computer.adopt();
+      computerStatus = { status: next, detail: config.computer!.url };
+      bus.refresh({ scope: 'info' });
+    }
+  };
+  void checkComputer();
+  const computerCheck = computer ? setInterval(() => void checkComputer(), 15_000) : null;
+  computerCheck?.unref();
+
+  // Attachments whose message was never sent (the page was closed with them on it).
+  const sweep = () =>
+    void sweepUploads(config.dataDir).catch((err) => console.warn(`Upload sweep failed: ${String(err)}`));
+  sweep();
+  const sweepTimer = setInterval(sweep, 60 * 60_000);
+  sweepTimer.unref();
+
+  // A connected app that failed is tried again every few minutes until it answers.
+  const retryApps = setInterval(
+    () => void services.connections.retryFailed(CONNECTION_RETRY_MS).catch(() => {}),
+    CONNECTION_RETRY_MS,
+  );
+  retryApps.unref();
+
+  const info = (): ServerInfo => ({
+    name: 'yumakbot',
+    version: '0.1.0',
+    bootId,
+    buildId,
+    claude: claudeStatus,
+    shellSandbox,
+    browser: browser.available
+      ? { status: 'ok', detail: browser.executable, window: browser.windowAvailable }
+      : { status: 'unavailable', detail: null },
+    computer: computerStatus,
+    publicUrl: config.publicUrl,
+  });
+
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
+  await app.register(fastifyCookie);
+
+  /** Errors go out in the language the page asks in, else in the server's language. */
+  const requestT = async (headers: { 'accept-language'?: string }): Promise<T> =>
+    translator(pickLocale(headers['accept-language'], await serverLocale(ctx)));
+  const sendError = async (req: FastifyRequest, reply: FastifyReply, err: HttpError) =>
+    reply.code(err.status).send({ error: err.localized(await requestT(req.headers)) });
+
+  app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    const problem = checkHostOrigin(
+      { host: req.headers.host, origin: req.headers.origin, method: req.method },
+      config,
+    );
+    if (problem) return sendError(req, reply, problem);
+    const path = req.url.split('?')[0] ?? '';
+    if (!path.startsWith('/api/') || PUBLIC_API.has(path) || path.startsWith(`${WEBHOOK_PATH}/`)) return;
+    const via = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE]);
+    if (!via) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
+    // Cookie-authenticated writes must come from our own page.
+    if (via === 'cookie' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
+      return sendError(req, reply, new HttpError(403, 'error.originRequired'));
+    }
+  });
+
+  app.setErrorHandler(async (err, req, reply) => {
+    if (err instanceof HttpError) return sendError(req, reply, err);
+    if (err instanceof ZodError) {
+      const t = await requestT(req.headers);
+      // Shared schemas use message keys for their own checks; zod's built-in messages pass through.
+      const text = (m: string) => (isServerKey(m) ? t(m) : m);
+      return reply
+        .code(400)
+        .send({ error: err.issues.map((i) => `${i.path.join('.')}: ${text(i.message)}`).join('; ') });
+    }
+    const status = (err as { statusCode?: number }).statusCode;
+    if (status && status < 500) return reply.code(status).send({ error: (err as Error).message });
+    console.error(err);
+    return reply.code(500).send({ error: (await requestT(req.headers))('error.server') });
+  });
+
+  registerMcpServer(app, services);
+  registerRoutes(app, {
+    services,
+    auth,
+    config,
+    info,
+    checkClaude: () => checkClaude(),
+    claude: claudeAuth,
+    testModel,
+  });
+
+  if (config.appDir && existsSync(join(config.appDir, 'index.html'))) {
+    const csp = appPolicy(readFileSync(join(config.appDir, 'index.html'), 'utf8'));
+    await app.register(fastifyStatic, {
+      root: config.appDir,
+      // Vite names each built file after its content, so a file under assets/ never changes and
+      // a browser may keep it; the page itself is checked every time, so a new version shows.
+      cacheControl: false,
+      setHeaders: (reply, path) => {
+        if (path.endsWith('.html')) {
+          void reply.header('content-security-policy', csp);
+          void reply.header('cache-control', 'no-cache');
+        } else if (/[\\/]assets[\\/]/.test(path)) {
+          void reply.header('cache-control', 'public, max-age=31536000, immutable');
+        } else {
+          void reply.header('cache-control', 'public, max-age=3600');
+        }
+      },
+    });
+    app.setNotFoundHandler((req, reply) => {
+      const path = req.url.split('?')[0] ?? '';
+      // Client-side routes get the page; missing files (paths with an extension) stay 404.
+      const isRoute = !/\.[a-z0-9]+$/i.test(path);
+      if (req.method === 'GET' && isRoute && !path.startsWith('/api/') && !path.startsWith('/socket.io')) {
+        return reply.sendFile('index.html');
+      }
+      return sendError(req, reply, new HttpError(404, 'error.notFound'));
+    });
+  }
+
+  const io = new IOServer<ClientToServerEvents, ServerToClientEvents>(app.server, {
+    path: '/socket.io',
+    serveClient: false,
+    allowRequest: (req, cb) => {
+      const refuse = (err: HttpError) =>
+        void requestT(req.headers).then(
+          (t) => cb(err.localized(t), false),
+          () => cb(err.message, false),
+        );
+      const problem = checkHostOrigin(
+        { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
+        config,
+      );
+      if (problem) return refuse(problem);
+      const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
+      auth
+        .authenticate({ authorization: req.headers.authorization }, cookie)
+        .then((via) => (via ? cb(null, true) : refuse(new HttpError(401, 'error.accessKeyRequired'))))
+        .catch(() => refuse(new HttpError(500, 'error.authCheckFailed')));
+    },
+  });
+  io.on('connection', (socket) => {
+    socket.emit('hello', { bootId, buildId });
+
+    // Watching and driving a bot's browser. Only existing bots: the id names a profile folder.
+    const watching = new Set<string>();
+    const botExists = (id: unknown): id is string =>
+      typeof id === 'string' && id.length <= 64 && /^[\w-]+$/.test(id);
+    const known = async (id: unknown) =>
+      botExists(id) &&
+      (await services.bots.get(id).then(
+        () => true,
+        () => false,
+      ));
+    socket.on('browser:watch', async (botId, ack) => {
+      if (typeof ack !== 'function') return;
+      if (!(await known(botId))) return ack(null);
+      watching.add(botId);
+      await socket.join(`browser:${botId}`);
+      const { state, frame } = browser.watch(botId, socket.id);
+      ack(state);
+      if (frame) socket.emit('browser:frame', { botId, ...frame });
+    });
+    socket.on('browser:unwatch', (botId) => {
+      if (typeof botId !== 'string' || !watching.delete(botId)) return;
+      void socket.leave(`browser:${botId}`);
+      browser.unwatch(botId, socket.id);
+    });
+    socket.on('browser:control', async (raw, ack) => {
+      if (typeof ack !== 'function') return;
+      const t = await requestT(socket.handshake.headers);
+      const parsed = BrowserControlEvent.safeParse(raw);
+      if (!parsed.success || !(await known(parsed.data.botId))) {
+        return ack({ ok: false, error: t('error.notFound') });
+      }
+      try {
+        await browser.setControl(parsed.data.botId, parsed.data.on);
+        ack({ ok: true });
+      } catch (err) {
+        ack({ ok: false, error: browserErrorText(err, t) });
+      }
+    });
+    socket.on('browser:input', (raw) => {
+      const parsed = BrowserInputEvent.safeParse(raw);
+      if (parsed.success && watching.has(parsed.data.botId)) {
+        void browser.input(parsed.data.botId, parsed.data.input);
+      }
+    });
+    // A bot's desktop: its state, waking it, taking control, and the live screen (RFB bytes).
+    const desks = new Set<string>();
+    const screens = new Map<string, { ws: WebSocket; filter: RfbClientFilter }>();
+    const closeScreen = (botId: string) => {
+      const s = screens.get(botId);
+      if (!s) return;
+      screens.delete(botId);
+      s.ws.close();
+    };
+    socket.on('computer:watch', async (botId, ack) => {
+      if (typeof ack !== 'function') return;
+      if (!computer || !(await known(botId))) return ack(null);
+      desks.add(botId);
+      computer.watch(botId, socket.id);
+      ack(computer.state(botId));
+    });
+    socket.on('computer:unwatch', (botId) => {
+      if (!computer || typeof botId !== 'string' || !desks.delete(botId)) return;
+      computer.unwatch(botId, socket.id);
+    });
+    socket.on('computer:wake', async (botId, ack) => {
+      if (typeof ack !== 'function') return;
+      const t = await requestT(socket.handshake.headers);
+      if (!computer || !(await known(botId))) return ack({ ok: false, error: t('error.notFound') });
+      try {
+        await computer.ensure(botId);
+        ack({ ok: true });
+      } catch (err) {
+        ack({ ok: false, error: computerErrorText(err, t) });
+      }
+    });
+    socket.on('computer:control', async (raw, ack) => {
+      if (typeof ack !== 'function') return;
+      const t = await requestT(socket.handshake.headers);
+      const parsed = BrowserControlEvent.safeParse(raw);
+      if (!computer || !parsed.success || !(await known(parsed.data.botId))) {
+        return ack({ ok: false, error: t('error.notFound') });
+      }
+      const { botId, on } = parsed.data;
+      try {
+        if (on) await computer.ensure(botId);
+        computer.setControl(botId, socket.id, on);
+        ack({ ok: true });
+      } catch (err) {
+        ack({ ok: false, error: computerErrorText(err, t) });
+      }
+    });
+    socket.on('vnc:open', async (botId, ack) => {
+      if (typeof ack !== 'function') return;
+      const t = await requestT(socket.handshake.headers);
+      if (!computer || !(await known(botId))) return ack({ ok: false, error: t('error.notFound') });
+      if (computer.state(botId).status !== 'running') {
+        return ack({ ok: false, error: t('computer.notRunning') });
+      }
+      closeScreen(botId);
+      const ws = new WebSocket(computer.client.socketUrl(botId, 'vnc'));
+      ws.binaryType = 'arraybuffer';
+      const entry = { ws, filter: new RfbClientFilter(() => computer.controlledBy(botId, socket.id)) };
+      screens.set(botId, entry);
+      let opened = false;
+      ws.addEventListener('open', () => {
+        opened = true;
+        ack({ ok: true });
+      });
+      ws.addEventListener('message', (e) => {
+        if (screens.get(botId) === entry)
+          socket.emit('vnc:data', { botId, data: Buffer.from(e.data as ArrayBuffer) });
+      });
+      ws.addEventListener('close', () => {
+        if (!opened) ack({ ok: false, error: t('computer.unreachable') });
+        // Closed from this side (the viewer left): the viewer already knows.
+        if (screens.get(botId) !== entry) return;
+        screens.delete(botId);
+        socket.emit('vnc:closed', { botId });
+      });
+    });
+    socket.on('vnc:data', (raw) => {
+      const botId = (raw as { botId?: unknown } | null)?.botId;
+      const data = (raw as { data?: unknown } | null)?.data;
+      if (typeof botId !== 'string' || !(data instanceof Uint8Array || data instanceof ArrayBuffer)) return;
+      const entry = screens.get(botId);
+      if (!entry || entry.ws.readyState !== WebSocket.OPEN) return;
+      const r = entry.filter.push(data instanceof ArrayBuffer ? new Uint8Array(data) : data);
+      if ('error' in r) {
+        closeScreen(botId);
+        socket.emit('vnc:closed', { botId });
+        return;
+      }
+      if (r.out.length) entry.ws.send(r.out);
+    });
+    socket.on('vnc:close', (botId) => {
+      if (typeof botId === 'string') closeScreen(botId);
+    });
+    socket.on('disconnect', () => {
+      for (const botId of watching) browser.unwatch(botId, socket.id);
+      for (const botId of [...screens.keys()]) closeScreen(botId);
+      computer?.forget(socket.id);
+    });
+  });
+  computer?.on((s) => io.emit('computer:state', s));
+  browser.on({
+    state: (s) => io.emit('browser:state', s),
+    // A frame a slow viewer cannot take yet is dropped, not queued: the next one replaces it anyway.
+    frame: (botId, f) => io.to(`browser:${botId}`).volatile.emit('browser:frame', { botId, ...f }),
+  });
+  bus.on('refresh', (e) => io.emit('refresh', e));
+  bus.on('delta', (e) => io.emit('delta', e));
+  bus.on('turn', (e) => io.emit('turn', e));
+  bus.on('notice', (e) => {
+    io.emit('notice', e);
+    void services.push.notice(e);
+  });
+  bus.on('tool', (e) => io.emit('tool', e));
+
+  await services.turns.recover();
+  await services.routines.recover();
+  services.routines.start();
+
+  return {
+    app,
+    io,
+    services,
+    auth,
+    db,
+    bootId,
+    accessKey,
+    info,
+    checkClaude,
+    async listen() {
+      return app.listen({ host: config.host, port: config.port });
+    },
+    async close() {
+      await services.routines.stop();
+      await services.reactions.stop();
+      services.push.stop();
+      await services.turns.shutdown();
+      await browser.shutdown();
+      if (computerCheck) clearInterval(computerCheck);
+      clearInterval(sweepTimer);
+      clearInterval(retryApps);
+      await computer?.shutdown();
+      io.disconnectSockets(true);
+      dropAllClients();
+      await app.close();
+      await db.close();
+    },
+  };
+}
+
+/**
+ * What this server serves: the page (it names the web app's hashed files) and the server's own
+ * code. An open page compares it across reconnects to tell a new deploy from a plain restart.
+ * Null without a built web app (development serves the page from elsewhere).
+ */
+function readBuildId(appDir: string | null): string | null {
+  if (!appDir) return null;
+  try {
+    const hash = createHash('sha256').update(readFileSync(join(appDir, 'index.html')));
+    try {
+      hash.update(readFileSync(fileURLToPath(import.meta.url)));
+    } catch {
+      // Only the page then; a server-only change goes unnoticed.
+    }
+    return hash.digest('hex').slice(0, 16);
+  } catch {
+    return null;
+  }
+}

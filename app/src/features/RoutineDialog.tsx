@@ -1,0 +1,632 @@
+import { describeSchedule, parseCron, SHORT_DAY_NAMES, type Routine, type Schedule } from '@yumakbot/shared';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Terminal, Webhook as WebhookIcon } from 'lucide-react';
+import { useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { useLocale, useT, type MessageKey } from '@/i18n';
+import { api } from '@/lib/api';
+import { copyText } from '@/lib/clipboard';
+import { useFormat } from '@/lib/format';
+import { useBots, useClaudeModels, useInfo, useRoutines, useSettings } from '@/lib/queries';
+import { useUi } from '@/lib/store';
+import { cn } from '@/lib/utils';
+
+/** Validation messages are message keys; `Field` shows them in the current language. */
+const Form = z.object({
+  name: z.string().trim().min(1, 'routine.nameRequired').max(80),
+  prompt: z.string().trim().min(1, 'routine.promptRequired').max(20_000),
+  type: z.enum(['hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'cron', 'once']),
+  expr: z
+    .string()
+    .trim()
+    .refine((e) => parseCron(e) !== null, 'routine.cronInvalid'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'routine.dateFormat'),
+  missed: z.enum(['run', 'skip']),
+  carryReport: z.boolean(),
+  inMain: z.boolean(),
+  onStartup: z.boolean(),
+  webhookFilter: z.string().max(2000),
+  webhookPost: z.boolean(),
+  model: z.string().max(200),
+  watchUrl: z
+    .string()
+    .trim()
+    .regex(/^(https:\/\/\S+)?$/, 'routine.watchUrlInvalid'),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'routine.timeFormat'),
+  minute: z.number().int().min(0).max(59),
+  days: z.array(z.number()),
+  day: z.number().int().min(1).max(31),
+  minutes: z.number().int().min(5).max(10080),
+  /** An interval routine kept to some days and hours. */
+  limited: z.boolean(),
+  from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'routine.timeFormat'),
+  to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'routine.timeFormat'),
+});
+type Form = z.infer<typeof Form>;
+
+function toSchedule(f: Form): Schedule {
+  switch (f.type) {
+    case 'hourly':
+      return { type: 'hourly', minute: f.minute };
+    case 'daily':
+    case 'weekdays':
+      return { type: f.type, time: f.time };
+    case 'weekly':
+      return { type: 'weekly', days: f.days.length ? f.days : [1], time: f.time };
+    case 'monthly':
+      return { type: 'monthly', day: f.day, time: f.time };
+    case 'interval': {
+      if (!f.limited) return { type: 'interval', minutes: f.minutes };
+      const days = f.days.length && f.days.length < 7 ? { days: [...f.days].sort() } : {};
+      const hours = f.from < f.to ? { from: f.from, to: f.to } : {};
+      return { type: 'interval', minutes: f.minutes, ...days, ...hours };
+    }
+    case 'cron':
+      return { type: 'cron', expr: f.expr.trim() };
+    case 'once':
+      return { type: 'once', date: f.date, time: f.time };
+  }
+}
+
+/** Tomorrow on the local calendar, as YYYY-MM-DD: where a one-time date starts. */
+function tomorrow(): string {
+  const d = new Date(Date.now() + 86_400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function fromRoutine(r?: Routine): Form {
+  const s = r?.schedule;
+  return {
+    name: r?.name ?? '',
+    prompt: r?.prompt ?? '',
+    type: s?.type ?? 'weekdays',
+    time: s && 'time' in s ? s.time : '09:00',
+    minute: s?.type === 'hourly' ? s.minute : 0,
+    days: s?.type === 'weekly' ? s.days : s?.type === 'interval' && s.days ? s.days : [1, 2, 3, 4, 5],
+    day: s?.type === 'monthly' ? s.day : 1,
+    minutes: s?.type === 'interval' ? s.minutes : 60,
+    expr: s?.type === 'cron' ? s.expr : '0 9 * * 1-5',
+    limited: s?.type === 'interval' && (!!s.days || !!s.from),
+    from: s?.type === 'interval' && s.from ? s.from : '09:00',
+    to: s?.type === 'interval' && s.to ? s.to : '18:00',
+    date: s?.type === 'once' ? s.date : tomorrow(),
+    missed: r?.missed ?? 'run',
+    carryReport: r?.carryReport ?? false,
+    inMain: r?.inMain ?? false,
+    onStartup: r?.onStartup ?? false,
+    watchUrl: r?.watchUrl ?? '',
+    webhookFilter: r?.webhookFilter ?? '',
+    webhookPost: r?.webhookPost ?? false,
+    model: r?.model ?? '',
+  };
+}
+
+export function RoutineDialog({
+  botId,
+  routine,
+  open,
+  onOpenChange,
+}: {
+  botId: string;
+  routine?: Routine;
+  open: boolean;
+  onOpenChange(v: boolean): void;
+}) {
+  const t = useT();
+  const locale = useLocale((s) => s.locale);
+  const qc = useQueryClient();
+  const { data: settings } = useSettings();
+  const { data: bots = [] } = useBots();
+  const claude = bots.find((b) => b.id === botId)?.engine !== 'pi';
+  const { data: claudeModels = [] } = useClaudeModels(open && claude);
+  const form = useForm<Form>({ resolver: zodResolver(Form), values: fromRoutine(routine) });
+  const values = useWatch({ control: form.control }) as Form;
+  const save = useMutation({
+    mutationFn: (f: Form) => {
+      const body = {
+        name: f.name,
+        prompt: f.prompt,
+        schedule: toSchedule(f),
+        missed: f.missed,
+        carryReport: f.carryReport,
+        inMain: f.inMain,
+        onStartup: f.onStartup,
+        watchUrl: f.watchUrl.trim() || null,
+        webhookFilter: f.webhookFilter.trim(),
+        webhookPost: f.webhookPost,
+        model: f.model.trim(),
+      };
+      return routine
+        ? api.updateRoutine(routine.id, body)
+        : api.createRoutine({ ...body, botId, timezone: settings?.timezone ?? 'Europe/Istanbul' });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['routines'] });
+      onOpenChange(false);
+      form.reset();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const remove = useMutation({
+    mutationFn: () => api.removeRoutine(routine!.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['routines'] });
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const err = form.formState.errors;
+  const type = values.type;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Title and buttons stay put; only the form between them scrolls. */}
+      <DialogContent className="screen-edges flex max-h-[min(880px,90vh)] flex-col gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-lg phone:h-dvh phone:max-h-none phone:max-w-full phone:rounded-none phone:border-0">
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle>{routine ? t('routine.edit') : t('routine.new')}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit((f) => save.mutate(f))} className="flex min-h-0 flex-1 flex-col">
+          <div className="scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pt-1 pb-6">
+            <Field label={t('routine.name')} error={err.name?.message}>
+              <Input
+                {...form.register('name')}
+                placeholder={t('routine.namePlaceholder')}
+                className="rounded-xl"
+              />
+            </Field>
+            <Field label={t('routine.prompt')} error={err.prompt?.message}>
+              <Textarea
+                {...form.register('prompt')}
+                rows={4}
+                placeholder={t('routine.promptPlaceholder')}
+                className="scroll-thin max-h-72 overflow-y-auto rounded-xl"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('routine.when')}>
+                <Select value={type} onValueChange={(v) => form.setValue('type', v as Form['type'])}>
+                  <SelectTrigger className="w-full rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      [
+                        'daily',
+                        'weekdays',
+                        'weekly',
+                        'monthly',
+                        'hourly',
+                        'interval',
+                        'cron',
+                        'once',
+                      ] as const
+                    ).map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {t(`routine.type.${v}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              {type === 'once' && (
+                <Field label={t('routine.date')} error={err.date?.message}>
+                  <Input type="date" {...form.register('date')} className="rounded-xl" />
+                </Field>
+              )}
+              {(type === 'daily' ||
+                type === 'weekdays' ||
+                type === 'weekly' ||
+                type === 'monthly' ||
+                type === 'once') && (
+                <Field label={t('routine.time')} error={err.time?.message}>
+                  <Input type="time" {...form.register('time')} className="rounded-xl" />
+                </Field>
+              )}
+              {type === 'hourly' && (
+                <Field label={t('routine.minute')}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    {...form.register('minute', { valueAsNumber: true })}
+                    className="rounded-xl"
+                  />
+                </Field>
+              )}
+              {type === 'interval' && (
+                <Field label={t('routine.everyMinutes')} error={err.minutes?.message}>
+                  <Input
+                    type="number"
+                    min={5}
+                    {...form.register('minutes', { valueAsNumber: true })}
+                    className="rounded-xl"
+                  />
+                </Field>
+              )}
+            </div>
+            {type === 'cron' && (
+              <Field label={t('routine.cronExpr')} error={err.expr?.message}>
+                <Input {...form.register('expr')} className="rounded-xl font-mono" spellCheck={false} />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.cronHint')}</p>
+              </Field>
+            )}
+            {type === 'interval' && (
+              <label className="flex items-center gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+                <span className="min-w-0 flex-1 text-sm">{t('routine.limited')}</span>
+                <Switch checked={values.limited} onCheckedChange={(v) => form.setValue('limited', v)} />
+              </label>
+            )}
+            {type === 'interval' && values.limited && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t('routine.from')} error={err.from?.message}>
+                  <Input type="time" {...form.register('from')} className="rounded-xl" />
+                </Field>
+                <Field label={t('routine.to')} error={err.to?.message}>
+                  <Input type="time" {...form.register('to')} className="rounded-xl" />
+                </Field>
+              </div>
+            )}
+            {(type === 'weekly' || (type === 'interval' && values.limited)) && (
+              <div className="flex gap-1.5">
+                {SHORT_DAY_NAMES[locale].map((d, i) => {
+                  const on = values.days?.includes(i);
+                  return (
+                    <button
+                      type="button"
+                      key={d}
+                      onClick={() =>
+                        form.setValue(
+                          'days',
+                          on ? values.days.filter((x) => x !== i) : [...(values.days ?? []), i],
+                        )
+                      }
+                      className={cn(
+                        'h-9 flex-1 rounded-full text-sm transition-colors',
+                        on ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent',
+                      )}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {type === 'monthly' && (
+              <Field label={t('routine.dayOfMonth')}>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  {...form.register('day', { valueAsNumber: true })}
+                  className="rounded-xl"
+                />
+              </Field>
+            )}
+            <p className="text-sm text-muted-foreground">
+              {describeSchedule(toSchedule({ ...fromRoutine(), ...values }), locale)} ·{' '}
+              {settings?.timezone ?? 'Europe/Istanbul'}
+            </p>
+            {type !== 'interval' && (
+              <Field label={t('routine.missed')}>
+                <Select
+                  value={values.missed}
+                  onValueChange={(v) => form.setValue('missed', v as Form['missed'])}
+                >
+                  <SelectTrigger className="w-full rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="run">{t('routine.missed.run')}</SelectItem>
+                    <SelectItem value="skip">{t('routine.missed.skip')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+            <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{t('routine.carryReport')}</span>
+                <span className="block text-xs text-muted-foreground">{t('routine.carryReportHint')}</span>
+              </span>
+              <Switch
+                checked={values.carryReport}
+                onCheckedChange={(v) => form.setValue('carryReport', v, { shouldDirty: true })}
+              />
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{t('routine.inMain')}</span>
+                <span className="block text-xs text-muted-foreground">{t('routine.inMainHint')}</span>
+              </span>
+              <Switch
+                checked={values.inMain}
+                onCheckedChange={(v) => form.setValue('inMain', v, { shouldDirty: true })}
+              />
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{t('routine.onStartup')}</span>
+                <span className="block text-xs text-muted-foreground">{t('routine.onStartupHint')}</span>
+              </span>
+              <Switch
+                checked={values.onStartup}
+                onCheckedChange={(v) => form.setValue('onStartup', v, { shouldDirty: true })}
+              />
+            </label>
+            <Field label={t('routine.model')}>
+              <Input
+                {...form.register('model')}
+                list="routine-model-options"
+                placeholder={t(claude ? 'routine.modelPlaceholder.claude' : 'routine.modelPlaceholder.pi')}
+                className="rounded-xl"
+              />
+              <datalist id="routine-model-options">
+                {claudeModels
+                  .filter((m) => m.value !== 'default')
+                  .map((m) => (
+                    <option key={m.value} value={m.value} label={m.name || undefined} />
+                  ))}
+              </datalist>
+              <p className="mt-1 text-xs text-muted-foreground">{t('routine.modelHint')}</p>
+            </Field>
+            <Field label={t('routine.watchUrl')} error={err.watchUrl?.message}>
+              <Input
+                {...form.register('watchUrl')}
+                placeholder={t('routine.watchUrlPlaceholder')}
+                inputMode="url"
+                className="rounded-xl"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t('routine.watchUrlHint')}</p>
+            </Field>
+            {routine && <Webhook routine={routine} />}
+            {routine?.webhookToken && (
+              <Field label={t('routine.webhookFilter')}>
+                <Textarea
+                  {...form.register('webhookFilter')}
+                  rows={2}
+                  placeholder={t('routine.webhookFilterPlaceholder')}
+                  className="rounded-xl font-mono text-xs"
+                  spellCheck={false}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.webhookFilterHint')}</p>
+              </Field>
+            )}
+            {routine?.webhookToken && (
+              <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{t('routine.webhookPost')}</span>
+                  <span className="block text-xs text-muted-foreground">{t('routine.webhookPostHint')}</span>
+                </span>
+                <Switch
+                  checked={values.webhookPost}
+                  onCheckedChange={(v) => form.setValue('webhookPost', v, { shouldDirty: true })}
+                />
+              </label>
+            )}
+            {routine && (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1">{t('routine.runCommandHint')}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-full"
+                  onClick={async () => {
+                    const ok = await copyText(runCommand(window.location.origin, routine.id));
+                    if (ok) toast.success(t('routine.runCommandCopied'));
+                    else toast.error(t('message.copyFailed'));
+                  }}
+                >
+                  <Terminal /> {t('routine.copyRunCommand')}
+                </Button>
+              </div>
+            )}
+            {routine && (
+              <RecentRuns routineId={routine.id} botId={botId} onOpen={() => onOpenChange(false)} />
+            )}
+          </div>
+          <DialogFooter className="gap-2 border-t px-6 py-4">
+            {routine && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="mr-auto rounded-full text-destructive"
+                onClick={() => remove.mutate()}
+              >
+                {t('common.delete')}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => onOpenChange(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" className="rounded-full" disabled={save.isPending}>
+              {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The routine's latest runs: when, how each went and why one failed; a run opens its conversation. */
+function RecentRuns({ routineId, botId, onOpen }: { routineId: string; botId: string; onOpen(): void }) {
+  const t = useT();
+  const { dayLabel } = useFormat();
+  const { data: runs = [] } = useQuery({
+    queryKey: ['routine-runs', routineId],
+    queryFn: () => api.routineRuns(routineId),
+  });
+  if (!runs.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium">{t('routine.runs')}</div>
+      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
+        {runs.slice(0, 10).map((r) => (
+          <li key={r.id}>
+            <button
+              type="button"
+              disabled={!r.threadId}
+              onClick={() => {
+                if (!r.threadId) return;
+                useUi.getState().openChat(botId);
+                useUi.getState().selectThread(r.threadId);
+                onOpen();
+              }}
+              className="flex w-full items-start gap-2 rounded-xl px-2 py-1 text-left enabled:hover:bg-accent"
+            >
+              <span
+                className={cn(
+                  'mt-1.5 size-2 shrink-0 rounded-full',
+                  r.status === 'done' && 'bg-emerald-500',
+                  r.status === 'error' && 'bg-destructive',
+                  (r.status === 'running' || r.status === 'waiting') && 'bg-amber-500',
+                  r.status === 'skipped' && 'bg-muted-foreground/40',
+                )}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block">
+                  {dayLabel(r.startedAt)} · {t(`routine.run.${r.status}`)}
+                </span>
+                {r.reason && <span className="block truncate text-xs text-muted-foreground">{r.reason}</span>}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  /** A message key from the form schema, or text as it came. */
+  error?: string;
+  children: React.ReactNode;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm text-muted-foreground">{label}</Label>
+      {children}
+      {error && <p className="text-sm text-destructive">{t(error as MessageKey)}</p>}
+    </div>
+  );
+}
+
+/**
+ * A command that runs the routine from a script or another service, with some text for the bot.
+ * The access key is read from the environment, never written into the command.
+ */
+export function runCommand(origin: string, routineId: string): string {
+  return [
+    `curl -X POST '${origin}/api/routines/${routineId}/run'`,
+    `  -H "Authorization: Bearer $YUMAKBOT_ACCESS_KEY"`,
+    `  -H 'Content-Type: application/json'`,
+    `  -d '{"payload":"..."}'`,
+  ].join(' \\\n');
+}
+
+/** The routine's secret address for other services, with buttons to make, copy, renew or remove it. */
+function Webhook({ routine: given }: { routine: Routine }) {
+  const t = useT();
+  const qc = useQueryClient();
+  // The dialog holds the routine as it was opened; the address comes from the latest list.
+  const { data: routines } = useRoutines();
+  const routine = routines?.find((r) => r.id === given.id) ?? given;
+  const set = useMutation({
+    mutationFn: (on: boolean) => (on ? api.enableWebhook(routine.id) : api.disableWebhook(routine.id)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routines'] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const { data: info } = useInfo();
+  const base = info?.publicUrl ?? window.location.origin;
+  const url = routine.webhookToken
+    ? `${base}/api/hooks/routines/${routine.id}/${routine.webhookToken}`
+    : null;
+  // An address on this computer only (the desktop app, a server not put online) cannot be reached
+  // by a service on the internet; the person is told rather than left to find out.
+  const localOnly = !!url && isLoopback(new URL(base).hostname);
+  return (
+    <div className="space-y-2 rounded-2xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1">{t(url ? 'routine.webhookOn' : 'routine.webhookHint')}</span>
+        {url ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => set.mutate(true)}
+            >
+              {t('routine.webhookRenew')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => set.mutate(false)}
+            >
+              {t('common.remove')}
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="rounded-full"
+            onClick={() => set.mutate(true)}
+          >
+            <WebhookIcon /> {t('routine.webhookCreate')}
+          </Button>
+        )}
+      </div>
+      {url && (
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-lg bg-background px-2 py-1 font-mono text-[11px]">
+            {url}
+          </code>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="rounded-full"
+            onClick={async () => {
+              if (await copyText(url)) toast.success(t('routine.webhookCopied'));
+              else toast.error(t('message.copyFailed'));
+            }}
+          >
+            {t('message.copy')}
+          </Button>
+        </div>
+      )}
+      {localOnly && <p>{t('routine.webhookLocalOnly')}</p>}
+    </div>
+  );
+}
+
+/** A name that only this computer answers to. */
+export function isLoopback(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127\./.test(h);
+}

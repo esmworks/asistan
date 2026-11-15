@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+**/dist
+**/drizzle
+data
+docker/seccomp.json
+# Written by Icon Composer in its own JSON style; reformatting would be undone on the next save.
+desktop/assets/icon.icon/icon.json

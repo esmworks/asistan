@@ -1,0 +1,41 @@
+import { useEffect, useState } from 'react';
+
+/** Bridge exposed by the desktop shell's preload script; absent in a normal browser. */
+interface DesktopBridge {
+  accessKey(): Promise<string | null>;
+  useLocal(): Promise<void>;
+  /** The server this window shows: the one on this computer or a remote one. Missing in older shells. */
+  server?(): Promise<{ mode: 'local' | 'remote'; url: string | null } | null>;
+  /** Opens the shell's window for connecting to another server. Missing in older shells. */
+  openConnect?(): Promise<void>;
+  /** Tells the shell the app's language, for its menu and windows. Missing in older shells. */
+  setLocale?(locale: string): Promise<void>;
+  /** Puts the number of bots with unread replies on the app icon (0 clears it). Missing in older shells. */
+  setUnread?(count: number): Promise<void>;
+  /** Whether a bot is working, so the shell keeps a computer running the server awake. Missing in older shells. */
+  setBusy?(busy: boolean): Promise<void>;
+  /** Shows the desktop app's log file in the file manager. Missing in older shells. */
+  showLogs?(): Promise<void>;
+  /** Whether the app opens when the person logs in; with `on`, sets it first. Missing in older shells. */
+  openAtLogin?(on?: boolean): Promise<boolean | null>;
+  /** Calls `fn` when Settings is chosen in the menu bar; returns a function that stops it. Missing in older shells. */
+  onOpenSettings?(fn: () => void): () => void;
+  /** The window has no title bar; the page leaves room for the window buttons. Missing in older shells. */
+  framelessTitleBar?: boolean;
+}
+
+export const desktop = (window as unknown as { yumakbotDesktop?: DesktopBridge }).yumakbotDesktop ?? null;
+
+export type DesktopServer = { mode: 'local' | 'remote'; url: string | null };
+
+/** The server the desktop window shows; null outside the desktop app or in an older shell. */
+export function useDesktopServer(): DesktopServer | null {
+  const [server, setServer] = useState<DesktopServer | null>(null);
+  useEffect(() => {
+    desktop
+      ?.server?.()
+      .then(setServer)
+      .catch(() => setServer(null));
+  }, []);
+  return server;
+}

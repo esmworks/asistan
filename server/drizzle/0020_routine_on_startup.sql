@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "on_startup" boolean DEFAULT false NOT NULL;

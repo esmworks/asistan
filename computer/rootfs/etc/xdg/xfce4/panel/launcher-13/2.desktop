@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Files
+Icon=system-file-manager
+Exec=sh -c 'exec thunar "$YUMAKBOT_WORKDIR"'
+Terminal=false
+StartupNotify=true

@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ADD COLUMN "effort" text DEFAULT '' NOT NULL;

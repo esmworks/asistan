@@ -1,0 +1,1 @@
+ALTER TABLE "routine_runs" ADD COLUMN "failed_by_bot" boolean DEFAULT false NOT NULL;

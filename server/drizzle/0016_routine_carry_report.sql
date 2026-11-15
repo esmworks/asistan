@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "carry_report" boolean DEFAULT false NOT NULL;

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Lets the browser install the app as its own window. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>YumakBot</title>
+    <script>
+      // Settings saved before the app was renamed sit under the old key prefix; carried over once so
+      // they are not lost.
+      try {
+        for (var i = localStorage.length - 1; i >= 0; i--) {
+          var old = localStorage.key(i);
+          if (!old || old.indexOf('asistan.') !== 0) continue;
+          var renamed = 'yumakbot.' + old.slice('asistan.'.length);
+          if (localStorage.getItem(renamed) === null)
+            localStorage.setItem(renamed, localStorage.getItem(old));
+          localStorage.removeItem(old);
+        }
+      } catch (e) {}
+      // Apply the saved theme and language before first paint to avoid a flash.
+      try {
+        var lang = localStorage.getItem('yumakbot.locale');
+        if (lang === 'tr' || lang === 'en') document.documentElement.lang = lang;
+      } catch (e) {}
+      try {
+        var t = localStorage.getItem('yumakbot.theme') || 'system';
+        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+      } catch (e) {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

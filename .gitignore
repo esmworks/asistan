@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+out/
+.stage/
+data/
+.env
+.env.*
+!.env.example
+
+# Yerel çalışma notları
+PRD.md
+TASKS.md
+.claude/launch.json

@@ -1,0 +1,244 @@
+<p align="center">
+  <img src="desktop/assets/icon.png" alt="YumakBot icon" width="128" height="128">
+</p>
+
+<h1 align="center">YumakBot</h1>
+
+<p align="center">
+  A self-hosted, single-person AI assistant: a server runs your bots, and a desktop or web app talks to them.
+</p>
+
+---
+
+YumakBot lets you build a small team of AI bots, each with its own instructions, memory, files, schedule and
+permissions. Bots run on a server you control — on your own computer through the desktop app, or on a Linux host in
+Docker — and you chat with them from the desktop app or a browser.
+
+The interface is available in English and Turkish.
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="Chatting with a research bot that compares standing desks in a table" width="900">
+</p>
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/today.png" alt="The Today page: what each bot did and what waits for you"></td>
+    <td><img src="docs/screenshots/usage.png" alt="The usage page: daily cost and spending by bot"></td>
+  </tr>
+  <tr>
+    <td align="center">What the bots did today</td>
+    <td align="center">Spending by day and by bot</td>
+  </tr>
+</table>
+
+<sub>Screenshots use made-up bots and conversations.</sub>
+
+## Features
+
+- **Bots** — create as many as you like, group them, give each a name, avatar, instructions and model. A manager bot
+  can create, update and delegate work to other bots; bot-to-bot messages are guarded against loops.
+- **Two engines** — Claude through the Claude Agent SDK (with a Claude subscription token or an Anthropic API key), or
+  bring-your-own-key models from other providers through the Pi engine.
+- **Live chat** — streamed replies, file attachments, stop at any time, and turns that pick up where they left off
+  after a server restart. Unread marks, find in a conversation (⌘F), `/` commands, quick replies, a goal per
+  conversation, branching from a reply, Markdown export, sortable tables and Mermaid diagrams.
+- **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
+- **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
+  conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a
+  filtered webhook, or only when a watched page changes; they can build on their last report and run in the main
+  conversation.
+- **Today and usage** — a Today page of what the bots did and what waits for you; spending by bot, model and routine,
+  a monthly limit and a CSV export.
+- **A bot as an API** — call a bot from a script with the access key and get its reply.
+- **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
+  choose which bots may use them.
+- **A browser per bot** — each bot drives its own Chromium profile; you can watch it live and take control for sign-ins
+  or verification codes.
+- **Password vault** — when a site needs a login, you type the credentials into a card and the server fills them in;
+  the bot never sees the password. Stored secrets are encrypted with AES-256-GCM.
+- **A computer per bot** (Docker) — an optional sandboxed Linux desktop for each bot with a browser, terminal, file
+  manager and LibreOffice, viewable from the app.
+- **Sandboxed shell** — Claude's Bash commands run in a bubblewrap sandbox that only sees the bot's own folders, and a
+  few catastrophic commands are refused whatever is allowed.
+- **Import** — bring in bots exported from other assistants.
+
+## How it fits together
+
+```
+app/        React + Vite web UI, served by the server or loaded by the desktop app
+server/     Fastify API, Socket.IO events, bot runtime, Drizzle ORM (PostgreSQL or embedded PGlite)
+desktop/    Electron shell: starts a local server or connects to a remote one
+computer/   Optional service that gives each bot its own sandboxed Linux desktop
+shared/     Schemas, events and translations used by every package
+docker/     Compose setup, seccomp and AppArmor profiles, firewall script
+```
+
+The server stores everything in PostgreSQL. With `DATABASE_URL` unset it uses embedded PGlite under the data folder,
+so a local install needs no database server.
+
+## Requirements
+
+- Node.js 24 or later
+- pnpm 11 (`corepack enable` picks the version from `package.json`)
+- For Claude bots: a Claude subscription (token from `claude setup-token`) or an Anthropic API key
+- For bots with a browser: Chrome, Edge or Chromium installed on the machine that runs the server
+- For the Docker setup: Docker Engine 26 or later on a Linux host
+
+## Quick start: desktop app
+
+```bash
+pnpm install
+```
+
+```bash
+pnpm start
+```
+
+`pnpm start` builds the app, the server and the Electron shell, then opens YumakBot. In local mode the desktop app
+starts its own server in the background and signs you in. On first launch, connect Claude in the setup screen (or later
+in Settings → Connection → Claude).
+
+The desktop app can also connect to a remote YumakBot server: enter its URL and access key in the connection settings.
+
+Installers for macOS (`.dmg`, Apple silicon) and Windows (`.exe`) are attached to each
+[release](https://github.com/esmworks/yumakbot/releases). To build one yourself on the platform it is for:
+
+```bash
+pnpm build && pnpm --filter @yumakbot/desktop dist
+```
+
+On a Mac with a Developer ID certificate in the keychain the app is signed; it is also notarized when `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set.
+
+Pushing a version tag (`v` and the version in `desktop/package.json`) runs the Release workflow, which builds both
+installers and attaches them to a draft release for that tag. It signs and notarizes the macOS app with these
+repository secrets: `MAC_CERTIFICATE` (the Developer ID Application certificate exported as `.p12`, base64-encoded),
+`MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. The Windows installer is not
+signed yet, so Windows shows a SmartScreen warning before it runs.
+
+## Running on a server (Docker)
+
+```bash
+cp docker/.env.example docker/.env
+```
+
+Fill in `docker/.env` (use `openssl rand -hex 32` for the secrets), then:
+
+```bash
+docker compose -f docker/compose.yml --env-file docker/.env up -d --build
+```
+
+```bash
+sudo ./docker/firewall.sh
+```
+
+This starts PostgreSQL, the YumakBot server and the computer service with a read-only root file system, all
+capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`; for remote access, put a TLS
+reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to your domain and `YUMAKBOT_SECURE_COOKIES=1`.
+
+[docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
+vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
+database — without it, saved passwords cannot be decrypted.
+
+## Development
+
+Run the server and the web UI in two terminals:
+
+```bash
+pnpm dev:server
+```
+
+```bash
+pnpm dev:app
+```
+
+Then open http://localhost:5173. Vite proxies `/api` and `/socket.io` to the server on port 4319 so cookies and origin
+checks behave as in production.
+
+Without `YUMAKBOT_ACCESS_KEY`, the server generates an access key on first start, saves it to `<data dir>/access-key` and
+prints the path; use it to sign in. The data folder defaults to `data/` in the server's working directory (`server/data`
+with `pnpm dev:server`).
+
+Right after the first sign-in with the key, the app asks for a username and password; later sign-ins use those. Only a
+scrypt hash of the password is stored. The account can be changed under Settings → Connection with the current password,
+or with the access key when the password is forgotten (the sign-in screen offers the key too). Ten wrong passwords from
+one address within 15 minutes make it wait. Scripts keep sending the key as `Authorization: Bearer`.
+
+Checks:
+
+```bash
+pnpm typecheck && pnpm lint && pnpm format:check
+```
+
+```bash
+pnpm build && pnpm test
+```
+
+Build before testing: the desktop tests start the built server. Database migrations live in `server/drizzle`; after
+changing `server/src/db/schema.ts`, run `pnpm --filter @yumakbot/server db:generate`.
+
+User-visible text goes through the translation tables in `shared/src/i18n.ts`, `server/src/i18n.ts` and
+`desktop/src/i18n.ts`; a test fails on hard-coded strings.
+
+## Calling a bot from a script
+
+Each bot can be called over HTTP with the server's access key. The message is answered in a
+conversation of its own ("Through the API" in the conversation menu), and the reply comes back when
+the turn ends:
+
+```bash
+curl -s -X POST "$YUMAKBOT_URL/api/bots/$BOT_ID/ask" \
+  -H "Authorization: Bearer $YUMAKBOT_ACCESS_KEY" -H 'content-type: application/json' \
+  -d '{"text": "Summarise today'\''s unread mail"}'
+```
+
+The answer is `{ status, reply, error, threadId, turnId }`. `wait` (seconds, default 300, at most 600) bounds how long the call waits; when it runs out the status is `running` (HTTP 202) and
+`GET /api/turns/<turnId>/result?wait=60` asks again. `threadId` sends the message to another of the
+bot's conversations instead.
+
+Agents that speak MCP (Claude Code, Claude Desktop and others) can reach the bots too: point them at
+`$YUMAKBOT_URL/api/mcp` (streamable HTTP) with the header `Authorization: Bearer $YUMAKBOT_ACCESS_KEY`. They get
+`list_bots`, `ask_bot` and `get_reply`.
+
+## Configuration
+
+The server reads these environment variables:
+
+| Variable                         | Default             | Purpose                                                                 |
+| -------------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `YUMAKBOT_HOST`                  | `127.0.0.1`         | Address to listen on                                                    |
+| `YUMAKBOT_PORT`                  | `4319`              | Port to listen on                                                       |
+| `YUMAKBOT_DATA_DIR`              | `./data`            | Bot workspaces, access key, vault key and the embedded database         |
+| `DATABASE_URL`                   | —                   | `postgres://…` connection string; unset means embedded PGlite           |
+| `YUMAKBOT_ACCESS_KEY`            | generated           | Key used to sign in to the server                                       |
+| `YUMAKBOT_ALLOWED_HOSTS`         | —                   | Comma-separated host names accepted besides loopback                    |
+| `YUMAKBOT_ALLOWED_ORIGINS`       | —                   | Comma-separated extra browser origins                                   |
+| `YUMAKBOT_SECURE_COOKIES`        | `0`                 | `1` when served over HTTPS                                              |
+| `YUMAKBOT_PUBLIC_URL`            | —                   | Public address for routine webhooks and sign-in callbacks               |
+| `YUMAKBOT_APP_DIR`               | `app/dist` if built | Built web UI to serve                                                   |
+| `YUMAKBOT_CLAUDE_MODEL`          | —                   | Default Claude model                                                    |
+| `YUMAKBOT_MAX_TURNS`             | `3`                 | Bot turns running at once                                               |
+| `YUMAKBOT_UNATTENDED_HOURS`      | `12`                | How long an approval opened by a routine or another bot waits (max 576) |
+| `YUMAKBOT_MCP_TIMEOUT_SECONDS`   | `300`               | How long a connected app's tool call may run (10–3600)                  |
+| `YUMAKBOT_TURN_STALL_MINUTES`    | `10`                | How long a bot may stay silent before its turn is stopped (2–240)       |
+| `YUMAKBOT_BROWSER`               | detected            | Chrome, Edge or Chromium executable for the bots' browsers              |
+| `YUMAKBOT_BROWSER_SANDBOX`       | `1`                 | `0` turns off Chromium's own sandbox where it cannot start              |
+| `YUMAKBOT_MAX_BROWSERS`          | `3`                 | Browsers open at once                                                   |
+| `YUMAKBOT_BROWSER_LOCAL_HOSTS`   | —                   | Private-network hosts the bots' browsers may reach (comma-separated)    |
+| `YUMAKBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
+| `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
+| `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
+| `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
+
+Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from
+the server's environment.
+
+## License
+
+YumakBot is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, change and share
+it for any noncommercial purpose: personal use, study, hobby projects, and use by charities, schools, public research
+bodies and government institutions. Use by or for a business needs a commercial license; write to
+[info@yumakbot.com](mailto:info@yumakbot.com). Anyone you pass it on to must also get the license terms and the
+`Required Notice:` lines in [NOTICE](NOTICE).
+
+Copyright © 2026 esmworks (Erhan Erbaş).

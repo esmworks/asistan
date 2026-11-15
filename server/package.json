@@ -1,0 +1,40 @@
+{
+  "name": "@yumakbot/server",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "start": "node dist/index.js",
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.322",
+    "@yumakbot/shared": "workspace:*",
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@electric-sql/pglite": "0.5.16",
+    "@fastify/cookie": "11.1.5",
+    "@fastify/static": "10.1.10",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
+    "playwright-core": "1.64.1",
+    "postgres": "4.1.1",
+    "socket.io": "4.8.4",
+    "tldts": "6.1.86",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "drizzle-kit": "0.31.11",
+    "esbuild": "0.28.2",
+    "socket.io-client": "4.8.4",
+    "tsx": "4.23.15",
+    "ws": "8.22.2"
+  }
+}
