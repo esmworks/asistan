@@ -11,12 +11,16 @@ const light = {
   muted: '#F0F0F0',
   mutedForeground: '#636363',
   border: '#E1E1E1',
+  /** The edge of something to tap, such as a chip or a checkbox: stronger than a card's border. */
+  outline: '#D0D0D0',
   destructive: '#DC2626',
   brand: '#4F6BED',
   /** The bot list and the bot's replies sit on this. */
   sidebar: '#F5F5F5',
   /** A pressed row. */
   accent: '#EBEBEB',
+  /** The chosen part of a segmented control: lighter than the muted track in both themes. */
+  raised: '#FFFFFF',
   bubble: '#F5F5F5',
   unread: '#0EA5E9',
   /** Cards that wait for the person, and their counts. */
@@ -38,10 +42,12 @@ const dark: Colors = {
   muted: '#1B1B1B',
   mutedForeground: '#8F8F8F',
   border: '#1D1D1D',
+  outline: '#383838',
   destructive: '#EF4444',
   brand: '#4F6BED',
   sidebar: '#040404',
   accent: '#1F1F1F',
+  raised: '#2E2E2E',
   bubble: '#161616',
   unread: '#0EA5E9',
   amber: '#F59E0B',
