@@ -100,7 +100,7 @@ describe('bot içe aktarma', () => {
       }),
     ]);
     expect(await list<Memory>('/api/memory')).toEqual([
-      expect.objectContaining({ scope: 'bot', botId: first!.id, status: 'proposed', source: 'import' }),
+      expect.objectContaining({ scope: 'bot', botId: first!.id, status: 'active', source: 'import' }),
     ]);
   });
 
@@ -371,7 +371,7 @@ describe('bot içe aktarma', () => {
     const memories = await list<Memory>('/api/memory');
     expect(memories.find((m) => m.botId === copy.id)).toMatchObject({
       content: 'Toplantılar salı.',
-      status: 'proposed',
+      status: 'active',
     });
 
     const all = (
