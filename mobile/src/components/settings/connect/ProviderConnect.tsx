@@ -1,9 +1,9 @@
 import type { ProviderInfo } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
-import { IconButton, PillButton } from '@/components/page';
+import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { IconButton, PillButton, usePageScroll } from '@/components/page';
 import { toast, toastError } from '@/components/overlay';
 import { Chip, ChipRow, ChoiceRow } from '@/components/settings/common/controls';
 import { Field } from '@/components/ui';
@@ -16,18 +16,27 @@ import { useColors } from '@/lib/theme';
  * Keys and endpoints for models outside the Claude subscription. The server keeps every key; the
  * app only ever sees its last characters.
  *
- * - `ProviderKeyForm` (no props): lists the saved providers and adds a key or a custom endpoint.
- * - `EndpointRow` (`provider`): one of the person's own endpoints, with edit, refresh and remove.
- * - `EndpointForm` (no props): adds an OpenAI-compatible endpoint (Ollama, LM Studio, a hosted one).
- * - `PiModelPicker` (`value`, `onChange`): picks `provider/model` among providers with a key.
+ * - `ProviderKeyForm` (no props): `ProviderRows` above `AddProviderForm`, for the first-run screen.
+ * - `ProviderRows` (`plain?`): the providers that can be used, each a `ProviderRow` (`provider`,
+ *   `plain?`); `plain` drops the frames, for rows inside a settings card.
+ * - `AddProviderForm` (`onAdded?`): picks a provider and takes its key, or adds an endpoint.
+ * - `EndpointRow` (`provider`, `plain?`): one of the person's own endpoints, with edit, refresh
+ *   and remove; editing also changes the models named by hand.
+ * - `EndpointForm` (`onAdded?`): adds an OpenAI-compatible endpoint (Ollama, LM Studio, a hosted one).
+ * - `PiModelPicker` (`value`, `onChange`, `empty?`): picks `provider/model` among providers with a
+ *   key; `empty` is shown while there is none (the key form when left out).
  * - `useSavePiModel(onSaved?, backup?)`: tries a `provider/model` with one request, then stores it
  *   as what new bots start with (or the backup model when `backup`); returns `{ save, error }`.
+ * - `useHasProvider()`: true once some provider can be used.
  * - `isPiModel(ref)`, `providerName(id)`: helpers.
  */
 
 /** Offered first; every other provider the server knows is under "Other". */
 const POPULAR = ['openai', 'google', 'openrouter', 'deepseek', 'xai', 'mistral', 'groq'];
-/** Product names, not words to translate; other providers show their id. */
+/**
+ * Product names, not words to translate. A provider missing here shows its id, which is also
+ * how regional plans (`minimax-cn`, `xiaomi-token-plan-sgp`) stay told apart.
+ */
 const NAMES: Record<string, string> = {
   openai: 'OpenAI',
   google: 'Google Gemini',
@@ -36,8 +45,33 @@ const NAMES: Record<string, string> = {
   xai: 'xAI',
   mistral: 'Mistral',
   groq: 'Groq',
+  anthropic: 'Anthropic',
+  baseten: 'Baseten',
+  cerebras: 'Cerebras',
+  fireworks: 'Fireworks',
+  huggingface: 'Hugging Face',
+  'kimi-coding': 'Kimi Coding',
+  meta: 'Meta',
+  minimax: 'MiniMax',
+  moonshotai: 'Moonshot AI',
+  nvidia: 'NVIDIA',
+  opencode: 'OpenCode',
+  'opencode-go': 'OpenCode Go',
+  together: 'Together AI',
+  'vercel-ai-gateway': 'Vercel AI Gateway',
+  xiaomi: 'Xiaomi',
+  zai: 'Z.ai',
 };
 export const providerName = (id: string) => NAMES[id] ?? id;
+const byName = (a: string, b: string) => providerName(a).localeCompare(providerName(b));
+/** Model names typed into one field, split on spaces, commas and new lines. */
+const modelList = (text: string) =>
+  text
+    .split(/[\s,]+/)
+    .map((m) => m.trim())
+    .filter(Boolean);
+/** How many matching models the picker shows under its field before asking for more letters. */
+const SHOWN_MODELS = 8;
 /** The chip that opens the form for the person's own endpoint; never a provider id. */
 const CUSTOM = '+custom';
 /** Ollama's address on the same computer; an address, not a word to translate. */
@@ -67,16 +101,19 @@ function SavedLine({
   icon,
   title,
   sub,
+  plain,
   children,
 }: {
   icon: 'check' | 'server';
   title: string;
   sub?: string;
+  /** No frame, for a line that sits in a settings card. */
+  plain?: boolean;
   children?: ReactNode;
 }) {
   const c = useColors();
   return (
-    <View style={[styles.saved, { borderColor: c.border }]}>
+    <View style={[styles.saved, plain ? styles.plain : { borderColor: c.border }]}>
       <View style={[styles.badge, { backgroundColor: `${c.success}26` }]}>
         <Feather name={icon} size={20} color={c.success} />
       </View>
@@ -97,15 +134,67 @@ function SavedLine({
 
 export function ProviderKeyForm() {
   const c = useColors();
+  const { isLoading } = useProviders();
+  if (isLoading) return <ActivityIndicator color={c.mutedForeground} />;
+  return (
+    <View style={styles.root}>
+      <ProviderRows />
+      <AddProviderForm />
+    </View>
+  );
+}
+
+/** The providers that can be used: those with a key, and the person's own endpoints. */
+export function ProviderRows({ plain = false }: { plain?: boolean }) {
+  const { data: providers = [] } = useProviders();
+  return providers
+    .filter((p) => p.configured)
+    .map((p) => <ProviderRow key={p.id} provider={p} plain={plain} />);
+}
+
+/** One provider that can be used: a key's provider with remove, or the person's own endpoint. */
+export function ProviderRow({ provider: p, plain = false }: { provider: ProviderInfo; plain?: boolean }) {
   const api = useApi();
-  const { data: providers = [], isLoading } = useProviders();
+  const refresh = useRefreshProviders();
+  const remove = useMutation({
+    mutationFn: api.removeProviderKey,
+    onSuccess: () => void refresh(),
+    onError: toastError,
+  });
+  if (p.custom) return <EndpointRow provider={p} plain={plain} />;
+  return (
+    <SavedLine
+      icon="check"
+      plain={plain}
+      title={providerName(p.id)}
+      sub={t('provider.keySaved', { hint: p.hint ?? '' })}
+    >
+      <IconButton
+        icon="x"
+        size={18}
+        label={t('common.remove')}
+        onPress={() => remove.mutate(p.id)}
+        disabled={remove.isPending}
+      />
+    </SavedLine>
+  );
+}
+
+/**
+ * Picks a provider and takes its key, or adds the person's own endpoint. `onAdded` runs once a
+ * key or an endpoint is saved.
+ */
+export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
+  const c = useColors();
+  const api = useApi();
+  const { data: providers = [] } = useProviders();
   const [provider, setProvider] = useState('');
   const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const refresh = useRefreshProviders();
   const ids = providers.filter((p) => !p.custom).map((p) => p.id);
   const popular = POPULAR.filter((id) => ids.includes(id));
-  const others = ids.filter((id) => !popular.includes(id));
+  const others = ids.filter((id) => !popular.includes(id)).sort(byName);
   const current = provider || popular[0] || ids[0] || '';
   const save = useMutation({
     mutationFn: () => api.setProviderKey(current, key.trim()),
@@ -113,17 +202,10 @@ export function ProviderKeyForm() {
       setKey('');
       setError(null);
       void refresh();
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
-  const remove = useMutation({
-    mutationFn: api.removeProviderKey,
-    onSuccess: () => void refresh(),
-    onError: toastError,
-  });
-
-  if (isLoading) return <ActivityIndicator color={c.mutedForeground} />;
-  const configured = providers.filter((p) => p.configured);
   const pick = (id: string) => {
     setProvider(id);
     setError(null);
@@ -131,28 +213,7 @@ export function ProviderKeyForm() {
 
   return (
     <View style={styles.root}>
-      {configured.map((p) =>
-        p.custom ? (
-          <EndpointRow key={p.id} provider={p} />
-        ) : (
-          <SavedLine
-            key={p.id}
-            icon="check"
-            title={t('provider.saved', { provider: providerName(p.id), hint: p.hint ?? '' })}
-          >
-            <IconButton
-              icon="x"
-              size={18}
-              label={t('common.remove')}
-              onPress={() => remove.mutate(p.id)}
-              disabled={remove.isPending}
-            />
-          </SavedLine>
-        ),
-      )}
-      <Text style={[styles.title, { color: c.foreground }]}>
-        {configured.length ? t('provider.addAnother') : t('provider.pick')}
-      </Text>
+      <Text style={[styles.title, { color: c.foreground }]}>{t('provider.pick')}</Text>
       <ChipRow>
         {popular.map((id) => (
           <Chip key={id} on={current === id} onPress={() => pick(id)} label={providerName(id)} />
@@ -169,13 +230,13 @@ export function ProviderKeyForm() {
           <ChoiceRow
             label={t('provider.other')}
             value={others.includes(current) ? current : ''}
-            options={others.map((id) => ({ value: id, label: id }))}
+            options={others.map((id) => ({ value: id, label: providerName(id) }))}
             onChange={pick}
           />
         </View>
       ) : null}
       {current === CUSTOM ? (
-        <EndpointForm />
+        <EndpointForm onAdded={onAdded} />
       ) : (
         <>
           <Field
@@ -190,13 +251,15 @@ export function ProviderKeyForm() {
             accessibilityLabel={t('provider.keyFor', { provider: providerName(current) })}
             placeholder={t('provider.keyFor', { provider: providerName(current) })}
           />
-          <PillButton
-            variant="primary"
-            label={t('common.save')}
-            onPress={() => key.trim() && save.mutate()}
-            busy={save.isPending}
-            disabled={!key.trim()}
-          />
+          <View style={styles.start}>
+            <PillButton
+              variant="primary"
+              label={t('common.save')}
+              onPress={() => key.trim() && save.mutate()}
+              busy={save.isPending}
+              disabled={!key.trim()}
+            />
+          </View>
           {error ? <Text style={[styles.sub, { color: c.destructive }]}>{error}</Text> : null}
         </>
       )}
@@ -205,7 +268,7 @@ export function ProviderKeyForm() {
 }
 
 /** One of the person's own endpoints: its name, where it is, and its model list on request. */
-export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
+export function EndpointRow({ provider: p, plain = false }: { provider: ProviderInfo; plain?: boolean }) {
   const api = useApi();
   const qc = useQueryClient();
   const { origin } = useServer();
@@ -223,10 +286,11 @@ export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
     onError: toastError,
   });
   const [editing, setEditing] = useState(false);
-  if (editing) return <EndpointEdit provider={p} onDone={() => setEditing(false)} />;
+  if (editing) return <EndpointEdit provider={p} plain={plain} onDone={() => setEditing(false)} />;
   return (
     <SavedLine
       icon="server"
+      plain={plain}
       title={p.custom!.name}
       sub={`${p.custom!.baseUrl}${p.hint ? ` · ${p.hint}` : ''}`}
     >
@@ -249,8 +313,19 @@ export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
   );
 }
 
-/** Changes a saved endpoint's name, address or key; an empty key field keeps the saved key. */
-function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone: () => void }) {
+/**
+ * Changes a saved endpoint's name, address, models or key; an empty key field keeps the saved key.
+ * The models are the ones named by hand, for an endpoint whose own list leaves some out.
+ */
+function EndpointEdit({
+  provider: p,
+  plain,
+  onDone,
+}: {
+  provider: ProviderInfo;
+  plain: boolean;
+  onDone: () => void;
+}) {
   const c = useColors();
   const api = useApi();
   const qc = useQueryClient();
@@ -258,9 +333,17 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone:
   const [name, setName] = useState(p.custom!.name);
   const [baseUrl, setBaseUrl] = useState(p.custom!.baseUrl);
   const [key, setKey] = useState('');
+  const { data: saved = [] } = useProviderModels(p.id);
+  // Null until edited: the saved list may still be loading, and an untouched list is not sent.
+  const [models, setModels] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () =>
-      api.updateEndpoint(p.id, { name: name.trim(), baseUrl: baseUrl.trim(), key: key.trim() }),
+      api.updateEndpoint(p.id, {
+        name: name.trim(),
+        baseUrl: baseUrl.trim(),
+        key: key.trim(),
+        ...(models !== null ? { models: modelList(models) } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['providers', origin] });
       void qc.invalidateQueries({ queryKey: ['provider-models', origin, p.id] });
@@ -269,7 +352,7 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone:
     onError: toastError,
   });
   return (
-    <View style={[styles.form, { borderColor: c.border }]}>
+    <View style={[styles.form, plain ? styles.formPlain : { borderColor: c.border }]}>
       <Field value={name} onChangeText={setName} accessibilityLabel={t('provider.customName')} />
       <Field
         value={baseUrl}
@@ -278,6 +361,16 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone:
         autoCapitalize="none"
         autoCorrect={false}
         accessibilityLabel={t('provider.customUrl')}
+      />
+      <Field
+        value={models ?? saved.join(', ')}
+        onChangeText={setModels}
+        autoCapitalize="none"
+        autoCorrect={false}
+        multiline
+        accessibilityLabel={t('provider.customModelsEdit')}
+        placeholder={t('provider.customModelsEdit')}
+        style={styles.area}
       />
       <Field
         value={key}
@@ -306,7 +399,7 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone:
  * Adds an OpenAI-compatible endpoint, such as Ollama or LM Studio on this network, or a hosted
  * service. The server asks it for its models; the key is optional and stays on the server.
  */
-export function EndpointForm() {
+export function EndpointForm({ onAdded }: { onAdded?: () => void }) {
   const c = useColors();
   const api = useApi();
   const qc = useQueryClient();
@@ -322,14 +415,7 @@ export function EndpointForm() {
         name: name.trim(),
         baseUrl: baseUrl.trim(),
         ...(key.trim() ? { key: key.trim() } : {}),
-        ...(models.trim()
-          ? {
-              models: models
-                .split(/[\s,]+/)
-                .map((m) => m.trim())
-                .filter(Boolean),
-            }
-          : {}),
+        ...(models.trim() ? { models: modelList(models) } : {}),
       }),
     onSuccess: () => {
       setName('');
@@ -338,6 +424,7 @@ export function EndpointForm() {
       setModels('');
       setError(null);
       void qc.invalidateQueries({ queryKey: ['providers', origin] });
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
@@ -353,6 +440,7 @@ export function EndpointForm() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['providers', origin] });
       void qc.invalidateQueries({ queryKey: ['endpoint-discovery', origin] });
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
@@ -413,26 +501,43 @@ export function EndpointForm() {
         accessibilityLabel={t('provider.customModels')}
         placeholder={t('provider.customModels')}
       />
-      <PillButton
-        variant="primary"
-        label={t('common.add')}
-        onPress={() => {
-          setError(null);
-          add.mutate();
-        }}
-        busy={add.isPending}
-        disabled={!name.trim() || !baseUrl.trim()}
-      />
+      <View style={styles.start}>
+        <PillButton
+          variant="primary"
+          label={t('common.add')}
+          onPress={() => {
+            setError(null);
+            add.mutate();
+          }}
+          busy={add.isPending}
+          disabled={!name.trim() || !baseUrl.trim()}
+        />
+      </View>
       {error ? <Text style={[styles.sub, { color: c.destructive }]}>{error}</Text> : null}
     </View>
   );
 }
 
+/** True once a provider can be used: it has a key, or it is the person's own endpoint. */
+export function useHasProvider() {
+  const { data: providers = [] } = useProviders();
+  return providers.some((p) => p.configured);
+}
+
 /**
  * Picks one model of a provider that has a key, as `provider/model`. Lists can be long, so the
- * model is typed, with the matching names offered under the box.
+ * model is searched by typing. With no provider yet it shows `empty`, or the key form.
  */
-export function PiModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function PiModelPicker({
+  value,
+  onChange,
+  empty,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** Shown while no provider can be used; the key form when left out. */
+  empty?: ReactNode;
+}) {
   const c = useColors();
   const { data: providers = [] } = useProviders();
   const configured = providers.filter((p) => p.configured).map((p) => p.id);
@@ -440,11 +545,7 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange: (v
   const provider = configured.includes(parts.provider) ? parts.provider : (configured[0] ?? '');
   const model = provider === parts.provider ? parts.model : '';
   const { data: models = [] } = useProviderModels(provider || null);
-  if (!configured.length) {
-    return <Text style={[styles.sub, { color: c.mutedForeground }]}>{t('provider.noKey')}</Text>;
-  }
-  const typed = model.toLowerCase();
-  const suggestions = models.filter((m) => m !== model && m.toLowerCase().includes(typed)).slice(0, 6);
+  if (!configured.length) return <>{empty ?? <ProviderKeyForm />}</>;
   return (
     <View style={styles.root}>
       <View style={[styles.other, { borderColor: c.border }]}>
@@ -458,20 +559,90 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange: (v
           onChange={(p) => onChange(`${p}/`)}
         />
       </View>
+      <ModelSearch value={model} models={models} onChange={(m) => onChange(`${provider}/${m}`)} />
+    </View>
+  );
+}
+
+/**
+ * A model name field with the provider's models under it while it has focus, narrowed to those
+ * holding what is typed. A name off the list stays allowed: the provider may serve models its
+ * list leaves out. Only the first few matches are shown, so the list stays on the screen.
+ */
+function ModelSearch({
+  value,
+  models,
+  onChange,
+}: {
+  value: string;
+  models: string[];
+  onChange: (model: string) => void;
+}) {
+  const c = useColors();
+  const box = useRef<ComponentRef<typeof View>>(null);
+  const scrollTo = usePageScroll();
+  const [open, setOpen] = useState(false);
+  // What was typed since the field took focus; until then every model is a match.
+  const [query, setQuery] = useState('');
+  const q = query.toLowerCase();
+  const matches = q ? models.filter((m) => m.toLowerCase().includes(q)) : models;
+  const shown = matches.slice(0, SHOWN_MODELS);
+  const pick = (m: string) => {
+    onChange(m);
+    setQuery('');
+    setOpen(false);
+    Keyboard.dismiss();
+  };
+  return (
+    <View ref={box} style={styles.search}>
       <Field
-        value={model}
-        onChangeText={(v) => onChange(`${provider}/${v.trim()}`)}
+        value={value}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+          // The list opens under the field; lift both above the keyboard.
+          scrollTo(box.current);
+        }}
+        onBlur={() => setOpen(false)}
+        onChangeText={(v) => {
+          const typed = v.trim();
+          onChange(typed);
+          setQuery(typed);
+          setOpen(true);
+        }}
+        selectTextOnFocus
         autoCapitalize="none"
         autoCorrect={false}
+        spellCheck={false}
         accessibilityLabel={t('provider.model')}
         placeholder={models[0] ?? t('provider.model')}
+        style={{ fontFamily: MONO }}
       />
-      {suggestions.length > 0 ? (
-        <ChipRow>
-          {suggestions.map((m) => (
-            <Chip key={m} on={false} onPress={() => onChange(`${provider}/${m}`)} label={m} />
+      {open && (shown.length > 0 || q) ? (
+        <View style={[styles.list, { borderColor: c.border, backgroundColor: c.card }]}>
+          {shown.map((m) => (
+            <Pressable
+              key={m}
+              accessibilityRole="button"
+              accessibilityState={{ selected: m === value }}
+              onPress={() => pick(m)}
+              style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.accent }]}
+            >
+              <Text style={[styles.optionText, { color: c.foreground, fontFamily: MONO }]} numberOfLines={1}>
+                {m}
+              </Text>
+              {m === value ? <Feather name="check" size={20} color={c.mutedForeground} /> : null}
+            </Pressable>
           ))}
-        </ChipRow>
+          {matches.length > shown.length ? (
+            <Text style={[styles.listNote, { color: c.mutedForeground }]}>
+              {t('provider.modelMore', { count: matches.length - shown.length })}
+            </Text>
+          ) : null}
+          {shown.length === 0 ? (
+            <Text style={[styles.listNote, { color: c.mutedForeground }]}>{t('provider.modelUnlisted')}</Text>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -502,6 +673,7 @@ export function useSavePiModel(onSaved?: () => void, backup = false) {
 
 const styles = StyleSheet.create({
   root: { gap: 12 },
+  plain: { borderWidth: 0, borderRadius: 0, paddingLeft: 16, paddingRight: 8, paddingVertical: 10 },
   saved: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -518,6 +690,14 @@ const styles = StyleSheet.create({
   sub: { fontSize: 15, lineHeight: 20 },
   other: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   form: { borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
+  formPlain: { borderWidth: 0, borderRadius: 0, padding: 16 },
+  area: { height: undefined, minHeight: 72, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
+  start: { alignItems: 'flex-start' },
+  search: { gap: 6 },
+  list: { borderWidth: 1, borderRadius: 16, overflow: 'hidden', paddingVertical: 4 },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  optionText: { flex: 1, fontSize: 15 },
+  listNote: { fontSize: 15, lineHeight: 20, paddingHorizontal: 16, paddingVertical: 8 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   found: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, gap: 8 },
   foundRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

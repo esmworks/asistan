@@ -17,6 +17,7 @@ export const tr = {
   'computer.desktopNoScreen':
     'Botun bilgisayarının canlı ekranı henüz telefonda gösterilemiyor. Ekranı bilgisayardaki uygulamadan izleyebilirsin.',
   'computer.unavailable': 'Bu sunucuda bota ait bir tarayıcı ya da bilgisayar yok.',
+  'computer.windowHint': 'Bilgisayarında ayrı pencerede açık; bot bekliyor.',
 };
 
 export const en: Record<keyof typeof tr, string> = {
@@ -37,4 +38,5 @@ export const en: Record<keyof typeof tr, string> = {
   'computer.desktopNoScreen':
     "The live screen of the bot's computer cannot be shown on the phone yet. Watch it in the desktop app.",
   'computer.unavailable': 'This server has no browser or computer for the bot.',
+  'computer.windowHint': 'Open in its own window on your computer; the bot waits.',
 };

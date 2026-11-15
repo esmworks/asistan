@@ -53,8 +53,7 @@ import { useFitHeight } from '@/lib/fitHeight';
 import { Field } from './RoutineDialog';
 import { AssistantCard, MessageItem, replyExcerpt, Working } from './MessageItem';
 
-const heading =
-  'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
+const heading = 'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
 
 /** The bots of a room that still exist, in speaking order. */
 function useMembers(room: Room | undefined): Bot[] {

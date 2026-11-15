@@ -359,8 +359,7 @@ function SidebarPanel({
 /** The search's shortcut as this computer's keyboard writes it. */
 const SEARCH_KEYS = /mac|iphone|ipad/i.test(navigator.userAgent) ? '⌘K' : 'Ctrl K';
 
-const heading =
-  'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
+const heading = 'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
 
 /** Highlights a bot while its menu is open. */
 const menuOpen = 'data-[state=open]:[&>button]:bg-accent/60';
