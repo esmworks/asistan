@@ -51,7 +51,7 @@ export const en: Catalog<MessageKey> = {
   'account.change': 'Change',
   'account.saved': 'Account saved',
 
-  'welcome.title': 'Welcome to YumakBot',
+  'welcome.title': 'Welcome to Yumak Bot',
   'welcome.body':
     'Each bot works in its own folder, keeps its own memory and talks to other bots when needed.',
   'welcome.create': 'Create a bot',
@@ -213,7 +213,7 @@ export const en: Catalog<MessageKey> = {
   'general.desktop': 'Desktop app',
   'general.openAtLogin': 'Open at login',
   'general.openAtLoginHint':
-    'YumakBot opens in the menu bar when you log in, so routines run without opening it by hand.',
+    'Yumak Bot opens in the menu bar when you log in, so routines run without opening it by hand.',
   'sidebarMenu.markGroupRead': 'Mark the group as read',
   'chat.apiThreads': 'Through the API',
   'activity.watch': 'Watch',
@@ -307,7 +307,7 @@ export const en: Catalog<MessageKey> = {
   'sidebarMenu.deleteGroupConfirm':
     'Delete the group "{name}"? Its bots move to Ungrouped and lose access to the group\'s shared folder.',
 
-  'update.title': 'YumakBot was updated',
+  'update.title': 'Yumak Bot was updated',
   'update.reloading': 'Loading the new version…',
   'update.waiting': 'The page will reload once your unsent message and files are done.',
   'update.reloadNow': 'Reload now',
@@ -600,7 +600,7 @@ export const en: Catalog<MessageKey> = {
     'The bot works with what you talked about there and writes its report where you chat, instead of in a conversation of the routine’s own.',
   'routine.onStartup': 'Also run when the server starts',
   'routine.onStartupHint':
-    'Runs once each time the server starts; in the desktop app, when you turn on the computer and open YumakBot.',
+    'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
   'routine.watchUrl': 'Only when this page changes (optional)',
   'routine.watchUrlHint':
     'At each time the page is read without the AI; the bot runs only when its text changed, and gets the new text. Costs nothing while the page stays the same.',
@@ -727,13 +727,13 @@ export const en: Catalog<MessageKey> = {
   'notify.level.needsYou': 'Only when a bot needs me',
   'notify.level.off': 'Never',
   'notify.hint': 'Shown on this device while you are looking at something else.',
-  'notify.blocked': 'This browser blocks notifications from YumakBot; allow them in its site settings.',
+  'notify.blocked': 'This browser blocks notifications from Yumak Bot; allow them in its site settings.',
   'notify.unsupported': 'This browser cannot show notifications.',
   'notify.sound': 'Play a sound',
   'notify.soundHint': 'A short chime with each notification, on this device.',
   'notify.test': 'Try it',
   'notify.testButton': 'Send a test notification',
-  'notify.testTitle': 'YumakBot',
+  'notify.testTitle': 'Yumak Bot',
   'notify.testBody': 'Notifications work on this device.',
   'apns.title': 'Phone notifications',
   'apns.key': 'Apple key for the iPhone',
@@ -775,7 +775,7 @@ export const en: Catalog<MessageKey> = {
     'A command runs encoded content (like base64), so what runs cannot be read in the text.',
   'skills.bringIn': 'Bring in from other AI tools',
   'skills.bringInHint':
-    'What tools such as Claude Code, Codex or Cursor on this computer have and YumakBot does not. They come in switched off: no bot uses them until you turn them on.',
+    'What tools such as Claude Code, Codex or Cursor on this computer have and Yumak Bot does not. They come in switched off: no bot uses them until you turn them on.',
   'skills.bringInSkills': 'Skills',
   'skills.bringInServers': 'App connections (MCP)',
   'skills.bringInRun': 'Bring in the chosen ones',
@@ -900,7 +900,7 @@ export const en: Catalog<MessageKey> = {
   'import.warn.skill': '{bot}: the "{skill}" skill was left out (its name or description is not valid)',
   'export.title': 'Export bots',
   'export.hint':
-    'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another YumakBot imports it from this page. Conversations, permissions and folders stay out of the file.',
+    'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Yumak Bot imports it from this page. Conversations, permissions and folders stay out of the file.',
   'export.download': 'Download {count} bots',
   'import.instructionsOf': 'Instructions',
   'import.none': '(none)',
@@ -962,7 +962,7 @@ export const en: Catalog<MessageKey> = {
   'profile.addressAsHint': 'For example just your first name.',
   'profile.occupation': 'What do you do?',
   'profile.occupationPlaceholder': 'e.g. architect, student, I run a shop',
-  'profile.section.use': 'How you use YumakBot',
+  'profile.section.use': 'How you use Yumak Bot',
   'profile.focus': 'Mostly for',
   'profile.focus.work': 'Work',
   'profile.focus.personal': 'Personal life',
@@ -992,7 +992,7 @@ export const en: Catalog<MessageKey> = {
   'onboarding.intro': 'Let me get to know you a little, so I can set up your bots.',
   'onboarding.q.name': 'What is your full name?',
   'onboarding.q.addressAs': 'What should I call you?',
-  'onboarding.q.focus': 'What will you mostly use YumakBot for?',
+  'onboarding.q.focus': 'What will you mostly use Yumak Bot for?',
   'onboarding.q.occupation': 'What do you do?',
   'onboarding.q.helpWith': 'What would you like help with?',
   'onboarding.q.about': 'Anything else your bots should know?',

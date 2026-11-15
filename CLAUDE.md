@@ -1,4 +1,4 @@
-# YumakBot
+# Yumak Bot
 
 Notes for people and coding agents working on this repository.
 

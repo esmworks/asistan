@@ -33,7 +33,7 @@ const tr = {
   'error.projectDirRelative': 'Proje klasörü tam bir yol olmalı (/ ile başlayan)',
   'error.projectDirTooWide':
     'Bu klasör proje klasörü olamaz: kök ya da ev klasörünü içeriyor ve bot içindeki her şeyi okuyup yazabilirdi. Projenin kendi klasörünü seç.',
-  'error.projectDirData': 'YumakBot’un veri klasörü ya da onu içeren bir klasör proje klasörü olamaz',
+  'error.projectDirData': 'Yumak Bot’un veri klasörü ya da onu içeren bir klasör proje klasörü olamaz',
   'error.projectDirPrivate':
     'Anahtar, oturum ya da ayar tutan bir ev klasörü (.ssh, .aws, .config gibi) ya da içindeki bir klasör proje klasörü olamaz',
   'error.botNotArchived': 'Yalnız arşivlenmiş bir bot kalıcı olarak silinebilir',
@@ -74,9 +74,9 @@ const tr = {
   'connection.resultKept':
     '[yanıt {size} karakter; tamamı {path} dosyasına kaydedildi. Gerekirse oradan parça parça oku ya da ara.]',
   'connection.emptyResult': '(boş yanıt)',
-  'connection.page.title': 'YumakBot bağlantısı',
+  'connection.page.title': 'Yumak Bot bağlantısı',
   'connection.page.done': '{name} bağlandı',
-  'connection.page.doneHint': 'Bu pencereyi kapatıp YumakBot’a dönebilirsiniz.',
+  'connection.page.doneHint': 'Bu pencereyi kapatıp Yumak Bot’a dönebilirsiniz.',
   'connection.page.failed': 'Bağlantı kurulamadı',
   'error.vaultDuplicate': 'Bu site için bu kullanıcı adı kasada zaten var',
   'error.loginRequired': 'Kullanıcı adı ve şifre gerekli',
@@ -88,7 +88,7 @@ const tr = {
   'error.fileForbidden': 'Bu dosyaya erişim yok',
   'error.fileTooLarge': 'Dosya çok büyük (en fazla {max} MB)',
   'error.uploadType': 'Dosya application/octet-stream olarak gönderilmeli',
-  'error.importFormat': 'Bu dosya bir YumakBot bot içe aktarma dosyası değil',
+  'error.importFormat': 'Bu dosya bir Yumak Bot içe aktarma dosyası değil',
   'error.importInvalid': 'İçe aktarma dosyası geçersiz: {path} alanı hatalı',
   'error.memoryNeedsBot': 'Bot hafızası için bot gerekli',
   'error.unknownProvider': 'Bilinmeyen sağlayıcı',
@@ -290,9 +290,9 @@ const tr = {
   'prompt.noOutside': 'Bu klasörlerin dışına erişimin yok.',
   'prompt.server': '## Nerede çalışıyorsun',
   'prompt.serverRemote':
-    'YumakBot sunucusu kullanıcının bilgisayarından ayrı, sürekli açık bir makinede çalışır. Araçların, tarayıcın ve klasörlerin o sunucudadır; rutinlerin kullanıcının bilgisayarı kapalıyken de zamanında çalışır.',
+    'Yumak Bot sunucusu kullanıcının bilgisayarından ayrı, sürekli açık bir makinede çalışır. Araçların, tarayıcın ve klasörlerin o sunucudadır; rutinlerin kullanıcının bilgisayarı kapalıyken de zamanında çalışır.',
   'prompt.serverLocal':
-    'YumakBot sunucusu kullanıcının kendi bilgisayarında, YumakBot uygulamasının içinde çalışır. Araçların, tarayıcın ve klasörlerin o bilgisayardadır; rutinlerin yalnızca bilgisayar açık ve YumakBot çalışırken (penceresi kapalı olsa da) çalışır. Kaçırılan bir zaman, bilgisayar uyanınca ya da YumakBot yeniden açılınca bir kez çalışır.',
+    'Yumak Bot sunucusu kullanıcının kendi bilgisayarında, Yumak Bot uygulamasının içinde çalışır. Araçların, tarayıcın ve klasörlerin o bilgisayardadır; rutinlerin yalnızca bilgisayar açık ve Yumak Bot çalışırken (penceresi kapalı olsa da) çalışır. Kaçırılan bir zaman, bilgisayar uyanınca ya da Yumak Bot yeniden açılınca bir kez çalışır.',
   'prompt.routinesHow':
     'Rutinleri sunucunun kendi zamanlayıcısı başlatır: zamanı gelince rutinin sohbetine sana bir mesaj gelir. Kullanıcı rutinleri uygulamadaki Rutinler bölümünden ekler ve değiştirir; "her sabah", "her cuma" gibi tekrar eden ya da belli bir zamana bağlı bir istekte `routine_create` ile kendin kurabilirsin; var olanı `routine_update` ile açıp kapatabilir ya da değiştirebilir, `routine_delete` ile silebilirsin (kullanıcı onaylar). Ayrı bir zamanlayıcı kurmana gerek yok. Rutin çalışırken kullanıcı başında olmayabilir: bir soruya ya da onaya cevap gelmezse o adımı atlayıp devam et.',
   'prompt.routines': '## Rutinler',
@@ -677,7 +677,7 @@ const tr = {
   'push.bot': 'Bot',
   'push.needsYou': '{name} seni bekliyor',
   'push.error': '{name} bir sorunla karşılaştı',
-  'push.testTitle': 'YumakBot',
+  'push.testTitle': 'Yumak Bot',
   'push.testBody': 'Bildirimler bu telefonda çalışıyor.',
   'error.apnsKey': 'Bu bir Apple .p8 anahtarı değil',
   'error.apnsUnconfigured': 'Sunucuda iPhone bildirimleri için Apple anahtarı yok',
@@ -715,7 +715,7 @@ const en: Catalog<ServerKey> = {
   'error.projectDirTooWide':
     'This folder cannot be a project folder: it is the root or holds the home folder, and the bot could read and change everything in it. Choose the project’s own folder.',
   'error.projectDirData':
-    'YumakBot’s data folder, or a folder around or inside it, cannot be a project folder',
+    'Yumak Bot’s data folder, or a folder around or inside it, cannot be a project folder',
   'error.projectDirPrivate':
     'A home folder that holds keys, sign-ins or settings (such as .ssh, .aws, .config), or a folder inside one, cannot be a project folder',
   'error.botNotArchived': 'Only an archived bot can be deleted for good',
@@ -755,9 +755,9 @@ const en: Catalog<ServerKey> = {
   'connection.resultKept':
     '[the answer is {size} characters; all of it was saved to {path}. Read or search it there in parts if needed.]',
   'connection.emptyResult': '(empty answer)',
-  'connection.page.title': 'YumakBot connection',
+  'connection.page.title': 'Yumak Bot connection',
   'connection.page.done': '{name} is connected',
-  'connection.page.doneHint': 'You can close this window and go back to YumakBot.',
+  'connection.page.doneHint': 'You can close this window and go back to Yumak Bot.',
   'connection.page.failed': 'Could not connect',
   'error.vaultDuplicate': 'This username is already saved for this site',
   'error.loginRequired': 'Username and password are required',
@@ -769,7 +769,7 @@ const en: Catalog<ServerKey> = {
   'error.fileForbidden': 'No access to this file',
   'error.fileTooLarge': 'The file is too large (at most {max} MB)',
   'error.uploadType': 'Send the file as application/octet-stream',
-  'error.importFormat': 'This is not an YumakBot bot import file',
+  'error.importFormat': 'This is not a Yumak Bot import file',
   'error.importInvalid': 'The import file is invalid: the field {path} is wrong',
   'error.memoryNeedsBot': 'Bot memory needs a bot',
   'error.unknownProvider': 'Unknown provider',
@@ -964,9 +964,9 @@ const en: Catalog<ServerKey> = {
   'prompt.noOutside': 'You have no access outside these folders.',
   'prompt.server': '## Where you run',
   'prompt.serverRemote':
-    "The YumakBot server runs on an always-on machine separate from the user's computer. Your tools, browser and folders are on that server; your routines run on time even while the user's computer is off.",
+    "The Yumak Bot server runs on an always-on machine separate from the user's computer. Your tools, browser and folders are on that server; your routines run on time even while the user's computer is off.",
   'prompt.serverLocal':
-    "The YumakBot server runs on the user's own computer, inside the YumakBot app. Your tools, browser and folders are on that computer; your routines run only while it is on and YumakBot is running (even with its window closed). A missed time runs once when the computer wakes or YumakBot opens again.",
+    "The Yumak Bot server runs on the user's own computer, inside the Yumak Bot app. Your tools, browser and folders are on that computer; your routines run only while it is on and Yumak Bot is running (even with its window closed). A missed time runs once when the computer wakes or Yumak Bot opens again.",
   'prompt.routinesHow':
     'Routines are started by the server\'s own scheduler: when one is due, a message arrives for you in that routine\'s conversation. The user adds and changes routines in the app\'s Routines section; for a repeated or timed request, such as "every morning" or "every Friday", you can set one up yourself with `routine_create`, turn one on or off or change it with `routine_update`, and delete one with `routine_delete` (the user approves). You need no scheduler of your own. The user may not be around while a routine runs: if a question or approval goes unanswered, skip that step and carry on.',
   'prompt.routines': '## Routines',
@@ -1345,7 +1345,7 @@ const en: Catalog<ServerKey> = {
   'push.bot': 'Bot',
   'push.needsYou': '{name} needs you',
   'push.error': '{name} ran into a problem',
-  'push.testTitle': 'YumakBot',
+  'push.testTitle': 'Yumak Bot',
   'push.testBody': 'Notifications work on this phone.',
   'error.apnsKey': 'This is not an Apple .p8 key',
   'error.apnsUnconfigured': 'The server has no Apple key for iPhone notifications',

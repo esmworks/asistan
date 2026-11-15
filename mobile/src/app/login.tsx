@@ -23,7 +23,7 @@ export default function Login() {
   return (
     <FormScreen>
       <Mark />
-      <Title>YumakBot</Title>
+      <Title>Yumak Bot</Title>
       <Hint>{password ? t('login.accountHint') : t('login.hint')}</Hint>
       {password ? <PasswordForm /> : <KeyForm />}
       {hasAccount ? (

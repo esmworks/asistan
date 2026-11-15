@@ -3,7 +3,7 @@
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "version": "0.1.0",
-  "description": "YumakBot's native app for iOS and Android",
+  "description": "Yumak Bot's native app for iOS and Android",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",

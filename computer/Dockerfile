@@ -1,4 +1,4 @@
-# YumakBot computer service: one sandboxed Linux desktop per bot. Build context is the repository root:
+# Yumak Bot computer service: one sandboxed Linux desktop per bot. Build context is the repository root:
 #   docker build -f computer/Dockerfile .      (docker/compose.yml does this)
 # See "Botların bilgisayarı" in docker/README.md for the host setup.
 FROM node:22-bookworm-slim AS build

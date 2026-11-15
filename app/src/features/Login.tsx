@@ -30,7 +30,7 @@ export function Login() {
           <div className="size-16">
             <ShapeArt shape="blob" color="var(--brand)" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">YumakBot</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Yumak Bot</h1>
           <p className="text-sm text-muted-foreground">
             {hasAccount && !useKey ? t('login.accountHint') : t('login.hint')}
           </p>

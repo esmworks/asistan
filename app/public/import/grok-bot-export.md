@@ -1,12 +1,12 @@
 ---
 name: move-to-yumakbot
-description: Packs the user's Grok Bot agents (instructions, picture, timed tasks, remembered facts, team chats) into a single yumakbot-bots.json file for the YumakBot app. Use when the user wants their agents in YumakBot.
+description: Packs the user's Grok Bot agents (instructions, picture, timed tasks, remembered facts, team chats) into a single yumakbot-bots.json file for the Yumak Bot app. Use when the user wants their agents in Yumak Bot.
 ---
 
-# Move agents to YumakBot
+# Move agents to Yumak Bot
 
-The result of this task is one JSON file named `yumakbot-bots.json`. The user loads it in YumakBot
-(**Settings → Import**), where it is previewed before anything is created. YumakBot checks the file
+The result of this task is one JSON file named `yumakbot-bots.json`. The user loads it in Yumak Bot
+(**Settings → Import**), where it is previewed before anything is created. Yumak Bot checks the file
 strictly; a file that does not match the shape below is rejected as a whole.
 
 ## What the file looks like
@@ -69,7 +69,7 @@ strictly; a file that does not match the shape below is rejected as a whole.
 
 Each has a `name` (up to 80 characters), the `prompt` it runs (up to 20,000 characters), a
 `schedule`, an IANA `timezone` (such as `Asia/Tokyo`) and `enabled`, which says whether the task
-is currently switched on in Grok Bot. YumakBot imports every routine switched off so nothing runs
+is currently switched on in Grok Bot. Yumak Bot imports every routine switched off so nothing runs
 twice; the user turns them on.
 
 `schedule` must be exactly one of the following. `HH:MM` is a 24-hour clock time in the routine's
@@ -99,12 +99,12 @@ Only what the agent already keeps as memory in Grok Bot (its saved facts about t
 plain sentence each, up to 2,000 characters. Copy them; do not add new ones. Never derive facts
 from the agent's conversations or summarise its chats, and never paste conversation text. An
 agent with no saved memory gets `[]`; that is the expected case for most agents, not a gap to
-fill. YumakBot saves these as the agent's memory as soon as the user confirms the import.
+fill. Yumak Bot saves these as the agent's memory as soon as the user confirms the import.
 
 ### `groups` (up to 50)
 
 Team chats in which several agents work together: a `name` (up to 60 characters) and the `ref` of
-each member. In YumakBot an agent belongs to at most one group.
+each member. In Yumak Bot an agent belongs to at most one group.
 
 ### `notImported` (up to 200)
 
@@ -127,4 +127,4 @@ event-triggered tasks: `bot` (the agent's `ref`, or `null`), `what` (up to 200 c
    - no credentials appear anywhere;
    - everything left behind is listed in `notImported`.
 5. Tell the user where the file is, how many agents and groups it contains and what is in
-   `notImported`, and that they can now load it under **Settings → Import** in YumakBot.
+   `notImported`, and that they can now load it under **Settings → Import** in Yumak Bot.

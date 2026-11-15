@@ -1356,7 +1356,7 @@ function About() {
       <div className="mb-6 flex items-center gap-4 px-1">
         <img src="/logo.png" alt="" className="size-14 rounded-2xl" />
         <div>
-          <div className="text-lg font-semibold">YumakBot</div>
+          <div className="text-lg font-semibold">Yumak Bot</div>
           <div className="text-sm text-muted-foreground">
             {t('about.version', { version: info?.version ?? '…' })}
           </div>

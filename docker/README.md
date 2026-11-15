@@ -1,4 +1,4 @@
-# YumakBot'u sunucuda çalıştırma (Docker)
+# Yumak Bot'u sunucuda çalıştırma (Docker)
 
 ```bash
 cp docker/.env.example docker/.env      # değerleri doldurun

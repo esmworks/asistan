@@ -116,7 +116,7 @@ elif [ "$restricted" != 1 ]; then
 else
   command -v apparmor_parser >/dev/null 2>&1 ||
     die "AppArmor kullanıcı ad alanlarını kısıtlıyor ama apparmor_parser yok. Kurun: sudo apt-get install -y apparmor"
-  [ -f "$SOURCE" ] || die "$SOURCE bulunamadı; betiği YumakBot deposunun içinden çalıştırın."
+  [ -f "$SOURCE" ] || die "$SOURCE bulunamadı; betiği Yumak Bot deposunun içinden çalıştırın."
   # Dry run first, so a host whose AppArmor is too old for the profile gets a clear message and keeps its state.
   apparmor_parser -QK "$SOURCE" >/dev/null ||
     die "AppArmor $PROFILE profilini kabul etmedi (iletisi yukarıda). Profil AppArmor 4 ister (Ubuntu 24.04 ve sonrası)."
