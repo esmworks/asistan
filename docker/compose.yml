@@ -1,4 +1,4 @@
-# Production-style setup: YumakBot server + PostgreSQL.
+# Production-style setup: Yumak Bot server + PostgreSQL.
 #   cp docker/.env.example docker/.env   (fill in the values)
 #   docker compose -f docker/compose.yml up -d --build
 name: yumakbot

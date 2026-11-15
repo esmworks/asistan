@@ -21,7 +21,7 @@ function server(s: Services): McpServer {
   const mcp = new McpServer({ name: 'yumakbot', version: '0.1.0' });
   mcp.registerTool(
     'list_bots',
-    { description: 'List the YumakBot bots: their ids, names and what each is for.', inputSchema: {} },
+    { description: 'List the bots in Yumak Bot: their ids, names and what each is for.', inputSchema: {} },
     async () =>
       text(
         (await s.bots.list()).map((b) => ({
@@ -36,7 +36,7 @@ function server(s: Services): McpServer {
     'ask_bot',
     {
       description:
-        'Send a message to an YumakBot bot (by id or name) and wait for its reply. The bot answers in a conversation of its own for API messages. When the wait runs out the status is "running"; read the reply later with get_reply.',
+        'Send a message to a bot in Yumak Bot (by id or name) and wait for its reply. The bot answers in a conversation of its own for API messages. When the wait runs out the status is "running"; read the reply later with get_reply.',
       inputSchema: {
         bot: z.string().min(1).max(100),
         message: z.string().min(1).max(100_000),
@@ -74,7 +74,7 @@ function server(s: Services): McpServer {
 }
 
 /**
- * YumakBot as an MCP server over streamable HTTP, without sessions: each request gets a fresh
+ * Yumak Bot as an MCP server over streamable HTTP, without sessions: each request gets a fresh
  * server and transport, so nothing has to be kept between calls.
  */
 export function registerMcpServer(app: FastifyInstance, s: Services) {

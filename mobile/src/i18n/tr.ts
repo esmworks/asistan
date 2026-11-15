@@ -20,12 +20,12 @@ export const tr = {
 
   'connect.title': 'Sunucuna bağlan',
   'connect.intro':
-    'Botlar kendi sunucunda çalışır; bu telefon yalnızca pencere olur. Bilgisayarındaki ya da sunucundaki YumakBot’un adresini yaz.',
+    'Botlar kendi sunucunda çalışır; bu telefon yalnızca pencere olur. Bilgisayarındaki ya da sunucundaki Yumak Bot’un adresini yaz.',
   'connect.url': 'Sunucu adresi',
   'connect.urlPlaceholder': '192.168.1.20:4319',
   'connect.submit': 'Bağlan',
   'connect.invalid': 'Bu bir adres değil',
-  'connect.notYumakBot': 'Bu adreste bir YumakBot sunucusu yanıt vermedi',
+  'connect.notYumakBot': 'Bu adreste bir Yumak Bot sunucusu yanıt vermedi',
 
   'offline.title': 'Sunucuya ulaşılamadı',
   'offline.text':

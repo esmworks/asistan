@@ -19,17 +19,17 @@ const tr = {
   'status.stopped': 'Sunucu durdu',
   'status.failed': 'Sunucu açılamadı',
   'status.quitting': 'Kapatılıyor…',
-  'dialog.gaveUp': 'YumakBot sunucusu tekrar tekrar durdu.',
+  'dialog.gaveUp': 'Yumak Bot sunucusu tekrar tekrar durdu.',
   'dialog.gaveUpDetail': 'Günlükler menü çubuğundaki "Günlükleri göster" ile açılabilir.',
-  'dialog.failed': 'YumakBot sunucusu açılamadı.',
-  'menu.open': "YumakBot'u aç",
+  'dialog.failed': 'Yumak Bot sunucusu açılamadı.',
+  'menu.open': "Yumak Bot'u aç",
   'menu.connectRemote': 'Uzak sunucuya bağlan…',
   'menu.useLocal': "Bu Mac'teki sunucuyu kullan",
   'menu.openAtLogin': 'Girişte aç',
   'menu.showLogs': 'Günlükleri göster',
   'menu.quit': 'Çık',
   'menu.settings': 'Ayarlar…',
-  'menu.about': 'YumakBot hakkında',
+  'menu.about': 'Yumak Bot hakkında',
   'menu.edit': 'Düzen',
   'menu.view': 'Görünüm',
   'menu.window': 'Pencere',
@@ -50,7 +50,7 @@ const tr = {
   'error.startExit': 'Sunucu açılamadı (çıkış {code}): {stderr}',
   'error.oldAppTitle': "Önce Asistan'ı kapatın",
   'error.oldAppRunning':
-    "YumakBot, Asistan'ın yeni adı. Botlarınız ve sohbetleriniz Asistan açıkken taşınamıyor. Asistan'ı kapatıp YumakBot'u yeniden açın; hepsi buraya gelir.",
+    "Yumak Bot, Asistan'ın yeni adı. Botlarınız ve sohbetleriniz Asistan açıkken taşınamıyor. Asistan'ı kapatıp Yumak Bot'u yeniden açın; hepsi buraya gelir.",
 } satisfies Catalog;
 
 export type DesktopKey = keyof typeof tr;
@@ -64,17 +64,17 @@ const en: Catalog<DesktopKey> = {
   'status.stopped': 'Server stopped',
   'status.failed': 'Server could not start',
   'status.quitting': 'Quitting…',
-  'dialog.gaveUp': 'The YumakBot server keeps stopping.',
+  'dialog.gaveUp': 'The Yumak Bot server keeps stopping.',
   'dialog.gaveUpDetail': 'Open the logs with "Show logs" in the menu bar.',
-  'dialog.failed': 'The YumakBot server could not start.',
-  'menu.open': 'Open YumakBot',
+  'dialog.failed': 'The Yumak Bot server could not start.',
+  'menu.open': 'Open Yumak Bot',
   'menu.connectRemote': 'Connect to a remote server…',
   'menu.useLocal': "Use this Mac's server",
   'menu.openAtLogin': 'Open at login',
   'menu.showLogs': 'Show logs',
   'menu.quit': 'Quit',
   'menu.settings': 'Settings…',
-  'menu.about': 'About YumakBot',
+  'menu.about': 'About Yumak Bot',
   'menu.edit': 'Edit',
   'menu.view': 'View',
   'menu.window': 'Window',
@@ -95,7 +95,7 @@ const en: Catalog<DesktopKey> = {
   'error.startExit': 'The server could not start (exit {code}): {stderr}',
   'error.oldAppTitle': 'Quit Asistan first',
   'error.oldAppRunning':
-    'YumakBot is the new name of Asistan. Your bots and chats cannot be moved over while Asistan is open. Quit Asistan and open YumakBot again; everything comes along.',
+    'Yumak Bot is the new name of Asistan. Your bots and chats cannot be moved over while Asistan is open. Quit Asistan and open Yumak Bot again; everything comes along.',
 };
 
 const CATALOGS = { tr, en };

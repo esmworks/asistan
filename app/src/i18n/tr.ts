@@ -54,7 +54,7 @@ export const tr = {
   'account.saved': 'Hesap kaydedildi',
 
   // Welcome
-  'welcome.title': "YumakBot'a hoş geldiniz",
+  'welcome.title': "Yumak Bot'a hoş geldiniz",
   'welcome.body':
     'Her bot kendi klasöründe çalışır, kendi hafızasını tutar ve gerekirse diğer botlarla konuşur.',
   'welcome.create': 'Bot oluştur',
@@ -217,7 +217,7 @@ export const tr = {
   'general.desktop': 'Masaüstü uygulaması',
   'general.openAtLogin': 'Girişte aç',
   'general.openAtLoginHint':
-    'Oturum açtığınızda YumakBot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
+    'Oturum açtığınızda Yumak Bot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
   'sidebarMenu.markGroupRead': 'Gruptakileri okundu işaretle',
   'chat.apiThreads': 'API üzerinden',
   'activity.watch': 'İzle',
@@ -312,7 +312,7 @@ export const tr = {
     '"{name}" grubu silinsin mi? İçindeki botlar Grupsuz\'a taşınır ve grubun ortak klasörüne erişemez.',
 
   // Update notice
-  'update.title': 'YumakBot güncellendi',
+  'update.title': 'Yumak Bot güncellendi',
   'update.reloading': 'Yeni sürüm yükleniyor…',
   'update.waiting': 'Gönderilmemiş mesajınız ve dosyalarınız bitince sayfa yenilenecek.',
   'update.reloadNow': 'Şimdi yenile',
@@ -597,7 +597,7 @@ export const tr = {
     'Bot orada konuştuklarınızı bilerek çalışır ve raporunu rutinin kendi sohbeti yerine sizin yazıştığınız yere yazar.',
   'routine.onStartup': 'Sunucu açılınca da çalıştır',
   'routine.onStartupHint':
-    'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp YumakBot’u başlattığınızda.',
+    'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Yumak Bot’u başlattığınızda.',
   'routine.watchUrl': 'Yalnız bu sayfa değişince (isteğe bağlı)',
   'routine.watchUrlHint':
     'Her zamanında sayfa yapay zekâsız okunur; bot yalnız metni değişince çalışır ve yeni metni alır. Sayfa aynı kaldıkça hiçbir şeye mal olmaz.',
@@ -728,13 +728,13 @@ export const tr = {
   'notify.level.needsYou': 'Yalnızca bir bot beni beklerken',
   'notify.level.off': 'Hiçbir zaman',
   'notify.hint': 'Başka bir şeye bakarken bu cihazda gösterilir.',
-  'notify.blocked': 'Bu tarayıcı YumakBot bildirimlerini engelliyor; site ayarlarından izin ver.',
+  'notify.blocked': 'Bu tarayıcı Yumak Bot bildirimlerini engelliyor; site ayarlarından izin ver.',
   'notify.unsupported': 'Bu tarayıcı bildirim gösteremiyor.',
   'notify.sound': 'Ses çal',
   'notify.soundHint': 'Her bildirimde bu cihazda kısa bir ses.',
   'notify.test': 'Dene',
   'notify.testButton': 'Deneme bildirimi gönder',
-  'notify.testTitle': 'YumakBot',
+  'notify.testTitle': 'Yumak Bot',
   'notify.testBody': 'Bildirimler bu cihazda çalışıyor.',
   'apns.title': 'Telefon bildirimleri',
   'apns.key': 'iPhone için Apple anahtarı',
@@ -777,7 +777,7 @@ export const tr = {
     'Kodlanmış (base64 gibi) içeriği çalıştıran bir komut var; ne çalışacağı metinden okunamıyor.',
   'skills.bringIn': 'Diğer yapay zekâ araçlarından al',
   'skills.bringInHint':
-    'Bu bilgisayardaki Claude Code, Codex, Cursor gibi araçlarda olup YumakBot’ta olmayanlar. Alınanlar kapalı gelir: hiçbir bot onları siz açana kadar kullanmaz.',
+    'Bu bilgisayardaki Claude Code, Codex, Cursor gibi araçlarda olup Yumak Bot’ta olmayanlar. Alınanlar kapalı gelir: hiçbir bot onları siz açana kadar kullanmaz.',
   'skills.bringInSkills': 'Beceriler',
   'skills.bringInServers': 'Uygulama bağlantıları (MCP)',
   'skills.bringInRun': 'Seçilenleri al',
@@ -908,7 +908,7 @@ export const tr = {
   'import.warn.skill': '{bot}: "{skill}" becerisi alınmadı (adı ya da açıklaması geçersiz)',
   'export.title': 'Botları dışa aktar',
   'export.hint':
-    'Seçilen botlar talimatları, avatarları, rutinleri, hafızaları, becerileri ve gruplarıyla bir dosyaya yazılır; başka bir YumakBot bu sayfadan içe aktarır. Sohbetler, izinler ve klasörler dosyaya girmez.',
+    'Seçilen botlar talimatları, avatarları, rutinleri, hafızaları, becerileri ve gruplarıyla bir dosyaya yazılır; başka bir Yumak Bot bu sayfadan içe aktarır. Sohbetler, izinler ve klasörler dosyaya girmez.',
   'export.download': '{count} botu indir',
   'import.instructionsOf': 'Talimatlar',
   'import.none': '(yok)',
@@ -969,7 +969,7 @@ export const tr = {
   'profile.addressAsHint': 'Örneğin yalnızca adınız.',
   'profile.occupation': 'Ne iş yapıyorsunuz?',
   'profile.occupationPlaceholder': 'Örn. mimar, öğrenci, kendi dükkânım var',
-  'profile.section.use': "YumakBot'u kullanma biçiminiz",
+  'profile.section.use': "Yumak Bot'u kullanma biçiminiz",
   'profile.focus': 'Daha çok ne için?',
   'profile.focus.work': 'İş',
   'profile.focus.personal': 'Kişisel işler',
@@ -999,7 +999,7 @@ export const tr = {
   'onboarding.intro': 'Sizi biraz tanıyayım, botlarınızı ona göre hazırlayayım.',
   'onboarding.q.name': 'Adınız ve soyadınız nedir?',
   'onboarding.q.addressAs': 'Size nasıl hitap edeyim?',
-  'onboarding.q.focus': "YumakBot'u daha çok ne için kullanacaksınız?",
+  'onboarding.q.focus': "Yumak Bot'u daha çok ne için kullanacaksınız?",
   'onboarding.q.occupation': 'Ne iş yapıyorsunuz?',
   'onboarding.q.helpWith': 'Hangi işlerde yardım istersiniz?',
   'onboarding.q.about': 'Botlarınızın bilmesini istediğiniz başka bir şey var mı?',
@@ -1025,7 +1025,7 @@ export const tr = {
   'onboarding.startEmpty': 'Bot olmadan başla',
   'onboarding.creating': 'Botlar hazırlanıyor…',
 
-  'starter.general.name': 'YumakBot',
+  'starter.general.name': 'Yumak Bot',
   'starter.general.description': 'Her işe yardım eder, gerekince diğer botlarınıza iş verir.',
   'starter.general.instructions':
     'Kullanıcının genel yardımcısısın. Kısa ve net cevap ver. Bir iş başka bir botun alanına giriyorsa o bota yaz ve sonucu kullanıcıya özetle.',

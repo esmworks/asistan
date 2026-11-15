@@ -229,7 +229,7 @@ function SidebarPanel({
         ) : (
           <>
             {phone ? (
-              <h1 className="flex-1 pl-1 text-xl font-semibold">YumakBot</h1>
+              <h1 className="flex-1 pl-1 text-xl font-semibold">Yumak Bot</h1>
             ) : (
               <div className="flex-1" />
             )}

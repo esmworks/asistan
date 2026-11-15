@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="desktop/assets/icon.png" alt="YumakBot icon" width="128" height="128">
+  <img src="desktop/assets/icon.png" alt="Yumak Bot icon" width="128" height="128">
 </p>
 
-<h1 align="center">YumakBot</h1>
+<h1 align="center">Yumak Bot</h1>
 
 <p align="center">
   A self-hosted, single-person AI assistant: a server runs your bots, and a desktop or web app talks to them.
@@ -10,7 +10,7 @@
 
 ---
 
-YumakBot lets you build a small team of AI bots, each with its own instructions, memory, files, schedule and
+Yumak Bot lets you build a small team of AI bots, each with its own instructions, memory, files, schedule and
 permissions. Bots run on a server you control — on your own computer through the desktop app, or on a Linux host in
 Docker — and you chat with them from the desktop app or a browser.
 
@@ -94,11 +94,11 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` builds the app, the server and the Electron shell, then opens YumakBot. In local mode the desktop app
+`pnpm start` builds the app, the server and the Electron shell, then opens Yumak Bot. In local mode the desktop app
 starts its own server in the background and signs you in. On first launch, connect Claude in the setup screen (or later
 in Settings → Connection → Claude).
 
-The desktop app can also connect to a remote YumakBot server: enter its URL and access key in the connection settings.
+The desktop app can also connect to a remote Yumak Bot server: enter its URL and access key in the connection settings.
 
 Installers for macOS (`.dmg`, Apple silicon) and Windows (`.exe`) are attached to each
 [release](https://github.com/esmworks/yumakbot/releases). To build one yourself on the platform it is for:
@@ -132,7 +132,7 @@ docker compose -f docker/compose.yml --env-file docker/.env up -d --build
 sudo ./docker/firewall.sh
 ```
 
-This starts PostgreSQL, the YumakBot server and the computer service with a read-only root file system, all
+This starts PostgreSQL, the Yumak Bot server and the computer service with a read-only root file system, all
 capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`; for remote access, put a TLS
 reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to your domain and `YUMAKBOT_SECURE_COOKIES=1`.
 
@@ -251,7 +251,7 @@ the server's environment.
 
 ## License
 
-YumakBot is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, change and share
+Yumak Bot is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, change and share
 it for any noncommercial purpose: personal use, study, hobby projects, and use by charities, schools, public research
 bodies and government institutions. Use by or for a business needs a commercial license; write to
 [info@yumakbot.com](mailto:info@yumakbot.com). Anyone you pass it on to must also get the license terms and the

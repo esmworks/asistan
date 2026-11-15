@@ -1,6 +1,6 @@
 {
-  "name": "YumakBot",
-  "short_name": "YumakBot",
+  "name": "Yumak Bot",
+  "short_name": "Yumak Bot",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
