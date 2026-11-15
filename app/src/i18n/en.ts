@@ -513,7 +513,6 @@ export const en: Catalog<MessageKey> = {
   'computer.openWindow': 'Open in a window',
   'computer.openWindowHint':
     "For sites that refuse to sign in on a remote-controlled browser: opens the bot's browser as an ordinary window on your computer.",
-  'computer.windowHint': 'Open in its own window on your computer; the bot waits.',
   'computer.windowNote':
     "The bot's browser is open in its own window on your computer. Sign in there, then press Done: the bot carries on with the same session.",
   'computer.windowDone': 'Done',

@@ -189,6 +189,7 @@ function BrowserWindow() {
   const { data: bots = [] } = useBots();
   const bot = bots.find((b) => b.id === botId);
   const shownId = bot?.id;
+  const compact = isCompact(useBrowsers((s) => (shownId ? s.states[shownId]?.status : undefined) ?? 'off'));
 
   // Closing the browser, or switching it to another bot, hands control back so the bot is never
   // left waiting by mistake. Switching between the two sizes keeps it.
@@ -200,7 +201,15 @@ function BrowserWindow() {
   if (bot && float && !phone) return <FloatingBrowser bot={bot} />;
   return (
     <Dialog open={!!bot} onOpenChange={(o) => !o && open(null)}>
-      <DialogContent className="screen-edges flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col gap-3 rounded-none p-3 sm:h-auto sm:max-h-[94vh] sm:max-w-[min(1320px,96vw)] sm:rounded-3xl sm:p-5">
+      <DialogContent
+        className={cn(
+          'flex flex-col gap-3',
+          // With no picture to show, only what to do next, the dialog is a small card.
+          compact
+            ? 'rounded-3xl p-5'
+            : 'screen-edges h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none p-3 sm:h-auto sm:max-h-[94vh] sm:max-w-[min(1320px,96vw)] sm:rounded-3xl sm:p-5',
+        )}
+      >
         {bot && <ComputerView bot={bot} />}
       </DialogContent>
     </Dialog>
@@ -267,11 +276,11 @@ function OpenWindowButton({ state }: { state: BrowserState }) {
   );
 }
 
-/** In place of the picture while the browser is open in its own window. */
-function WindowNote({ botId }: { botId: string }) {
+/** Closes the browser's own window so the bot can go on with the same sign-ins. */
+function useCloseWindow(botId: string) {
   const t = useT();
   const [closing, setClosing] = useState(false);
-  const done = async () => {
+  const close = async () => {
     setClosing(true);
     try {
       await api.closeBrowserWindow(botId);
@@ -281,15 +290,64 @@ function WindowNote({ botId }: { botId: string }) {
       setClosing(false);
     }
   };
+  return { closing, close };
+}
+
+function WindowDoneButton({ botId, className }: { botId: string; className?: string }) {
+  const t = useT();
+  const { closing, close } = useCloseWindow(botId);
+  return (
+    <Button onClick={() => void close()} disabled={closing} className={cn('rounded-full', className)}>
+      {closing && <Loader2 className="animate-spin" />}
+      {closing ? t('computer.windowClosing') : t('computer.windowDone')}
+    </Button>
+  );
+}
+
+/** In place of the picture in the small window while the browser is open in its own window. */
+function WindowNote({ botId }: { botId: string }) {
+  const t = useT();
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-secondary px-6 text-center text-sm">
       <AppWindow className="size-8 text-muted-foreground" />
       <p className="max-w-md text-muted-foreground">{t('computer.windowNote')}</p>
-      <Button onClick={() => void done()} disabled={closing} className="rounded-full">
-        {closing && <Loader2 className="animate-spin" />}
-        {closing ? t('computer.windowClosing') : t('computer.windowDone')}
-      </Button>
+      <WindowDoneButton botId={botId} />
     </div>
+  );
+}
+
+/** Whether there is no picture of the browser to show, only what to do: off, or in its own window. */
+function isCompact(status: BrowserStatus) {
+  return status === 'off' || status === 'window';
+}
+
+/** The dialog as a small card: what state the browser is in and the actions that fit it. */
+function CompactView({
+  bot,
+  state,
+  hint,
+  children,
+}: {
+  bot: Bot;
+  state: BrowserState;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="flex items-start gap-3 pr-8">
+        <StatusDot status={state.status} className="mt-2" />
+        <div className="min-w-0">
+          <DialogTitle className="text-base">{t('computer.browserTitleOf', { name: bot.name })}</DialogTitle>
+          <DialogDescription className="mt-1 text-sm">
+            {t(STATUS[state.status])} · {hint}
+          </DialogDescription>
+        </div>
+      </div>
+      {/* Reversed so the dialog focuses the main action, put first, rather than a button with a tooltip. */}
+      <div className="flex flex-row-reverse flex-wrap justify-start gap-2">{children}</div>
+    </>
   );
 }
 
@@ -314,6 +372,25 @@ function ComputerView({ bot }: { bot: Bot }) {
     setTyped('');
   };
 
+  // Nothing to watch or steer yet: the address bar and the empty picture would only take room.
+  // Taking control starts the browser, e.g. to sign in to a site before the bot needs it.
+  if (state.status === 'off')
+    return (
+      <CompactView bot={bot} state={state} hint={t('computer.offHint')}>
+        <Button onClick={() => void toggle()} disabled={busy} className="shrink-0 rounded-full max-sm:w-full">
+          {busy ? <Loader2 className="animate-spin" /> : <Hand />} {t('computer.take')}
+        </Button>
+        <OpenWindowButton state={state} />
+      </CompactView>
+    );
+  // The browser is on the person's screen in a window of its own; here is only how to give it back.
+  if (state.status === 'window')
+    return (
+      <CompactView bot={bot} state={state} hint={t('computer.windowNote')}>
+        <WindowDoneButton botId={bot.id} className="shrink-0 max-sm:w-full" />
+      </CompactView>
+    );
+
   return (
     <>
       <div className="flex items-center gap-3 pr-8">
@@ -323,14 +400,7 @@ function ComputerView({ bot }: { bot: Bot }) {
             {t('computer.browserTitleOf', { name: bot.name })}
           </DialogTitle>
           <DialogDescription className="truncate text-xs">
-            {t(STATUS[state.status])} ·{' '}
-            {control
-              ? t('computer.controlHint')
-              : state.status === 'window'
-                ? t('computer.windowHint')
-                : state.status === 'off'
-                  ? t('computer.offHint')
-                  : t('computer.watchHint')}
+            {t(STATUS[state.status])} · {control ? t('computer.controlHint') : t('computer.watchHint')}
           </DialogDescription>
         </div>
         {/* A title, not a tooltip: the dialog focuses this button first, and a tooltip would open with it. */}
@@ -382,7 +452,7 @@ function ComputerView({ bot }: { bot: Bot }) {
         {!control && <OpenWindowButton state={state} />}
         <Button
           onClick={() => void toggle()}
-          disabled={busy || state.status === 'window'}
+          disabled={busy}
           variant={control ? 'secondary' : 'default'}
           className="shrink-0 rounded-full max-sm:w-full"
         >
