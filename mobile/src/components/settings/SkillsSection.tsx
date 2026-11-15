@@ -5,11 +5,11 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Avatar } from '@/components/Avatar';
 import { confirm, toastError } from '@/components/overlay';
-import { IconButton, LabeledInput, PillButton, Row, Section } from '@/components/page';
+import { Empty, IconButton, LabeledInput, PillButton, Row, Section } from '@/components/page';
 import { BringIn } from './more/BringIn';
 import { SkillForm, type SkillDraft } from './more/SkillForm';
 import { parseSkillFile } from './more/skillText';
-import { Hint, Pad, Rows } from './common/controls';
+import { Pad, Rows } from './common/controls';
 import { useSectionBack } from './common/sectionBack';
 import { t } from '@/i18n';
 import { useBots, useSkills } from '@/lib/queries';
@@ -82,53 +82,56 @@ export function SkillsSection() {
   if (bringOpen && found) return <BringIn found={found} onClose={() => setBringOpen(false)} />;
   return (
     <>
-      <Hint>{t('skills.intro')}</Hint>
-      <View style={styles.buttons}>
-        <PillButton
-          variant="primary"
-          icon="plus"
-          label={t('skills.new')}
-          onPress={() => {
-            setDraft(null);
-            setEditing('new');
-          }}
-        />
-        <PillButton icon="file-text" label={t('skills.import')} onPress={() => void pickFile()} />
-        <PillButton icon="link" label={t('skills.importLink')} onPress={() => setLinkOpen((v) => !v)} />
-        {offered ? (
-          <PillButton icon="download" label={t('skills.bringIn')} onPress={() => setBringOpen(true)} />
-        ) : null}
-      </View>
-      {linkOpen ? (
-        <View style={styles.link}>
-          <LabeledInput
-            label={t('skills.importLink')}
-            value={link}
-            onChangeText={setLink}
-            placeholder={t('skills.linkPlaceholder')}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            autoFocus
-            returnKeyType="go"
-            onSubmitEditing={() => link.trim() && fromLink.mutate(link.trim())}
+      <Section footer={t('skills.intro')}>
+        <Rows>
+          <Row
+            icon="plus"
+            label={t('skills.new')}
+            onPress={() => {
+              setDraft(null);
+              setEditing('new');
+            }}
           />
-          <View style={styles.right}>
-            <PillButton
-              variant="primary"
-              label={t('skills.linkFetch')}
-              onPress={() => fromLink.mutate(link.trim())}
-              busy={fromLink.isPending}
-              disabled={!link.trim()}
-            />
-          </View>
-        </View>
-      ) : null}
+          <Row icon="file-text" label={t('skills.import')} onPress={() => void pickFile()} />
+          <Row
+            icon="link"
+            label={t('skills.importLink')}
+            onPress={() => setLinkOpen((v) => !v)}
+            chevron={false}
+          />
+          {linkOpen ? (
+            <Pad>
+              <LabeledInput
+                label={t('skills.importLink')}
+                value={link}
+                onChangeText={setLink}
+                placeholder={t('skills.linkPlaceholder')}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                autoFocus
+                returnKeyType="go"
+                onSubmitEditing={() => link.trim() && fromLink.mutate(link.trim())}
+              />
+              <View style={styles.right}>
+                <PillButton
+                  variant="primary"
+                  label={t('skills.linkFetch')}
+                  onPress={() => fromLink.mutate(link.trim())}
+                  busy={fromLink.isPending}
+                  disabled={!link.trim()}
+                />
+              </View>
+            </Pad>
+          ) : null}
+          {offered ? (
+            <Row icon="download" label={t('skills.bringIn')} onPress={() => setBringOpen(true)} />
+          ) : null}
+        </Rows>
+      </Section>
       <Section>
         {!isPending && skills.length === 0 ? (
-          <Pad>
-            <Hint>{t('skills.empty')}</Hint>
-          </Pad>
+          <Empty icon="star" text={t('skills.empty')} />
         ) : (
           <Rows>
             {skills.map((s) => {
@@ -174,8 +177,6 @@ export function SkillsSection() {
 }
 
 const styles = StyleSheet.create({
-  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  link: { gap: 10 },
   right: { alignItems: 'flex-end' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

@@ -113,6 +113,7 @@ export function MemorySection() {
         />
         <PillButton
           variant="primary"
+          size="large"
           label={t('common.add')}
           onPress={() => add.mutate()}
           busy={add.isPending}

@@ -72,7 +72,7 @@ export function AboutSection() {
 }
 
 const styles = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 4 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 16 },
   logo: { width: 56, height: 56, borderRadius: 14 },
   headText: { flex: 1, gap: 2 },
   name: { fontSize: 20, fontWeight: '600' },

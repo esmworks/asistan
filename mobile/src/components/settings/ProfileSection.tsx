@@ -1,7 +1,7 @@
 import type { ProfileFocus, ProfileHelp } from '@yumakbot/shared';
 import { StyleSheet, Text, View } from 'react-native';
 import { Loading, Section } from '@/components/page';
-import { Chip, ChipRow, ChoiceRow, Hint, Pad, Rows, SavedField, useSaveSettings } from './common/controls';
+import { CheckRow, ChoiceRow, Hint, Pad, Rows, SavedField, useSaveSettings } from './common/controls';
 import { t } from '@/i18n';
 import { useSettings } from '@/lib/queries';
 import { useColors } from '@/lib/theme';
@@ -73,26 +73,24 @@ export function ProfileSection() {
                 options={FOCUS.map((f) => ({ value: f, label: t(`profile.focus.${f}`) }))}
                 onChange={(focus) => save.mutate({ focus })}
               />
-              <Pad>
-                <Text style={[styles.label, { color: c.foreground }]}>{t('profile.helpWith')}</Text>
-                <ChipRow>
-                  {HELP.map((h) => (
-                    <Chip
-                      key={h}
-                      check
-                      on={helpWith.includes(h)}
-                      label={t(`profile.help.${h}`)}
-                      onPress={() =>
-                        save.mutate({
-                          helpWith: helpWith.includes(h)
-                            ? helpWith.filter((x) => x !== h)
-                            : HELP.filter((x) => x === h || helpWith.includes(x)),
-                        })
-                      }
-                    />
-                  ))}
-                </ChipRow>
-              </Pad>
+            </Rows>
+          </Section>
+          <Section title={t('profile.helpWith')}>
+            <Rows>
+              {HELP.map((h) => (
+                <CheckRow
+                  key={h}
+                  on={helpWith.includes(h)}
+                  label={t(`profile.help.${h}`)}
+                  onPress={() =>
+                    save.mutate({
+                      helpWith: helpWith.includes(h)
+                        ? helpWith.filter((x) => x !== h)
+                        : HELP.filter((x) => x === h || helpWith.includes(x)),
+                    })
+                  }
+                />
+              ))}
             </Rows>
           </Section>
           <Section title={t('profile.section.about')}>
@@ -118,5 +116,4 @@ export function ProfileSection() {
 const styles = StyleSheet.create({
   old: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
   oldText: { fontSize: 16, lineHeight: 22 },
-  label: { fontSize: 17 },
 });

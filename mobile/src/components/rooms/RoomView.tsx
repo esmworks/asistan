@@ -23,6 +23,7 @@ import { IconButton, Sheet, back, type SheetItem } from '@/components/page';
 import { Button } from '@/components/ui';
 import { locale, t } from '@/i18n';
 import { ApiError } from '@/lib/api';
+import { useTapToDismiss } from '@/lib/dismiss';
 import { formatters, needsDivider } from '@/lib/format';
 import { nav } from '@/lib/nav';
 import { useBots, useMessages } from '@/lib/queries';
@@ -102,6 +103,7 @@ export function RoomView({ room }: { room: Room }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [menu, setMenu] = useState(false);
   const listRef = useRef<FlatList<Row>>(null);
+  const tapToDismiss = useTapToDismiss();
 
   const signedOut = messagesQ.error instanceof ApiError && messagesQ.error.status === 401;
   useEffect(() => {
@@ -268,6 +270,7 @@ export function RoomView({ room }: { room: Room }) {
               renderItem={renderItem}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
+              {...tapToDismiss}
               contentContainerStyle={styles.listContent}
               ItemSeparatorComponent={Gap}
               onEndReached={() => {

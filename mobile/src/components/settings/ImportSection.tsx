@@ -5,9 +5,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { toast, toastError } from '@/components/overlay';
-import { IconButton, PillButton, Row, Section } from '@/components/page';
+import { PillButton, Row, Section } from '@/components/page';
 import { shareFile } from '@/components/panel/files';
-import { Hint, Rows } from './common/controls';
+import { Lead, Rows } from './common/controls';
 import { ExportBots } from './more/ExportBots';
 import { PlanBots } from './more/PlanBots';
 import { t, type MessageKey } from '@/i18n';
@@ -77,44 +77,38 @@ export function ImportSection() {
   };
   return (
     <>
-      <Hint>{t('import.hint')}</Hint>
-      <Section title={t('import.step1')}>
-        <Row
-          label={t('import.instructions')}
-          detail={t('import.instructionsHint')}
-          detailLines={0}
-          right={
-            <View style={styles.actions}>
-              <PillButton icon="copy" label={t('import.copy')} onPress={() => void copyInstructions()} />
-              <IconButton
-                icon="download"
-                label={t('import.download')}
-                filled
-                onPress={() => void shareFile(`${origin}${INSTRUCTIONS}`, 'yumakbot-export.md')}
-              />
-            </View>
-          }
-        />
+      <Lead>{t('import.hint')}</Lead>
+      <Section title={t('import.step1')} footer={t('import.instructionsHint')}>
+        <Rows>
+          <Row
+            icon="copy"
+            label={t('import.instructions')}
+            value={t('import.copy')}
+            chevron={false}
+            onPress={() => void copyInstructions()}
+          />
+          <Row
+            icon="download"
+            label={t('import.download')}
+            chevron={false}
+            onPress={() => void shareFile(`${origin}${INSTRUCTIONS}`, 'yumakbot-export.md')}
+          />
+        </Rows>
       </Section>
-      <Section title={t('import.step2')}>
+      <Section title={t('import.step2')} footer={t('import.fileHint')}>
         <Row
+          icon="file"
           label={file?.name ?? t('import.file')}
-          detail={t('import.fileHint')}
-          detailLines={0}
-          right={
-            <PillButton
-              icon="file"
-              label={t('import.choose')}
-              onPress={() => void pick()}
-              busy={preview.isPending}
-              disabled={commit.isPending}
-            />
-          }
+          value={t('import.choose')}
+          chevron={false}
+          busy={preview.isPending}
+          disabled={commit.isPending}
+          onPress={() => void pick()}
         />
       </Section>
       {plan && file ? (
         <>
-          <Hint>{t('import.safety')}</Hint>
+          <Lead>{t('import.safety')}</Lead>
           <PlanBots plan={plan} />
           {plan.groups.length > 0 ? (
             <Section title={t('import.groups')}>
@@ -172,5 +166,4 @@ export function ImportSection() {
 
 const styles = StyleSheet.create({
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });
