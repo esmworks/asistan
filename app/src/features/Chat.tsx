@@ -734,6 +734,10 @@ function Conversation({
 
   // Pending (optimistic) messages disappear once the server copy arrives.
   const shown = pending.filter((p) => !messages.some((m) => m.clientId === p.clientId));
+  // A sent message stays one row, keyed by its clientId, from the moment it is sent until the
+  // server's copy replaces it, so it neither redraws nor moves when that copy arrives.
+  const rows = shown.length ? [...listed, ...shown] : listed;
+  const waiting = new Set(shown.map((m) => m.clientId));
   const streamDone = stream && messages.some((m) => m.turnId === stream.turnId && m.role === 'assistant');
   const busy = state === 'running' || state === 'queued';
   const activity = useThreadActivity(bot.id, threadId, state);
@@ -880,9 +884,9 @@ function Conversation({
                 </Button>
               </div>
             )}
-            {listed.map((m, i) => (
-              <Fragment key={m.id}>
-                {needsDivider(listed[i - 1], m) && (
+            {rows.map((m, i) => (
+              <Fragment key={m.clientId ?? m.id}>
+                {needsDivider(rows[i - 1], m) && (
                   <div className="py-2 text-center text-xs text-muted-foreground">
                     {dayLabel(m.createdAt)}
                   </div>
@@ -904,13 +908,11 @@ function Conversation({
                     tint={bot.color}
                     botId={bot.id}
                     onReply={setReplyTo}
-                    canRetry={i === listed.length - 1 && activity === 'idle' && !shown.length}
+                    canRetry={i === rows.length - 1 && activity === 'idle' && !shown.length}
+                    pending={waiting.has(m.clientId)}
                   />
                 </ErrorBoundary>
               </Fragment>
-            ))}
-            {shown.map((m) => (
-              <MessageItem key={m.clientId} m={m} bots={botMap} tint={bot.color} botId={bot.id} pending />
             ))}
             {stream && !streamDone && stream.text && (
               <AssistantCard text={stream.text} turnId={stream.turnId} streaming />
