@@ -175,10 +175,11 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     models = { list, at: Date.now() };
     return list;
   };
-  // Fake and test engines answer for every engine, so they stand in for Pi here too.
+  // Fake and test engines answer for every engine, so they stand in for Pi here too. A model off
+  // the provider's list is tried too: a new release or one an endpoint does not list. The request
+  // itself tells whether the provider serves it. Asking for the list turns away unknown providers.
   const testModel = async (provider: string, model: string): Promise<ModelTest> => {
-    if (!(await services.keys.models(provider)).includes(model))
-      throw new HttpError(400, 'error.unknownModel');
+    await services.keys.models(provider);
     if (!(await services.keys.credential(provider))) throw new HttpError(400, 'error.noProviderKey');
     const engine = opts.engine ?? fake ?? pi;
     if (!engine.testModel) return { ok: true };

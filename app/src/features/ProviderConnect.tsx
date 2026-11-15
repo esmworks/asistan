@@ -15,7 +15,10 @@ import { Chip } from './onboarding/Chip';
 
 /** Offered first; every other provider the server knows is under "Other". */
 const POPULAR = ['openai', 'google', 'openrouter', 'deepseek', 'xai', 'mistral', 'groq'];
-/** Product names, not words to translate; other providers show their id. */
+/**
+ * Product names, not words to translate. A provider missing here shows its id, which is also
+ * how regional plans (`minimax-cn`, `xiaomi-token-plan-sgp`) stay told apart.
+ */
 const NAMES: Record<string, string> = {
   openai: 'OpenAI',
   google: 'Google Gemini',
@@ -24,8 +27,25 @@ const NAMES: Record<string, string> = {
   xai: 'xAI',
   mistral: 'Mistral',
   groq: 'Groq',
+  anthropic: 'Anthropic',
+  baseten: 'Baseten',
+  cerebras: 'Cerebras',
+  fireworks: 'Fireworks',
+  huggingface: 'Hugging Face',
+  'kimi-coding': 'Kimi Coding',
+  meta: 'Meta',
+  minimax: 'MiniMax',
+  moonshotai: 'Moonshot AI',
+  nvidia: 'NVIDIA',
+  opencode: 'OpenCode',
+  'opencode-go': 'OpenCode Go',
+  together: 'Together AI',
+  'vercel-ai-gateway': 'Vercel AI Gateway',
+  xiaomi: 'Xiaomi',
+  zai: 'Z.ai',
 };
 export const providerName = (id: string) => NAMES[id] ?? id;
+const byName = (a: string, b: string) => providerName(a).localeCompare(providerName(b));
 /** The chip that opens the form for the person's own endpoint; never a provider id. */
 const CUSTOM = '+custom';
 /** Ollama's address on the same computer; an address, not a word to translate. */
@@ -57,7 +77,7 @@ export function ProviderKeyForm() {
   if (isLoading) return <Loader2 className="size-4 animate-spin text-muted-foreground" />;
   const ids = providers.filter((p) => !p.custom).map((p) => p.id);
   const popular = POPULAR.filter((id) => ids.includes(id));
-  const others = ids.filter((id) => !popular.includes(id));
+  const others = ids.filter((id) => !popular.includes(id)).sort(byName);
   const current = provider || popular[0] || ids[0] || '';
   const configured = providers.filter((p) => p.configured);
   const submit = (e: FormEvent) => {
@@ -127,7 +147,7 @@ export function ProviderKeyForm() {
               <SelectContent className="max-h-72">
                 {others.map((id) => (
                   <SelectItem key={id} value={id}>
-                    {id}
+                    {providerName(id)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -237,16 +257,34 @@ export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
   );
 }
 
-/** Changes a saved endpoint's name, address or key; an empty key field keeps the saved key. */
+/** Model names typed into one field, split at commas and spaces. */
+const modelList = (text: string) =>
+  text
+    .split(/[\s,]+/)
+    .map((m) => m.trim())
+    .filter(Boolean);
+
+/**
+ * Changes a saved endpoint's name, address, key or models; an empty key field keeps the saved
+ * key. The models start as the saved list, so one the server leaves out can be added by hand.
+ */
 function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone(): void }) {
   const t = useT();
   const qc = useQueryClient();
   const [name, setName] = useState(p.custom!.name);
   const [baseUrl, setBaseUrl] = useState(p.custom!.baseUrl);
   const [key, setKey] = useState('');
+  const { data: saved = [] } = useProviderModels(p.id);
+  // Null until edited: the saved list may still be loading, and an untouched list is not sent.
+  const [models, setModels] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () =>
-      api.updateEndpoint(p.id, { name: name.trim(), baseUrl: baseUrl.trim(), key: key.trim() }),
+      api.updateEndpoint(p.id, {
+        name: name.trim(),
+        baseUrl: baseUrl.trim(),
+        key: key.trim(),
+        ...(models !== null ? { models: modelList(models) } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['providers'] });
       void qc.invalidateQueries({ queryKey: ['provider-models', p.id] });
@@ -277,6 +315,15 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone(
           className="h-10 min-w-56 flex-1 rounded-full px-4 font-mono"
         />
       </div>
+      <Input
+        value={models ?? saved.join(', ')}
+        onChange={(e) => setModels(e.target.value)}
+        aria-label={t('provider.customModelsEdit')}
+        placeholder={t('provider.customModelsEdit')}
+        title={t('provider.customModelsEdit')}
+        spellCheck={false}
+        className="h-10 rounded-full px-4 font-mono"
+      />
       <div className="flex flex-wrap gap-2">
         <Input
           type="password"
@@ -321,14 +368,7 @@ export function EndpointForm() {
         name: name.trim(),
         baseUrl: baseUrl.trim(),
         ...(key.trim() ? { key: key.trim() } : {}),
-        ...(models.trim()
-          ? {
-              models: models
-                .split(/[\s,]+/)
-                .map((m) => m.trim())
-                .filter(Boolean),
-            }
-          : {}),
+        ...(models.trim() ? { models: modelList(models) } : {}),
       }),
     onSuccess: () => {
       setName('');
@@ -439,9 +479,16 @@ export function EndpointForm() {
   );
 }
 
+/** True once a provider can be used: it has a key, or it is the person's own endpoint. */
+export function useHasProvider() {
+  const { data: providers = [] } = useProviders();
+  return providers.some((p) => p.configured);
+}
+
 /**
  * Picks one model of a provider that has a key, as `provider/model`. Lists can be long, so the
- * model is typed with suggestions instead of picked from cards.
+ * model is typed with suggestions instead of picked from cards. With no provider yet it asks for
+ * one right here, so the way on is not somewhere else on the page.
  */
 export function PiModelPicker({ value, onChange }: { value: string; onChange(v: string): void }) {
   const t = useT();
@@ -451,7 +498,7 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange(v: 
   const provider = configured.includes(parts.provider) ? parts.provider : (configured[0] ?? '');
   const model = provider === parts.provider ? parts.model : '';
   const { data: models = [] } = useProviderModels(provider || null);
-  if (!configured.length) return <p className="text-sm text-muted-foreground">{t('provider.noKey')}</p>;
+  if (!configured.length) return <ProviderKeyForm />;
   const listId = 'pi-model-options';
   return (
     <div className="flex flex-wrap gap-2">

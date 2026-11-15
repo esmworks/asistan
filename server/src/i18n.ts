@@ -120,7 +120,6 @@ const tr = {
   'app.viewShown': '{name} görünümü',
   'error.endpointUrl': 'Adres http:// ya da https:// ile başlayan geçerli bir adres olmalı',
   'error.endpointModels': 'Uç nokta model listesini vermedi ({message}); modelleri elle yaz',
-  'error.unknownModel': 'Bu sağlayıcıda böyle bir model yok',
   'error.noProviderKey': 'Önce bu sağlayıcının API anahtarını kaydedin',
   'error.subscriptionToken': 'Bu bir Claude abonelik jetonu; burada yalnızca API anahtarı kullanılır',
   'error.notClaudeToken':
@@ -798,7 +797,6 @@ const en: Catalog<ServerKey> = {
   'app.viewShown': '{name} view',
   'error.endpointUrl': 'The address must be a valid http:// or https:// address',
   'error.endpointModels': 'The endpoint did not list its models ({message}); type them in',
-  'error.unknownModel': 'This provider has no such model',
   'error.noProviderKey': "Save this provider's API key first",
   'error.subscriptionToken': 'This is a Claude subscription token; only API keys are used here',
   'error.notClaudeToken':

@@ -21,6 +21,7 @@ import {
   type FauxProviderRegistration,
 } from '@earendil-works/pi-ai/compat';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
+import type { Model } from '@earendil-works/pi-ai';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -36,7 +37,7 @@ import {
 } from '../src/engine/pi';
 import { translator } from '../src/i18n';
 import { CONTEXT_FULL } from '../src/runtime/turns';
-import { endpointUrl, keySafeAt } from '../src/services/keys';
+import { endpointUrl, keySafeAt, unlistedModel } from '../src/services/keys';
 import type { AppTool, PermissionAsk, PermissionAnswer, TurnRequest } from '../src/engine/types';
 import { testServer, type TestServer } from './helpers';
 
@@ -691,8 +692,31 @@ describe('sağlayıcı anahtarları', () => {
     expect(before.status).toBe(400);
     await t.api('PUT', '/api/providers/openai/key', { key: 'sk-test-abcdefgh1234' });
     expect((await t.api('POST', '/api/providers/openai/test', { model })).body).toEqual({ ok: true });
-    expect((await t.api('POST', '/api/providers/openai/test', { model: 'uydurma-model' })).status).toBe(400);
+    // A model the catalog does not list yet is tried as well; the request tells whether it exists.
+    expect((await t.api('POST', '/api/providers/openai/test', { model: 'yeni-cikan-model' })).body).toEqual({
+      ok: true,
+    });
+    expect((await t.api('POST', '/api/providers/openai/test', { model: 'hata-model' })).body).toMatchObject({
+      ok: false,
+    });
     expect((await t.api('POST', '/api/providers/uydurma/test', { model })).status).toBe(404);
+  });
+
+  it('katalogda olmayan modeli sağlayıcının en benzer modelinin ayarlarıyla kurar', async () => {
+    const listed = (await t.api<string[]>('GET', '/api/providers/openai/models')).body;
+    const base = listed.find((m) => m.startsWith('gpt-'))!;
+    const made = await t.services.keys.customModel('openai', `${base}-yeni`);
+    expect(made).toMatchObject({
+      id: `${base}-yeni`,
+      name: `${base}-yeni`,
+      provider: 'openai',
+      cost: { input: 0, output: 0 },
+    });
+    expect(made?.api).toBeTruthy();
+    expect(made?.baseUrl).toMatch(/^https:/);
+    // Subscription-only and unknown providers are not given made-up models.
+    expect(await t.services.keys.customModel('github-copilot', 'gpt-x')).toBeUndefined();
+    expect(await t.services.keys.customModel('uydurma', 'gpt-x')).toBeUndefined();
   });
 
   it('anahtarı kasa anahtarıyla şifreli saklar; eski düz anahtarı okurken şifreler', async () => {
@@ -813,7 +837,6 @@ describe('sağlayıcı anahtarları', () => {
         maxTokens: 2_048,
         input: ['text', 'image'],
       });
-      expect(await t.services.keys.customModel('openai', 'qwen3')).toBeUndefined();
       expect(
         (await t.api('POST', '/api/providers/custom-evdeki-ollama/test', { model: 'qwen3' })).body,
       ).toEqual({
@@ -871,6 +894,22 @@ describe('sağlayıcı anahtarları', () => {
       expect(auth.at(-1)).toBe('Bearer sk-yeni-87654321');
       expect((await t.api<string[]>('GET', `/api/providers/${id}/models`)).body).toEqual(['llama3', 'qwen3']);
       expect((await t.api('PATCH', `/api/providers/${id}`, { baseUrl: `${base}/yok` })).status).toBe(400);
+
+      // A model the server leaves out is named by hand; an empty list keeps the saved one.
+      await t.api('PATCH', `/api/providers/${id}`, { models: ['qwen3', 'elle-eklenen', 'qwen3'] });
+      expect((await t.api<string[]>('GET', `/api/providers/${id}/models`)).body).toEqual([
+        'qwen3',
+        'elle-eklenen',
+      ]);
+      await t.api('PATCH', `/api/providers/${id}`, { name: 'Ev', models: [] });
+      expect((await t.api<string[]>('GET', `/api/providers/${id}/models`)).body).toEqual([
+        'qwen3',
+        'elle-eklenen',
+      ]);
+      // A model typed for the endpoint is tried even when it is on no list.
+      expect((await t.api('POST', `/api/providers/${id}/test`, { model: 'listede-yok' })).body).toEqual({
+        ok: true,
+      });
     });
 
     it('model listesi alınamazsa modellerin elle yazılmasını ister', async () => {
@@ -915,6 +954,36 @@ describe('sağlayıcı anahtarları', () => {
     });
     expect((await t.api('PATCH', '/api/settings', { piModel: 'modelsiz' })).status).toBe(400);
     expect((await t.api('PATCH', '/api/settings', { defaultEngine: 'gpt' })).status).toBe(400);
+  });
+});
+
+describe('katalogda olmayan model', () => {
+  const model = (id: string, api: string) =>
+    ({
+      id,
+      name: id,
+      api,
+      provider: 'p',
+      baseUrl: `https://${api}.example`,
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000,
+      maxTokens: 100,
+    }) as Model<string>;
+  const listed = [model('claude-opus-5', 'anthropic-messages'), model('gpt-6-sol', 'openai-responses')];
+
+  it('adı en çok benzeyen modelin API ve adresini alır, fiyatı bilinmez sayar', () => {
+    expect(unlistedModel(listed, 'gpt-6.2')).toMatchObject({
+      id: 'gpt-6.2',
+      api: 'openai-responses',
+      baseUrl: 'https://openai-responses.example',
+      cost: { input: 0, output: 0 },
+    });
+    expect(unlistedModel(listed, 'claude-opus-6')).toMatchObject({ api: 'anthropic-messages' });
+    // Nothing alike: the first listed model stands in.
+    expect(unlistedModel(listed, 'zzz')?.api).toBe('anthropic-messages');
+    expect(unlistedModel([], 'gpt-6.2')).toBeUndefined();
   });
 });
 

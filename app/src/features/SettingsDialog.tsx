@@ -25,7 +25,6 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
-  Server,
   Shield,
   Sparkles,
   SlidersHorizontal,
@@ -53,7 +52,6 @@ import {
   useGroups,
   useInfo,
   useMemory,
-  useProviders,
   useRoutines,
   useRules,
   useSettings,
@@ -94,7 +92,7 @@ import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
 import { ApnsCard } from './PhoneSettings';
 import { Chip } from './onboarding/Chip';
-import { EndpointForm, EndpointRow, isPiModel, PiModelPicker, useSavePiModel } from './ProviderConnect';
+import { isPiModel, PiModelPicker, ProviderKeyForm, useHasProvider, useSavePiModel } from './ProviderConnect';
 
 const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'profile', icon: <UserRound /> },
@@ -743,6 +741,7 @@ function BackupModel() {
   const [on, setOn] = useState<boolean | null>(null);
   const [ref, setRef] = useState<string | null>(null);
   const pi = useSavePiModel(() => setRef(null), true);
+  const hasProvider = useHasProvider();
   const stored = settings?.backupModel ?? '';
   const open = on ?? !!stored;
   const value = ref ?? stored;
@@ -765,20 +764,22 @@ function BackupModel() {
       {open && (
         <div className="space-y-2">
           <PiModelPicker value={value} onChange={setRef} />
-          <div className="flex items-center gap-3">
-            <Button
-              size="sm"
-              className="rounded-full"
-              onClick={() => pi.save.mutate(value)}
-              disabled={!isPiModel(value) || value === stored || pi.save.isPending}
-            >
-              {pi.save.isPending && <Loader2 className="animate-spin" />}
-              {pi.save.isPending ? t('claude.testing') : t('provider.tryAndSave')}
-            </Button>
-            {stored && value === stored && (
-              <span className="text-xs text-muted-foreground">{t('provider.inUse')}</span>
-            )}
-          </div>
+          {hasProvider && (
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="rounded-full"
+                onClick={() => pi.save.mutate(value)}
+                disabled={!isPiModel(value) || value === stored || pi.save.isPending}
+              >
+                {pi.save.isPending && <Loader2 className="animate-spin" />}
+                {pi.save.isPending ? t('claude.testing') : t('provider.tryAndSave')}
+              </Button>
+              {stored && value === stored && (
+                <span className="text-xs text-muted-foreground">{t('provider.inUse')}</span>
+              )}
+            </div>
+          )}
           {pi.error && (
             <p className="text-sm text-destructive">{t('provider.failed', { detail: pi.error })}</p>
           )}
@@ -796,6 +797,7 @@ function NewBotEngine() {
   const [picked, setPicked] = useState<'claude' | 'pi' | null>(null);
   const [ref, setRef] = useState<string | null>(null);
   const pi = useSavePiModel(() => setRef(null));
+  const hasProvider = useHasProvider();
   const kind = picked ?? settings?.defaultEngine ?? 'claude';
   const value = ref ?? settings?.piModel ?? '';
   const saved = settings?.defaultEngine === 'pi' && settings.piModel === value;
@@ -822,18 +824,20 @@ function NewBotEngine() {
       {kind === 'pi' && (
         <div className="space-y-2">
           <PiModelPicker value={value} onChange={setRef} />
-          <div className="flex items-center gap-3">
-            <Button
-              size="sm"
-              className="rounded-full"
-              onClick={() => pi.save.mutate(value)}
-              disabled={!isPiModel(value) || saved || pi.save.isPending}
-            >
-              {pi.save.isPending && <Loader2 className="animate-spin" />}
-              {pi.save.isPending ? t('claude.testing') : t('provider.tryAndSave')}
-            </Button>
-            {saved && <span className="text-xs text-muted-foreground">{t('provider.inUse')}</span>}
-          </div>
+          {hasProvider && (
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="rounded-full"
+                onClick={() => pi.save.mutate(value)}
+                disabled={!isPiModel(value) || saved || pi.save.isPending}
+              >
+                {pi.save.isPending && <Loader2 className="animate-spin" />}
+                {pi.save.isPending ? t('claude.testing') : t('provider.tryAndSave')}
+              </Button>
+              {saved && <span className="text-xs text-muted-foreground">{t('provider.inUse')}</span>}
+            </div>
+          )}
           {pi.error && (
             <p className="text-sm text-destructive">{t('provider.failed', { detail: pi.error })}</p>
           )}
@@ -875,93 +879,18 @@ function DesktopServerRow() {
   );
 }
 
-/** API keys for models outside the Claude subscription. Keys are write-only from here. */
+/**
+ * API keys for models outside the Claude subscription, and the person's own endpoints. The same
+ * form as setup: product names, the popular providers first, model servers found on this computer.
+ * Keys are write-only from here.
+ */
 function ApiKeys() {
   const t = useT();
-  const { data: providers = [] } = useProviders();
-  const qc = useQueryClient();
-  const [provider, setProvider] = useState('openai');
-  const [key, setKey] = useState('');
-  const done = () => qc.invalidateQueries({ queryKey: ['providers'] });
-  const save = useMutation({
-    mutationFn: () => api.setProviderKey(provider, key),
-    onSuccess: () => {
-      setKey('');
-      toast.success(t('keys.saved'));
-      void done();
-    },
-    onError: (e) => toast.error((e as Error).message),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => api.removeProviderKey(id),
-    onSuccess: () => void done(),
-    onError: (e) => toast.error((e as Error).message),
-  });
-  const [addingEndpoint, setAddingEndpoint] = useState(false);
-  const configured = providers.filter((p) => p.configured && !p.custom);
-  const endpoints = providers.filter((p) => p.custom);
   return (
     <Card title={t('keys.title')}>
-      <p className="px-4 py-3 text-xs text-muted-foreground">{t('keys.hint')}</p>
-      {endpoints.map((p) => (
-        <div key={p.id} className="px-2 py-2">
-          <EndpointRow provider={p} />
-        </div>
-      ))}
-      {configured.map((p) => (
-        <Row key={p.id} label={p.id} hint={p.hint ?? undefined}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="rounded-full text-muted-foreground"
-            onClick={() => remove.mutate(p.id)}
-            disabled={remove.isPending}
-          >
-            <X /> {t('common.remove')}
-          </Button>
-        </Row>
-      ))}
-      <form
-        className="flex flex-wrap items-center gap-2 px-4 py-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (key.trim()) save.mutate();
-        }}
-      >
-        <Select value={provider} onValueChange={setProvider}>
-          <SelectTrigger className="w-44 rounded-xl">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-72">
-            {providers
-              .filter((p) => !p.custom)
-              .map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.id}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="password"
-          autoComplete="off"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder={t('keys.placeholder')}
-          className="min-w-48 flex-1 rounded-xl"
-        />
-        <Button type="submit" size="sm" className="rounded-full" disabled={!key.trim() || save.isPending}>
-          {t('common.save')}
-        </Button>
-      </form>
+      <p className="px-4 pt-3 text-xs text-muted-foreground">{t('keys.hint')}</p>
       <div className="px-4 py-3">
-        {addingEndpoint ? (
-          <EndpointForm />
-        ) : (
-          <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setAddingEndpoint(true)}>
-            <Server /> {t('provider.addCustom')}
-          </Button>
-        )}
+        <ProviderKeyForm />
       </div>
     </Card>
   );
