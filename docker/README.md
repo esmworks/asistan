@@ -2,6 +2,7 @@
 
 ```bash
 cp docker/.env.example docker/.env      # değerleri doldurun
+sudo ./docker/apparmor.sh --env docker/.env   # Linux ana makinede, bir kez; bkz. "AppArmor"
 docker compose -f docker/compose.yml --env-file docker/.env up -d --build
 sudo ./docker/firewall.sh               # Linux ana makinede, compose'dan sonra
 ```
@@ -120,21 +121,42 @@ sunucuda "Bash yalıtımı" satırı "Çalışmıyor" gösterir ve Claude botlar
 sonrası ayrıca kullanıcı ad alanlarını AppArmor ile kısıtlar (`kernel.apparmor_restrict_unprivileged_userns=1`);
 bu kısıt profilsiz (`unconfined`) süreçlere de uygulanır, yani `apparmor=unconfined` yetmez.
 
-Çözüm, `yumakbot` ve `computer` kapsayıcılarına yalnızca kullanıcı ad alanı izni veren `yumakbot-userns`
-profilidir. Ana makinede bir kez kurun (yeniden başlatmadan sonra da yüklü kalır):
+`apparmor.sh` ana makineye bakıp `YUMAKBOT_APPARMOR` değerini seçer; ana makinede root olarak bir kez
+çalıştırın, yeniden çalıştırmak zarar vermez:
 
 ```bash
-sudo cp docker/apparmor/yumakbot-userns /etc/apparmor.d/yumakbot-userns
-sudo apparmor_parser -r /etc/apparmor.d/yumakbot-userns
+sudo ./docker/apparmor.sh --env docker/.env
+docker compose -f docker/compose.yml --env-file docker/.env up -d
 ```
 
-Sonra `.env` dosyasına `YUMAKBOT_APPARMOR=yumakbot-userns` yazıp kapsayıcıları yeniden oluşturun. Profil
-yüklü değilken bu değer verilirse kapsayıcı başlamaz. Profil AppArmor 4 ister (Ubuntu 24.04); daha eski
-AppArmor'lu sunucularda (ör. Debian 12) kullanıcı ad alanı kısıtı olmadığı için
-`YUMAKBOT_APPARMOR=unconfined` yeterlidir. Değer verilmezse Docker'ın varsayılan profili kullanılır.
+| Ana makine                                                            | Değer             | Betiğin yaptığı                     |
+| --------------------------------------------------------------------- | ----------------- | ----------------------------------- |
+| AppArmor kapalı                                                       | (yok)             | Hiçbir şey; satırı siler            |
+| AppArmor açık, kullanıcı ad alanı kısıtı yok (ör. Debian 12)          | `unconfined`      | Değeri yazar                        |
+| AppArmor kullanıcı ad alanlarını kısıtlıyor (Ubuntu 23.10 ve sonrası) | `yumakbot-userns` | Profili kurar, yükler, değeri yazar |
+
+`yumakbot-userns`, `yumakbot` ve `computer` kapsayıcılarına yalnızca kullanıcı ad alanı izni veren profildir
+(`docker/apparmor/yumakbot-userns`); `/etc/apparmor.d/` altına kurulur ve yeniden başlatmadan sonra da yüklü
+kalır. Profil AppArmor 4 ister (Ubuntu 24.04); yüklü değilken bu değer verilirse kapsayıcı başlamaz.
+Kullanıcı ad alanları çekirdekte kapalıysa betik bunu ve nasıl açılacağını söyler. `--env` verilmezse betik
+değeri yalnızca yazdırır; `--remove` profili kaldırır.
 
 Profil Ubuntu 24.04'te denendi. SELinux'un kapsayıcı politikası da bubblewrap'i engelleyebilir; SELinux'lu
 bir sunucuda denenmedi.
+
+#### Dokploy ve benzeri paneller
+
+Panel her yayında depoyu yeniden indirir ve `docker/.env` dosyasını kendi ayarlarından yeniden yazar; bu
+yüzden `--env` kullanmayın. Sunucuya SSH ile bağlanıp betiği panelin indirdiği kopyadan çalıştırın
+(Dokploy'da `/etc/dokploy/compose/<uygulama>/code`):
+
+```bash
+sudo /etc/dokploy/compose/<uygulama>/code/docker/apparmor.sh
+```
+
+Betiğin yazdırdığı `YUMAKBOT_APPARMOR=…` satırını panelde uygulamanın ortam değişkenlerine (Dokploy'da
+Environment) ekleyip yeniden yayınlayın. Profil `/etc/apparmor.d/` altında durduğu için yeni yayınlar onu
+silmez.
 
 ## Botların bilgisayarı
 
