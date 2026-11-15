@@ -408,15 +408,15 @@ function SetupForm({
 
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  sub: { flex: 1, fontSize: 14 },
+  sub: { flex: 1, fontSize: 16 },
   field: { gap: 6 },
-  label: { fontSize: 14, fontWeight: '500', paddingHorizontal: 4 },
-  link: { fontSize: 14, textDecorationLine: 'underline' },
-  noteText: { fontSize: 14, lineHeight: 20 },
+  label: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
+  link: { fontSize: 16, textDecorationLine: 'underline' },
+  noteText: { fontSize: 16, lineHeight: 22 },
   box: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 16 },
   callout: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
   redirect: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   redirectText: { flex: 1, gap: 2 },
-  mono: { fontSize: 12, fontFamily: 'Courier' },
+  mono: { fontSize: 13, fontFamily: 'Courier' },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
 });

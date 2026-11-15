@@ -93,7 +93,7 @@ export function SkillForm({
           accessibilityRole="alert"
           style={[styles.warn, { borderColor: c.amber, backgroundColor: c.amberSoft }]}
         >
-          <Feather name="alert-triangle" size={16} color={c.amber} />
+          <Feather name="alert-triangle" size={20} color={c.amber} />
           <View style={styles.warnText}>
             {warnings.map((w) => (
               <Text key={w} style={[styles.warnLine, { color: c.foreground }]}>
@@ -130,12 +130,12 @@ export function SkillForm({
 const styles = StyleSheet.create({
   form: { gap: 14 },
   title: { fontSize: 17, fontWeight: '600' },
-  hint: { fontSize: 13, lineHeight: 18 },
-  mono: { fontFamily: 'Menlo', fontSize: 13, minHeight: 180 },
+  hint: { fontSize: 15, lineHeight: 20 },
+  mono: { fontFamily: 'Menlo', fontSize: 15, minHeight: 180 },
   warn: { flexDirection: 'row', gap: 8, borderWidth: 1, borderRadius: 14, padding: 12 },
   warnText: { flex: 1, gap: 4 },
-  warnLine: { fontSize: 14, lineHeight: 19 },
+  warnLine: { fontSize: 16, lineHeight: 21 },
   bots: { gap: 6 },
-  label: { fontSize: 14, fontWeight: '500', paddingHorizontal: 4 },
+  label: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
 });

@@ -119,5 +119,5 @@ export function StatusLine({ text, tone }: { text: string; tone?: 'ok' | 'warn' 
 const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  text: { fontSize: 13, flexShrink: 1 },
+  text: { fontSize: 15, flexShrink: 1 },
 });

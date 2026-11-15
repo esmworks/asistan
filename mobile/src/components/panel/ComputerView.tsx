@@ -359,9 +359,9 @@ export function DesktopView({ bot }: { bot: Bot }) {
 const styles = StyleSheet.create({
   content: { padding: 12, paddingBottom: 32, gap: 12 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
-  statusText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  statusText: { flex: 1, fontSize: 13, lineHeight: 18 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  address: { flex: 1, height: 36, borderRadius: 18, paddingHorizontal: 14, fontSize: 14, marginLeft: 4 },
+  address: { flex: 1, height: 36, borderRadius: 18, paddingHorizontal: 14, fontSize: 16, marginLeft: 4 },
   // On a phone the buttons take the whole width, one under the other.
   actions: { gap: 8 },
   screen: {
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   screenControlled: { borderWidth: 2 },
   inner: { flex: 1 },
   note: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20 },
-  noteText: { fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  noteText: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
   typeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  typeInput: { flex: 1, height: 36, borderRadius: 18, paddingHorizontal: 14, fontSize: 14 },
+  typeInput: { flex: 1, height: 36, borderRadius: 18, paddingHorizontal: 14, fontSize: 16 },
 });

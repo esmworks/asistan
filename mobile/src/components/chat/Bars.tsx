@@ -34,12 +34,12 @@ export function GoalBar({ threadId, botId, goal }: { threadId: string; botId: st
       .catch(toastError);
   return (
     <View style={[styles.bar, { borderColor: c.brand, backgroundColor: c.background }]}>
-      <Feather name="target" size={16} color={c.brand} style={styles.icon} />
+      <Feather name="target" size={20} color={c.brand} style={styles.icon} />
       <Text style={[styles.barText, { color: c.foreground }]} numberOfLines={3}>
         <Text style={styles.strong}>{t('goal.label')}</Text> {goal}
       </Text>
       <Pressable accessibilityRole="button" accessibilityLabel={t('goal.clear')} onPress={clear} hitSlop={8}>
-        <Feather name="x" size={16} color={c.mutedForeground} />
+        <Feather name="x" size={20} color={c.mutedForeground} />
       </Pressable>
     </View>
   );
@@ -67,7 +67,7 @@ export function PinnedBar({
       .catch(toastError);
   return (
     <View style={[styles.bar, { borderColor: c.border, backgroundColor: c.background }]}>
-      <Feather name="bookmark" size={16} color={c.mutedForeground} style={styles.icon} />
+      <Feather name="bookmark" size={20} color={c.mutedForeground} style={styles.icon} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('pin.jump')}
@@ -79,7 +79,7 @@ export function PinnedBar({
         </Text>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel={t('pin.remove')} onPress={unpin} hitSlop={8}>
-        <Feather name="x" size={16} color={c.mutedForeground} />
+        <Feather name="x" size={20} color={c.mutedForeground} />
       </Pressable>
     </View>
   );
@@ -116,7 +116,7 @@ export function WaitingElsewhere({
       : t('chat.waitingIn', { count, place: name(first) });
   return (
     <View style={[styles.waiting, { borderColor: c.amber, backgroundColor: c.amberSoft }]}>
-      <Feather name="shield" size={16} color={c.amber} />
+      <Feather name="shield" size={20} color={c.amber} />
       <Text style={[styles.barText, { color: c.foreground }]}>{text}</Text>
       <Pressable
         accessibilityRole="button"
@@ -167,7 +167,7 @@ export function ToBottom({ unread, onPress }: { unread: number; onPress: () => v
       onPress={onPress}
       style={[styles.toBottom, { backgroundColor: c.card, borderColor: c.border }]}
     >
-      <Feather name="arrow-down" size={16} color={c.foreground} />
+      <Feather name="arrow-down" size={20} color={c.foreground} />
       {unread > 0 ? <Text style={[styles.showText, { color: c.foreground }]}>{label}</Text> : null}
     </Pressable>
   );
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   },
   icon: { marginTop: 2 },
   grow: { flex: 1 },
-  barText: { flex: 1, fontSize: 14, lineHeight: 20 },
+  barText: { flex: 1, fontSize: 16, lineHeight: 22 },
   strong: { fontWeight: '600' },
   waiting: {
     flexDirection: 'row',
@@ -216,10 +216,10 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   show: { borderRadius: 16, paddingHorizontal: 12, height: 32, justifyContent: 'center' },
-  showText: { fontSize: 14, fontWeight: '500' },
+  showText: { fontSize: 16, fontWeight: '500' },
   replies: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 4 },
   reply: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
-  replyText: { fontSize: 14, lineHeight: 20 },
+  replyText: { fontSize: 16, lineHeight: 22 },
   toBottom: {
     position: 'absolute',
     bottom: 8,
@@ -237,5 +237,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  broken: { fontSize: 12, textAlign: 'center', paddingVertical: 4 },
+  broken: { fontSize: 13, textAlign: 'center', paddingVertical: 4 },
 });

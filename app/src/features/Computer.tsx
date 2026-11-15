@@ -107,7 +107,7 @@ export function ComputerButton({ bot }: { bot: Bot }) {
           onClick={() => open(bot.id)}
           aria-label={t('computer.browserOpen')}
         >
-          <Monitor />
+          <Monitor className="size-5" />
           {desktop
             ? desktopActive && (
                 <StatusDot status="bot" className="absolute top-1.5 right-1.5 ring-2 ring-background" />

@@ -157,8 +157,8 @@ export default function FileScreen() {
 
 const styles = StyleSheet.create({
   right: { flexDirection: 'row' },
-  size: { fontSize: 12, textAlign: 'center', paddingBottom: 6 },
+  size: { fontSize: 13, textAlign: 'center', paddingBottom: 6 },
   body: { flex: 1, overflow: 'hidden', borderTopWidth: StyleSheet.hairlineWidth },
   stepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, height: 52 },
-  position: { fontSize: 14, minWidth: 56, textAlign: 'center' },
+  position: { fontSize: 16, minWidth: 56, textAlign: 'center' },
 });

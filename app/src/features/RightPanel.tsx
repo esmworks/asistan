@@ -183,7 +183,7 @@ function Upcoming({ bot }: { bot: Bot }) {
               }}
             >
               <div className="truncate text-sm font-medium">{r.name}</div>
-              <div className="truncate text-xs text-muted-foreground">
+              <div className="truncate text-[13px] text-muted-foreground">
                 {describeSchedule(r.schedule, locale)}
                 {r.enabled && r.nextRunAt ? ` · ${t('panel.nextRun', { when: dayLabel(r.nextRunAt) })}` : ''}
               </div>
@@ -261,7 +261,7 @@ function BotApps({ bot }: { bot: Bot }) {
               {t('panel.appsOn', { on: on.length, total: connections.length })}
             </span>
             {troubled > 0 && (
-              <span className="block truncate text-xs text-amber-600 dark:text-amber-400">
+              <span className="block truncate text-[13px] text-amber-600 dark:text-amber-400">
                 {t('panel.appsTrouble', { count: troubled })}
               </span>
             )}
@@ -349,7 +349,7 @@ function BotAppsDialog({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{c.name}</div>
                 {c.status !== 'connected' && (
-                  <div className="truncate text-xs text-amber-600 dark:text-amber-400">
+                  <div className="truncate text-[13px] text-amber-600 dark:text-amber-400">
                     {c.status === 'error' ? t('apps.status.error') : t('apps.status.signedOut')}
                   </div>
                 )}
@@ -418,7 +418,7 @@ function BotSkills({ bot }: { bot: Bot }) {
           <div key={k.id} className="flex items-center gap-3 rounded-2xl bg-secondary/60 px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="truncate font-mono text-sm">{k.name}</div>
-              <div className="truncate text-xs text-muted-foreground" title={k.description}>
+              <div className="truncate text-[13px] text-muted-foreground" title={k.description}>
                 {k.description}
               </div>
             </div>
@@ -534,7 +534,7 @@ function Library({ bot }: { bot: Bot }) {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{f.name}</span>
-              <span className="block text-xs text-muted-foreground">
+              <span className="block text-[13px] text-muted-foreground">
                 {fileSize(f.size)} · {dayLabel(f.modifiedAt)}
               </span>
             </span>

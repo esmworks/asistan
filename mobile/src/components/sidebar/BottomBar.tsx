@@ -79,10 +79,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   disc: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  initials: { fontSize: 14, fontWeight: '600' },
+  initials: { fontSize: 16, fontWeight: '600' },
   profileText: { flex: 1, minWidth: 0 },
-  userName: { fontSize: 14, fontWeight: '500' },
+  userName: { fontSize: 16, fontWeight: '500' },
   status: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12 },
+  statusText: { fontSize: 13 },
 });

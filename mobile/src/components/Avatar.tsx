@@ -40,6 +40,9 @@ const BODIES: Record<AvatarShape, number> = {
   moon: CAPSULE,
 };
 
+/** How much larger than its box the body picture is drawn; its fur margin is about a third of it. */
+const ART_ZOOM = 1.38;
+
 /**
  * A bot's mark: its uploaded picture, or its shape as a felt plush in its color with two eyes, as
  * the web app draws its bots. Without an avatar (a profile, an app) it is the first letter on a disc.
@@ -62,21 +65,21 @@ export function Avatar({
   }
   if (avatar?.startsWith('shape:')) {
     const body = BODIES[avatar.slice(6) as AvatarShape] ?? BLOB;
-    // The body picture has room around the shape for its fur, so it is drawn larger than the box.
-    const art = { width: size * 1.15, height: size * 1.15, left: size * -0.075, top: size * -0.075 };
-    const eye = {
-      width: size * 0.066,
-      height: size * 0.145,
-      borderRadius: size,
-      top: size * 0.4,
-    };
+    // The body picture has room around the shape for its fur, so it is drawn larger than the box
+    // and the shape nearly fills it.
+    const span = size * ART_ZOOM;
+    const offset = (size - span) / 2;
+    const art = { width: span, height: span, left: offset, top: offset };
+    const eye = { width: span * 0.057, height: span * 0.126, borderRadius: size };
+    // Eye centres, as fractions of the body picture.
+    const at = (f: number, length: number) => offset + f * span - length / 2;
     return (
       <View style={[styles.plush, { width: size, height: size }]} accessible={false}>
         {/* The colour fills the shape, then the grey fur lights and shades it. */}
         <Image source={body} style={[styles.layer, art]} tintColor={color} />
         <Image source={body} style={[styles.layer, styles.fur, art]} />
-        <View style={[styles.eye, eye, { left: size * 0.407 }]} />
-        <View style={[styles.eye, eye, { left: size * 0.567 }]} />
+        <View style={[styles.eye, eye, { top: at(0.476, eye.height), left: at(0.448, eye.width) }]} />
+        <View style={[styles.eye, eye, { top: at(0.476, eye.height), left: at(0.587, eye.width) }]} />
       </View>
     );
   }

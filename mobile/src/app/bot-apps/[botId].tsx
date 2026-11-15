@@ -53,7 +53,7 @@ export default function Screen() {
     <Page title={t('panel.appsTitle', { name: bot?.name ?? '' })}>
       <Text style={[styles.hint, { color: c.mutedForeground }]}>{t('panel.appsHint')}</Text>
       <View style={[styles.search, { backgroundColor: c.card, borderColor: c.border }]}>
-        <Feather name="search" size={16} color={c.mutedForeground} />
+        <Feather name="search" size={20} color={c.mutedForeground} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -102,7 +102,7 @@ export default function Screen() {
 }
 
 const styles = StyleSheet.create({
-  hint: { fontSize: 14, lineHeight: 20, paddingHorizontal: 4 },
+  hint: { fontSize: 16, lineHeight: 22, paddingHorizontal: 4 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -112,9 +112,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 16,
   },
-  searchInput: { flex: 1, fontSize: 16, height: 44 },
+  searchInput: { flex: 1, fontSize: 17, height: 44 },
   bulk: { flexDirection: 'row', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 16 },
   text: { flex: 1, gap: 2 },
-  name: { fontSize: 15, fontWeight: '500' },
+  name: { fontSize: 17, fontWeight: '500' },
 });

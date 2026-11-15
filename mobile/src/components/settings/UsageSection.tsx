@@ -203,7 +203,7 @@ function Report({
 }
 
 const styles = StyleSheet.create({
-  small: { fontSize: 13 },
+  small: { fontSize: 15 },
   total: { fontSize: 32, fontWeight: '600', fontVariant: ['tabular-nums'] },
   limit: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 12,
-    fontSize: 15,
+    fontSize: 17,
     textAlign: 'right',
   },
   notes: { gap: 4 },

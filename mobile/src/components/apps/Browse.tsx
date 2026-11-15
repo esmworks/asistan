@@ -167,7 +167,7 @@ export function Browse() {
     <View style={styles.head}>
       <Text style={[styles.subtitle, { color: c.mutedForeground }]}>{t('apps.subtitle')}</Text>
       <View style={[styles.search, { backgroundColor: c.card, borderColor: c.border }]}>
-        <Feather name="search" size={16} color={c.mutedForeground} />
+        <Feather name="search" size={20} color={c.mutedForeground} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -273,7 +273,7 @@ function AppRow({ item }: { item: RowItem }) {
 const styles = StyleSheet.create({
   list: { paddingHorizontal: 16, paddingBottom: 40, flexGrow: 1 },
   head: { gap: 12, paddingBottom: 4 },
-  subtitle: { fontSize: 14, lineHeight: 20, paddingHorizontal: 4 },
+  subtitle: { fontSize: 16, lineHeight: 22, paddingHorizontal: 4 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -283,11 +283,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 16,
   },
-  searchInput: { flex: 1, fontSize: 16, height: 44 },
+  searchInput: { flex: 1, fontSize: 17, height: 44 },
   chips: { gap: 8, paddingVertical: 2 },
   chip: { height: 34, borderRadius: 17, paddingHorizontal: 14, justifyContent: 'center' },
-  chipText: { fontSize: 14 },
-  sectionTitle: { fontSize: 13, fontWeight: '500', paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 },
+  chipText: { fontSize: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: '500', paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -298,5 +298,5 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   rowText: { flex: 1, gap: 2 },
-  rowName: { fontSize: 15, fontWeight: '500' },
+  rowName: { fontSize: 17, fontWeight: '500' },
 });

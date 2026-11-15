@@ -72,8 +72,11 @@ const MOODS: Record<BotActivity, Mood> = {
 
 /** Frames per second: plenty at avatar size, and a list of avatars stays cheap. */
 const FPS = 30;
-/** The felt's dark, soft edge makes the body look smaller than its box; this evens it out. */
-const BODY_STYLE = { transform: 'scale(1.15)', width: '100%', height: '100%', overflow: 'visible' };
+/**
+ * The plush is drawn with room around it for its felt pieces, so its body takes only about two thirds
+ * of the drawing. Zoomed in, the body nearly fills the avatar's box and the pieces spill past it.
+ */
+const BODY_STYLE = { transform: 'scale(1.38)', width: '100%', height: '100%', overflow: 'visible' };
 /** What must be pointed at for a resting avatar to move: the control it sits in, not only itself. */
 const HOVER_GROUP = "[data-avatar-hover], button, a, [role='button'], [role='link'], [role='menuitem']";
 

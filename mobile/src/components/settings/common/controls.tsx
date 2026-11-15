@@ -81,7 +81,7 @@ export function Chip({
           {on ? <Feather name="check" size={11} color="#FFFFFF" /> : null}
         </View>
       ) : null}
-      {icon ? <Feather name={icon} size={14} color={c.foreground} /> : null}
+      {icon ? <Feather name={icon} size={16} color={c.foreground} /> : null}
       <Text style={[styles.chipText, { color: c.foreground }]}>{label}</Text>
     </Pressable>
   );
@@ -144,7 +144,7 @@ export function Status({ state, label }: { state: 'ok' | 'problem' | 'unknown'; 
   const color = state === 'ok' ? c.success : state === 'problem' ? c.amber : c.mutedForeground;
   return (
     <View style={styles.status}>
-      {state !== 'unknown' ? <Feather name={state === 'ok' ? 'check' : 'x'} size={16} color={color} /> : null}
+      {state !== 'unknown' ? <Feather name={state === 'ok' ? 'check' : 'x'} size={20} color={color} /> : null}
       <Text style={[styles.statusText, { color }]}>{label}</Text>
     </View>
   );
@@ -226,7 +226,7 @@ export function useSaveSettings() {
 }
 
 const styles = StyleSheet.create({
-  hint: { fontSize: 13, lineHeight: 18 },
+  hint: { fontSize: 15, lineHeight: 20 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flexDirection: 'row',
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   // A long label wraps inside the chip instead of running past the card.
-  chipText: { fontSize: 14, flexShrink: 1, textAlign: 'center' },
+  chipText: { fontSize: 16, flexShrink: 1, textAlign: 'center' },
   tick: {
     width: 16,
     height: 16,
@@ -250,8 +250,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   status: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statusText: { fontSize: 14 },
+  statusText: { fontSize: 16 },
   saved: { gap: 6 },
-  savedLabel: { fontSize: 15 },
+  savedLabel: { fontSize: 17 },
   area: { height: undefined, minHeight: 110, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
 });

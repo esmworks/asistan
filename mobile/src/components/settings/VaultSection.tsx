@@ -36,7 +36,7 @@ export function VaultSection() {
   return (
     <>
       <View style={styles.search}>
-        <Feather name="search" size={16} color={c.mutedForeground} style={styles.searchIcon} />
+        <Feather name="search" size={20} color={c.mutedForeground} style={styles.searchIcon} />
         <Field
           value={query}
           onChangeText={setQuery}

@@ -55,7 +55,7 @@ export function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
         ) : !props.replied ? (
           <View style={[styles.dot, { backgroundColor: c.success }]} />
         ) : null}
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={c.mutedForeground} />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={20} color={c.mutedForeground} />
       </Pressable>
       {open ? (
         <View style={[styles.body, { borderColor: c.border }]}>
@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     maxWidth: '100%',
   },
-  small: { fontSize: 14, lineHeight: 20 },
-  tiny: { fontSize: 12, fontWeight: '500' },
+  small: { fontSize: 16, lineHeight: 22 },
+  tiny: { fontSize: 13, fontWeight: '500' },
   name: { fontWeight: '500', flexShrink: 1 },
   count: {
     minWidth: 16,

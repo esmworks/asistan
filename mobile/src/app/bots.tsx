@@ -91,7 +91,7 @@ export default function Bots() {
       <View style={styles.header}>
         {searching ? (
           <View style={styles.searchBox}>
-            <Feather name="search" size={16} color={c.mutedForeground} style={styles.searchIcon} />
+            <Feather name="search" size={20} color={c.mutedForeground} style={styles.searchIcon} />
             <TextInput
               autoFocus
               value={query}
@@ -109,7 +109,7 @@ export default function Bots() {
               hitSlop={8}
               style={styles.searchClose}
             >
-              <Feather name="x" size={16} color={c.mutedForeground} />
+              <Feather name="x" size={20} color={c.mutedForeground} />
             </Pressable>
           </View>
         ) : (
@@ -185,14 +185,14 @@ const styles = StyleSheet.create({
     height: 56,
   },
   titleBox: { flex: 1, justifyContent: 'center', minHeight: 40 },
-  title: { fontSize: 20, fontWeight: '600' },
+  title: { fontSize: 22, fontWeight: '600' },
   searchBox: { flex: 1, justifyContent: 'center', marginRight: 8 },
   searchIcon: { position: 'absolute', left: 14, zIndex: 1 },
-  searchInput: { height: 40, borderRadius: 20, paddingLeft: 40, paddingRight: 40, fontSize: 16 },
+  searchInput: { height: 40, borderRadius: 20, paddingLeft: 40, paddingRight: 40, fontSize: 17 },
   searchClose: { position: 'absolute', right: 12, height: 40, justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   message: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
-  detail: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  detail: { fontSize: 16, lineHeight: 22, textAlign: 'center' },
   content: { flexGrow: 1, paddingHorizontal: 8, paddingBottom: 16 },
   filler: { flexGrow: 1, minHeight: 80 },
 });

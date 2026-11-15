@@ -203,8 +203,8 @@ export function PiModelStep({ onBack, onNext }: { onBack: () => void; onNext: ()
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: { padding: 24, paddingBottom: 32 },
-  title: { fontSize: 24, fontWeight: '600', letterSpacing: -0.4 },
-  body: { fontSize: 14, lineHeight: 20, marginTop: 8 },
+  title: { fontSize: 26, fontWeight: '600', letterSpacing: -0.4 },
+  body: { fontSize: 16, lineHeight: 22, marginTop: 8 },
   children: { marginTop: 24, gap: 12 },
   footer: {
     flexDirection: 'row',
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   spacer: { flex: 1 },
   options: { gap: 8, marginBottom: 12 },
   option: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, gap: 2 },
-  optionTitle: { fontSize: 15, fontWeight: '500' },
-  optionHint: { fontSize: 13, lineHeight: 18 },
-  error: { fontSize: 14, lineHeight: 20, marginTop: 12 },
+  optionTitle: { fontSize: 17, fontWeight: '500' },
+  optionHint: { fontSize: 15, lineHeight: 20 },
+  error: { fontSize: 16, lineHeight: 22, marginTop: 12 },
 });

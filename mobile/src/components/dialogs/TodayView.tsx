@@ -135,19 +135,19 @@ function Block({
 
 function RunIcon({ status }: { status: TodayReport['runs'][number]['status'] }) {
   const c = useColors();
-  if (status === 'done') return <Feather name="check-circle" size={20} color={c.success} />;
-  if (status === 'error') return <Feather name="alert-circle" size={20} color={c.destructive} />;
-  return <Feather name="clock" size={20} color={c.mutedForeground} />;
+  if (status === 'done') return <Feather name="check-circle" size={24} color={c.success} />;
+  if (status === 'error') return <Feather name="alert-circle" size={24} color={c.destructive} />;
+  return <Feather name="clock" size={24} color={c.mutedForeground} />;
 }
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40, gap: 20 },
-  summary: { fontSize: 14, lineHeight: 20, paddingHorizontal: 4 },
+  summary: { fontSize: 16, lineHeight: 22, paddingHorizontal: 4 },
   block: { gap: 6 },
-  title: { fontSize: 13, fontWeight: '500', paddingHorizontal: 4 },
-  empty: { fontSize: 14, paddingHorizontal: 4 },
-  grow: { flex: 1, fontSize: 14 },
+  title: { fontSize: 15, fontWeight: '500', paddingHorizontal: 4 },
+  empty: { fontSize: 16, paddingHorizontal: 4 },
+  grow: { flex: 1, fontSize: 16 },
   name: { fontWeight: '500' },
-  note: { fontSize: 12 },
+  note: { fontSize: 13 },
   blank: { width: 28, height: 28 },
 });

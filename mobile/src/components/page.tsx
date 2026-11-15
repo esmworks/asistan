@@ -27,7 +27,7 @@ export function IconButton({
   label,
   onPress,
   disabled,
-  size = 20,
+  size = 22,
   color,
   filled,
   children,
@@ -177,7 +177,7 @@ export function Row({
       ]}
     >
       {icon ? (
-        <Feather name={icon} size={18} color={destructive ? c.destructive : c.mutedForeground} />
+        <Feather name={icon} size={22} color={destructive ? c.destructive : c.mutedForeground} />
       ) : null}
       <View style={styles.rowText}>
         <Text style={[styles.rowLabel, { color: tint }]} numberOfLines={2}>
@@ -198,7 +198,7 @@ export function Row({
         </Text>
       ) : null}
       {busy ? <ActivityIndicator size="small" color={c.mutedForeground} /> : right}
-      {chevron && !busy ? <Feather name="chevron-right" size={18} color={c.mutedForeground} /> : null}
+      {chevron && !busy ? <Feather name="chevron-right" size={22} color={c.mutedForeground} /> : null}
     </Pressable>
   );
 }
@@ -343,7 +343,7 @@ export function PillButton({
       {busy ? (
         <ActivityIndicator size="small" color={fg} />
       ) : icon ? (
-        <Feather name={icon} size={16} color={fg} />
+        <Feather name={icon} size={20} color={fg} />
       ) : null}
       <Text style={[styles.pillText, { color: fg }]}>{label}</Text>
     </Pressable>
@@ -406,7 +406,7 @@ export function Sheet({
                 {item.icon ? (
                   <Feather
                     name={item.icon}
-                    size={18}
+                    size={22}
                     color={item.destructive ? c.destructive : c.foreground}
                   />
                 ) : null}
@@ -416,7 +416,7 @@ export function Sheet({
                 >
                   {item.label}
                 </Text>
-                {item.selected ? <Feather name="check" size={18} color={c.foreground} /> : null}
+                {item.selected ? <Feather name="check" size={22} color={c.foreground} /> : null}
               </Pressable>
             ))}
             {children}
@@ -460,11 +460,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 56 },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '600', textAlign: 'center' },
   headerRight: { minWidth: 40, flexDirection: 'row', justifyContent: 'flex-end' },
-  iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   pageContent: { padding: 16, paddingBottom: 40, gap: 20 },
   section: { gap: 6 },
-  sectionTitle: { fontSize: 13, fontWeight: '500', paddingHorizontal: 16 },
-  sectionFooter: { fontSize: 13, lineHeight: 18, paddingHorizontal: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: '500', paddingHorizontal: 16 },
+  sectionFooter: { fontSize: 15, lineHeight: 20, paddingHorizontal: 16 },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
@@ -475,13 +475,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   rowText: { flex: 1, gap: 2 },
-  rowLabel: { fontSize: 15, lineHeight: 20 },
-  rowDetail: { fontSize: 13, lineHeight: 18 },
-  rowValue: { fontSize: 15, maxWidth: '45%' },
+  rowLabel: { fontSize: 17, lineHeight: 22 },
+  rowDetail: { fontSize: 15, lineHeight: 20 },
+  rowValue: { fontSize: 17, maxWidth: '45%' },
   labeled: { gap: 6 },
-  inputLabel: { fontSize: 14, fontWeight: '500', paddingHorizontal: 4 },
-  inputHint: { fontSize: 13, lineHeight: 18, paddingHorizontal: 4 },
-  input: { height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 20, fontSize: 16 },
+  inputLabel: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
+  inputHint: { fontSize: 15, lineHeight: 20, paddingHorizontal: 4 },
+  input: { height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 20, fontSize: 17 },
   textArea: {
     minHeight: 112,
     borderRadius: 16,
@@ -489,8 +489,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 12,
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 17,
+    lineHeight: 23,
     textAlignVertical: 'top',
   },
   segments: { flexDirection: 'row', borderRadius: 20, padding: 3 },
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
-  segmentText: { fontSize: 14, fontWeight: '500' },
+  segmentText: { fontSize: 16, fontWeight: '500' },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 16,
   },
-  pillText: { fontSize: 14, fontWeight: '500' },
+  pillText: { fontSize: 16, fontWeight: '500' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: {
     borderTopLeftRadius: 24,
@@ -523,10 +523,10 @@ const styles = StyleSheet.create({
   },
   sheetScroll: { flexGrow: 0 },
   grabber: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, marginBottom: 8 },
-  sheetTitle: { fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
+  sheetTitle: { fontSize: 15, paddingHorizontal: 20, paddingBottom: 8 },
   sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 50, paddingHorizontal: 20 },
-  sheetLabel: { flex: 1, fontSize: 16 },
+  sheetLabel: { flex: 1, fontSize: 17 },
   empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
-  emptyText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  note: { fontSize: 13, lineHeight: 18, paddingHorizontal: 4 },
+  emptyText: { fontSize: 16, lineHeight: 22, textAlign: 'center' },
+  note: { fontSize: 15, lineHeight: 20, paddingHorizontal: 4 },
 });

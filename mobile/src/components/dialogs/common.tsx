@@ -47,7 +47,7 @@ export function AreaBox({ invalid, ...rest }: TextInputProps & { invalid?: boole
 
 const styles = StyleSheet.create({
   field: { gap: 6 },
-  label: { fontSize: 14, fontWeight: '500', paddingHorizontal: 4 },
-  hint: { fontSize: 13, lineHeight: 18, paddingHorizontal: 4 },
+  label: { fontSize: 16, fontWeight: '500', paddingHorizontal: 4 },
+  hint: { fontSize: 15, lineHeight: 20, paddingHorizontal: 4 },
   area: { height: undefined, minHeight: 110, borderRadius: 16, paddingTop: 12, textAlignVertical: 'top' },
 });

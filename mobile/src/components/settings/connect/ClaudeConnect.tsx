@@ -118,7 +118,7 @@ export function ClaudeConnect({
           ) : unknown ? (
             <View style={[styles.dot, { backgroundColor: tone }]} />
           ) : (
-            <Feather name={connected ? 'check' : 'x'} size={16} color={tone} />
+            <Feather name={connected ? 'check' : 'x'} size={20} color={tone} />
           )}
         </View>
         <View style={styles.statusText}>
@@ -250,8 +250,8 @@ const styles = StyleSheet.create({
   badge: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { flex: 1, gap: 2 },
-  title: { fontSize: 15, fontWeight: '500' },
-  muted: { fontSize: 13, lineHeight: 18 },
+  title: { fontSize: 17, fontWeight: '500' },
+  muted: { fontSize: 15, lineHeight: 20 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   methods: { gap: 8 },
   method: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, gap: 2 },
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
   },
 });

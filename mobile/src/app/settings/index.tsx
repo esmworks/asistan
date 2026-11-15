@@ -46,5 +46,5 @@ export default function SettingsList() {
 const styles = StyleSheet.create({
   search: { marginBottom: 4 },
   list: { marginHorizontal: -8 },
-  input: { height: 40, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
+  input: { height: 40, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, fontSize: 17 },
 });

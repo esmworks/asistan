@@ -68,7 +68,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
   return (
     <Page title={t('search.title')} scroll={false}>
       <View style={[styles.box, { backgroundColor: c.card, borderColor: c.border }]}>
-        <Feather name="search" size={18} color={c.mutedForeground} />
+        <Feather name="search" size={22} color={c.mutedForeground} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -188,9 +188,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
   },
-  input: { flex: 1, fontSize: 16, height: 48 },
+  input: { flex: 1, fontSize: 17, height: 48 },
   list: { paddingHorizontal: 8, paddingBottom: 32, flexGrow: 1 },
-  empty: { fontSize: 14, textAlign: 'center', paddingHorizontal: 16, paddingVertical: 32 },
+  empty: { fontSize: 16, textAlign: 'center', paddingHorizontal: 16, paddingVertical: 32 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -201,10 +201,10 @@ const styles = StyleSheet.create({
   },
   text: { flex: 1, gap: 2 },
   center: { alignSelf: 'center' },
-  title: { fontSize: 15, fontWeight: '500' },
-  meta: { fontSize: 12 },
+  title: { fontSize: 17, fontWeight: '500' },
+  meta: { fontSize: 13 },
   head: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   headName: { flex: 1, fontWeight: '500' },
-  excerpt: { fontSize: 14, lineHeight: 20 },
+  excerpt: { fontSize: 16, lineHeight: 22 },
   blank: { width: 32, height: 32, borderRadius: 16 },
 });

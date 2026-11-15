@@ -700,8 +700,8 @@ const styles = StyleSheet.create({
   },
   dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   runText: { flex: 1, gap: 2 },
-  runTitle: { fontSize: 15 },
-  runReason: { fontSize: 13, lineHeight: 18 },
-  url: { fontSize: 12, fontFamily: 'Menlo' },
+  runTitle: { fontSize: 17 },
+  runReason: { fontSize: 15, lineHeight: 20 },
+  url: { fontSize: 13, fontFamily: 'Menlo' },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
 });

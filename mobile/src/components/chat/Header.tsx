@@ -52,7 +52,7 @@ export function ChatHeader({
             { borderColor: c.border, backgroundColor: pressed ? c.accent : c.background },
           ]}
         >
-          <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={28} />
+          <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={32} />
           <Text style={[styles.pillName, { color: c.foreground }]} numberOfLines={1}>
             {bot.name}
           </Text>
@@ -62,7 +62,7 @@ export function ChatHeader({
               {title}
             </Text>
           ) : null}
-          <Feather name="chevron-down" size={16} color={c.mutedForeground} />
+          <Feather name="chevron-down" size={20} color={c.mutedForeground} />
         </Pressable>
       ) : (
         <View />
@@ -260,11 +260,11 @@ function ThreadMenu({
               ]}
             >
               {icon ? (
-                <Feather name={icon} size={16} color={c.mutedForeground} />
+                <Feather name={icon} size={20} color={c.mutedForeground} />
               ) : th.pinnedAt ? (
                 <Feather
                   name="bookmark"
-                  size={16}
+                  size={20}
                   color={c.mutedForeground}
                   accessibilityLabel={t('chat.pinnedThread')}
                 />
@@ -306,13 +306,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  pillName: { fontSize: 15, fontWeight: '600', flexShrink: 0 },
-  pillTitle: { fontSize: 15, flexShrink: 1 },
-  groupLabel: { fontSize: 13, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
+  pillName: { fontSize: 17, fontWeight: '600', flexShrink: 0 },
+  pillTitle: { fontSize: 17, flexShrink: 1 },
+  groupLabel: { fontSize: 15, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
   thread: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 46, paddingHorizontal: 20 },
-  threadEmoji: { fontSize: 16 },
-  groupName: { flex: 1, fontSize: 16 },
-  time: { fontSize: 13 },
+  threadEmoji: { fontSize: 17 },
+  groupName: { flex: 1, fontSize: 17 },
+  time: { fontSize: 15 },
   badge: {
     minWidth: 18,
     height: 18,

@@ -256,7 +256,7 @@ function AccountRow({ account: a, current }: { account: Connection; current: boo
         hitSlop={8}
         onPress={() => void edit()}
       >
-        <Feather name="edit-2" size={16} color={c.mutedForeground} />
+        <Feather name="edit-2" size={20} color={c.mutedForeground} />
       </Pressable>
     </View>
   );
@@ -378,7 +378,7 @@ function Tools({ connection: conn }: { connection: Connection }) {
         onPress={() => setOpen(!open)}
         style={styles.toolsHead}
       >
-        <Feather name={open ? 'chevron-down' : 'chevron-right'} size={18} color={c.foreground} />
+        <Feather name={open ? 'chevron-down' : 'chevron-right'} size={22} color={c.foreground} />
         <View style={styles.toolsText}>
           <Text style={[styles.toolsTitle, { color: c.foreground }]}>
             {t('apps.tools', { count: conn.tools.length })}
@@ -433,7 +433,7 @@ function ToolRow({ connection, tool }: { connection: Connection; tool: Connectio
           style={[styles.kind, { backgroundColor: c.muted }]}
         >
           <Text style={[styles.kindText, { color: c.foreground }]}>{t(`apps.kind.${tool.kind}`)}</Text>
-          <Feather name="chevron-down" size={14} color={c.mutedForeground} />
+          <Feather name="chevron-down" size={16} color={c.mutedForeground} />
         </Pressable>
       </View>
       <Switch
@@ -460,23 +460,23 @@ function ToolRow({ connection, tool }: { connection: Connection; tool: Connectio
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headText: { flex: 1, gap: 3 },
-  accountName: { fontSize: 15, fontWeight: '600' },
-  url: { fontSize: 13 },
+  accountName: { fontSize: 17, fontWeight: '600' },
+  url: { fontSize: 15 },
   callout: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
-  text: { fontSize: 14, lineHeight: 20 },
+  text: { fontSize: 16, lineHeight: 22 },
   link: { textDecorationLine: 'underline' },
   tokenForm: { gap: 10 },
   tokenSave: { alignItems: 'flex-end' },
   account: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 16 },
   accountMain: { flex: 1, gap: 2, paddingVertical: 8 },
-  accountLabel: { fontSize: 15, fontWeight: '500' },
+  accountLabel: { fontSize: 17, fontWeight: '500' },
   botRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 16 },
-  botName: { flex: 1, fontSize: 15 },
+  botName: { flex: 1, fontSize: 17 },
   tools: { gap: 8 },
   toolsHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, minHeight: 44 },
   toolsText: { flex: 1, gap: 2 },
-  toolsTitle: { fontSize: 15, fontWeight: '600' },
-  toolsSummary: { fontSize: 13 },
+  toolsTitle: { fontSize: 17, fontWeight: '600' },
+  toolsSummary: { fontSize: 15 },
   tool: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -485,8 +485,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   toolMain: { flex: 1, gap: 4 },
-  toolName: { fontSize: 13, fontWeight: '600', fontFamily: 'Courier' },
-  toolDesc: { fontSize: 13, lineHeight: 18 },
+  toolName: { fontSize: 15, fontWeight: '600', fontFamily: 'Courier' },
+  toolDesc: { fontSize: 15, lineHeight: 20 },
   kind: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -497,5 +497,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginTop: 2,
   },
-  kindText: { fontSize: 13 },
+  kindText: { fontSize: 15 },
 });

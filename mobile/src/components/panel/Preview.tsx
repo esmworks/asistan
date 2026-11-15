@@ -304,7 +304,7 @@ export function FolderOrNone({
           onPress={() => onOpen(item.path)}
           style={({ pressed }) => [styles.folderRow, pressed && { backgroundColor: c.accent }]}
         >
-          <Feather name="file-text" size={16} color={c.mutedForeground} />
+          <Feather name="file-text" size={20} color={c.mutedForeground} />
           <Text style={[styles.folderName, { color: c.foreground }]} numberOfLines={1}>
             {item.path.slice(key.length + 1)}
           </Text>
@@ -318,11 +318,11 @@ export function FolderOrNone({
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   message: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  messageText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  cut: { fontSize: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  messageText: { fontSize: 16, lineHeight: 22, textAlign: 'center' },
+  cut: { fontSize: 13, paddingHorizontal: 16, paddingVertical: 8 },
   markdown: { paddingHorizontal: 20, paddingVertical: 16 },
   code: { paddingHorizontal: 16, paddingVertical: 12 },
-  codeText: { fontSize: 13, lineHeight: 19 },
+  codeText: { fontSize: 15, lineHeight: 21 },
   rowLine: { flexDirection: 'row' },
   tableFrame: {
     flex: 1,
@@ -332,14 +332,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cell: {
-    fontSize: 13,
+    fontSize: 15,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headCell: { fontWeight: '600' },
-  folderHead: { fontSize: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  folderHead: { fontSize: 13, paddingHorizontal: 16, paddingVertical: 8 },
   folderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 44 },
-  folderName: { flex: 1, fontSize: 14 },
-  folderSize: { fontSize: 12 },
+  folderName: { flex: 1, fontSize: 16 },
+  folderSize: { fontSize: 13 },
 });

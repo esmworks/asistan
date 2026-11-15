@@ -52,7 +52,7 @@ function PlanBotRow({ bot }: { bot: PlanBot }) {
           <Text style={[styles.name, { color: c.foreground }]}>{bot.name}</Text>
           <Text style={[styles.small, { color: c.mutedForeground }]}>{summary}</Text>
         </View>
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={18} color={c.mutedForeground} />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={22} color={c.mutedForeground} />
       </Pressable>
       {open ? (
         <View style={styles.body}>
@@ -107,11 +107,11 @@ function PlanBotRow({ bot }: { bot: PlanBot }) {
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   topText: { flex: 1, gap: 2 },
-  name: { fontSize: 15, fontWeight: '500' },
-  small: { fontSize: 13, lineHeight: 18 },
+  name: { fontSize: 17, fontWeight: '500' },
+  small: { fontSize: 15, lineHeight: 20 },
   strong: { fontWeight: '500' },
   body: { paddingHorizontal: 16, paddingBottom: 14, gap: 12 },
   part: { gap: 4 },
-  head: { fontSize: 12, fontWeight: '500' },
-  box: { borderRadius: 12, padding: 12, fontSize: 13, lineHeight: 18, overflow: 'hidden' },
+  head: { fontSize: 13, fontWeight: '500' },
+  box: { borderRadius: 12, padding: 12, fontSize: 15, lineHeight: 20, overflow: 'hidden' },
 });
