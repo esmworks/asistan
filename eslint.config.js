@@ -14,6 +14,10 @@ export default tseslint.config(
       'data/**',
       'server/drizzle/**',
       'app/src/components/ui/**',
+      'mobile/ios/**',
+      'mobile/android/**',
+      'mobile/.expo/**',
+      'mobile/expo-env.d.ts',
     ],
   },
   js.configs.recommended,
@@ -33,6 +37,11 @@ export default tseslint.config(
   {
     files: ['app/src/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
+    plugins: { 'react-hooks': reactHooks },
+    rules: { ...reactHooks.configs.recommended.rules },
+  },
+  {
+    files: ['mobile/src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs.recommended.rules },
   },

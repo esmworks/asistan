@@ -4,6 +4,7 @@ packages:
   - app
   - desktop
   - computer
+  - mobile
 allowBuilds:
   electron: true
   electron-winstaller: false

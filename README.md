@@ -140,6 +140,22 @@ reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to you
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
 database — without it, saved passwords cannot be decrypted.
 
+## Phone app (early)
+
+`mobile/` holds the app for iOS and Android, built with Expo. It talks to the server's API and socket directly and draws
+every screen of the web app's phone layout natively: the bot list with groups, rooms and the cards that wait,
+conversations with live replies, attachments, approval and question cards, the side panel with the bot's files and
+browser, rooms, Today, search, the bot and routine editors, apps, every settings section and the first-run setup.
+Notifications, the live screen of the bot's own desktop and picking an avatar image are still only in the web app. Run
+it in the iOS Simulator or on a phone with Expo Go:
+
+```bash
+pnpm --filter @yumakbot/mobile start
+```
+
+`pnpm --filter @yumakbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
+name, icon and network settings.
+
 ## Development
 
 Run the server and the web UI in two terminals:

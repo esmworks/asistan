@@ -1,0 +1,476 @@
+import { AVATAR_SHAPES, EFFORTS, PERMISSION_MODES, type Bot, type Effort } from '@yumakbot/shared';
+import { availableStarters, starterBot, type StarterId } from '@yumakbot/app/src/features/onboarding/profile';
+import Feather from '@expo/vector-icons/Feather';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Avatar } from '@/components/Avatar';
+import { AreaBox, FormField, SaveButton, TextBox } from '@/components/dialogs/common';
+import { COLORS, newBotEngine } from '@/components/dialogs/model';
+import { confirm, toast, toastError } from '@/components/overlay';
+import { Empty, Loading, Note, Page, Row, Section, SwitchRow, back } from '@/components/page';
+import { ChipRow, ChoiceRow, Pad, Rows } from '@/components/settings/common/controls';
+import { ModelDefaults } from '@/components/settings/connect/ModelDefaults';
+import { PiModelPicker } from '@/components/settings/connect/ProviderConnect';
+import { t, type MessageKey } from '@/i18n';
+import { nav } from '@/lib/nav';
+import { useBots, useGroups, useInfo, useProviders, useSettings } from '@/lib/queries';
+import { useApi, useServer } from '@/lib/server';
+import { useColors } from '@/lib/theme';
+
+const NO_GROUP = '';
+/** The effort row's value for "as set for all bots"; efforts never take this form. */
+const DEFAULT_EFFORT = '*';
+
+const MODE_LABEL: Record<(typeof PERMISSION_MODES)[number], MessageKey> = {
+  readonly: 'mode.readonly',
+  ask: 'mode.ask',
+  review: 'mode.review',
+  auto: 'mode.auto',
+};
+
+interface Form {
+  name: string;
+  description: string;
+  instructions: string;
+  groupId: string;
+  newGroup: string;
+  color: string;
+  avatar: string;
+  permissionMode: Bot['permissionMode'];
+  isManager: boolean;
+  memory: boolean;
+  effort: Effort | '';
+  internet: boolean;
+  projectDir: string;
+  engine: 'claude' | 'pi';
+  /** The model for Claude; `provider/model` for the other engine. */
+  model: string;
+}
+
+function initial(bot: Bot | undefined, start: { engine: 'claude' | 'pi'; model: string }): Form {
+  return {
+    name: bot?.name ?? '',
+    description: bot?.description ?? '',
+    instructions: bot?.instructions ?? '',
+    groupId: bot?.groupId ?? NO_GROUP,
+    newGroup: '',
+    color: bot?.color ?? COLORS[0]!,
+    avatar: bot?.avatar ?? 'shape:blob',
+    permissionMode: bot?.permissionMode ?? 'ask',
+    isManager: bot?.isManager ?? false,
+    memory: bot?.memory ?? true,
+    effort: (bot?.effort as Effort | '' | undefined) ?? '',
+    internet: bot?.internet ?? true,
+    projectDir: bot?.projectDir ?? '',
+    engine: bot?.engine ?? start.engine,
+    model: bot?.model ?? start.model,
+  };
+}
+
+/** Creates a bot, or edits the one named by `botId`. */
+export function BotEditor({ botId }: { botId?: string }) {
+  const bots = useBots();
+  const settings = useSettings();
+  if (bots.isLoading || (!botId && settings.isLoading)) {
+    return (
+      <Page title={t('bot.new')}>
+        <Loading />
+      </Page>
+    );
+  }
+  const bot = botId ? bots.data?.find((b) => b.id === botId) : undefined;
+  if (botId && !bot) {
+    return (
+      <Page title={t('bot.new')}>
+        <Empty icon="alert-circle" text={t('dialogs.botNotFound')} />
+      </Page>
+    );
+  }
+  return <BotFormPage key={bot?.id ?? 'new'} bot={bot} />;
+}
+
+function BotFormPage({ bot }: { bot?: Bot }) {
+  const c = useColors();
+  const api = useApi();
+  const { origin } = useServer();
+  const qc = useQueryClient();
+  const { data: groups = [] } = useGroups();
+  const { data: bots = [] } = useBots();
+  const { data: settings } = useSettings();
+  const { data: info } = useInfo();
+  const { data: providers = [] } = useProviders();
+  const start = useMemo(() => initial(bot, newBotEngine(settings)), [bot, settings]);
+  const [v, setV] = useState<Form>(start);
+  const [tried, setTried] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const dirty = JSON.stringify(v) !== JSON.stringify(start);
+  const set = <K extends keyof Form>(k: K, val: Form[K]) => setV((f) => ({ ...f, [k]: val }));
+  const pi = v.engine === 'pi';
+
+  // Offered once, when the page opens: a bot made meanwhile does not reshuffle the choices.
+  const [starters] = useState(() =>
+    bot
+      ? []
+      : availableStarters(
+          t,
+          bots.map((b) => b.name),
+        ),
+  );
+  const starterOn = (id: StarterId) => {
+    const s = starterBot(id, t);
+    return (
+      v.name === s.name &&
+      v.description === s.description &&
+      v.instructions === s.instructions &&
+      v.avatar === s.avatar &&
+      v.color === s.color
+    );
+  };
+  /** Fills the form from a starter; choosing the chosen one again empties it. */
+  const pickStarter = (id: StarterId) => {
+    const fill = starterOn(id) ? initial(undefined, newBotEngine(settings)) : starterBot(id, t);
+    setV((f) => ({
+      ...f,
+      name: fill.name,
+      description: fill.description,
+      instructions: fill.instructions,
+      avatar: fill.avatar,
+      color: fill.color,
+    }));
+  };
+
+  const nameError: MessageKey | undefined = v.name.trim() ? undefined : 'bot.nameRequired';
+  const modelError: MessageKey | undefined =
+    pi && !/^[^/]+\/.+/.test(v.model.trim()) ? 'bot.modelRequired' : undefined;
+  const keyMissing = pi && providers.length > 0 && !providers.some((p) => p.configured);
+  // Only a definite "not signed in"; an unchecked or failing connection is not worth a warning here.
+  const claudeLoggedOut = !pi && info?.claude.status === 'logged-out';
+
+  const save = useMutation({
+    mutationFn: async () => {
+      let groupId: string | null = v.groupId === NO_GROUP ? null : v.groupId;
+      if (v.newGroup.trim()) groupId = (await api.createGroup(v.newGroup.trim())).id;
+      const body = {
+        name: v.name.trim(),
+        description: v.description,
+        instructions: v.instructions,
+        groupId,
+        color: v.color,
+        avatar: v.avatar,
+        permissionMode: v.permissionMode,
+        isManager: v.isManager,
+        memory: v.memory,
+        effort: v.effort,
+        internet: v.internet,
+        projectDir: v.projectDir.trim() || null,
+        engine: v.engine,
+        model: v.model.trim(),
+      };
+      return bot ? api.updateBot(bot.id, body) : api.createBot(body);
+    },
+    onSuccess: (saved) => {
+      // Put the bot in the cache first so the chat opened next does not fall back to another bot.
+      qc.setQueryData<Bot[]>(['bots', origin], (old = []) => [
+        ...old.filter((b) => b.id !== saved.id),
+        saved,
+      ]);
+      void qc.invalidateQueries({ queryKey: ['bots', origin] });
+      void qc.invalidateQueries({ queryKey: ['groups', origin] });
+      if (bot) back();
+      else nav.replaceChat(saved.id);
+    },
+    onError: toastError,
+  });
+  const archive = useMutation({
+    mutationFn: () => api.archiveBot(bot!.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['bots', origin] });
+      toast(t('bot.archived'));
+      nav.list();
+    },
+    onError: toastError,
+  });
+
+  const submit = () => {
+    setTried(true);
+    if (nameError || modelError) return;
+    save.mutate();
+  };
+  const leave = async () => {
+    if (
+      dirty &&
+      !(await confirm({
+        title: t('bot.discardConfirm'),
+        confirmLabel: t('dialogs.discard'),
+        destructive: true,
+      }))
+    )
+      return;
+    back();
+  };
+
+  const efforts: { value: string; label: string }[] = [
+    { value: DEFAULT_EFFORT, label: t(pi ? 'bot.effortModelDefault' : 'bot.effortDefault') },
+    ...EFFORTS.map((e) => ({ value: e, label: t(`effort.${e}`) })),
+  ];
+
+  return (
+    <Page
+      title={bot ? t('bot.settingsTitle', { name: bot.name }) : t('bot.new')}
+      onBack={() => void leave()}
+      right={
+        <SaveButton label={bot ? t('common.save') : t('bot.create')} onPress={submit} busy={save.isPending} />
+      }
+    >
+      {starters.length > 0 ? (
+        <Section title={t('bot.starters')}>
+          <Pad>
+            <ChipRow>
+              {starters.map((id) => {
+                const s = starterBot(id, t);
+                const on = starterOn(id);
+                return (
+                  <Pressable
+                    key={id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    onPress={() => pickStarter(id)}
+                    style={({ pressed }) => [
+                      styles.starter,
+                      {
+                        borderColor: on ? c.brand : c.border,
+                        backgroundColor: on ? `${c.brand}1A` : 'transparent',
+                      },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Avatar name={s.name} color={s.color} avatar={s.avatar} size={24} />
+                    <Text style={[styles.starterText, { color: c.foreground }]}>{s.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ChipRow>
+          </Pad>
+        </Section>
+      ) : null}
+
+      <Section>
+        <Pad gap={16}>
+          <View style={styles.preview}>
+            <Avatar name={v.name || t('common.bot')} color={v.color} avatar={v.avatar} size={72} />
+          </View>
+          <View style={styles.swatches} accessibilityLabel={t('bot.shape')}>
+            {AVATAR_SHAPES.map((s) => {
+              const on = v.avatar === `shape:${s}`;
+              return (
+                <Pressable
+                  key={s}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={s}
+                  onPress={() => set('avatar', `shape:${s}`)}
+                  style={[styles.shape, on && { backgroundColor: c.accent, borderColor: c.brand }]}
+                >
+                  <Avatar name={s} color={v.color} avatar={`shape:${s}`} size={32} />
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.swatches}>
+            {COLORS.map((col) => (
+              <Pressable
+                key={col}
+                accessibilityRole="button"
+                accessibilityLabel={col}
+                accessibilityState={{ selected: col === v.color }}
+                onPress={() => set('color', col)}
+                style={[styles.color, { backgroundColor: col }]}
+              >
+                {col === v.color ? <Feather name="check" size={16} color="#FFFFFF" /> : null}
+              </Pressable>
+            ))}
+          </View>
+        </Pad>
+      </Section>
+
+      <FormField label={t('bot.name')} error={tried ? nameError : undefined}>
+        <TextBox
+          value={v.name}
+          onChangeText={(x) => set('name', x)}
+          maxLength={60}
+          autoFocus={!bot}
+          placeholder={t('bot.namePlaceholder')}
+          invalid={tried && !!nameError}
+        />
+      </FormField>
+
+      <FormField label={t('bot.group')}>
+        <Section>
+          <ChoiceRow
+            label={t('bot.group')}
+            value={v.groupId}
+            options={[
+              { value: NO_GROUP, label: t('bot.noGroup') },
+              ...groups.map((g) => ({ value: g.id, label: g.name })),
+            ]}
+            onChange={(g) => set('groupId', g)}
+          />
+        </Section>
+        <TextBox
+          value={v.newGroup}
+          onChangeText={(x) => set('newGroup', x)}
+          maxLength={60}
+          placeholder={t('bot.newGroup')}
+        />
+      </FormField>
+
+      <FormField label={t('bot.description')}>
+        <TextBox
+          value={v.description}
+          onChangeText={(x) => set('description', x)}
+          maxLength={500}
+          placeholder={t('bot.descriptionPlaceholder')}
+        />
+      </FormField>
+
+      <FormField label={t('bot.instructions')}>
+        <AreaBox
+          value={v.instructions}
+          onChangeText={(x) => set('instructions', x)}
+          maxLength={20_000}
+          placeholder={t('bot.instructionsPlaceholder')}
+        />
+      </FormField>
+
+      <Section>
+        <Rows>
+          <ChoiceRow
+            label={t('bot.engine')}
+            detail={t(pi ? 'bot.engineHint.pi' : 'bot.engineHint.claude')}
+            value={v.engine}
+            options={[
+              { value: 'claude', label: t('bot.engine.claude') },
+              { value: 'pi', label: t('bot.engine.pi') },
+            ]}
+            onChange={(e) => setV((f) => ({ ...f, engine: e, model: '', effort: '' }))}
+          />
+          <Pad gap={16}>
+            <Text style={[styles.sectionLabel, { color: c.foreground }]}>{t('bot.model')}</Text>
+            {pi ? (
+              <PiModelPicker value={v.model} onChange={(m) => set('model', m)} />
+            ) : (
+              <ModelDefaults
+                value={{ model: v.model, effort: v.effort }}
+                onChange={(m) => setV((f) => ({ ...f, model: m.model, effort: m.effort }))}
+              />
+            )}
+            {tried && modelError ? <Note tone="error">{t(modelError)}</Note> : null}
+            {keyMissing ? <Note>{t('bot.keyMissing')}</Note> : null}
+            {claudeLoggedOut ? <Note>{t('bot.claudeLoggedOut')}</Note> : null}
+          </Pad>
+          {pi ? (
+            <ChoiceRow
+              label={t('model.effort')}
+              value={v.effort || DEFAULT_EFFORT}
+              options={efforts}
+              onChange={(e) => set('effort', e === DEFAULT_EFFORT ? '' : (e as Effort))}
+            />
+          ) : null}
+        </Rows>
+      </Section>
+
+      <Section>
+        <Row
+          label={t('bot.advanced')}
+          detail={t('bot.advancedHint')}
+          onPress={() => setAdvanced((a) => !a)}
+          chevron={false}
+          right={
+            <Feather name={advanced ? 'chevron-up' : 'chevron-down'} size={18} color={c.mutedForeground} />
+          }
+        />
+        {advanced ? (
+          <Rows>
+            <ChoiceRow
+              label={t('bot.permissionMode')}
+              detail={t(`bot.modeHint.${v.permissionMode}`)}
+              value={v.permissionMode}
+              options={PERMISSION_MODES.map((m) => ({ value: m, label: t(MODE_LABEL[m]) }))}
+              onChange={(m) => set('permissionMode', m)}
+            />
+            <Pad>
+              <FormField label={t('bot.projectDir')} hint={t('bot.projectDirHint')}>
+                <TextBox
+                  value={v.projectDir}
+                  onChangeText={(x) => set('projectDir', x)}
+                  maxLength={1000}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder={t('bot.projectDirPlaceholder')}
+                />
+              </FormField>
+            </Pad>
+            <SwitchRow
+              label={t('bot.internet')}
+              detail={t('bot.internetHint')}
+              value={v.internet}
+              onChange={(on) => set('internet', on)}
+            />
+            <SwitchRow
+              label={t('bot.manager')}
+              detail={t('bot.managerHint')}
+              value={v.isManager}
+              onChange={(on) => set('isManager', on)}
+            />
+            <SwitchRow
+              label={t('bot.memory')}
+              detail={t('bot.memoryHint')}
+              value={v.memory}
+              onChange={(on) => set('memory', on)}
+            />
+          </Rows>
+        ) : null}
+      </Section>
+
+      {bot ? (
+        <Section>
+          <Row
+            icon="archive"
+            label={t('bot.archive')}
+            onPress={() => archive.mutate()}
+            busy={archive.isPending}
+            chevron={false}
+          />
+        </Section>
+      ) : null}
+    </Page>
+  );
+}
+
+const styles = StyleSheet.create({
+  starter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingLeft: 6,
+    paddingRight: 12,
+    height: 36,
+  },
+  starterText: { fontSize: 14 },
+  preview: { alignItems: 'center' },
+  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
+  shape: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  color: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  sectionLabel: { fontSize: 15, fontWeight: '500' },
+});
