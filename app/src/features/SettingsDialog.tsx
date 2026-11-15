@@ -1091,6 +1091,11 @@ function MemoryTab() {
     onSuccess: refresh,
   });
   const remove = useMutation({ mutationFn: api.removeMemory, onSuccess: refresh });
+  const settle = useMutation({
+    mutationFn: api.settleProposedMemory,
+    onSuccess: refresh,
+    onError: (e) => toast.error((e as Error).message),
+  });
   // A deleted memory can be brought back for a moment, in case the wrong one went.
   const forget = useMutation({
     mutationFn: async (m: Memory) => {
@@ -1114,12 +1119,36 @@ function MemoryTab() {
   });
   const proposed = memory.filter((m) => m.status === 'proposed');
   const user = memory.filter((m) => m.scope === 'user' && m.status === 'active');
-  const botMem = memory.filter((m) => m.scope === 'bot');
+  // Proposals are listed once, above; the bots' notes are the ones in use.
+  const botMem = memory.filter((m) => m.scope === 'bot' && m.status === 'active');
   const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
   return (
     <>
       {proposed.length > 0 && (
         <Card title={t('memory.proposed')}>
+          {proposed.length > 1 && (
+            <Row label={t('memory.proposedCount', { count: proposed.length })}>
+              <Button
+                size="sm"
+                className="rounded-full"
+                disabled={settle.isPending}
+                onClick={() => settle.mutate('approve')}
+              >
+                {t('memory.approveAll')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-full"
+                disabled={settle.isPending}
+                onClick={() =>
+                  confirm(t('memory.deleteAllConfirm', { count: proposed.length })) && settle.mutate('delete')
+                }
+              >
+                {t('memory.deleteAll')}
+              </Button>
+            </Row>
+          )}
           {proposed.map((m) => (
             <Row
               key={m.id}

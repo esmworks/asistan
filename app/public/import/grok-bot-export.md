@@ -63,7 +63,7 @@ strictly; a file that does not match the shape below is rejected as a whole.
 - `avatar`: `null`, or the agent's picture as a base64 data URL of type `image/png`,
   `image/jpeg` or `image/webp`, no larger than 290 KB. SVG is not accepted.
 - `routines`: up to 32 timed tasks (see below).
-- `memories`: up to 50 facts (see below).
+- `memories`: the facts the agent has saved in its memory, at most 50 (see below).
 
 ### `routines`
 
@@ -95,9 +95,11 @@ routine per schedule, each with the same prompt and a distinguishing name.
 
 ### `memories`
 
-Plain sentences, one fact each, up to 2,000 characters: who the user is, how they like things
-done, people and projects they mention, standing decisions and unfinished work. Derive them from
-the agent's conversations, but summarise; never paste conversation text.
+Only what the agent already keeps as memory in Grok Bot (its saved facts about the user), one
+plain sentence each, up to 2,000 characters. Copy them; do not add new ones. Never derive facts
+from the agent's conversations or summarise its chats, and never paste conversation text. An
+agent with no saved memory gets `[]`; that is the expected case for most agents, not a gap to
+fill. YumakBot saves these as the agent's memory as soon as the user confirms the import.
 
 ### `groups` (up to 50)
 
@@ -114,7 +116,7 @@ event-triggered tasks: `bot` (the agent's `ref`, or `null`), `what` (up to 200 c
 
 1. Gather the user's agents and team chats and show them as a list. Ask which to include (all, or
    a selection) and wait for the reply. Skip any agent whose only job is to run this export.
-2. For each chosen agent, collect the fields above and write its memories.
+2. For each chosen agent, collect the fields above, copying its saved memories as they are.
 3. Keep credentials out of the file. API keys, passwords, tokens, cookies and signed URLs never
    go in, not even inside instructions or prompts; put a note such as `[needs the user's API key]`
    in their place.
