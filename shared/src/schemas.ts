@@ -529,8 +529,8 @@ export const CustomEndpointCreate = z.object({
   models: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
 });
 export type CustomEndpointCreate = z.infer<typeof CustomEndpointCreate>;
-/** A change to a saved endpoint; an empty or missing key keeps the saved one. */
-export const CustomEndpointUpdate = CustomEndpointCreate.omit({ models: true }).partial();
+/** A change to a saved endpoint; an empty or missing key or model list keeps the saved one. */
+export const CustomEndpointUpdate = CustomEndpointCreate.partial();
 export type CustomEndpointUpdate = z.infer<typeof CustomEndpointUpdate>;
 
 /** How the person mostly uses the assistant; asked when YumakBot is first opened. */

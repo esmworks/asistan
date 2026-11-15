@@ -848,10 +848,8 @@ export const tr = {
   'sandbox.status.unknown': 'Denetlenmedi',
 
   'keys.title': 'API anahtarları',
-  'keys.saved': 'Anahtar kaydedildi',
   'keys.hint':
     'Claude dışındaki modeller (OpenAI, Gemini, OpenRouter…) için. Anahtar yalnızca sunucuda saklanır; botlar okuyamaz, burada yalnızca son dört karakteri görünür.',
-  'keys.placeholder': 'API anahtarı',
 
   'rules.ask': 'Her zaman sor',
   'rules.allow': 'Sormadan izin ver',
@@ -1134,6 +1132,7 @@ export const tr = {
   'provider.customUrl': 'Adres',
   'provider.customKey': 'API anahtarı (isteğe bağlı)',
   'provider.customModels': 'Modeller (listeleyemiyorsa)',
+  'provider.customModelsEdit': 'Modeller (virgülle ayırın)',
   'provider.customRefresh': 'Modellerini yeniden sor',
   'provider.customRefreshed': '{count} model listelendi',
   'provider.noKey': 'Önce bir sağlayıcının API anahtarını kaydedin.',

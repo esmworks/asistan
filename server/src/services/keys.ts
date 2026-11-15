@@ -253,8 +253,10 @@ export class ProviderKeyService {
   }
 
   /**
-   * Renames an endpoint, moves it to another address or gives it a new key. A new address must
-   * list its models; an empty key keeps the saved one.
+   * Renames an endpoint, moves it to another address, gives it a new key or a new model list.
+   * A new address must list its models; an empty key or model list keeps the saved one. A model
+   * list given here wins over what a new address lists, so a model the server leaves out can be
+   * named by hand.
    */
   async updateEndpoint(id: string, patch: CustomEndpointUpdate): Promise<ProviderInfo> {
     const list = await this.endpoints();
@@ -278,6 +280,8 @@ export class ProviderKeyService {
         Object.assign(next, { baseUrl, ...(read.ids.length ? { models: read.ids, meta: read.meta } : {}) });
       }
     }
+    const models = [...new Set(patch.models ?? [])];
+    if (models.length) next.models = models;
     await this.saveEndpoints(list.map((x) => (x.id === id ? next : x)));
     if (key) await this.store(id, key);
     return (await this.list()).find((p) => p.id === id)!;
@@ -409,12 +413,16 @@ export class ProviderKeyService {
   }
 
   /**
-   * A model on one of the person's endpoints, described for the engine. What the server does not
-   * say is assumed: chat completions, text in, a modest context.
+   * A model the catalog does not describe, for the engine: one on the person's endpoints, or one
+   * a built-in provider serves but the catalog does not list yet. For an endpoint, what the server
+   * does not say is assumed: chat completions, text in, a modest context.
    */
-  async customModel(provider: string, id: string): Promise<Model<'openai-completions'> | undefined> {
+  async customModel(provider: string, id: string): Promise<Model<string> | undefined> {
     const e = await this.endpoint(provider);
-    if (!e) return undefined;
+    if (!e) {
+      if (!this.builtIn().includes(provider)) return undefined;
+      return unlistedModel(getModels(provider as never) as Model<string>[], id);
+    }
     return {
       id,
       name: id,
@@ -432,6 +440,24 @@ export class ProviderKeyService {
       ),
     };
   }
+}
+
+/**
+ * A model a built-in provider serves but the catalog does not list, such as one released after
+ * this version. It borrows the API, address and limits of the listed model whose id starts most
+ * like it (`gpt-6.2` takes after `gpt-6.1-sol`), since one provider may serve model families
+ * through different APIs. Its price is unknown and counted as nothing.
+ */
+export function unlistedModel(listed: readonly Model<string>[], id: string): Model<string> | undefined {
+  let best: Model<string> | undefined;
+  let shared = -1;
+  for (const m of listed) {
+    let n = 0;
+    while (n < m.id.length && n < id.length && m.id[n] === id[n]) n++;
+    if (n > shared) [best, shared] = [m, n];
+  }
+  if (!best) return undefined;
+  return { ...best, id, name: id, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 }
 
 function hint(key: string) {

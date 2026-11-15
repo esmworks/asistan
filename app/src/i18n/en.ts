@@ -847,10 +847,8 @@ export const en: Catalog<MessageKey> = {
   'sandbox.status.unknown': 'Not checked',
 
   'keys.title': 'API keys',
-  'keys.saved': 'Key saved',
   'keys.hint':
     'For models other than Claude (OpenAI, Gemini, OpenRouter…). The key is kept only on the server; bots cannot read it, and only its last four characters show here.',
-  'keys.placeholder': 'API key',
 
   'rules.ask': 'Always ask',
   'rules.allow': 'Allow without asking',
@@ -1131,6 +1129,7 @@ export const en: Catalog<MessageKey> = {
   'provider.customUrl': 'Address',
   'provider.customKey': 'API key (optional)',
   'provider.customModels': 'Models (if it cannot list them)',
+  'provider.customModelsEdit': 'Models (separated by commas)',
   'provider.customRefresh': 'Ask for its models again',
   'provider.customRefreshed': { one: '1 model listed', other: '{count} models listed' },
   'provider.noKey': "Save a provider's API key first.",
