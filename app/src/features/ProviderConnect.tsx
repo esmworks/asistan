@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, Loader2, Pencil, RefreshCw, Server, X } from 'lucide-react';
 import type { ProviderInfo } from '@yumakbot/shared';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,148 +60,175 @@ const CUSTOM = '+custom';
 const EXAMPLE_URL = 'http://localhost:11434/v1';
 
 /**
- * Saves an API key for a provider other than Claude. The server keeps the key; the app only
- * ever sees its last characters.
+ * Saves an API key for a provider other than Claude, with the providers already usable above the
+ * form. The server keeps the key; the app only ever sees its last characters.
  */
 export function ProviderKeyForm() {
+  const { isLoading } = useProviders();
+  if (isLoading) return <Loader2 className="size-4 animate-spin text-muted-foreground" />;
+  return (
+    <div className="space-y-4">
+      <ProviderRows />
+      <AddProviderForm />
+    </div>
+  );
+}
+
+/**
+ * The providers that can be used: those with a key, and the person's own endpoints. `plain`
+ * leaves out the frame, for rows that sit in a settings card.
+ */
+export function ProviderRows({ plain = false }: { plain?: boolean }) {
   const t = useT();
   const qc = useQueryClient();
-  const { data: providers = [], isLoading } = useProviders();
+  const { data: providers = [] } = useProviders();
+  const remove = useMutation({
+    mutationFn: api.removeProviderKey,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['providers'] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return providers
+    .filter((p) => p.configured)
+    .map((p) =>
+      p.custom ? (
+        <EndpointRow key={p.id} provider={p} plain={plain} />
+      ) : (
+        <div key={p.id} className={cn('flex items-center gap-3 px-4 py-3', !plain && 'rounded-2xl border')}>
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+            <Check className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{providerName(p.id)}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {t('provider.keySaved', { hint: p.hint ?? '' })}
+            </span>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full text-muted-foreground"
+            onClick={() => remove.mutate(p.id)}
+            disabled={remove.isPending}
+          >
+            <X /> {t('common.remove')}
+          </Button>
+        </div>
+      ),
+    );
+}
+
+/**
+ * Picks a provider and takes its key, or adds the person's own endpoint. `onAdded` runs once a
+ * key or an endpoint is saved.
+ */
+export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const { data: providers = [] } = useProviders();
   const [provider, setProvider] = useState('');
   const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const refresh = () => qc.invalidateQueries({ queryKey: ['providers'] });
   const save = useMutation({
     mutationFn: () => api.setProviderKey(current, key.trim()),
     onSuccess: () => {
       setKey('');
       setError(null);
-      void refresh();
+      void qc.invalidateQueries({ queryKey: ['providers'] });
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
-  const remove = useMutation({ mutationFn: api.removeProviderKey, onSuccess: () => void refresh() });
-
-  if (isLoading) return <Loader2 className="size-4 animate-spin text-muted-foreground" />;
   const ids = providers.filter((p) => !p.custom).map((p) => p.id);
   const popular = POPULAR.filter((id) => ids.includes(id));
   const others = ids.filter((id) => !popular.includes(id)).sort(byName);
   const current = provider || popular[0] || ids[0] || '';
-  const configured = providers.filter((p) => p.configured);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (key.trim()) save.mutate();
   };
 
   return (
-    <div className="space-y-4">
-      {configured.map((p) =>
-        p.custom ? (
-          <EndpointRow key={p.id} provider={p} />
-        ) : (
-          <div key={p.id} className="flex items-center gap-3 rounded-2xl border px-4 py-3">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-              <Check className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1 text-sm font-medium">
-              {t('provider.saved', { provider: providerName(p.id), hint: p.hint ?? '' })}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-full text-muted-foreground"
-              onClick={() => remove.mutate(p.id)}
-              disabled={remove.isPending}
-            >
-              <X /> {t('common.remove')}
-            </Button>
-          </div>
-        ),
-      )}
-      <form onSubmit={submit} className="space-y-3">
-        <div className="text-sm font-medium">
-          {configured.length ? t('provider.addAnother') : t('provider.pick')}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {popular.map((id) => (
-            <Chip
-              key={id}
-              on={current === id}
-              onClick={() => {
-                setProvider(id);
-                setError(null);
-              }}
-            >
-              {providerName(id)}
-            </Chip>
-          ))}
-          {others.length > 0 && (
-            <Select
-              value={others.includes(current) ? current : ''}
-              onValueChange={(id) => {
-                setProvider(id);
-                setError(null);
-              }}
-            >
-              <SelectTrigger
-                className={cn(
-                  'h-9 w-auto min-w-28 rounded-full',
-                  others.includes(current) && 'border-[var(--brand)]/60 bg-[var(--brand)]/10',
-                )}
-                aria-label={t('provider.other')}
-              >
-                <SelectValue placeholder={t('provider.other')} />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {others.map((id) => (
-                  <SelectItem key={id} value={id}>
-                    {providerName(id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+    <form onSubmit={submit} className="space-y-3">
+      <div className="text-sm font-medium">{t('provider.pick')}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        {popular.map((id) => (
           <Chip
-            on={current === CUSTOM}
+            key={id}
+            on={current === id}
             onClick={() => {
-              setProvider(CUSTOM);
+              setProvider(id);
               setError(null);
             }}
           >
-            <Server className="size-3.5" /> {t('provider.custom')}
+            {providerName(id)}
           </Chip>
-        </div>
-        {current === CUSTOM ? (
-          <EndpointForm />
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={key}
-              onChange={(e) => {
-                setKey(e.target.value);
-                setError(null);
-              }}
-              aria-label={t('provider.keyFor', { provider: providerName(current) })}
-              placeholder={t('provider.keyFor', { provider: providerName(current) })}
-              className="h-10 min-w-56 flex-1 rounded-full px-4 font-mono"
-            />
-            <Button type="submit" className="h-10 rounded-full" disabled={!key.trim() || save.isPending}>
-              {save.isPending && <Loader2 className="animate-spin" />}
-              {t('common.save')}
-            </Button>
-          </div>
+        ))}
+        {others.length > 0 && (
+          <Select
+            value={others.includes(current) ? current : ''}
+            onValueChange={(id) => {
+              setProvider(id);
+              setError(null);
+            }}
+          >
+            <SelectTrigger
+              className={cn(
+                'h-9 w-auto min-w-28 rounded-full',
+                others.includes(current) && 'border-[var(--brand)]/60 bg-[var(--brand)]/10',
+              )}
+              aria-label={t('provider.other')}
+            >
+              <SelectValue placeholder={t('provider.other')} />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {others.map((id) => (
+                <SelectItem key={id} value={id}>
+                  {providerName(id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-        {error && current !== CUSTOM && <p className="text-sm text-destructive">{error}</p>}
-      </form>
-    </div>
+        <Chip
+          on={current === CUSTOM}
+          onClick={() => {
+            setProvider(CUSTOM);
+            setError(null);
+          }}
+        >
+          <Server className="size-3.5" /> {t('provider.custom')}
+        </Chip>
+      </div>
+      {current === CUSTOM ? (
+        <EndpointForm onAdded={onAdded} />
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+              setError(null);
+            }}
+            aria-label={t('provider.keyFor', { provider: providerName(current) })}
+            placeholder={t('provider.keyFor', { provider: providerName(current) })}
+            className="h-10 min-w-56 flex-1 rounded-full px-4 font-mono"
+          />
+          <Button type="submit" className="h-10 rounded-full" disabled={!key.trim() || save.isPending}>
+            {save.isPending && <Loader2 className="animate-spin" />}
+            {t('common.save')}
+          </Button>
+        </div>
+      )}
+      {error && current !== CUSTOM && <p className="text-sm text-destructive">{error}</p>}
+    </form>
   );
 }
 
 /** One of the person's own endpoints: its name, where it is, and its model list on request. */
-export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
+export function EndpointRow({ provider: p, plain = false }: { provider: ProviderInfo; plain?: boolean }) {
   const t = useT();
   const qc = useQueryClient();
   const refresh = useMutation({
@@ -210,9 +245,14 @@ export function EndpointRow({ provider: p }: { provider: ProviderInfo }) {
     onError: (e) => toast.error((e as Error).message),
   });
   const [editing, setEditing] = useState(false);
-  if (editing) return <EndpointEdit provider={p} onDone={() => setEditing(false)} />;
+  if (editing)
+    return (
+      <div className={cn(plain && 'px-2 py-2')}>
+        <EndpointEdit provider={p} onDone={() => setEditing(false)} />
+      </div>
+    );
   return (
-    <div className="flex items-center gap-3 rounded-2xl border px-4 py-3">
+    <div className={cn('flex items-center gap-3 px-4 py-3', !plain && 'rounded-2xl border')}>
       <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
         <Server className="size-4" />
       </span>
@@ -354,7 +394,7 @@ function EndpointEdit({ provider: p, onDone }: { provider: ProviderInfo; onDone(
  * Adds an OpenAI-compatible endpoint, such as Ollama or LM Studio on this network, or a hosted
  * service. The server asks it for its models; the key is optional and stays on the server.
  */
-export function EndpointForm() {
+export function EndpointForm({ onAdded }: { onAdded?: () => void }) {
   const t = useT();
   const qc = useQueryClient();
   const [name, setName] = useState('');
@@ -377,6 +417,7 @@ export function EndpointForm() {
       setModels('');
       setError(null);
       void qc.invalidateQueries({ queryKey: ['providers'] });
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
@@ -393,6 +434,7 @@ export function EndpointForm() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['providers'] });
       void qc.invalidateQueries({ queryKey: ['endpoint-discovery'] });
+      onAdded?.();
     },
     onError: (e) => setError((e as Error).message),
   });
@@ -490,7 +532,16 @@ export function useHasProvider() {
  * model is typed with suggestions instead of picked from cards. With no provider yet it asks for
  * one right here, so the way on is not somewhere else on the page.
  */
-export function PiModelPicker({ value, onChange }: { value: string; onChange(v: string): void }) {
+export function PiModelPicker({
+  value,
+  onChange,
+  empty,
+}: {
+  value: string;
+  onChange(v: string): void;
+  /** Shown while no provider can be used; the key form when left out. */
+  empty?: ReactNode;
+}) {
   const t = useT();
   const { data: providers = [] } = useProviders();
   const configured = providers.filter((p) => p.configured).map((p) => p.id);
@@ -498,7 +549,7 @@ export function PiModelPicker({ value, onChange }: { value: string; onChange(v: 
   const provider = configured.includes(parts.provider) ? parts.provider : (configured[0] ?? '');
   const model = provider === parts.provider ? parts.model : '';
   const { data: models = [] } = useProviderModels(provider || null);
-  if (!configured.length) return <ProviderKeyForm />;
+  if (!configured.length) return <>{empty ?? <ProviderKeyForm />}</>;
   return (
     <div className="flex flex-wrap gap-2">
       <Select value={provider} onValueChange={(p) => onChange(`${p}/`)}>
