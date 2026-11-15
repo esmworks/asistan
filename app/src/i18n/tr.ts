@@ -809,7 +809,6 @@ export const tr = {
   'connection.claude': 'Claude',
   'connection.environment': 'Botların çalışma ortamı',
   'connection.ai': 'Yapay zekâ',
-  'connection.subscription': 'Abonelik girişi',
   'connection.status.ok': 'Giriş yapılmış',
   'connection.status.logged-out': 'Giriş yapılmamış',
   'connection.status.error': 'Sorun var',

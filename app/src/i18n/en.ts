@@ -809,7 +809,6 @@ export const en: Catalog<MessageKey> = {
   'connection.claude': 'Claude',
   'connection.environment': 'Where bots work',
   'connection.ai': 'AI',
-  'connection.subscription': 'Subscription login',
   'connection.status.ok': 'Signed in',
   'connection.status.logged-out': 'Not signed in',
   'connection.status.error': 'Problem',

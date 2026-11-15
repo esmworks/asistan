@@ -1,6 +1,15 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import type { ComponentProps, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  type ComponentProps,
+  type ComponentRef,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -70,6 +79,26 @@ export function back() {
   else router.replace('/bots');
 }
 
+/** The scrolling page around a section, for a part that brings another part into view. */
+const PageScroll = createContext<{
+  scroll: RefObject<ComponentRef<typeof ScrollView> | null>;
+  content: RefObject<ComponentRef<typeof View> | null>;
+} | null>(null);
+
+/**
+ * Scrolls the page so `target` sits near the top of the screen, as a link to a form further up
+ * the page does. Does nothing outside a scrolling `Page`.
+ */
+export function usePageScroll() {
+  const page = useContext(PageScroll);
+  return (target: ComponentRef<typeof View> | null) => {
+    const scroll = page?.scroll.current;
+    const content = page?.content.current;
+    if (!scroll || !content || !target) return;
+    target.measureLayout(content, (_x, y) => scroll.scrollTo({ y: Math.max(0, y - 24), animated: true }));
+  };
+}
+
 /**
  * A screen with a back button and a title, its content scrolling under it. `scroll` false leaves
  * the content to lay itself out, for lists that scroll on their own.
@@ -88,6 +117,9 @@ export function Page({
   onBack?: () => void;
 }) {
   const c = useColors();
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const contentRef = useRef<ComponentRef<typeof View>>(null);
+  const pageScroll = useMemo(() => ({ scroll: scrollRef, content: contentRef }), []);
   const tapToDismiss = useTapToDismiss();
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.background }]} edges={['top', 'left', 'right']}>
@@ -105,12 +137,14 @@ export function Page({
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {scroll ? (
           <ScrollView
+            ref={scrollRef}
+            innerViewRef={contentRef}
             contentContainerStyle={styles.pageContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             {...tapToDismiss}
           >
-            {children}
+            <PageScroll.Provider value={pageScroll}>{children}</PageScroll.Provider>
           </ScrollView>
         ) : (
           children
