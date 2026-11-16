@@ -67,7 +67,7 @@ version is 0.x, a minor release may change the data format or the API; the serve
   issues) without the AI, and the bot runs only when the answer changed, with the new answer. A quiet tick costs
   nothing. Bots set it up when asked ("tell me when a new invoice email arrives"); the routine screen shows the check
   and removes it. Only a tool that reads, of an app open to the bot, can be a check.
-- A routine pre-check on the usage page: before a run that a watched page, an app's check or a webhook call started, the
+- A routine pre-check on the usage page, on the web, the desktop and the phone: before a run that a watched page, an app's check or a webhook call started, the
   cheapest Claude model says whether the run has anything new to work on (only page noise changed, an event the
   routine does not care about, nothing beyond the last report). "Watch" only records what it said, beside the run and
   as a total on the usage page with what those runs cost; "On" skips such runs with the reason before the bot starts.

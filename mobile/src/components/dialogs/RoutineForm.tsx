@@ -613,6 +613,14 @@ function RecentRuns({ routineId, botId }: { routineId: string; botId: string }) 
                     {r.reason}
                   </Text>
                 ) : null}
+                {/* While the pre-check only watches, the runs it would have skipped say so. */}
+                {r.gate?.decision === 'skip' && r.status !== 'skipped' ? (
+                  <Text style={[styles.runReason, { color: c.mutedForeground }]} numberOfLines={2}>
+                    {r.gate.reason
+                      ? t('routine.gateWouldSkip', { reason: r.gate.reason })
+                      : t('routine.gateWouldSkipNoReason')}
+                  </Text>
+                ) : null}
               </View>
             </Pressable>
           ))}
