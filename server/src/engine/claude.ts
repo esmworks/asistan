@@ -13,6 +13,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { translator } from '../i18n';
 import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
+import { gatePrompt, parseGate } from './gate';
 import { parseVerdict, reviewPrompt } from './review';
 import {
   APP_SERVER,
@@ -22,6 +23,8 @@ import {
   type AccountStatus,
   type AppTool,
   type Engine,
+  type GateRequest,
+  type GateVerdict,
   type ReviewRequest,
   type ReviewVerdict,
   type Sandbox,
@@ -647,11 +650,14 @@ export class ClaudeEngine implements Engine {
   }
 
   /**
-   * The `review` mode: the cheapest model, without tools, looks at one permission request.
-   * A failure, a timeout or an unclear answer is "ask".
+   * One answer from the cheapest model, without tools, for a small decision. Returns the text and
+   * what it cost; throws on a failure or after 30 seconds.
    */
-  async review(req: ReviewRequest): Promise<ReviewVerdict> {
-    const { system, user } = reviewPrompt(req);
+  private async quick(
+    system: string,
+    user: string,
+    signal: AbortSignal,
+  ): Promise<{ text: string; costUsd: number | null }> {
     const input = inbox();
     const { options } = await this.baseOptions();
     const q = query({
@@ -666,15 +672,17 @@ export class ClaudeEngine implements Engine {
       },
     });
     const onAbort = () => void q.interrupt().catch(() => {});
-    req.signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
     input.push(user);
     let text = '';
+    let costUsd: number | null = null;
     const run = async () => {
       for await (const m of q as AsyncIterable<SDKMessage>) {
         if (m.type === 'assistant') {
           const parts = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : []));
           if (parts.length) text = parts.join('');
         } else if (m.type === 'result') {
+          if (typeof m.total_cost_usd === 'number') costUsd = m.total_cost_usd;
           if (m.subtype === 'success' && !m.is_error && m.result) text = m.result;
           break;
         }
@@ -683,18 +691,41 @@ export class ClaudeEngine implements Engine {
     try {
       await Promise.race([run(), new Promise<never>((_, rej) => setTimeout(() => rej(TIMEOUT), 30_000))]);
     } catch (err) {
-      // A reviewer that cannot answer hands every request to the person; say so in the log.
-      if (!req.signal.aborted)
-        console.warn(
-          `Review failed, asking instead: ${err === TIMEOUT ? 'timeout' : (err as Error).message}`,
-        );
-      return { decision: 'ask', reason: '' };
+      throw err === TIMEOUT ? new Error('timeout') : err;
     } finally {
-      req.signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', onAbort);
       input.close();
       q.close?.();
     }
+    return { text, costUsd };
+  }
+
+  /**
+   * The `review` mode: the cheapest model, without tools, looks at one permission request.
+   * A failure, a timeout or an unclear answer is "ask".
+   */
+  async review(req: ReviewRequest): Promise<ReviewVerdict> {
+    const { system, user } = reviewPrompt(req);
+    let text: string;
+    try {
+      ({ text } = await this.quick(system, user, req.signal));
+    } catch (err) {
+      // A reviewer that cannot answer hands every request to the person; say so in the log.
+      if (!req.signal.aborted) console.warn(`Review failed, asking instead: ${(err as Error).message}`);
+      return { decision: 'ask', reason: '' };
+    }
     return req.signal.aborted ? { decision: 'ask', reason: '' } : parseVerdict(text);
+  }
+
+  /**
+   * The routine pre-check: the cheapest model, without tools, says whether a run has anything to
+   * work on. A failure throws, and the caller lets the run go ahead.
+   */
+  async gate(req: GateRequest): Promise<GateVerdict> {
+    const { system, user } = gatePrompt(req);
+    const { text, costUsd } = await this.quick(system, user, req.signal);
+    if (req.signal.aborted) throw new Error('aborted');
+    return parseGate(text, costUsd);
   }
 
   /** The models this login can use and their effort levels. */

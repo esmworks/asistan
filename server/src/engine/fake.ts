@@ -6,6 +6,8 @@ import {
   toolPermName,
   type Engine,
   type ModelTest,
+  type GateRequest,
+  type GateVerdict,
   type ReviewRequest,
   type ReviewVerdict,
   type TurnOutcome,
@@ -42,6 +44,7 @@ export class FakeEngine implements Engine {
   private totals = new Map<string, number>();
   public requests: TurnRequest[] = [];
   public reviews: ReviewRequest[] = [];
+  public gates: GateRequest[] = [];
 
   /**
    * The `review` mode, by words in the action: "güvenli" lets it run, "inceleme-hatası" fails
@@ -54,6 +57,18 @@ export class FakeEngine implements Engine {
     if (action.includes('güvenli'))
       return { decision: 'allow', reason: 'Sahte inceleme: güvenli görünüyor.' };
     return { decision: 'ask', reason: 'Sahte inceleme: emin değil.' };
+  }
+
+  /**
+   * The routine pre-check, by words in the input: "önemsiz" says the run has nothing to work on,
+   * "kapı-hatası" fails the check; anything else lets the run go ahead.
+   */
+  async gate(req: GateRequest): Promise<GateVerdict> {
+    this.gates.push(req);
+    if (req.input.includes('kapı-hatası')) throw new Error('Sahte ön kontrol hatası');
+    if (req.input.includes('önemsiz'))
+      return { decision: 'skip', reason: 'Sahte ön kontrol: yeni bir şey yok.', costUsd: 0.001 };
+    return { decision: 'run', reason: 'Sahte ön kontrol: bakmaya değer.', costUsd: 0.001 };
   }
 
   forget(sessionId: string) {

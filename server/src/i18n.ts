@@ -258,6 +258,8 @@ const tr = {
   'routine.staleWait': 'Beklemeyi bıraktı: bu rutinin sıradaki çalışması onun yerine başladı.',
   'routine.pausedWait': 'Rutin duraklatıldığı için beklemeyi bıraktı.',
   'routine.stillRunning': 'Önceki çalıştırma hâlâ sürüyor',
+  'routine.gateSkipped': 'Ön kontrol yeni bir iş görmedi: {reason}',
+  'routine.gateSkippedNoReason': 'Ön kontrol yeni bir iş görmedi.',
   'routine.prompt':
     'Rutin "{name}" zamanı geldi.\n\n{prompt}\n\n(Bu çalıştırmada bildirmeye değer bir şey yoksa yalnızca {silent} yaz; sohbete bir şey eklenmez. Hatırlatma rutininde her zaman hatırlatmayı yaz.)',
   'routine.missedSkipped':
@@ -960,6 +962,8 @@ const en: Catalog<ServerKey> = {
   'routine.staleWait': 'Stopped waiting: the next run of this routine started instead.',
   'routine.pausedWait': 'Stopped waiting because the routine was paused.',
   'routine.stillRunning': 'The previous run is still going',
+  'routine.gateSkipped': 'The pre-check found nothing new to work on: {reason}',
+  'routine.gateSkippedNoReason': 'The pre-check found nothing new to work on.',
   'routine.prompt':
     'Time for the routine "{name}".\n\n{prompt}\n\n(If this run has nothing worth reporting, write only {silent}; nothing is added to the chat. A reminder routine always writes the reminder.)',
   'routine.missedSkipped': 'The server was off at this time; the routine is set to skip missed runs.',

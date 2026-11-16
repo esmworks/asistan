@@ -147,4 +147,5 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   threadId: r.threadId,
   startedAt: r.startedAt.toISOString(),
   finishedAt: iso(r.finishedAt),
+  gate: r.gateDecision ? { decision: r.gateDecision, reason: r.gateReason ?? '' } : null,
 });

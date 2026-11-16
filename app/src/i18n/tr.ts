@@ -162,6 +162,22 @@ export const tr = {
   'usage.noLimit': 'Aylık sınır yok',
   'usage.limit': 'Sınır ($)',
   'usage.downloadCsv': 'Bütün turları CSV olarak indir',
+  'usage.gate': 'Rutin ön kontrolü',
+  'usage.gate.off': 'Her rutin çalışması bota gider',
+  'usage.gate.offHint':
+    "İzlenen sayfanın ya da bir webhook'un başlattığı çalışmaların hepsi botun kendi modeline gider.",
+  'usage.gate.shadow': 'Yalnızca izliyor',
+  'usage.gate.shadowHint':
+    'Böyle bir çalışmadan önce küçük bir model yapılacak yeni bir şey olup olmadığını söyler. Çalışmaların hepsi yine yapılır; söyledikleri burada ve çalışmanın yanında görünür.',
+  'usage.gate.on': 'Yeni bir şey olmayan çalışmalar atlanır',
+  'usage.gate.onHint':
+    'Önce küçük bir model bakar; yeni bir şey görmediği çalışma gerekçesiyle atlanır. Emin olmadığında ya da hata verdiğinde çalışma yapılır. Hatırlatmalar her zaman çalışır.',
+  'usage.gate.choice.off': 'Kapalı',
+  'usage.gate.choice.shadow': 'İzle',
+  'usage.gate.choice.on': 'Açık',
+  'usage.gate.checks': '{count} çalışma kontrol edildi; kontrollerin maliyeti {cost}',
+  'usage.gate.skippable': 'Bunların {count} tanesi atlanırdı; o çalışmaların maliyeti {cost}',
+  'usage.gate.skipped': '{count} çalışma atlandı',
   'archive.title': 'Arşivlenen botlar',
   'archive.empty': 'Arşivlenen bot yok. Kenar çubuğundan arşivlenen bot burada bekler.',
   'archive.since': '{when} arşivlendi',
@@ -629,6 +645,8 @@ export const tr = {
   'routine.run.done': 'tamamlandı',
   'routine.run.error': 'başarısız',
   'routine.run.skipped': 'atlandı',
+  'routine.gateWouldSkip': 'Ön kontrol bunu atlardı: {reason}',
+  'routine.gateWouldSkipNoReason': 'Ön kontrol bunu atlardı',
   'routine.runCommandHint': 'Bir betik ya da başka bir hizmet bu rutini başlatıp ona bir metin verebilir.',
   'routine.copyRunCommand': 'Çalıştırma komutunu kopyala',
   'routine.runCommandCopied':
