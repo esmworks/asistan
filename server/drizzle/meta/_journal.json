@@ -260,6 +260,13 @@
       "when": 1794779939610,
       "tag": "0036_memories_always_active",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794854814209,
+      "tag": "0037_channels",
+      "breakpoints": true
     }
   ]
 }

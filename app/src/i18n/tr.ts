@@ -1285,6 +1285,76 @@ export const tr = {
   'panel.addApp': 'Bağla',
   'panel.noApps':
     'Bağlı uygulama yok. Notion, Slack, Gmail gibi servisleri bağladığınızda tüm botlar kullanabilir.',
+  'telegram.title': 'Telegram',
+  'telegram.off': 'Bağlı değil',
+  'telegram.waiting': 'Eşleşme bekliyor',
+  'telegram.paired': 'Bağlı',
+  'telegram.error': 'Telegram bağlantısı çalışmıyor: {error}',
+  'telegram.step1':
+    "Telegram'da yeni bir bot oluşturun: /newbot yazın, bir ad ve sonu bot ile biten bir kullanıcı adı seçin.",
+  'telegram.botFather': '@BotFather',
+  'telegram.step2': "BotFather'ın gönderdiği anahtarı (ya da mesajın tamamını) buraya yapıştırın.",
+  'telegram.tokenPlaceholder': '123456789:AA…',
+  'telegram.connect': 'Bağla',
+  'telegram.connected': '@{bot} bağlandı. Şimdi Telegram hesabınızı eşleştirin.',
+  'telegram.pairedWith':
+    "@{bot} yalnızca {name} hesabından gelen mesajları okur. Yanıtlar, siz en son Telegram'dan yazdıysanız oraya gider.",
+  'telegram.qrAlt': 'Telegram eşleşme bağlantısının QR kodu',
+  'telegram.pairHint':
+    "Telefonla QR kodu tarayın ya da bağlantıyı açın, sonra Başlat'a basın. Bağlantı 15 dakika geçerli; ona basan hesap botla konuşabilen tek hesap olur.",
+  'telegram.openToPair': "Telegram'da aç",
+  'telegram.newLink': 'Yeni eşleşme bağlantısı al',
+  'telegram.notices': 'Diğer konuşmalardan da haber ver',
+  'telegram.noticesHint': "Rutin raporları ve botun sizi beklediği kartlar Telegram'a da gelir.",
+  'telegram.openChat': 'Sohbeti aç',
+  'telegram.otherAccount': 'Başka bir hesapla eşleştir',
+  'telegram.disconnect': 'Bağlantıyı kes',
+  'telegram.disconnectConfirm':
+    "Telegram bağlantısı kesilsin mi? Anahtar ve eşleşen hesap unutulur; Telegram'daki bot olduğu gibi kalır.",
+  'settings.tab.channels': 'Sohbet uygulamaları',
+  'settings.keywords.channels': 'whatsapp, telegram, mesaj, telefon, qr',
+  'channels.telegram': 'Telegram',
+  'channels.telegramHint':
+    'Her bot kendi Telegram botuyla bağlanır; bunu botun ayarlarında, Telegram bölümünde yaparsınız.',
+  'whatsapp.title': 'WhatsApp',
+  'whatsapp.state.off': 'Bağlı değil',
+  'whatsapp.state.linking': 'QR kodu okutulmayı bekliyor',
+  'whatsapp.state.connecting': 'Bağlanıyor…',
+  'whatsapp.state.connected': 'Bağlı',
+  'whatsapp.state.error': 'Bağlantı durdu',
+  'whatsapp.error.expired': 'QR kodu zamanında okutulmadı. Yeniden bağlayıp yeni bir kod alın.',
+  'whatsapp.error.ownNumber':
+    'Bağlanan hesap sizin kendi numaranız. Başka bir numarayı bağlayın ya da "Kendi numaram"ı seçin.',
+  'whatsapp.error.loggedOut': 'WhatsApp bu cihazın bağlantısını kaldırdı. Yeniden bağlayıp QR kodunu okutun.',
+  'whatsapp.mode.separate': 'Ayrı bir bot numarası',
+  'whatsapp.modeHint.separate':
+    'Önerilen. İkinci bir numara bağlanır; siz kendi numaranızdan ona yazarsınız.',
+  'whatsapp.mode.own': 'Kendi numaram',
+  'whatsapp.modeHint.own': 'Kendi hesabınız bağlanır; botlara "Kendine mesaj" sohbetinden yazarsınız.',
+  'whatsapp.phone': 'Kendi numaranız',
+  'whatsapp.phoneHint.separate': 'Ülke koduyla, yalnızca rakam. Yalnızca bu numaradan gelen mesajlar okunur.',
+  'whatsapp.phoneHint.own': 'Ülke koduyla, yalnızca rakam. Bağlanan hesabın numarası.',
+  'whatsapp.bot': 'Mesajların gittiği bot',
+  'whatsapp.botPick': 'Bir bot seçin',
+  'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
+  'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
+  'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
+  'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',
+  'whatsapp.qrWaiting': 'QR kodu hazırlanıyor…',
+  'whatsapp.scan':
+    "Bağlanacak hesabın telefonunda WhatsApp → Ayarlar → Bağlı cihazlar → Cihaz bağla'ya dokunun ve bu kodu okutun. Kod kendiliğinden yenilenir; kurulum 5 dakika içinde tamamlanmalı.",
+  'whatsapp.howTo.separate':
+    'Kendi numaranızdan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+  'whatsapp.howTo.own':
+    'WhatsApp\'ta "Kendine mesaj" sohbetine yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+  'whatsapp.risk':
+    'WhatsApp, resmi olmayan bir bağlı cihaz yoluyla (WhatsApp Web gibi) bağlanır. Hesabın kısıtlanma riski küçük de olsa vardır; ayrı bir numara kendi sohbetlerinizi bunun dışında tutar. Gruplar ve başkalarının mesajları hiç okunmaz.',
+  'whatsapp.link': 'QR kodunu göster',
+  'whatsapp.relink': 'Yeniden bağla',
+  'whatsapp.saved': 'WhatsApp ayarları kaydedildi',
+  'whatsapp.disconnect': 'Bağlantıyı kes',
+  'whatsapp.disconnectConfirm':
+    'WhatsApp bağlantısı kesilsin mi? Cihaz Bağlı cihazlar listesinden çıkar ve anahtarları silinir.',
 } satisfies Catalog;
 
 export type MessageKey = keyof typeof tr;

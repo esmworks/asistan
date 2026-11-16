@@ -8,6 +8,9 @@ import { BotImportService } from './bot-import';
 import { BotService } from './bots';
 import { ClaudeAuthService } from './claude-auth';
 import { ConnectionService } from './connections';
+import { TelegramChannels } from '../channels/telegram';
+import { WhatsAppChannel } from '../channels/whatsapp';
+import { Inbox } from './inbox';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -43,6 +46,9 @@ export class Services {
   readonly reactions: ReactionNotifier;
   readonly usage: UsageService;
   readonly botApi: BotApi;
+  readonly inbox: Inbox;
+  readonly telegram: TelegramChannels;
+  readonly whatsapp: WhatsAppChannel;
 
   constructor(
     readonly ctx: Ctx,
@@ -74,5 +80,8 @@ export class Services {
     this.reactions = new ReactionNotifier(ctx, this);
     this.usage = new UsageService(ctx, this.settings, clock);
     this.botApi = new BotApi(ctx, this);
+    this.inbox = new Inbox(ctx, this);
+    this.telegram = new TelegramChannels(ctx, this, this.vault);
+    this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }
 }
