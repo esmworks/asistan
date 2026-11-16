@@ -120,6 +120,7 @@ export class JobService {
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.jobId || turn.source !== 'bot') return;
     const job = await this.get(turn.jobId).catch(() => null);
+    if (job && job.fromThreadId === turn.threadId) await this.recountAnswered(job);
     if (!job || job.toThreadId !== turn.threadId || job.status !== 'pending') return;
     const t = await serverTranslator(this.ctx);
     const reply =
@@ -246,18 +247,73 @@ export class JobService {
   }
 
   private async markReplied(job: JobRow) {
+    await this.recount(job, { replied: true });
+  }
+
+  /**
+   * A turn that read answers of bots asked for a request belongs to that request's exchange, so
+   * the markers of the requests this thread was working on count it too.
+   */
+  private async recountAnswered(answer: JobRow) {
+    const asked = await this.ctx.db
+      .select()
+      .from(schema.jobs)
+      .where(
+        and(
+          eq(schema.jobs.rootId, answer.rootId),
+          eq(schema.jobs.toThreadId, answer.fromThreadId),
+          sql`${schema.jobs.status} <> 'pending'`,
+        ),
+      );
+    for (const job of asked) await this.recount(job);
+  }
+
+  /** Writes on the job's marker how many messages the open marker shows. */
+  private async recount(job: JobRow, extra: Record<string, unknown> = {}, opts: { quiet?: boolean } = {}) {
     const rows = await this.ctx.db
       .select()
       .from(schema.messages)
-      .where(and(eq(schema.messages.threadId, job.fromThreadId), eq(schema.messages.role, 'marker')));
-    const marker = rows.find((m) => (m.props as { jobId?: string }).jobId === job.id);
+      .where(
+        and(
+          eq(schema.messages.threadId, job.fromThreadId),
+          eq(schema.messages.role, 'marker'),
+          sql`${schema.messages.props}->>'jobId' = ${job.id}`,
+        ),
+      );
+    const marker = rows[0];
     if (!marker) return;
-    const count = (await this.exchange(job)).filter(
-      (m) => m.role === 'user' || m.role === 'assistant',
-    ).length;
-    await this.services.threads.updateMessage(marker.id, {
-      props: { ...(marker.props as object), count: Math.max(count, 1), replied: true },
-    });
+    const count = Math.max(
+      (await this.exchange(job)).filter((m) => m.role === 'user' || m.role === 'assistant').length,
+      1,
+    );
+    const props = marker.props as Record<string, unknown>;
+    if (props.count === count && Object.entries(extra).every(([k, v]) => props[k] === v)) return;
+    const next = { ...props, ...extra, count };
+    if (opts.quiet) {
+      await this.ctx.db.update(schema.messages).set({ props: next }).where(eq(schema.messages.id, marker.id));
+    } else {
+      await this.services.threads.updateMessage(marker.id, { props: next });
+    }
+  }
+
+  /**
+   * Markers written before a marker opened to its own request counted every message the two bots
+   * ever exchanged, so a closed line showed more than it opened to. Counted again once.
+   */
+  async recountMarkers() {
+    const KEY = 'jobs.markerCounts';
+    const [done] = await this.ctx.db.select().from(schema.kv).where(eq(schema.kv.key, KEY)).limit(1);
+    if (done) return;
+    const markers = await this.ctx.db
+      .select({ jobId: sql<string>`${schema.messages.props}->>'jobId'` })
+      .from(schema.messages)
+      .where(and(eq(schema.messages.role, 'marker'), sql`${schema.messages.props}->>'jobId' is not null`));
+    for (const { jobId } of markers) {
+      const job = await this.get(jobId).catch(() => null);
+      if (!job || job.status === 'pending') continue;
+      await this.recount(job, {}, { quiet: true });
+    }
+    await this.ctx.db.insert(schema.kv).values({ key: KEY, value: true }).onConflictDoNothing();
   }
 
   async status(botId: string) {

@@ -1,7 +1,9 @@
 import type { Approval, Bot, Group, Message, Thread } from '@yumakbot/shared';
+import { eq } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 describe('botlar arası', () => {
@@ -70,6 +72,34 @@ describe('botlar arası', () => {
     }
   });
 
+  it('iki botun bütün geçmişini sayan eski işaret satırları bir kez yeniden sayılır', async () => {
+    const g = await group('Ekip');
+    const a = await t.bot({ name: 'Ali', groupId: g.id });
+    await t.bot({ name: 'Ayşe', groupId: g.id });
+    const ta = await main(a.id);
+    await t.send(ta.id, '[araç:bot_send {"bot":"Ayşe","message":"ilk soru"}]');
+    await t.services.turns.idle();
+    const marker = (await t.messages(ta.id)).find((m) => m.role === 'marker')!;
+    await t.db.db
+      .update(schema.messages)
+      .set({ props: { ...marker.props, count: 11 } })
+      .where(eq(schema.messages.id, marker.id));
+    // As on a database from before the recount: this start has already done it.
+    await t.db.db.delete(schema.kv).where(eq(schema.kv.key, 'jobs.markerCounts'));
+
+    await t.services.jobs.recountMarkers();
+    const fixed = (await t.messages(ta.id)).find((m) => m.id === marker.id)!;
+    expect(fixed.props).toMatchObject({ replied: true, count: 2 });
+
+    // Done once: a later start leaves the markers alone.
+    await t.db.db
+      .update(schema.messages)
+      .set({ props: { ...marker.props, count: 11 } })
+      .where(eq(schema.messages.id, marker.id));
+    await t.services.jobs.recountMarkers();
+    expect((await t.messages(ta.id)).find((m) => m.id === marker.id)!.props).toMatchObject({ count: 11 });
+  });
+
   it('aracı bot başka bota sorarsa gelen cevap ve devamı da aynı işaret satırında görünür', async () => {
     const g = await group('Ekip');
     const a = await t.bot({ name: 'Ali', groupId: g.id });
@@ -89,6 +119,8 @@ describe('botlar arası', () => {
     const said = job.body.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
     expect(said[0]!.role).toBe('user');
     expect(said.at(-1)!.text).toContain('Can cevap verdi');
+    // The closed line counts what the open one shows, the answer read later included.
+    expect(marker.props).toMatchObject({ replied: true, count: said.length });
   });
 
   it('bir turda birden çok bota sorulursa cevaplar hepsi bitince tek turda gelir', async () => {

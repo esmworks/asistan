@@ -548,6 +548,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
 
   await services.turns.recover();
   await services.routines.recover();
+  await services.jobs.recountMarkers().catch((err: unknown) => {
+    app.log.warn({ err }, 'marker recount failed');
+  });
   services.routines.start();
   if (config.channelsEnabled) {
     await services.telegram.start();
