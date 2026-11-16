@@ -5,6 +5,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Memory
+
+- A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is
+  told to ask for the vault instead: memory reaches the model on every turn, so a secret there would leak with it.
+- Writing a note that is already saved, give or take case, spacing and closing punctuation, makes no second copy.
+- Each note reaches the bot with the day it was last written, so of two notes that disagree it can trust the newer.
+
 ### Apps
 
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes

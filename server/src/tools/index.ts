@@ -27,6 +27,7 @@ import { errorText, newId, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { sendFileTool, showPageTool } from './files';
+import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 
@@ -709,14 +710,14 @@ export class ToolFactory {
               return t('tool.memoryBadSite', { site });
             }
           }
-          const m = await s.memory.create({
-            scope,
-            botId: scope === 'bot' ? bot.id : null,
-            content,
-            source: `bot:${bot.id}`,
-            site: host,
-          });
-          return t('tool.memorySaved', { id: m.id });
+          const clean = redactSecrets(content, t('memory.redacted'));
+          const note = { scope, botId: scope === 'bot' ? bot.id : null, content: clean.text, site: host };
+          const same = await s.memory.findSame(note);
+          if (same) return t('tool.memoryAlreadySaved', { id: same.id });
+          const m = await s.memory.create({ ...note, source: `bot:${bot.id}` });
+          return clean.redacted
+            ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
+            : t('tool.memorySaved', { id: m.id });
         },
         // The bot keeps its memory itself; everything it writes shows in the memory screen, where the
         // user can change or delete it.
@@ -728,8 +729,11 @@ export class ToolFactory {
         async ({ id, content }) => {
           const m = await s.memory.get(id);
           if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
-          await s.memory.update(id, { content }, `bot:${bot.id}`);
-          return t('tool.memoryUpdated');
+          const clean = redactSecrets(content, t('memory.redacted'));
+          await s.memory.update(id, { content: clean.text }, `bot:${bot.id}`);
+          return clean.redacted
+            ? `${t('tool.memoryUpdated')} ${t('tool.memoryRedacted')}`
+            : t('tool.memoryUpdated');
         },
         'internal',
       ),

@@ -348,7 +348,7 @@ const tr = {
   'prompt.ruleDraft':
     '- Kullanıcı adına bir şey göndereceksen (e-posta, mesaj, paylaşım) önce taslağı göster ve onayını al; rutinin talimatı göndermeni açıkça istiyorsa gönder. Bir ödemeden önce ürünü, fiyatı ve toplamı söyleyip onay iste.',
   'prompt.ruleMemory':
-    '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil.',
+    '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil. Notun başındaki tarih en son ne zaman yazıldığıdır; çelişen iki nottan yenisine güven. Şifre, anahtar ya da kod gibi gizli değerleri hafızaya yazma.',
   'prompt.ruleTryFirst':
     '- Bir işi yapamayacağını söylemeden önce elindekileri dene: bağlı uygulamalar, tarayıcı, becerilerin ve işi bilen başka bir bot. Bir site oturum açmanı istiyorsa durma; oturum açma adımını kullan ya da kullanıcıdan tarayıcıda açmasını iste. Hiçbiri olmazsa ne denediğini ve kullanıcının işi açmak için ne yapabileceğini söyle.',
   'prompt.ruleFiles':
@@ -624,6 +624,10 @@ const tr = {
   'tool.scopeBot': 'bot',
   'tool.memorySaved': 'Kaydedildi ({id}).',
   'tool.memoryUpdated': 'Güncellendi.',
+  'tool.memoryAlreadySaved': 'Bu not zaten kayıtlı ({id}); yenisi açılmadı.',
+  'tool.memoryRedacted':
+    'Nottaki şifre ya da anahtar gibi gizli değerler silindi: hafızaya gizli değer yazılmaz. Giriş bilgileri için kişiden kasaya kaydetmesini iste.',
+  'memory.redacted': '«gizli değer silindi»',
   'tool.memoryNotYours': 'Bu kayıt başka bir botun kendi notu; ona dokunamazsın.',
   'tool.memoryManager':
     'Yöneticisin: yönetici olmayan botların (arşivdekiler dahil) kendi notlarını da görür, düzeltir ve silersin. memory_search içinde bot (ad ya da kimlik) verirsen yalnızca o botun notlarını listeler. Başka bir yöneticinin notlarına dokunamazsın. Unutma: bir botun notunu yalnızca o bot görür; senin notlarını ve diğer botlarınkini göremez, herkesin gördüğü tek yer ortak (kullanıcı) hafızadır. Bu yüzden aynı bilgi birkaç botta ayrı ayrı durabilir ve durmalıdır. Bir botun notunu, aynı bilgi sende, başka bir botta ya da Leafdesk gibi o botun okumadığı bir yerde var diye silme: sildiğin bilgi o bota bir daha ulaşmaz. Başka bir botun notunu yalnızca o bot için yanlış ya da eskimişse veya o botun kendi notları arasında tekrarlanıyorsa düzelt ya da sil. Bütün botların bilmesi gereken bir bilgiyi tek yerde toplamak istersen önce memory_write ile scope "user" olarak ortak hafızaya yaz, sonra botlardaki kopyaları sil.',
@@ -1028,7 +1032,7 @@ const en: Catalog<ServerKey> = {
   'prompt.ruleDraft':
     "- Before you send something for the user (an email, a message, a post), show the draft and get their approval; send right away only when a routine's instruction says to. Before a payment, read back the item, price and total and ask to confirm.",
   'prompt.ruleMemory':
-    "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`.",
+    "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`. The date before a note is when it was last written; of two notes that disagree, trust the newer. Never write secrets such as passwords, keys or codes to memory.",
   'prompt.ruleTryFirst':
     '- Before you say you cannot do a task, try what you have: connected apps, the browser, your skills, and another bot that knows the work. When a site wants you signed in, do not stop; use the sign-in step or ask the user to sign in in the browser. If nothing works, say what you tried and what the user can do to unblock it.',
   'prompt.ruleFiles':
@@ -1303,6 +1307,10 @@ const en: Catalog<ServerKey> = {
   'tool.scopeBot': 'bot',
   'tool.memorySaved': 'Saved ({id}).',
   'tool.memoryUpdated': 'Updated.',
+  'tool.memoryAlreadySaved': 'This note is already saved ({id}); no new one was made.',
+  'tool.memoryRedacted':
+    'Secret values such as passwords or keys were removed from the note: memory never holds secrets. For sign-in details, ask the person to save them in the vault.',
+  'memory.redacted': '«secret removed»',
   'tool.memoryNotYours': "That entry is another bot's own note; you cannot touch it.",
   'tool.memoryManager':
     "You are a manager: you also see, correct and delete the own notes of bots that are not managers, archived ones included. Give bot (a name or an id) in memory_search to list that bot's notes alone. You cannot touch another manager's notes. Keep in mind: a bot's note is seen by that bot alone; it sees neither your notes nor another bot's, and the shared (user) memory is the only place every bot sees. So the same fact may, and should, sit in several bots' notes separately. Never delete a bot's note because the same fact is in your notes, in another bot's or somewhere that bot does not read, such as Leafdesk: what you delete never reaches that bot again. Correct or delete another bot's note only when it is wrong or outdated for that bot, or repeated among that bot's own notes. To keep a fact every bot needs in one place, first write it to the shared memory with memory_write and scope \"user\", then delete the copies in the bots.",
