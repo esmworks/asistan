@@ -60,7 +60,8 @@ The interface is available in English and Turkish.
   manager and LibreOffice, viewable from the app.
 - **Sandboxed shell** — Claude's Bash commands run in a bubblewrap sandbox that only sees the bot's own folders, and a
   few catastrophic commands are refused whatever is allowed.
-- **Import** — bring in bots exported from other assistants.
+- **Import and backup** — bring in bots exported from other assistants, and keep everything in one password-sealed
+  backup file that restores on another computer.
 
 ## How it fits together
 
@@ -145,7 +146,8 @@ reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to you
 
 [docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
-database — without it, saved passwords cannot be decrypted.
+database — without it, saved passwords cannot be decrypted. Settings → Import and backup writes both, with the
+bots' folders, into one password-sealed file that restores on another server.
 
 ## Phone app (early)
 

@@ -26,6 +26,16 @@ version is 0.x, a minor release may change the data format or the API; the serve
   away, the bot is told so plainly: hand the step to the person with Take control, or use another source. It is
   never to get past a check itself.
 
+### Backups
+
+- A full backup in one file, sealed with a password of your choosing (scrypt and AES-256-GCM): the bots,
+  conversations, memory, routines, skills, connections, the bots' folders, and the vault key the saved logins need.
+  Download it under Settings → Import and backup, on the web, the desktop or the phone.
+- Restoring one, on the web or the desktop, replaces everything on the server with what the file holds, then starts the
+  server again. A wrong password, a damaged file or a backup from a newer version changes nothing, and a restore waits
+  until no bot is working. The folders it replaced stay beside the new ones as `*.before-restore` until the next
+  restore. Who is signed in to the server stays signed in.
+
 ### Apps
 
 - The desktop app for Linux: an AppImage that updates itself, and a `.deb` for Debian and Ubuntu, built by the release

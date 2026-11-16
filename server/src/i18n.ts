@@ -115,6 +115,11 @@ const tr = {
     'Anahtar düz http üzerinden yalnızca bu bilgisayardaki bir sunucuya gönderilir; başka bir adres için https kullan',
   'error.gatewayKeyOnly': 'Ağ geçidi adresi yalnızca API anahtarıyla birlikte kullanılabilir',
   'error.appUnavailable': 'Bu uygulama bağlantısı şu an kullanılamıyor ya da bu bota açık değil',
+  'error.backupPassword': 'Yedeğin şifresi en az 12 karakter olmalı',
+  'error.backupWrongPassword': 'Şifre yanlış ya da dosya değiştirilmiş; hiçbir şey değişmedi',
+  'error.backupDamaged': 'Bu bir Yumak Bot yedeği değil ya da dosya bozuk; hiçbir şey değişmedi',
+  'error.backupNewer': 'Bu yedek Yumak Bot’un daha yeni bir sürümünden; önce uygulamayı güncelleyin',
+  'error.backupBusy': 'Botlar çalışırken yedek geri yüklenmez; işleri bitince yeniden deneyin',
   'error.routineCheckTool':
     'Rutinin denetimi, bu bota açık bir uygulamanın açık ve yalnız okuyan bir aracı olmalı',
   'error.appCallAsks':
@@ -817,6 +822,11 @@ const en: Catalog<ServerKey> = {
     'A key goes over plain http only to a server on this computer; use https for any other address',
   'error.gatewayKeyOnly': 'A gateway address goes only with an API key',
   'error.appUnavailable': 'This app connection cannot be used now, or is not open to this bot',
+  'error.backupPassword': "The backup's password needs at least 12 characters",
+  'error.backupWrongPassword': 'Wrong password, or the file was changed; nothing was changed',
+  'error.backupDamaged': 'This is not a Yumak Bot backup, or the file is damaged; nothing was changed',
+  'error.backupNewer': 'This backup is from a newer Yumak Bot; update the app first',
+  'error.backupBusy': 'A backup is not restored while bots are working; try again once they are done',
   'error.routineCheckTool':
     "A routine's check must be a tool that only reads, switched on, of an app open to this bot",
   'error.appCallAsks':
