@@ -40,6 +40,7 @@ import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
 import { BackupService } from './services/backup';
+import { TranscribeService } from './services/transcribe';
 import { probeShellSandbox } from './shell-sandbox';
 import { isServerKey, translator, type T } from './i18n';
 import { serverLocale } from './services/settings';
@@ -75,7 +76,14 @@ export interface YumakBotServer {
 /** How often, and how long after its last try, a failed app connection is tried again. */
 const CONNECTION_RETRY_MS = 5 * 60_000;
 
-const PUBLIC_API = new Set(['/api/health', '/api/access', '/api/login', '/api/session', OAUTH_CALLBACK_PATH]);
+const PUBLIC_API = new Set([
+  '/api/health',
+  '/api/access',
+  '/api/login',
+  '/api/pair',
+  '/api/session',
+  OAUTH_CALLBACK_PATH,
+]);
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
@@ -151,6 +159,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   const pi = new PiEngine({
     sessionsDir: join(config.dataDir, 'pi-sessions'),
     apiKey: (provider) => services.keys.credential(provider),
+    auth: (provider) => services.keys.auth(provider),
     customModel: (provider, id) => services.keys.customModel(provider, id),
     takesTools: (provider, id) => services.keys.takesTools(provider, id),
   });
@@ -313,6 +322,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   registerMcpServer(app, services);
   registerRoutes(app, {
     services,
+    transcribe: new TranscribeService(services.keys),
     backup: new BackupService(
       ctx,
       opts.restart ?? (() => console.warn('backup restored; start the server again')),
@@ -563,6 +573,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.whatsapp.stop();
       await services.reactions.stop();
       services.push.stop();
+      services.subscriptions.stop();
       await services.turns.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);

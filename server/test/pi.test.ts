@@ -614,6 +614,25 @@ describe('Pi motoru', () => {
     expect(calls).toEqual([{ q: 'plan' }]);
   });
 
+  it('planla açılan oturumun jetonunu ve planın adresini modele verir', async () => {
+    let seen: { key?: string; baseUrl?: string } = {};
+    const signedIn = new PiEngine({
+      sessionsDir: join(dir, 'sessions'),
+      apiKey: async () => null,
+      auth: async (p) =>
+        p === 'deneme' ? { apiKey: 'plan-jetonu', baseUrl: 'https://api.plan.example' } : null,
+      resolveModel: (p, id) => (p === 'deneme' ? faux.getModel(id) : undefined),
+      streamFn: ((model, context, options) => {
+        seen = { key: options?.apiKey, baseUrl: model.baseUrl };
+        return streamSimple(model, context, options);
+      }) as StreamFn,
+    });
+    faux.setResponses([fauxAssistantMessage('Selam!')]);
+    const { req } = request();
+    expect(await signedIn.run(req)).toMatchObject({ ok: true });
+    expect(seen).toEqual({ key: 'plan-jetonu', baseUrl: 'https://api.plan.example' });
+  });
+
   it('anahtar yoksa ya da model biçimi yanlışsa açık bir hata verir', async () => {
     keys = {};
     const noKey = await engine().run(request().req);
@@ -684,7 +703,7 @@ describe('sağlayıcı anahtarları', () => {
     expect(put.status).toBe(200);
     const list = await t.api<ProviderInfo[]>('GET', '/api/providers');
     const openai = list.body.find((p) => p.id === 'openai')!;
-    expect(openai).toEqual({ id: 'openai', configured: true, hint: '…1234' });
+    expect(openai).toEqual({ id: 'openai', configured: true, hint: '…1234', signIn: { signedIn: false } });
     expect(JSON.stringify(list.body)).not.toContain('abcdefgh');
     expect(await t.services.keys.get('openai')).toBe('sk-test-abcdefgh1234');
     // Settings never include secrets.

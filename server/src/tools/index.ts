@@ -1,4 +1,5 @@
 import {
+  ALL_TOOLS,
   catalogEntry,
   CONNECTION_CATALOG,
   ConnectionCreate,
@@ -1059,6 +1060,7 @@ export class ToolFactory {
             projectDir: null,
             memory: true,
             effort: '',
+            toolSelection: ALL_TOOLS,
           });
           await audit('create', created.id, null, created);
           return t('tool.created', { name: created.name, id: created.id });

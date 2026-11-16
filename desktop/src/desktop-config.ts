@@ -22,7 +22,12 @@ export function readDesktopConfig(dir: string, crypto: Crypto): DesktopConfig {
   if (!existsSync(file)) return { mode: 'local' };
   try {
     const s = JSON.parse(readFileSync(file, 'utf8')) as Stored;
-    if (s.mode === 'remote' && s.url && s.keyEncrypted && crypto.isEncryptionAvailable()) {
+    if (
+      s.mode === 'remote' &&
+      s.url &&
+      typeof s.keyEncrypted === 'string' &&
+      crypto.isEncryptionAvailable()
+    ) {
       return { mode: 'remote', url: s.url, key: crypto.decryptString(Buffer.from(s.keyEncrypted, 'base64')) };
     }
   } catch {

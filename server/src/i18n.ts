@@ -115,6 +115,12 @@ const tr = {
     'Anahtar düz http üzerinden yalnızca bu bilgisayardaki bir sunucuya gönderilir; başka bir adres için https kullan',
   'error.gatewayKeyOnly': 'Ağ geçidi adresi yalnızca API anahtarıyla birlikte kullanılabilir',
   'error.appUnavailable': 'Bu uygulama bağlantısı şu an kullanılamıyor ya da bu bota açık değil',
+  'error.signInNoPaste': 'Bu oturum açma şu an yapıştırılan bir adres beklemiyor',
+  'error.pairingWrong':
+    'Eşleştirme kodu yanlış, kullanılmış ya da süresi dolmuş; bağlı bir cihazda yenisini alın',
+  'error.transcribeNone': 'Sesi yazıya çevirmek için bir OpenAI ya da Groq API anahtarı kaydedin',
+  'error.transcribeEmpty': 'Kayıtta ses yok',
+  'error.transcribeFailed': 'Ses yazıya çevrilemedi: {message}',
   'error.backupPassword': 'Yedeğin şifresi en az 12 karakter olmalı',
   'error.backupWrongPassword': 'Şifre yanlış ya da dosya değiştirilmiş; hiçbir şey değişmedi',
   'error.backupDamaged': 'Bu bir Yumak Bot yedeği değil ya da dosya bozuk; hiçbir şey değişmedi',
@@ -147,11 +153,14 @@ const tr = {
   'thread.forkTitle': '{title} (dal)',
   'thread.untitled': 'Sohbet',
   'turn.compacted': 'Sohbet buraya kadar özetlendi; bot öncesini bu özetten hatırlıyor.',
+  'turn.toolOff': 'Bu araç bu botta kapalı (botun ayarları → Araçlar).',
   'turn.safetyFloor':
     'Bu komut hiçbir izinle çalıştırılmaz: bir diski ya da bütün ev klasörünü silebilir, bilgisayarı kapatabilir. Daha dar bir hedefle (belirli bir klasör ya da dosya) yeniden dene.',
   'turn.spendLimit':
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
+  'validation.toolSelector':
+    'Araç adı harf, rakam, _ . - içerebilir; sonda tek bir * ile o adla başlayan bütün araçları seçer',
   'validation.cron': 'Beş alanlı bir cron ifadesi olmalı (dakika saat gün ay haftagünü)',
   'validation.timeWindow': 'Saat aralığının başı ve sonu birlikte verilmeli; baş sondan önce olmalı',
   'validation.timezone': 'Geçersiz saat dilimi',
@@ -206,7 +215,8 @@ const tr = {
     'Model "sağlayıcı/model" biçiminde olmalı (ör. openai/gpt-5-mini); bu botta "{model}" yazıyor.',
   'engine.modelNotFound': 'Model bulunamadı: {model}',
   'engine.testFailed': 'Sağlayıcı yanıt vermedi',
-  'engine.noApiKey': '{provider} için API anahtarı yok. Ayarlar → Bağlantı bölümünden ekleyin.',
+  'engine.noApiKey':
+    '{provider} için API anahtarı yok, planla açılmış bir oturum da yok (ya da süresi dolmuş). Ayarlar → Bağlantı bölümünden ekleyin ya da yeniden oturum açın.',
   'engine.stepLimit': 'Adım sınırına ({max}) ulaşıldı; tur durduruldu.',
   'engine.modelError': 'Model hatası',
   'engine.noResponse': 'Model yanıt vermedi',
@@ -868,6 +878,11 @@ const en: Catalog<ServerKey> = {
     'A key goes over plain http only to a server on this computer; use https for any other address',
   'error.gatewayKeyOnly': 'A gateway address goes only with an API key',
   'error.appUnavailable': 'This app connection cannot be used now, or is not open to this bot',
+  'error.signInNoPaste': 'This sign-in is not waiting for a pasted address now',
+  'error.pairingWrong': 'The pairing code is wrong, used or expired; get a new one on a signed-in device',
+  'error.transcribeNone': 'Save an OpenAI or Groq API key to turn speech into text',
+  'error.transcribeEmpty': 'The recording holds no sound',
+  'error.transcribeFailed': 'The speech could not be turned into text: {message}',
   'error.backupPassword': "The backup's password needs at least 12 characters",
   'error.backupWrongPassword': 'Wrong password, or the file was changed; nothing was changed',
   'error.backupDamaged': 'This is not a Yumak Bot backup, or the file is damaged; nothing was changed',
@@ -899,11 +914,14 @@ const en: Catalog<ServerKey> = {
   'thread.forkTitle': '{title} (branch)',
   'thread.untitled': 'Conversation',
   'turn.compacted': 'The conversation up to here was summarised; the bot remembers it from that summary.',
+  'turn.toolOff': "This tool is off for this bot (the bot's settings → Tools).",
   'turn.safetyFloor':
     'This command is never run, whatever is allowed: it could wipe a disk or a whole home folder, or stop the machine. Try again with a narrower target (a particular folder or file).',
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
+  'validation.toolSelector':
+    'A tool name may hold letters, digits, _ . -; one * at the end picks every tool it starts',
   'validation.cron': 'Must be a five-field cron expression (minute hour day month weekday)',
   'validation.timeWindow': 'A time window needs both a start and an end, the start before the end',
   'validation.timezone': 'Invalid time zone',
@@ -956,7 +974,8 @@ const en: Catalog<ServerKey> = {
     'The model must be written as "provider/model" (e.g. openai/gpt-5-mini); this bot has "{model}".',
   'engine.modelNotFound': 'Model not found: {model}',
   'engine.testFailed': 'The provider did not answer',
-  'engine.noApiKey': 'No API key for {provider}. Add one under Settings → Connection.',
+  'engine.noApiKey':
+    'No API key for {provider}, and no sign-in with a plan (or it ran out). Add one, or sign in again, under Settings → Connection.',
   'engine.stepLimit': 'Step limit ({max}) reached; the turn was stopped.',
   'engine.modelError': 'Model error',
   'engine.noResponse': 'The model did not respond',

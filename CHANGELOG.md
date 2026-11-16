@@ -5,6 +5,40 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Running it
+
+- Sign a phone or another computer in with a one-time pairing code from a device already signed in (Settings →
+  Connection → Connect another device), instead of the password or the access key. A code works once, within five
+  minutes; wrong codes are slowed like wrong passwords. The web, the phone and the desktop app's server window take
+  it.
+- Docker Compose profiles reach the server from elsewhere without opening a port: `--profile cloudflare` runs a
+  Cloudflare Tunnel, `--profile tailscale` serves it on your tailnet with HTTPS. The tunnel reaches the server over a
+  network of its own with no way out.
+
+### Connections and models
+
+- Sign in with your ChatGPT plan instead of an OpenAI API key, through OpenAI's "Sign in with ChatGPT", which lets an
+  app use a person's plan with its name on the consent page. On the computer that runs the server the sign-in comes
+  back by itself; on a server elsewhere you paste the address the browser ended on.
+- Sign in with your GitHub Copilot plan with a code typed on GitHub (GitHub Enterprise too); bots get the models your
+  plan opens.
+- Both are sealed like keys, refreshed when they run out, and signed out from the connection page. A saved API key for
+  the same provider comes first.
+
+### Chat
+
+- A microphone button in the message box: speak instead of typing. With an OpenAI or Groq key saved, the recording is
+  written out by that provider (on the web and in the desktop app); without one, a browser with its own speech
+  recognition (Chrome, Safari) writes as you speak. The desktop app may use the microphone and nothing else of the
+  camera or screen; on macOS it asks first. On the phone, the keyboard's own dictation does the same.
+
+### Bots
+
+- Each bot's settings have a Tools section: give it only the tools listed, or leave some out, named as approval cards
+  name them (`Read`, `mcp__gmail__search_threads`), with `*` at the end for a whole app. A small local model gets
+  room to work, and a bot stays to its job. Both engines leave the other tools out of the request, and one the engine
+  offers anyway is refused.
+
 ### Chat apps
 
 - Each bot can have a Telegram bot of its own: paste the token BotFather gives in the bot's settings, then open the

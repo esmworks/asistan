@@ -15,6 +15,7 @@ import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
 import { RoutineService } from './routines';
+import { SubscriptionService } from './subscriptions';
 import { ProviderKeyService } from './keys';
 import { SkillService } from './skills';
 import { ReactionNotifier } from './reactions';
@@ -41,6 +42,7 @@ export class Services {
   readonly skills: SkillService;
   readonly jobs: JobService;
   readonly routines: RoutineService;
+  readonly subscriptions: SubscriptionService;
   readonly tools: ToolFactory;
   readonly turns: TurnManager;
   readonly reactions: ReactionNotifier;
@@ -71,7 +73,8 @@ export class Services {
     this.push = new PushService(ctx, this.vault);
     this.settings = new SettingsService(ctx);
     this.botImport = new BotImportService(ctx, this.settings);
-    this.keys = new ProviderKeyService(ctx, this.vault);
+    this.subscriptions = new SubscriptionService(ctx, this.vault);
+    this.keys = new ProviderKeyService(ctx, this.vault, fetch, this.subscriptions);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);
     this.routines = new RoutineService(ctx, this, clock, reviewer);

@@ -1,6 +1,7 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
+import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { Readable } from 'node:stream';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
@@ -32,6 +33,8 @@ import {
   patchOf,
   PermissionRuleCreate,
   ProviderKeyInput,
+  ProviderSignInStart,
+  LOCALES,
   RoutineCreate,
   RoutineUpdate,
   RoomCreate,
@@ -88,6 +91,7 @@ import { eq } from 'drizzle-orm';
 interface Deps {
   services: Services;
   backup: BackupService;
+  transcribe: TranscribeService;
   auth: Auth;
   config: Config;
   info(): ServerInfo;
@@ -216,6 +220,32 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
 
+  // Pairing: a signed-in device makes a short code; another device signs in with it once.
+  app.post('/api/pairing', async () => ({
+    ...d.auth.createPairingCode(),
+    // Where the other device finds this server, when it is known to the server.
+    url: d.config.publicUrl ?? null,
+  }));
+  app.post('/api/pair', async (req, reply) => {
+    const { code, token: wantToken } = z
+      .object({ code: z.string().min(1).max(40), token: z.boolean().optional() })
+      .parse(req.body);
+    // Wrong codes count with wrong passwords: guessing either is slowed the same way.
+    if (d.auth.throttle.blocked(req.ip)) throw new HttpError(429, 'error.loginBlocked');
+    if (!d.auth.usePairingCode(code)) {
+      d.auth.throttle.failed(req.ip);
+      await new Promise((r) => setTimeout(r, 300));
+      throw new HttpError(401, 'error.pairingWrong');
+    }
+    d.auth.throttle.succeeded(req.ip);
+    const token = await d.auth.createSession(req.headers['user-agent']);
+    reply.setCookie(SESSION_COOKIE, token, sessionCookie);
+    // The desktop app pairs from its own process and puts the session in its window's cookies.
+    return wantToken
+      ? { ok: true, token, cookie: SESSION_COOKIE, maxAge: sessionCookie.maxAge }
+      : { ok: true };
+  });
+
   app.get('/api/account', async () => ({ username: await d.auth.account.username() }));
   app.put('/api/account', async (req) => {
     const { username, password, current } = AccountSet.parse(req.body);
@@ -291,6 +321,25 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       z.object({ model: z.string().trim().min(1).max(200) }).parse(req.body).model,
     ),
   );
+  // Signing in with the person's own plan (ChatGPT, Copilot); the app follows the sign-in it starts.
+  app.post('/api/providers/:id/sign-in', async (req) =>
+    s.subscriptions.start(ProviderParams.parse(req.params).id, ProviderSignInStart.parse(req.body ?? {})),
+  );
+  app.get('/api/sign-ins/:id', async (req) => s.subscriptions.status(IdParams.parse(req.params).id));
+  app.post('/api/sign-ins/:id/paste', async (req) =>
+    s.subscriptions.paste(
+      IdParams.parse(req.params).id,
+      z.object({ input: z.string().min(1).max(4000) }).parse(req.body).input,
+    ),
+  );
+  app.delete('/api/sign-ins/:id', async (req) => {
+    s.subscriptions.cancel(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+  app.delete('/api/providers/:id/sign-in', async (req) => {
+    await s.subscriptions.signOut(ProviderParams.parse(req.params).id);
+    return { ok: true };
+  });
   app.delete('/api/providers/:id/key', async (req) => {
     await s.keys.remove(ProviderParams.parse(req.params).id);
     return { ok: true };
@@ -660,6 +709,28 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   // Files the person attaches wait in a staging folder; sending the message moves them into the
   // conversation's folder.
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+  // A recording from the message box's microphone button, as the browser made it.
+  app.addContentTypeParser(/^audio\//, (_req, payload, done) => done(null, payload));
+  app.get('/api/transcribe', async () => ({ available: await d.transcribe.available() }));
+  app.post('/api/transcribe', async (req) => {
+    if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req.body) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_AUDIO_BYTES) {
+        throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_AUDIO_BYTES / 1024 / 1024) });
+      }
+      chunks.push(chunk as Buffer);
+    }
+    const { lang } = z.object({ lang: z.enum(LOCALES).optional() }).parse(req.query);
+    const text = await d.transcribe.transcribe(
+      Buffer.concat(chunks),
+      String(req.headers['content-type'] ?? 'audio/webm'),
+      lang,
+    );
+    return { text };
+  });
   app.post('/api/threads/:id/files', async (req) => {
     const id = IdParams.parse(req.params).id;
     const { name } = z.object({ name: z.string().min(1).max(500) }).parse(req.query);

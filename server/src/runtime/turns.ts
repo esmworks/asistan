@@ -1,6 +1,14 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describeAction, INTL_LOCALE, type Bot, type Effort, type Locale } from '@yumakbot/shared';
+import {
+  describeAction,
+  INTL_LOCALE,
+  selectsTools,
+  toolPicker,
+  type Bot,
+  type Effort,
+  type Locale,
+} from '@yumakbot/shared';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -607,7 +615,9 @@ export class TurnManager {
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
     });
-    const tools = [
+    // The bot's tool selection narrows what it is given; the rest never reaches the model.
+    const pickTool = toolPicker(bot.toolSelection);
+    const allTools = [
       ...this.services.tools.forTurn({
         bot,
         thread,
@@ -665,6 +675,7 @@ export class TurnManager {
         },
       )),
     ];
+    const tools = allTools.filter((x) => pickTool(toolPermName(x)));
     // Internal app tools, and connection tools marked read, run without a card; `ask` rules can
     // still require one.
     const readOnlyTools = new Set(tools.filter((t) => t.internal || t.readOnly).map(toolPermName));
@@ -700,6 +711,10 @@ export class TurnManager {
         raw.toolName === 'mcp__yumakbot__run_command'
           ? { toolName: 'Bash', input: { command: raw.input.command } }
           : raw;
+      // A tool the bot's selection leaves out is never run, even when the engine offers it by itself.
+      if (raw.toolName !== SANDBOX_NETWORK && !pickTool(raw.toolName)) {
+        return { behavior: 'deny', message: t('turn.toolOff') };
+      }
       // ask_user handles its own card.
       if (ask.toolName === 'mcp__yumakbot__ask_user') return { behavior: 'allow' };
       // A sandboxed command reaching a host: the internet switch decides, never a card. This
@@ -953,6 +968,7 @@ export class TurnManager {
         sandbox,
         shell,
         tools,
+        ...(selectsTools(bot.toolSelection) && { pickTool }),
         canUseTool: async (ask) => {
           const answer = await canUseTool(ask);
           if (

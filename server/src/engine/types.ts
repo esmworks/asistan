@@ -104,6 +104,11 @@ export interface TurnRequest {
   /** Where shell commands run: this server's OS sandbox, or the bot's desktop (an app tool). */
   shell: 'sandbox' | 'computer';
   tools: AppTool[];
+  /**
+   * Which of the engine's own tools (`Read`, `Bash`…) the bot gets, by the names cards use; left
+   * out when it gets every one. App tools come already narrowed in `tools`.
+   */
+  pickTool?: (name: string) => boolean;
   canUseTool(ask: PermissionAsk): Promise<PermissionAnswer>;
   onText(delta: string): void;
   /** The bot's plan for the task, each time it changes. */

@@ -288,6 +288,13 @@
       "when": 1794857447886,
       "tag": "0040_memory_use",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794858431752,
+      "tag": "0041_bot_tool_selection",
+      "breakpoints": true
     }
   ]
 }

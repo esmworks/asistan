@@ -21,6 +21,7 @@ const bot = (name: string, extra: Partial<Bot> = {}): Bot => ({
   projectDir: null,
   memory: true,
   effort: '',
+  toolSelection: { only: false, allow: [], exclude: [] },
   archivedAt: null,
   createdAt: new Date(2026, 0, 1, 0, 0, n++).toISOString(),
   updatedAt: '',

@@ -32,6 +32,7 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Smartphone,
   Sparkles,
   SlidersHorizontal,
   Trash2,
@@ -652,9 +653,75 @@ function Connection() {
           </Button>
         </Row>
       </Card>
+      <PairDevice />
       <Devices />
       <ApnsCard />
     </>
+  );
+}
+
+/**
+ * A one-time code for signing in a phone or another computer, typed there instead of the password.
+ * It works once, within five minutes; the address is the one the other device reaches this
+ * server at.
+ */
+function PairDevice() {
+  const t = useT();
+  const qc = useQueryClient();
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string; url: string | null } | null>(
+    null,
+  );
+  const [now, setNow] = useState(() => Date.now());
+  const make = useMutation({
+    mutationFn: api.pairingCode,
+    onSuccess: (p) => {
+      setPairing(p);
+      setNow(Date.now());
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const left = pairing ? Math.max(0, Math.round((Date.parse(pairing.expiresAt) - now) / 1000)) : 0;
+  useEffect(() => {
+    if (!pairing || left <= 0) return;
+    const timer = setTimeout(() => {
+      setNow(Date.now());
+      // A device that used the code shows up in the list below.
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [pairing, left, qc]);
+  const address = pairing?.url ?? window.location.origin;
+  return (
+    <Card title={t('pair.title')}>
+      <Row label={t('pair.label')} hint={t('pair.hint')}>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="rounded-full"
+          onClick={() => make.mutate()}
+          disabled={make.isPending}
+        >
+          {make.isPending ? <Loader2 className="animate-spin" /> : <Smartphone />}
+          {pairing && left > 0 ? t('pair.again') : t('pair.make')}
+        </Button>
+      </Row>
+      {pairing && left > 0 && (
+        <div className="space-y-2 px-4 pb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="rounded-xl bg-secondary px-4 py-2 font-mono text-2xl tracking-widest">
+              {pairing.code}
+            </code>
+            <span className="text-xs text-muted-foreground">
+              {t('pair.left', {
+                minutes: String(Math.floor(left / 60)),
+                seconds: String(left % 60).padStart(2, '0'),
+              })}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('pair.where', { address })}</p>
+        </div>
+      )}
+    </Card>
   );
 }
 

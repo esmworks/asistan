@@ -52,6 +52,8 @@ export const bots = pgTable('bots', {
   memory: boolean('memory').notNull().default(true),
   /** How hard a Claude bot thinks; empty takes the server-wide setting. */
   effort: text('effort').notNull().default(''),
+  /** Which tools the bot gets (`ToolSelection`); null for every tool. */
+  toolSelection: jsonb('tool_selection'),
   archivedAt: ts('archived_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
