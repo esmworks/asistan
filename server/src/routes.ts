@@ -426,6 +426,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/today', async () => ({
     ...(await s.usage.today()),
     staleMemory: (await s.memory.stale()).length,
+    pendingMemory: (await s.memory.pending()).length,
   }));
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
@@ -950,6 +951,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.get('/api/memory-history', async () => s.memory.history());
+  // Memory changes bots asked for while nobody watched; they wait for the person.
+  app.get('/api/memory-changes', async () => s.memory.pending());
+  app.post('/api/memory-changes/:id/accept', async (req) => {
+    const { content } = z.object({ content: z.string().trim().max(2000).optional() }).parse(req.body ?? {});
+    await s.memory.accept(IdParams.parse(req.params).id, content);
+    return { ok: true };
+  });
+  app.delete('/api/memory-changes/:id', async (req) => {
+    await s.memory.reject(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
   // Notes no bot uses any more, offered to the user to keep or delete.
   app.get('/api/memory-stale', async () => s.memory.stale());
   // Deletes the ones of `ids` that are still unused; a note a bot used since the list was shown stays.

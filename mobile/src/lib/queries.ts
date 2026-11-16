@@ -96,6 +96,11 @@ export const useStaleMemory = () => {
   const api = useApi();
   return useQuery({ queryKey: ['memory', useOrigin(), 'stale'], queryFn: api.staleMemory });
 };
+/** Under `memory` too: memory changes waiting for the person's yes. */
+export const useMemoryChanges = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['memory', useOrigin(), 'changes'], queryFn: api.memoryChanges });
+};
 export const useRoutines = () => {
   const api = useApi();
   return useQuery({ queryKey: ['routines', useOrigin()], queryFn: api.routines });

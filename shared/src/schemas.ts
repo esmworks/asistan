@@ -416,6 +416,26 @@ export const Memory = z.object({
   updatedAt: z.string(),
 });
 export type Memory = z.infer<typeof Memory>;
+
+/**
+ * A memory change a bot asked for while nobody watched (a routine, another bot's request); it
+ * takes effect only once the person accepts it.
+ */
+export interface MemoryChange {
+  id: string;
+  action: 'write' | 'update' | 'forget';
+  memoryId: string | null;
+  scope: MemoryScope;
+  botId: string | null;
+  site: string | null;
+  /** The words after the change; for a forget, the words that would go. */
+  content: string;
+  before: string | null;
+  proposedBy: string;
+  origin: { kind: 'routine' | 'bot'; name: string };
+  threadId: string | null;
+  createdAt: string;
+}
 /**
  * Days after which a note that no prompt carries, and that no bot changed or looked up, is offered
  * to the user for deletion.
@@ -695,6 +715,8 @@ export const TodayReport = z.object({
   ),
   /** Memory notes no bot uses any more, waiting for the user to keep or delete them. Missing from older servers. */
   staleMemory: z.number().int().optional(),
+  /** Memory changes asked for while nobody watched, waiting for the user's yes. Missing from older servers. */
+  pendingMemory: z.number().int().optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
 

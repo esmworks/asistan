@@ -5,6 +5,20 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Safety
+
+- The auto review (the "review" approval level) reads only the person's own words: their latest messages in the
+  conversation, the instructions saved on a routine, or, for work another bot handed over, the request it started from.
+  A webhook's payload, a routine's last report, another bot's message or a quoted reply no longer counts as what the
+  person asked for. To let a step run, the reviewer must quote those words, and the server checks the quote is really
+  there; the note in the conversation keeps the quote. Work with no request from the person behind it goes to a card.
+- Memory changes a bot asks for while nobody watches (a routine's run, another bot's request) no longer take effect at
+  once: they wait under "Waiting for approval" in the memory settings, and the Today page counts them. The person
+  accepts or rejects each one, or all at once; a change asked for twice waits once. A bot the person is talking to still
+  keeps its memory itself.
+- What a connected app or a page in the bot's browser returns reaches the model in an `<outside-data>` block that names
+  where it came from and says it is not instructions; a tag in the text that would end the block early is broken up.
+
 ### Running it
 
 - Sign a phone or another computer in with a one-time pairing code from a device already signed in (Settings →

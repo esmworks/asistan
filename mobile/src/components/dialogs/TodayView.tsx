@@ -59,7 +59,7 @@ export function TodayView() {
           <Block
             title={t('today.waiting')}
             empty={t('today.waitingNone')}
-            count={waiting.length + (data.staleMemory ? 1 : 0)}
+            count={waiting.length + (data.staleMemory ? 1 : 0) + (data.pendingMemory ? 1 : 0)}
           >
             {[
               ...waiting.map((s) => (
@@ -74,6 +74,18 @@ export function TodayView() {
                   </Text>
                 </Item>
               )),
+              // Memory changes asked for while nobody watched wait for the person's yes.
+              ...(data.pendingMemory
+                ? [
+                    <Item key="pending-memory" onPress={() => nav.settings('memory')}>
+                      <Feather name="check-square" size={24} color={c.mutedForeground} />
+                      <Text style={[styles.grow, { color: c.foreground }]} numberOfLines={1}>
+                        {t('today.pendingMemory', { count: data.pendingMemory })}
+                      </Text>
+                      <Text style={[styles.note, { color: c.amber }]}>{t('today.pendingMemoryReview')}</Text>
+                    </Item>,
+                  ]
+                : []),
               // Notes no bot uses wait for the person to keep or delete them in the memory screen.
               // One list with the bots' lines, so the card draws a divider between each.
               ...(data.staleMemory

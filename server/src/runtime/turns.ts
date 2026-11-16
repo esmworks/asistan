@@ -25,6 +25,8 @@ import { askRuleFor, askRuleMatches, decide, READ_ONLY_TOOLS, summarize } from '
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
+import { markedOutside, outsideSource } from './outside';
+import { ownerWords, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -675,13 +677,16 @@ export class TurnManager {
         },
       )),
     ];
-    const tools = allTools.filter((x) => pickTool(toolPermName(x)));
+    const connectionNames = await this.services.connections.names();
+    // What a connected app or a web page returns reaches the model marked as data, not instructions.
+    const tools = allTools
+      .filter((x) => pickTool(toolPermName(x)))
+      .map((x) => markedOutside(x, outsideSource(x, connectionNames, t), t));
     // Internal app tools, and connection tools marked read, run without a card; `ask` rules can
     // still require one.
     const readOnlyTools = new Set(tools.filter((t) => t.internal || t.readOnly).map(toolPermName));
     // With the internet on, searching and reading pages are reads like opening one in the browser.
     if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
-    const connectionNames = await this.services.connections.names();
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
     const down = await this.services.connections.unavailableFor(bot.id);
@@ -1100,13 +1105,17 @@ export class TurnManager {
     const no = { allowed: false, reason: '' };
     const engine = this.reviewer?.();
     if (!engine?.review) return no;
+    const t = translator(o.locale);
+    // Only the person's own words can let an action run, never what the turn read or was handed.
+    const words = await ownerWords(this.ctx, o.turn);
+    if (!words.length) return { allowed: false, reason: t('review.noWords') };
     let verdict;
     try {
       verdict = await engine.review({
         toolName: o.ask.toolName,
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
-        request: o.turn.prompt,
+        words,
         locale: o.locale,
         signal: o.signal,
       });
@@ -1116,7 +1125,8 @@ export class TurnManager {
     }
     if (o.signal.aborted) return no;
     if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
-    const t = translator(o.locale);
+    // The reviewer must point at what the person said; a quote that is not there does not count.
+    if (!quoteFound(verdict.quote, words)) return { allowed: false, reason: t('review.noQuote') };
     const action = summarize(o.ask.toolName, o.ask.input);
     await this.services.threads.addMessage({
       threadId: o.thread.id,
@@ -1125,7 +1135,7 @@ export class TurnManager {
       text: verdict.reason
         ? t('review.allowed', { action, reason: verdict.reason })
         : t('review.allowedNoReason', { action }),
-      props: { review: true },
+      props: { review: true, quote: truncate(verdict.quote, 300) },
       turnId: o.turn.id,
     });
     return { allowed: true, reason: verdict.reason };

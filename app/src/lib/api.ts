@@ -20,6 +20,7 @@ import type {
   TodayReport,
   Group,
   Memory,
+  MemoryChange,
   Message,
   PermissionRule,
   ProviderInfo,
@@ -382,6 +383,10 @@ export const api = {
   removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),
   staleMemory: () => http.get<Memory[]>('/api/memory-stale'),
   removeStaleMemory: (ids: string[]) => http.post<{ count: number }>('/api/memory-stale/delete', { ids }),
+  /** Memory changes bots asked for while nobody watched; they wait for the person. */
+  memoryChanges: () => http.get<MemoryChange[]>('/api/memory-changes'),
+  acceptMemoryChange: (id: string) => http.post<{ ok: true }>(`/api/memory-changes/${id}/accept`, {}),
+  rejectMemoryChange: (id: string) => http.del<{ ok: true }>(`/api/memory-changes/${id}`),
 
   routines: () => http.get<Routine[]>('/api/routines'),
   createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),
