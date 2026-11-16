@@ -5,6 +5,7 @@ export const SECTIONS = [
   { id: 'profile', icon: 'user' },
   { id: 'general', icon: 'sliders' },
   { id: 'connection', icon: 'link-2' },
+  { id: 'channels', icon: 'message-circle' },
   { id: 'permissions', icon: 'shield' },
   { id: 'vault', icon: 'key' },
   { id: 'memory', icon: 'cpu' },

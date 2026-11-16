@@ -539,6 +539,10 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   await services.turns.recover();
   await services.routines.recover();
   services.routines.start();
+  if (config.channelsEnabled) {
+    await services.telegram.start();
+    await services.whatsapp.start();
+  }
 
   return {
     app,
@@ -555,6 +559,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     },
     async close() {
       await services.routines.stop();
+      await services.telegram.stop();
+      await services.whatsapp.stop();
       await services.reactions.stop();
       services.push.stop();
       await services.turns.shutdown();

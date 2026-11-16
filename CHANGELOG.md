@@ -5,6 +5,21 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Chat apps
+
+- Each bot can have a Telegram bot of its own: paste the token BotFather gives in the bot's settings, then open the
+  pairing link (or scan its QR code) and press Start. Only the paired Telegram account is read. What it writes goes to
+  the bot's main conversation; while the person last wrote from Telegram, replies, files, "typing…" and approval and
+  question cards (with buttons) go back there. `/stop` stops the work in progress and `/new` starts afresh. Routine
+  reports and cards from the bot's other conversations can come to Telegram too.
+- WhatsApp connects as a linked device, the way WhatsApp Web does, from the new "Chat apps" settings section: with a
+  separate bot number only the person's own number is read, and with their own number only "Message yourself". The
+  messages go to one chosen bot and `/bot <name>` switches it; cards come with numbered choices that a typed number
+  answers. Groups and other people's messages are never read. This uses Baileys, an unofficial WhatsApp client, so a
+  separate number is recommended.
+- Sign-in cards, secret answers and cards with several questions are left to the Yumak Bot app; passwords never go
+  through a chat app.
+
 ### Memory
 
 - A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is

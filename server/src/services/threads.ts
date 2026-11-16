@@ -32,6 +32,16 @@ export const MESSAGE_PAGE = 500;
 export class ThreadService {
   constructor(private ctx: Ctx) {}
 
+  /** Told of every new message once it is saved; chat apps pass on the ones meant for them. */
+  private listeners: ((m: Message) => void | Promise<void>)[] = [];
+
+  onMessage(fn: (m: Message) => void | Promise<void>): () => void {
+    this.listeners.push(fn);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== fn);
+    };
+  }
+
   private async states(threadIds: string[]): Promise<Map<string, TurnState>> {
     const map = new Map<string, TurnState>();
     if (!threadIds.length) return map;
@@ -501,7 +511,13 @@ export class ThreadService {
         .set({ updatedAt: new Date(), snoozedUntil: null, ...(m.role === 'user' && { archivedAt: null }) })
         .where(eq(schema.threads.id, m.threadId));
       this.ctx.bus.refresh({ scope: 'thread', threadId: m.threadId, botId: thread.botId });
-      return { message: toMessage(row!), created: true };
+      const message = toMessage(row!);
+      for (const l of this.listeners) {
+        void Promise.resolve()
+          .then(() => l(message))
+          .catch((err: unknown) => console.warn('message listener', err));
+      }
+      return { message, created: true };
     } catch (err) {
       if (m.clientId && isUniqueViolation(err)) {
         const [existing] = await this.ctx.db

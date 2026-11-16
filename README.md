@@ -49,6 +49,10 @@ The interface is available in English and Turkish.
   conversation.
 - **Today and usage** — a Today page of what the bots did and what waits for you; spending by bot, model and routine,
   a monthly limit and a CSV export.
+- **Telegram and WhatsApp** — each bot can have its own Telegram bot, paired with your Telegram account only;
+  WhatsApp links like WhatsApp Web, with a separate number or your own "Message yourself" chat, and `/bot <name>`
+  switches the bot it talks to. Replies, files and approval cards go back to the app you last wrote from; passwords
+  and sign-ins stay in the Yumak Bot app.
 - **A bot as an API** — call a bot from a script with the access key and get its reply.
 - **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
   choose which bots may use them.
@@ -259,6 +263,7 @@ The server reads these environment variables:
 | `YUMAKBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
 | `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
 | `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
+| `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from

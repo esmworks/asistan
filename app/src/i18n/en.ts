@@ -1325,4 +1325,74 @@ export const en: Catalog<MessageKey> = {
   'panel.addApp': 'Connect',
   'panel.noApps':
     'No apps connected. Services you connect, like Notion, Slack or Gmail, are available to every bot.',
+  'telegram.title': 'Telegram',
+  'telegram.off': 'Not connected',
+  'telegram.waiting': 'Waiting to pair',
+  'telegram.paired': 'Connected',
+  'telegram.error': 'The Telegram connection is not working: {error}',
+  'telegram.step1':
+    'Make a new bot in Telegram: send /newbot, then choose a name and a username ending in bot.',
+  'telegram.botFather': '@BotFather',
+  'telegram.step2': 'Paste the token BotFather sends (or its whole message) here.',
+  'telegram.tokenPlaceholder': '123456789:AA…',
+  'telegram.connect': 'Connect',
+  'telegram.connected': '@{bot} is connected. Now pair your Telegram account.',
+  'telegram.pairedWith':
+    '@{bot} reads messages from {name} only. Replies go there when you last wrote from Telegram.',
+  'telegram.qrAlt': 'QR code of the Telegram pairing link',
+  'telegram.pairHint':
+    'Scan the QR code with your phone or open the link, then press Start. The link works for 15 minutes; the account that presses it becomes the only one that can talk to the bot.',
+  'telegram.openToPair': 'Open in Telegram',
+  'telegram.newLink': 'Get a new pairing link',
+  'telegram.notices': 'Also tell me about other conversations',
+  'telegram.noticesHint': 'Routine reports and cards where the bot waits for you come to Telegram too.',
+  'telegram.openChat': 'Open the chat',
+  'telegram.otherAccount': 'Pair another account',
+  'telegram.disconnect': 'Disconnect',
+  'telegram.disconnectConfirm':
+    'Disconnect Telegram? The token and the paired account are forgotten; the bot in Telegram stays as it is.',
+  'settings.tab.channels': 'Chat apps',
+  'settings.keywords.channels': 'whatsapp, telegram, message, phone, qr',
+  'channels.telegram': 'Telegram',
+  'channels.telegramHint':
+    "Each bot connects with its own Telegram bot; you set that up in the bot's settings, under Telegram.",
+  'whatsapp.title': 'WhatsApp',
+  'whatsapp.state.off': 'Not connected',
+  'whatsapp.state.linking': 'Waiting for the QR code to be scanned',
+  'whatsapp.state.connecting': 'Connecting…',
+  'whatsapp.state.connected': 'Connected',
+  'whatsapp.state.error': 'The connection stopped',
+  'whatsapp.error.expired': 'The QR code was not scanned in time. Link again to get a new code.',
+  'whatsapp.error.ownNumber':
+    'The linked account is your own number. Link another number, or choose "My own number".',
+  'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
+  'whatsapp.mode.separate': 'A separate bot number',
+  'whatsapp.modeHint.separate': 'Recommended. A second number is linked; you write to it from your own.',
+  'whatsapp.mode.own': 'My own number',
+  'whatsapp.modeHint.own': 'Your own account is linked; you write to the bots in "Message yourself".',
+  'whatsapp.phone': 'Your own number',
+  'whatsapp.phoneHint.separate':
+    'With the country code, digits only. Only messages from this number are read.',
+  'whatsapp.phoneHint.own': 'With the country code, digits only. The number of the account you link.',
+  'whatsapp.bot': 'The bot messages go to',
+  'whatsapp.botPick': 'Choose a bot',
+  'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
+  'whatsapp.notices': 'Also tell me about other conversations',
+  'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
+  'whatsapp.qrAlt': 'QR code of the WhatsApp link',
+  'whatsapp.qrWaiting': 'Preparing the QR code…',
+  'whatsapp.scan':
+    'On the phone of the account you link, open WhatsApp → Settings → Linked devices → Link a device and scan this code. The code renews itself; setup must finish within 5 minutes.',
+  'whatsapp.howTo.separate':
+    'Write to +{number} from your own number. /bot <name> switches to another bot, /stop stops work in progress.',
+  'whatsapp.howTo.own':
+    'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
+  'whatsapp.risk':
+    "WhatsApp is connected as an unofficial linked device (like WhatsApp Web). There is a small risk of the account being restricted; a separate number keeps your own chats out of it. Groups and other people's messages are never read.",
+  'whatsapp.link': 'Show the QR code',
+  'whatsapp.relink': 'Link again',
+  'whatsapp.saved': 'WhatsApp settings saved',
+  'whatsapp.disconnect': 'Disconnect',
+  'whatsapp.disconnectConfirm':
+    'Disconnect WhatsApp? The device leaves Linked devices and its keys are deleted.',
 };
