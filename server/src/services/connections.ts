@@ -549,6 +549,80 @@ export class ConnectionService {
     );
   }
 
+  /**
+   * The tool a routine's check may call for a bot: of a connected app open to the bot, switched on,
+   * and one that only reads. Null when it is not such a tool.
+   */
+  async checkTool(botId: string, connectionId: string, name: string) {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.connections)
+      .where(eq(schema.connections.id, connectionId));
+    if (!row) return null;
+    if (!row.allBots) {
+      const [open] = await this.ctx.db
+        .select()
+        .from(schema.botConnections)
+        .where(and(eq(schema.botConnections.botId, botId), eq(schema.botConnections.connectionId, row.id)));
+      if (!open) return null;
+    }
+    const tool = row.tools.find((x) => x.name === name && x.enabled && !x.appOnly);
+    if (!tool || (tool.kind ?? tool.hinted) !== 'read') return null;
+    return { row, tool };
+  }
+
+  /**
+   * The app tool a bot names the way it sees it (`mcp__<app>__<tool>`), as a routine's check: the
+   * connection and the tool's own name, when it is one `checkTool` allows.
+   */
+  async checkFromName(
+    botId: string,
+    exposed: string,
+  ): Promise<{ connectionId: string; tool: string } | null> {
+    // Claude sees an app's tool as `mcp__<app>__<tool>`; other engines see the tool's name alone.
+    const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(exposed);
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.connections)
+      .where(m ? eq(schema.connections.slug, m[1]!) : undefined)
+      .orderBy(asc(schema.connections.createdAt));
+    const want = m ? m[2]! : exposed;
+    const found: { connectionId: string; tool: string }[] = [];
+    for (const row of rows) {
+      const names = exposedNames(
+        row.slug,
+        row.tools.map((x) => x.name),
+      );
+      const tool = row.tools.find((x) => names.get(x.name) === want || x.name === want);
+      if (tool && (await this.checkTool(botId, row.id, tool.name)))
+        found.push({ connectionId: row.id, tool: tool.name });
+    }
+    // Two apps with a tool of that name: the bot has to say which, with the app's part.
+    return found.length === 1 ? found[0]! : null;
+  }
+
+  /**
+   * Calls a routine's check, with no one watching: only a tool `checkTool` allows. Returns the
+   * app's name and the answer as text; throws when the call cannot be made or the tool failed.
+   */
+  async callCheck(
+    botId: string,
+    check: { connectionId: string; tool: string; args: Record<string, unknown> },
+  ) {
+    const found = await this.checkTool(botId, check.connectionId, check.tool);
+    if (!found) throw new HttpError(400, 'error.routineCheckTool');
+    if (found.row.status !== 'connected') throw new HttpError(409, 'error.appUnavailable');
+    const result = await callTool(
+      this.target(found.row),
+      found.tool.name,
+      check.args,
+      AbortSignal.timeout(this.ctx.config.mcpCallTimeoutMs),
+    );
+    const text = resultText(result);
+    if (result.isError) throw new Error(truncate(text, 500));
+    return { app: found.row.name, text };
+  }
+
   /** The connections open to a bot that are not usable now, with why: their tools are left out. */
   async unavailableFor(botId: string): Promise<{ name: string; status: 'signed-out' | 'error' }[]> {
     const chosen = this.ctx.db
@@ -704,6 +778,22 @@ export class ConnectionService {
       },
     };
   }
+}
+
+/**
+ * An app's answer as plain text, for comparing one check with the next: the text parts, or the
+ * structured answer when there is no text. Pictures and other media are left out.
+ */
+export function resultText(result: CallToolResult): string {
+  const parts = (result.content ?? []).flatMap((c) =>
+    c.type === 'text'
+      ? [c.text]
+      : c.type === 'resource' && 'text' in c.resource
+        ? [String(c.resource.text)]
+        : [],
+  );
+  if (parts.length) return parts.join('\n');
+  return result.structuredContent ? JSON.stringify(result.structuredContent) : '';
 }
 
 /** A tool's view and the call it shows, for the conversation. */

@@ -22,5 +22,8 @@ describe('konuşma bağlantısı', () => {
     expect(sameServerThread('https://yumakbot.ornek/docs?thread=abc-123', at)).toBeNull();
     expect(sameServerThread('https://yumakbot.ornek/', at)).toBeNull();
     expect(sameServerThread('javascript:alert(1)', at)).toBeNull();
+    // The desktop app's own link, pasted into a chat.
+    expect(sameServerThread('yumakbot://thread/abc-123', at)).toBe('abc-123');
+    expect(sameServerThread('yumakbot://thread/../x', at)).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import {
   occurrenceKey,
   passesFilter,
   type Routine,
+  type RoutineCheck,
   type RoutineCreate,
   type RoutineRun,
   type Schedule,
@@ -175,6 +176,7 @@ export class RoutineService {
 
   async create(input: RoutineCreate): Promise<Routine> {
     await this.services.bots.get(input.botId);
+    if (input.check) await this.checkCheck(input.botId, input.check);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
     const [row] = await this.ctx.db
@@ -196,9 +198,15 @@ export class RoutineService {
     const enabled = patch.enabled ?? current.enabled;
     const last = current.lastRunAt ? new Date(current.lastRunAt) : null;
     if (patch.schedule) this.checkOnce(schedule, timezone, this.clock());
+    if (patch.check) await this.checkCheck(current.botId, patch.check);
     const [row] = await this.ctx.db
       .update(schema.routines)
-      .set({ ...patch, nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null })
+      .set({
+        ...patch,
+        // A new check starts from its own first answer, not from what the old one returned.
+        ...(patch.check !== undefined && { checkHash: null }),
+        nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null,
+      })
       .where(eq(schema.routines.id, id))
       .returning();
     // Pausing a routine also ends a run of it that waits on the person; one at work goes on.
@@ -208,6 +216,15 @@ export class RoutineService {
     }
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRoutine(row!);
+  }
+
+  /**
+   * A check must be a tool the bot itself may call without asking: of an app open to it, switched
+   * on, and one that only reads. It runs with no one watching, so it may never change anything.
+   */
+  private async checkCheck(botId: string, check: RoutineCheck) {
+    const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool);
+    if (!tool) throw new HttpError(400, 'error.routineCheckTool');
   }
 
   /** A one-time run must be ahead; one set in the past would run at once by surprise. */
@@ -294,20 +311,36 @@ export class RoutineService {
         const late = now.getTime() - r.nextRunAt!.getTime() > MISSED_GRACE_MS;
         if (late && r.missed === 'skip') {
           await this.record(toRoutine(r), occurrenceKey(r.nextRunAt!), 'skipped', t('routine.missedSkipped'));
-        } else if (r.watchUrl) {
-          // A watched page is read with no AI; the bot runs only when the page changed.
-          const changed = await this.pageChanged(r.id, r.watchUrl, r.watchHash, r.watchText);
-          const still = changed !== null ? await current(r) : null;
-          if (changed !== null && still) {
-            await this.fire(
-              toRoutine(still),
-              occurrenceKey(r.nextRunAt!),
-              t('routine.watchChanged', { url: r.watchUrl, text: changed.excerpt }),
-              false,
-              // Without the earlier text the check reads the page as it is now.
-              { trigger: 'watch', input: changed.diff ?? changed.excerpt },
-            );
+        } else if (r.watchUrl || r.check) {
+          // A watched page and an app's check are read with no AI; the bot runs only when one of
+          // them changed, and gets what is new.
+          const news: string[] = [];
+          // What the pre-check reads: what changed on the page (or, without its earlier text, the
+          // page as it is now) and the app's new answer.
+          const changes: string[] = [];
+          if (r.watchUrl) {
+            const changed = await this.pageChanged(r.id, r.watchUrl, r.watchHash, r.watchText);
+            if (changed !== null) {
+              news.push(t('routine.watchChanged', { url: r.watchUrl, text: changed.excerpt }));
+              changes.push(`Page ${r.watchUrl}:\n${changed.diff ?? changed.excerpt}`);
+            }
           }
+          if (r.check) {
+            const check = r.check as RoutineCheck;
+            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash);
+            if (changed) {
+              news.push(
+                t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }),
+              );
+              changes.push(`App ${changed.app}, tool ${check.tool}, new answer:\n${changed.text}`);
+            }
+          }
+          const still = news.length ? await current(r) : null;
+          if (still)
+            await this.fire(toRoutine(still), occurrenceKey(r.nextRunAt!), news.join('\n\n'), false, {
+              trigger: 'watch',
+              input: changes.join('\n\n'),
+            });
         } else {
           await this.fire(toRoutine(r), occurrenceKey(r.nextRunAt!));
         }
@@ -359,6 +392,33 @@ export class RoutineService {
       excerpt: text.slice(0, WATCH_EXCERPT),
       diff: beforeText === null ? null : pageDiff(beforeText, kept),
     };
+  }
+
+  /**
+   * Calls a routine's check and keeps the fingerprint of its answer. Returns the answer when it
+   * changed since the last call, and null when it did not, could not be called, or is called for the
+   * first time (that answer sets what later ones are compared with).
+   */
+  async checkChanged(
+    routineId: string,
+    botId: string,
+    check: RoutineCheck,
+    before: string | null,
+  ): Promise<{ app: string; text: string } | null> {
+    let app: string, text: string;
+    try {
+      ({ app, text } = await this.services.connections.callCheck(botId, check));
+    } catch (err) {
+      console.warn(`Check of routine ${routineId} could not be called: ${String(err)}`);
+      return null;
+    }
+    const hash = createHash('sha256').update(text).digest('hex');
+    if (hash === before) return null;
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ checkHash: hash })
+      .where(eq(schema.routines.id, routineId));
+    return before === null ? null : { app, text: text.slice(0, WATCH_EXCERPT) };
   }
 
   /** Gives the routine a new webhook secret (the old address stops working), or removes it. */

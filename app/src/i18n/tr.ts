@@ -618,6 +618,10 @@ export const tr = {
   'routine.onStartupHint':
     'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Yumak Bot’u başlattığınızda.',
   'routine.watchUrl': 'Yalnız bu sayfa değişince (isteğe bağlı)',
+  'routine.checkOn': 'Yalnız {app} · {tool} yeni bir cevap verince çalışır; yapay zekâsız denetlenir.',
+  'routine.checkRemove': 'Denetimi kaldır',
+  'routine.checkHint':
+    'Yalnız bir uygulamada bir şey olunca (yeni e-posta, yeni issue) çalışsın istiyorsan bota söyle: bir şey değişmedikçe hiçbir şeye mal olmayan bir denetim kurar.',
   'routine.watchUrlHint':
     'Her zamanında sayfa yapay zekâsız okunur; bot yalnız metni değişince çalışır ve yeni metni alır. Sayfa aynı kaldıkça hiçbir şeye mal olmaz.',
   'routine.watchUrlInvalid': 'https:// ile başlayan bir adres',
@@ -900,7 +904,7 @@ export const tr = {
   'groups.empty': 'Grup yok.',
   'groups.count': '{count} bot',
 
-  'settings.tab.import': 'İçe aktar',
+  'settings.tab.import': 'İçe aktarma ve yedek',
   'import.hint':
     "Grok Bot'taki botlarınızı talimatları, rutinleri, hafızaları ve gruplarıyla buraya taşıyın. Dosyadaki her şeyi kaydetmeden önce görürsünüz.",
   'import.step1': "1. Grok Bot'ta dışa aktarın",
@@ -924,6 +928,23 @@ export const tr = {
   'import.skills': 'Beceriler',
   'import.skillExists': 'burada zaten var; olduğu gibi bağlanır',
   'import.warn.skill': '{bot}: "{skill}" becerisi alınmadı (adı ya da açıklaması geçersiz)',
+  'backup.title': 'Tam yedek',
+  'backup.hint':
+    'Bu sunucudaki her şey tek dosyada: botlar, sohbetler, hafıza, rutinler, beceriler, bağlantılar, botların dosyaları, kayıtlı girişler ve anahtarlar. Dosya burada seçtiğiniz şifreyle kilitlenir; şifre olmadan kimse açamaz, siz de; şifreyi güvenli bir yerde saklayın.',
+  'backup.password': 'Yedek şifresi',
+  'backup.passwordPlaceholder': 'Yedek şifresi (en az {count} karakter)',
+  'backup.download': 'Yedeği indir',
+  'backup.ready': 'Yedek hazır ({size}); indirme başladı.',
+  'backup.restoreTitle': 'Yedekten geri yükle',
+  'backup.restoreHint':
+    'Bu sunucudaki her şeyi dosyadakiyle değiştirir. Şifre yanlışsa ya da dosya bozuksa hiçbir şey değişmez.',
+  'backup.pick': 'Dosya seç',
+  'backup.restore': 'Geri yükle',
+  'backup.restoreConfirm':
+    'Bu sunucudaki her şey bu yedekle değiştirilecek: botlar, sohbetler, hafıza ve dosyalar. Sunucu ardından yeniden başlar. Devam edilsin mi?',
+  'backup.restored': 'Geri yüklendi. Sunucu yeniden başlıyor; sayfa birazdan yenilenecek.',
+  'backup.phoneRestore':
+    'Bir yedeği geri yüklemek için Yumak Bot’u bilgisayarda açın: Ayarlar → İçe aktarma ve yedek.',
   'export.title': 'Botları dışa aktar',
   'export.hint':
     'Seçilen botlar talimatları, avatarları, rutinleri, hafızaları, becerileri ve gruplarıyla bir dosyaya yazılır; başka bir Yumak Bot bu sayfadan içe aktarır. Sohbetler, izinler ve klasörler dosyaya girmez.',

@@ -27,6 +27,7 @@ import {
 } from './desktop-config';
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
+import { LINK_SCHEME, linkInArgs, parseLink, type AppLink } from './links';
 import { ServerProcess } from './server-process';
 import { startUpdates, type Updates } from './updates';
 import { MIN_SIZE, readWindowState, resolveWindowState, writeWindowState } from './window-state';
@@ -111,11 +112,44 @@ const serverEntry = () => join(resources(), 'server', 'dist', 'index.mjs');
 const appDir = () => (app.isPackaged ? join(resources(), 'app') : join(resources(), 'app', 'dist'));
 const assets = () => (app.isPackaged ? join(resources(), 'assets') : join(app.getAppPath(), 'assets'));
 
+/** A `yumakbot://` link waiting for the page to take it (see `links.ts`). */
+let pendingLink: AppLink | null = linkInArgs(process.argv);
+
+/** Shows the chat a link names: the window comes forward and the page is told to open it. */
+function openLink(link: AppLink | null) {
+  if (!link) {
+    showWindow();
+    return;
+  }
+  pendingLink = link;
+  showWindow();
+  // A page already up takes it now; one still loading takes it when it starts.
+  if (win && !win.isDestroyed()) win.webContents.send('yumakbot:open-link');
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => showWindow());
+  // Windows and Linux start a second copy with the link among its arguments; it hands them here.
+  app.on('second-instance', (_e, argv) => openLink(linkInArgs(argv)));
+  // macOS hands a link to the running app, or to the app it is starting, as an event.
+  app.on('open-url', (e, url) => {
+    e.preventDefault();
+    const link = parseLink(url);
+    if (!link) return;
+    if (app.isReady()) openLink(link);
+    else pendingLink = link;
+  });
   void app.whenReady().then(boot);
+}
+
+/** Makes this app the one `yumakbot://` links open. Run from source, Electron needs the app's path. */
+function registerLinks() {
+  if (process.defaultApp && process.argv[1]) {
+    app.setAsDefaultProtocolClient(LINK_SCHEME, process.execPath, [join(process.cwd(), process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient(LINK_SCHEME);
+  }
 }
 
 async function boot() {
@@ -125,6 +159,7 @@ async function boot() {
   loadLocale(userData, app.getPreferredSystemLanguages());
   hardenSessions();
   registerIpc();
+  registerLinks();
   createTray();
   watchForUpdates();
   config = readDesktopConfig(userData, safeStorage);
@@ -184,13 +219,18 @@ async function connect() {
 }
 
 /**
- * Only an installed app updates itself: one run from source has no release to compare with, and
- * only macOS and Windows builds are published. YUMAKBOT_DISABLE_UPDATES turns it off, e.g. while
- * testing a packaged build.
+ * Only an installed app updates itself: one run from source has no release to compare with. On
+ * Linux only the AppImage can replace itself; a .deb is updated through the package manager.
+ * YUMAKBOT_DISABLE_UPDATES turns it off, e.g. while testing a packaged build.
  */
 function watchForUpdates() {
   if (!app.isPackaged || process.env.YUMAKBOT_DISABLE_UPDATES) return;
-  if (process.platform !== 'darwin' && process.platform !== 'win32') return;
+  if (
+    process.platform === 'linux'
+      ? !process.env.APPIMAGE
+      : process.platform !== 'darwin' && process.platform !== 'win32'
+  )
+    return;
   autoUpdater.logger = log;
   updates = startUpdates({
     updater: autoUpdater,
@@ -375,6 +415,13 @@ function fromConnectPage(e: IpcMainInvokeEvent) {
 
 function registerIpc() {
   ipcMain.handle('yumakbot:access-key', (e) => (fromMainPage(e) ? accessKey : null));
+  // The chat a `yumakbot://` link named, once: the page asks when it starts and when told to.
+  ipcMain.handle('yumakbot:take-link', (e) => {
+    if (!fromMainPage(e)) return null;
+    const link = pendingLink;
+    pendingLink = null;
+    return link;
+  });
   // Which server the window shows, so the page can offer to switch.
   ipcMain.handle('yumakbot:server', (e) =>
     fromMainPage(e) ? { mode: config.mode, url: config.mode === 'remote' ? config.url : null } : null,

@@ -112,6 +112,20 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
           <script>document.getElementById('b').onclick = () => {
             document.getElementById('out').textContent = 'Tıklandı'; };</script>`);
       }
+      if (req.url === '/bekle') {
+        // An interstitial that clears by itself, as Cloudflare's "Just a moment..." does.
+        return res.end(`<title>Just a moment...</title><div id="challenge-running">Checking your browser</div>
+          <script>setTimeout(() => location.replace('/sonuc?ad=gecti'), 1500)</script>`);
+      }
+      if (req.url === '/denetim') {
+        return res.end(
+          '<title>Doğrulama</title><div class="g-recaptcha"></div><p>Robot olmadığını doğrula</p>',
+        );
+      }
+      if (req.url === '/engel') {
+        res.statusCode = 403;
+        return res.end('<title>Access denied</title><h1>Access denied</h1>');
+      }
       if (req.url === '/menu') {
         return res.end(`<title>Menü</title><style>#alt{display:none} #ana:hover #alt{display:block}</style>
           <div id="ana"><button>Hesap</button><ul id="alt"><li><a href="/sonuc?ad=cikis">Çıkış yap</a></li></ul></div>`);
@@ -217,6 +231,20 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     const keptText = typeof kept === 'string' ? kept : kept.text;
     const path = /: (\/[^ ]+giris\.jpg)/.exec(keptText)?.[1];
     expect(path && readFileSync(path).subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+  });
+
+  it('kendiliğinden geçen bot denetimini bekler; geçmeyeni ve engeli bota söyler, aşmaya çalışmaz', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_snapshot {}]`);
+    await t.services.turns.idle();
+    const waited = await text('browser_open', { url: `${base}/bekle` });
+    expect(waited).toContain('Merhaba gecti');
+    expect(waited).not.toContain('bot denetimi');
+    const check = await text('browser_open', { url: `${base}/denetim` });
+    expect(check).toContain('Kontrolü al');
+    const blocked = await text('browser_open', { url: `${base}/engel` });
+    expect(blocked).toContain('geri çevirdi');
   });
 
   it('yanıt vermeyen sayfada adım sınırda biter, tarayıcı baştan açılır ve sonraki adımlar beklemez', async () => {

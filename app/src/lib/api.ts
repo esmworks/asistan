@@ -67,10 +67,15 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  extra: Record<string, string> = {},
+): Promise<T> {
   const hasBody = method !== 'GET' && method !== 'DELETE';
   // The server writes its error messages in the language the page asks in.
-  const headers: Record<string, string> = { 'accept-language': useLocale.getState().locale };
+  const headers: Record<string, string> = { ...extra, 'accept-language': useLocale.getState().locale };
   // A file goes as it is; everything else as JSON.
   const raw = body instanceof Blob;
   if (hasBody) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
@@ -368,4 +373,11 @@ export const api = {
   previewBotImport: (file: File) => http.post<BotImportPlan>('/api/import/bots?preview=1', file),
   steerMessage: (id: string) => http.post<Message>(`/api/messages/${id}/steer`),
   importBots: (file: File) => http.post<BotImportResult>('/api/import/bots', file),
+  /** Writes a sealed backup of everything on the server, ready for one download at `/api/backup/<id>`. */
+  createBackup: (password: string) => http.post<{ id: string; size: number }>('/api/backup', { password }),
+  /** Replaces everything with a backup; the server starts again after. The body is the file itself. */
+  restoreBackup: (file: File, password: string) =>
+    request<{ tables: number; files: number }>('POST', '/api/backup/restore', file, {
+      'x-backup-password': encodeURIComponent(password),
+    }),
 };

@@ -295,6 +295,10 @@ export const routines = pgTable('routines', {
   watchHash: text('watch_hash'),
   /** The watched page's text when it was last read, cut short, so a change can be shown as what changed. */
   watchText: text('watch_text'),
+  /** A connected app's read-only tool called before each scheduled run (`RoutineCheck`); null for none. */
+  check: jsonb('check'),
+  /** The fingerprint of the check's answer when it was last called. */
+  checkHash: text('check_hash'),
   /** Conditions a webhook call's JSON body must meet to start the routine; empty for none. */
   webhookFilter: text('webhook_filter').notNull().default(''),
   /** A webhook call only posts what it carries, as the bot's message, without running the bot. */

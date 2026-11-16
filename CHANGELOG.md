@@ -5,9 +5,20 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Memory
+
+- A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is
+  told to ask for the vault instead: memory reaches the model on every turn, so a secret there would leak with it.
+- Writing a note that is already saved, give or take case, spacing and closing punctuation, makes no second copy.
+- Each note reaches the bot with the day it was last written, so of two notes that disagree it can trust the newer.
+
 ### Routines
 
-- A routine pre-check on the usage page: before a run that a watched page change or a webhook call started, the
+- A routine can wait on an app: before each run it calls a read-only tool of a connected app (unread mail, open
+  issues) without the AI, and the bot runs only when the answer changed, with the new answer. A quiet tick costs
+  nothing. Bots set it up when asked ("tell me when a new invoice email arrives"); the routine screen shows the check
+  and removes it. Only a tool that reads, of an app open to the bot, can be a check.
+- A routine pre-check on the usage page: before a run that a watched page, an app's check or a webhook call started, the
   cheapest Claude model says whether the run has anything new to work on (only page noise changed, an event the
   routine does not care about, nothing beyond the last report). "Watch" only records what it said, beside the run and
   as a total on the usage page with what those runs cost; "On" skips such runs with the reason before the bot starts.
@@ -15,8 +26,30 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - A watched page keeps its last text, so the pre-check reads the sentences that were removed and added instead of the
   whole page.
 
+### Browser
+
+- A "Just a moment..." page that clears by itself no longer reaches the bot: opening a site waits for it, reloading
+  once, before the bot reads the page. When a site still shows a check a person has to answer, or turns the browser
+  away, the bot is told so plainly: hand the step to the person with Take control, or use another source. It is
+  never to get past a check itself.
+
+### Backups
+
+- A full backup in one file, sealed with a password of your choosing (scrypt and AES-256-GCM): the bots,
+  conversations, memory, routines, skills, connections, the bots' folders, and the vault key the saved logins need.
+  Download it under Settings → Import and backup, on the web, the desktop or the phone.
+- Restoring one, on the web or the desktop, replaces everything on the server with what the file holds, then starts the
+  server again. A wrong password, a damaged file or a backup from a newer version changes nothing, and a restore waits
+  until no bot is working. The folders it replaced stay beside the new ones as `*.before-restore` until the next
+  restore. Who is signed in to the server stays signed in.
+
 ### Apps
 
+- The desktop app for Linux: an AppImage that updates itself, and a `.deb` for Debian and Ubuntu, built by the release
+  workflow with the others.
+- `yumakbot://` links open a bot, a conversation or a room in the desktop app from outside it (a bookmark, a dashboard,
+  a script). In the desktop app, "Copy a link to this conversation" copies one, and such a link pasted into a chat
+  opens the conversation in place.
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes
   the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps

@@ -17,7 +17,7 @@ import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { useFormat } from '@/lib/format';
-import { useBots, useClaudeModels, useInfo, useRoutines, useSettings } from '@/lib/queries';
+import { useBots, useClaudeModels, useConnections, useInfo, useRoutines, useSettings } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -408,6 +408,7 @@ export function RoutineDialog({
               />
               <p className="mt-1 text-xs text-muted-foreground">{t('routine.watchUrlHint')}</p>
             </Field>
+            {routine && <Check routine={routine} />}
             {routine && <Webhook routine={routine} />}
             {routine?.webhookToken && (
               <Field label={t('routine.webhookFilter')}>
@@ -595,6 +596,47 @@ export function runCommand(origin: string, routineId: string): string {
 }
 
 /** The routine's secret address for other services, with buttons to make, copy, renew or remove it. */
+/**
+ * The app tool a routine calls before each run (bots set it up when asked to act on an app event);
+ * here the person sees which, with what, and can remove it.
+ */
+function Check({ routine: given }: { routine: Routine }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const { data: routines } = useRoutines();
+  const routine = routines?.find((r) => r.id === given.id) ?? given;
+  const { data: connections = [] } = useConnections();
+  const remove = useMutation({
+    mutationFn: () => api.updateRoutine(routine.id, { check: null }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routines'] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const check = routine.check;
+  if (!check) {
+    return <p className="px-1 text-xs text-muted-foreground">{t('routine.checkHint')}</p>;
+  }
+  const app = connections.find((c) => c.id === check.connectionId)?.name ?? check.connectionId;
+  const args = Object.keys(check.args).length ? JSON.stringify(check.args) : null;
+  return (
+    <div className="space-y-1 rounded-2xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1">{t('routine.checkOn', { app, tool: check.tool })}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="rounded-full"
+          disabled={remove.isPending}
+          onClick={() => remove.mutate()}
+        >
+          {t('routine.checkRemove')}
+        </Button>
+      </div>
+      {args && <code className="block break-all font-mono text-[11px]">{args}</code>}
+    </div>
+  );
+}
+
 function Webhook({ routine: given }: { routine: Routine }) {
   const t = useT();
   const qc = useQueryClient();
