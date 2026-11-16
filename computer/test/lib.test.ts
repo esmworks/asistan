@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtempSync, readdirSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DesktopAction } from '@yumakbot/shared';
 import {
@@ -6,6 +9,7 @@ import {
   bearerToken,
   CdpDecoder,
   checkToken,
+  clearForeignProfileLock,
   encodeCdp,
   Jobs,
   isOpenableUrl,
@@ -206,5 +210,30 @@ describe('arka plan komutları', () => {
     expect(() => j.run('sleep 30', '/tmp')).toThrow(/running already/);
     j.stopAll();
     expect(await j.status(a, 5_000)).toMatchObject({ running: false });
+  });
+});
+
+describe('Chromium profile lock', () => {
+  const profile = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-profile-'));
+    symlinkSync('12345', join(dir, 'SingletonCookie'));
+    symlinkSync('/tmp/org.chromium.Chromium.x/SingletonSocket', join(dir, 'SingletonSocket'));
+    return dir;
+  };
+  const left = (dir: string) => readdirSync(dir).sort();
+
+  it('removes a lock left by another host and keeps one from this host', () => {
+    const other = profile();
+    symlinkSync('71f2686f2dae-51', join(other, 'SingletonLock'));
+    expect(clearForeignProfileLock(other, 'eadafa65883c')).toBe(true);
+    expect(left(other)).toEqual([]);
+
+    const own = profile();
+    symlinkSync('my-host-name-51', join(own, 'SingletonLock'));
+    expect(clearForeignProfileLock(own, 'my-host-name')).toBe(false);
+    expect(left(own)).toEqual(['SingletonCookie', 'SingletonLock', 'SingletonSocket']);
+
+    // No lock: nothing to do.
+    expect(clearForeignProfileLock(mkdtempSync(join(tmpdir(), 'yumakbot-profile-')), 'h')).toBe(false);
   });
 });

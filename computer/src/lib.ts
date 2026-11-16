@@ -1,6 +1,31 @@
 import type { ChildProcess } from 'node:child_process';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { readlinkSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { DesktopAction } from '@yumakbot/shared';
+
+/**
+ * Removes a Chromium profile lock left by another host. Chromium names its lock `<host>-<pid>`
+ * and only clears a stale one from its own host; a lock from another host makes it ask the
+ * person to unlock the profile. The computer service's host name changes each time its container
+ * is made again, while the profile stays in the bot's home, so every desktop started after that
+ * would ask. A lock from this host is left to Chromium, which checks whether its process lives.
+ * Returns whether a lock was removed.
+ */
+export function clearForeignProfileLock(profileDir: string, host: string): boolean {
+  let target: string;
+  try {
+    target = readlinkSync(join(profileDir, 'SingletonLock'));
+  } catch {
+    return false;
+  }
+  const dash = target.lastIndexOf('-');
+  if (dash > 0 && target.slice(0, dash) === host) return false;
+  for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    rmSync(join(profileDir, name), { force: true });
+  }
+  return true;
+}
 
 /** An action after parsing: the schema's defaults (button, count, amount) are filled in. */
 export type ParsedAction = ReturnType<(typeof DesktopAction)['parse']>;

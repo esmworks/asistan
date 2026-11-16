@@ -8,9 +8,10 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { createServer as createNetServer, type Socket } from 'node:net';
 import type { Writable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { DESKTOP_SIZE, DesktopAction, DesktopExec, DesktopJobQuery, DesktopJobStart } from '@yumakbot/shared';
-import { isOpenableUrl, Jobs, pngSize, TailBuffer, xdotoolArgs } from './lib';
+import { clearForeignProfileLock, isOpenableUrl, Jobs, pngSize, TailBuffer, xdotoolArgs } from './lib';
 
 const CTL = process.env.YUMAKBOT_CTL ?? '/run/ctl';
 const HOME = process.env.HOME ?? '/tmp';
@@ -18,8 +19,9 @@ const CHROMIUM = process.env.YUMAKBOT_CHROMIUM ?? 'chromium';
 const MAX_OUTPUT = 100_000;
 const MAX_BODY = 1024 * 1024;
 
+const PROFILE = join(HOME, '.config', 'chromium');
 const chromiumArgs = [
-  '--user-data-dir=' + join(HOME, '.config', 'chromium'),
+  '--user-data-dir=' + PROFILE,
   '--no-first-run',
   '--no-default-browser-check',
   '--disable-session-crashed-bubble',
@@ -138,6 +140,8 @@ let cdpClient: Socket | null = null;
 /** Starts the one Chromium of this session (with the DevTools pipe) unless it is running. */
 function ensureChromium(url?: string): boolean {
   if (chromium && chromium.exitCode === null) return false;
+  if (clearForeignProfileLock(PROFILE, hostname()))
+    console.error('chromium: removed a lock left by another host');
   const args = ['--remote-debugging-pipe', ...chromiumArgs, ...(url ? ['--', url] : [])];
   // fd 3: Chromium reads our commands; fd 4: Chromium writes its answers and events.
   const child = spawn(CHROMIUM, args, { stdio: ['ignore', 'inherit', 'inherit', 'pipe', 'pipe'] });
@@ -145,8 +149,12 @@ function ensureChromium(url?: string): boolean {
   toBrowser = child.stdio[3] as Writable;
   toBrowser.on('error', () => {});
   const fromBrowser = child.stdio[4]!;
-  // Always drain: events pile up in the pipe even when nobody listens.
-  fromBrowser.on('data', (d: Buffer) => cdpClient?.write(d));
+  // Always drain: events pile up in the pipe even when nobody listens. Only the current Chromium
+  // speaks to the client: one that relaunched itself may keep the pipe after this child exited,
+  // and its answers would reach a client that never asked them.
+  fromBrowser.on('data', (d: Buffer) => {
+    if (chromium === child) cdpClient?.write(d);
+  });
   fromBrowser.on('error', () => {});
   child.on('error', (e) => console.error('chromium:', e.message));
   child.on('exit', () => {
