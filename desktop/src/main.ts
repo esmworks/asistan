@@ -18,6 +18,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import log from 'electron-log/main';
+import { autoUpdater } from 'electron-updater';
 import {
   normalizeRemoteUrl,
   readDesktopConfig,
@@ -27,6 +28,7 @@ import {
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
 import { ServerProcess } from './server-process';
+import { startUpdates, type Updates } from './updates';
 import { MIN_SIZE, readWindowState, resolveWindowState, writeWindowState } from './window-state';
 
 /**
@@ -99,6 +101,9 @@ let stopped = false;
 let unread = 0;
 /** Keeps the computer from sleeping while a bot works; null while none does. */
 let awake: number | null = null;
+let updates: Updates | null = null;
+/** A downloaded version waiting for a restart. */
+let updateReady: string | null = null;
 
 const resources = () => (app.isPackaged ? process.resourcesPath : join(app.getAppPath(), '..'));
 const serverEntry = () => join(resources(), 'server', 'dist', 'index.mjs');
@@ -120,6 +125,7 @@ async function boot() {
   hardenSessions();
   registerIpc();
   createTray();
+  watchForUpdates();
   config = readDesktopConfig(userData, safeStorage);
   await connect();
 }
@@ -174,6 +180,46 @@ async function connect() {
       detail: (err as Error).message,
     });
   }
+}
+
+/**
+ * Only an installed app updates itself: one run from source has no release to compare with, and
+ * only macOS and Windows builds are published. YUMAKBOT_DISABLE_UPDATES turns it off, e.g. while
+ * testing a packaged build.
+ */
+function watchForUpdates() {
+  if (!app.isPackaged || process.env.YUMAKBOT_DISABLE_UPDATES) return;
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return;
+  autoUpdater.logger = log;
+  updates = startUpdates({
+    updater: autoUpdater,
+    ask: async (version) => {
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        message: t('update.readyTitle', { version }),
+        detail: t('update.readyDetail'),
+        buttons: [t('update.restart'), t('update.later')],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
+    // The installer replaces the app's files, the server's among them, so the server is stopped
+    // the usual way first instead of being cut off mid-write.
+    beforeInstall: async () => {
+      quitting = true;
+      setStatus('status.quitting');
+      if (awake !== null) powerSaveBlocker.stop(awake);
+      awake = null;
+      await server?.stop();
+      stopped = true;
+    },
+    onReady: (version) => {
+      updateReady = version;
+      rebuildMenu();
+    },
+    warn: (message) => log.warn(message),
+  });
 }
 
 function showWindow() {
@@ -535,6 +581,14 @@ function rebuildMenu() {
       },
       { label: t('menu.showLogs'), click: () => shell.showItemInFolder(log.transports.file.getFile().path) },
       { type: 'separator' },
+      ...(updateReady
+        ? [
+            {
+              label: t('menu.installUpdate', { version: updateReady }),
+              click: () => void updates?.install(),
+            },
+          ]
+        : []),
       { label: t('menu.quit'), role: 'quit' },
     ]),
   );

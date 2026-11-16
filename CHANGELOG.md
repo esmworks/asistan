@@ -3,6 +3,14 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Apps
+
+- The desktop app updates itself from GitHub releases on macOS and Windows: a new version downloads in the background,
+  and the app offers to restart into it or installs it when it quits. Apps from 0.2.0 and earlier have no updater, so
+  this version is installed by hand once.
+
 ## 0.2.0 — 2026-11-16
 
 ### Apps
