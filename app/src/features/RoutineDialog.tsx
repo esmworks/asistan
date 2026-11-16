@@ -2,6 +2,7 @@ import { describeSchedule, parseCron, SHORT_DAY_NAMES, type Routine, type Schedu
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, Webhook as WebhookIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -19,6 +20,24 @@ import { useFormat } from '@/lib/format';
 import { useBots, useClaudeModels, useInfo, useRoutines, useSettings } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
+
+/** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
+export function OpenedRoutineDialog() {
+  const opened = useUi((s) => s.routineDialog);
+  const openRoutine = useUi((s) => s.openRoutine);
+  const { data: routines = [] } = useRoutines();
+  const routine = opened && routines.find((r) => r.id === opened.routineId);
+  if (!opened || !routine) return null;
+  return (
+    <RoutineDialog
+      botId={opened.botId}
+      routine={routine}
+      open
+      onOpenChange={(v) => !v && openRoutine(null)}
+      showRuns
+    />
+  );
+}
 
 /** Validation messages are message keys; `Field` shows them in the current language. */
 const Form = z.object({
@@ -115,11 +134,14 @@ export function RoutineDialog({
   routine,
   open,
   onOpenChange,
+  showRuns = false,
 }: {
   botId: string;
   routine?: Routine;
   open: boolean;
   onOpenChange(v: boolean): void;
+  /** Scrolls to the latest runs, for a dialog opened to see why a run failed. */
+  showRuns?: boolean;
 }) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
@@ -430,7 +452,12 @@ export function RoutineDialog({
               </div>
             )}
             {routine && (
-              <RecentRuns routineId={routine.id} botId={botId} onOpen={() => onOpenChange(false)} />
+              <RecentRuns
+                routineId={routine.id}
+                botId={botId}
+                reveal={showRuns}
+                onOpen={() => onOpenChange(false)}
+              />
             )}
           </div>
           <DialogFooter className="gap-2 border-t px-6 py-4">
@@ -463,16 +490,31 @@ export function RoutineDialog({
 }
 
 /** The routine's latest runs: when, how each went and why one failed; a run opens its conversation. */
-function RecentRuns({ routineId, botId, onOpen }: { routineId: string; botId: string; onOpen(): void }) {
+function RecentRuns({
+  routineId,
+  botId,
+  reveal,
+  onOpen,
+}: {
+  routineId: string;
+  botId: string;
+  reveal: boolean;
+  onOpen(): void;
+}) {
   const t = useT();
   const { dayLabel } = useFormat();
   const { data: runs = [] } = useQuery({
     queryKey: ['routine-runs', routineId],
     queryFn: () => api.routineRuns(routineId),
   });
+  const ref = useRef<HTMLDivElement>(null);
+  const loaded = runs.length > 0;
+  useEffect(() => {
+    if (reveal && loaded) ref.current?.scrollIntoView({ block: 'nearest' });
+  }, [reveal, loaded]);
   if (!runs.length) return null;
   return (
-    <div className="space-y-1.5">
+    <div ref={ref} className="space-y-1.5">
       <div className="text-sm font-medium">{t('routine.runs')}</div>
       <ul className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
         {runs.slice(0, 10).map((r) => (

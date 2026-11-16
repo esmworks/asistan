@@ -669,15 +669,23 @@ export class ThreadService {
     // Each enabled routine's latest finished run; a failed one marks its bot until a run succeeds.
     const latestRuns = await this.ctx.db
       .selectDistinctOn([schema.routineRuns.routineId], {
+        routineId: schema.routineRuns.routineId,
         botId: schema.routines.botId,
         name: schema.routines.name,
         status: schema.routineRuns.status,
+        startedAt: schema.routineRuns.startedAt,
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
       .where(and(eq(schema.routines.enabled, true), inArray(schema.routineRuns.status, ['done', 'error'])))
       .orderBy(schema.routineRuns.routineId, desc(schema.routineRuns.startedAt));
-    const failedBy = new Map(latestRuns.filter((r) => r.status === 'error').map((r) => [r.botId, r.name]));
+    // Newest failure first: that one names the bot's mark.
+    const failedBy = new Map<string, { id: string; name: string }[]>();
+    for (const r of latestRuns
+      .filter((r) => r.status === 'error')
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())) {
+      failedBy.set(r.botId, [...(failedBy.get(r.botId) ?? []), { id: r.routineId, name: r.name }]);
+    }
     return bots.map(({ id }) => {
       const own = threads.filter((t) => t.botId === id);
       const userThread = own.find((t) => t.kind === 'user') ?? null;
@@ -700,7 +708,8 @@ export class ThreadService {
         repliedThreadId: replied?.threadId ?? null,
         state: busy ?? 'idle',
         pendingApprovals: pendingBy.get(id) ?? 0,
-        failedRoutine: failedBy.get(id) ?? null,
+        failedRoutine: failedBy.get(id)?.[0]?.name ?? null,
+        failedRoutines: failedBy.get(id)?.map((r) => r.id) ?? [],
         waiting: waitingBy.get(id) ?? null,
       };
     });

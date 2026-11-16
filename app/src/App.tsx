@@ -22,6 +22,7 @@ import { SearchDialog } from '@/features/SearchDialog';
 import { SettingsDialog } from '@/features/SettingsDialog';
 import { ShortcutsDialog } from '@/features/ShortcutsDialog';
 import { TodayDialog } from '@/features/TodayDialog';
+import { OpenedRoutineDialog } from '@/features/RoutineDialog';
 import { Sidebar } from '@/features/Sidebar';
 import { useLocale, useT } from '@/i18n';
 import { api, setUnauthorizedHandler } from '@/lib/api';
@@ -251,6 +252,7 @@ function Workspace() {
       <SearchDialog />
       <ShortcutsDialog />
       <TodayDialog />
+      <OpenedRoutineDialog />
       <AppsDialog />
     </div>
   );

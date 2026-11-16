@@ -9,6 +9,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
+  CircleAlert,
   Clock,
   Download,
   FileText,
@@ -32,7 +33,15 @@ import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { useBotActivityById } from '@/lib/botActivity';
 import { useFormat } from '@/lib/format';
-import { useBots, useConnections, useGroups, useLibrary, useRoutines, useSkills } from '@/lib/queries';
+import {
+  useBots,
+  useConnections,
+  useGroups,
+  useLibrary,
+  useRoutines,
+  useSkills,
+  useSummaries,
+} from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { ComputerCard, useBrowserAvailable } from './Computer';
@@ -134,6 +143,9 @@ function Upcoming({ bot }: { bot: Bot }) {
   const { dayLabel } = useFormat();
   const { data: routines = [] } = useRoutines();
   const mine = routines.filter((r) => r.botId === bot.id);
+  const { data: summaries = [] } = useSummaries();
+  // Servers older than the field send no ids.
+  const failed = new Set(summaries.find((s) => s.botId === bot.id)?.failedRoutines ?? []);
   const [editing, setEditing] = useState<Routine | undefined>();
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
@@ -174,7 +186,11 @@ function Upcoming({ bot }: { bot: Bot }) {
       <div className="space-y-2">
         {mine.map((r) => (
           <div key={r.id} className="flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-3">
-            <Clock className="size-4 shrink-0 text-muted-foreground" />
+            {failed.has(r.id) ? (
+              <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden />
+            ) : (
+              <Clock className="size-4 shrink-0 text-muted-foreground" />
+            )}
             <button
               className="min-w-0 flex-1 text-left"
               onClick={() => {
@@ -184,6 +200,7 @@ function Upcoming({ bot }: { bot: Bot }) {
             >
               <div className="truncate text-sm font-medium">{r.name}</div>
               <div className="truncate text-[13px] text-muted-foreground">
+                {failed.has(r.id) && <span className="text-destructive">{t('panel.lastRunFailed')} · </span>}
                 {describeSchedule(r.schedule, locale)}
                 {r.enabled && r.nextRunAt ? ` · ${t('panel.nextRun', { when: dayLabel(r.nextRunAt) })}` : ''}
               </div>
@@ -205,7 +222,13 @@ function Upcoming({ bot }: { bot: Bot }) {
           </div>
         ))}
       </div>
-      <RoutineDialog botId={bot.id} routine={editing} open={open} onOpenChange={setOpen} />
+      <RoutineDialog
+        botId={bot.id}
+        routine={editing}
+        open={open}
+        onOpenChange={setOpen}
+        showRuns={!!editing && failed.has(editing.id)}
+      />
     </section>
   );
 }

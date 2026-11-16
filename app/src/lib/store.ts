@@ -86,6 +86,8 @@ interface UiState {
   shortcutsOpen: boolean;
   /** The day's summary. */
   todayOpen: boolean;
+  /** A routine opened from outside the bot panel (the failed-routine mark on a bot's avatar). */
+  routineDialog: { botId: string; routineId: string } | null;
   /** Text picked in a message, waiting to be quoted at the top of the draft. */
   pendingQuote: string | null;
   /** The apps (connections) window; `botId` is the bot it was opened for, whose switch a new connection turns on. */
@@ -124,6 +126,7 @@ interface UiState {
   setFindOpen(open: boolean, seed?: { query: string; messageId: string }): void;
   setShortcutsOpen(open: boolean): void;
   setTodayOpen(open: boolean): void;
+  openRoutine(routine: UiState['routineDialog']): void;
   quote(text: string | null): void;
   openApps(apps: UiState['apps']): void;
   openBotDialog(d: UiState['botDialog']): void;
@@ -183,6 +186,7 @@ export const useUi = create<UiState>((set, get) => ({
   findSeed: null,
   shortcutsOpen: false,
   todayOpen: false,
+  routineDialog: null,
   pendingQuote: null,
   apps: null,
   botDialog: null,
@@ -217,6 +221,7 @@ export const useUi = create<UiState>((set, get) => ({
   setFindOpen: (findOpen, seed) => set({ findOpen, findSeed: findOpen ? (seed ?? null) : null }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setTodayOpen: (todayOpen) => set({ todayOpen }),
+  openRoutine: (routineDialog) => set({ routineDialog }),
   quote: (pendingQuote) => set({ pendingQuote }),
   openApps: (apps) => set({ apps }),
   openBotDialog: (botDialog) => set({ botDialog }),

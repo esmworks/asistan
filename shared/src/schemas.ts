@@ -169,6 +169,8 @@ export const BotSummary = z.object({
   pendingApprovals: z.number(),
   /** A routine of the bot whose latest run failed, by name; null when none did. */
   failedRoutine: z.string().nullable(),
+  /** Every routine of the bot whose latest run failed, newest failure first. */
+  failedRoutines: z.array(Id),
   /** The oldest card the bot waits on the person for, if any. */
   waiting: z
     .object({ kind: z.enum(['tool', 'question', 'login']), summary: z.string(), threadId: Id })

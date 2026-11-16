@@ -498,12 +498,27 @@ function StateDot({ summary }: { summary?: BotSummary }) {
   if (state === 'idle') {
     if (!summary?.failedRoutine) return null;
     const label = t('sidebar.routineFailed', { name: summary.failedRoutine });
+    // Servers older than the field send no ids; the mark then only tells.
+    const routineId = summary.failedRoutines?.[0];
+    // The mark sits on the bot's button: a click opens the failed routine instead of only the chat.
+    const open = (e: React.SyntheticEvent) => {
+      if (!routineId) return;
+      e.stopPropagation();
+      const ui = useUi.getState();
+      ui.openChat(summary.botId);
+      ui.openRoutine({ botId: summary.botId, routineId });
+    };
     return (
       <span
         role="img"
         aria-label={label}
         title={label}
-        className="absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white ring-2 ring-sidebar"
+        onClick={open}
+        onPointerDown={(e) => routineId && e.stopPropagation()}
+        className={cn(
+          'absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white ring-2 ring-sidebar',
+          routineId && 'cursor-pointer',
+        )}
       >
         !
       </span>

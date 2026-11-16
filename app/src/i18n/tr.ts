@@ -563,6 +563,7 @@ export const tr = {
   'panel.addRoutine': 'Rutin',
   'panel.noRoutines': 'Zamanlanmış iş yok. Rutin ekleyince bot o saatte kendi başına çalışır.',
   'panel.nextRun': 'sıradaki {when}',
+  'panel.lastRunFailed': 'son çalışma başarısız',
   'panel.runNow': 'Şimdi çalıştır',
   'panel.toggle': 'Aç/kapat',
   'panel.bot': 'Bot',
