@@ -8,6 +8,9 @@ web-build/
 /android
 .kotlin/
 
+# The Expo account and project the app is released from; app.config.ts reads them
+app.local.json
+
 # Signing material
 *.jks
 *.p8
