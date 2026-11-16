@@ -1,9 +1,9 @@
-import { USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
+import { ROUTINE_GATE_MODES, USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { Loading, Note, PillButton, Row, Section, Segments } from '@/components/page';
 import { shareFile } from '@/components/panel/files';
-import { ChoiceRow, Pad, Rows, useSaveSettings } from './common/controls';
+import { ChoiceRow, Hint, Pad, Rows, useSaveSettings } from './common/controls';
 import { usd } from './more/money';
 import { BotMark, DailyChart, ShareBar, UsageCard, UsageLine } from './more/usageParts';
 import { t } from '@/i18n';
@@ -57,6 +57,7 @@ export function UsageSection() {
         <Report data={data} filtered={botId !== null} onPickBot={setBotId} />
       )}
       <MonthLimit month={data?.month} />
+      <RoutineGate gate={data?.gate} />
       <PillButton
         icon="download"
         label={t('usage.downloadCsv')}
@@ -123,6 +124,41 @@ function MonthLimit({ month }: { month?: UsageReport['month'] }) {
           </Pad>
         ) : null}
       </Rows>
+    </Section>
+  );
+}
+
+/**
+ * The small-model check before routine runs that a watched page, an app's check or a webhook
+ * started: off, watching only, or on; and over the period, what it cost and what it would have saved.
+ */
+function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const mode = settings?.routineGate;
+  // A server older than the check does not offer it.
+  if (!mode) return null;
+  return (
+    <Section title={t('usage.gate')}>
+      <Pad>
+        <Segments
+          value={mode}
+          onChange={(m) => m !== mode && save.mutate({ routineGate: m })}
+          options={ROUTINE_GATE_MODES.map((m) => ({ value: m, label: t(`usage.gate.choice.${m}`) }))}
+        />
+        <Hint>{t(`usage.gate.${mode}Hint`)}</Hint>
+        {gate ? (
+          <>
+            <Hint>{t('usage.gate.checks', { count: gate.checks, cost: usd(gate.costUsd) })}</Hint>
+            {gate.skippable > 0 ? (
+              <Hint>
+                {t('usage.gate.skippable', { count: gate.skippable, cost: usd(gate.skippableCostUsd) })}
+              </Hint>
+            ) : null}
+            {gate.skipped > 0 ? <Hint>{t('usage.gate.skipped', { count: gate.skipped })}</Hint> : null}
+          </>
+        ) : null}
+      </Pad>
     </Section>
   );
 }
