@@ -52,6 +52,8 @@ export const bots = pgTable('bots', {
   memory: boolean('memory').notNull().default(true),
   /** How hard a Claude bot thinks; empty takes the server-wide setting. */
   effort: text('effort').notNull().default(''),
+  /** Which tools the bot gets (`ToolSelection`); null for every tool. */
+  toolSelection: jsonb('tool_selection'),
   archivedAt: ts('archived_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
@@ -243,6 +245,12 @@ export const memories = pgTable(
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
     source: text('source').notNull().default('user'),
+    /**
+     * When a bot last looked the note up: a search that found it, or the site it is about opened.
+     * Being in the prompt does not count, or every note there would stay in use for good.
+     */
+    lastUsedAt: ts('last_used_at'),
+    useCount: integer('use_count').notNull().default(0),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -523,3 +531,67 @@ export const botSkills = pgTable(
   },
   (t) => [uniqueIndex('bot_skills_uq').on(t.botId, t.skillId)],
 );
+
+/**
+ * A chat app the person talks to bots through. Telegram: one row per bot, with that bot's own
+ * Telegram bot (its token sealed with the vault key) and the one Telegram account paired with it.
+ * WhatsApp: a single row for the linked number; `botId` is the bot its messages go to now.
+ */
+export const channels = pgTable(
+  'channels',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: ['telegram', 'whatsapp'] }).notNull(),
+    botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    /** Telegram: the bot token, sealed. */
+    secret: text('secret'),
+    /** What the chat app says about the account the server uses (Telegram bot name, linked number). */
+    account: jsonb('account').$type<Record<string, unknown>>().notNull().default({}),
+    /** The person's id in the chat app; nobody else's messages are read. Null until paired. */
+    owner: text('owner'),
+    ownerName: text('owner_name'),
+    /** Telegram: the code the person sends with /start to pair; good until `pairUntil`. */
+    pairCode: text('pair_code'),
+    pairUntil: ts('pair_until'),
+    /** Choices of the person (WhatsApp: own number or a separate bot number). */
+    settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+    /** Telegram: the next update to read. */
+    cursor: text('cursor'),
+    /** Why the connection stopped working, in the chat app's words; null while it works. */
+    error: text('error'),
+    createdAt: created(),
+  },
+  (t) => [
+    uniqueIndex('channels_telegram_bot_uq')
+      .on(t.botId)
+      .where(sql`${t.kind} = 'telegram'`),
+    uniqueIndex('channels_whatsapp_uq')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'whatsapp'`),
+  ],
+);
+
+/** Which message in a chat app is which message here, so an answer to one finds its place. */
+export const channelMessages = pgTable(
+  'channel_messages',
+  {
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => channels.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    createdAt: created(),
+  },
+  (t) => [
+    uniqueIndex('channel_messages_uq').on(t.channelId, t.externalId),
+    index('channel_messages_message_idx').on(t.messageId),
+  ],
+);
+
+/** The linked WhatsApp device's keys, each sealed with the vault key. */
+export const whatsappKeys = pgTable('whatsapp_keys', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});

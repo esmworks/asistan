@@ -38,10 +38,12 @@ The interface is available in English and Turkish.
 - **Bots** — create as many as you like, group them, give each a name, avatar, instructions and model. A manager bot
   can create, update and delegate work to other bots; bot-to-bot messages are guarded against loops.
 - **Two engines** — Claude through the Claude Agent SDK (with a Claude subscription token or an Anthropic API key), or
-  bring-your-own-key models from other providers through the Pi engine.
+  models from other providers through the Pi engine: with your own key, or by signing in with your ChatGPT or GitHub
+  Copilot plan.
 - **Live chat** — streamed replies, file attachments, stop at any time, and turns that pick up where they left off
   after a server restart. Unread marks, find in a conversation (⌘F), `/` commands, quick replies, a goal per
-  conversation, branching from a reply, Markdown export, sortable tables and Mermaid diagrams.
+  conversation, branching from a reply, Markdown export, sortable tables, Mermaid diagrams, and speaking a message
+  instead of typing it.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a
@@ -49,6 +51,10 @@ The interface is available in English and Turkish.
   conversation.
 - **Today and usage** — a Today page of what the bots did and what waits for you; spending by bot, model and routine,
   a monthly limit and a CSV export.
+- **Telegram and WhatsApp** — each bot can have its own Telegram bot, paired with your Telegram account only;
+  WhatsApp links like WhatsApp Web, with a separate number or your own "Message yourself" chat, and `/bot <name>`
+  switches the bot it talks to. Replies, files and approval cards go back to the app you last wrote from; passwords
+  and sign-ins stay in the Yumak Bot app.
 - **A bot as an API** — call a bot from a script with the access key and get its reply.
 - **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
   choose which bots may use them.
@@ -174,11 +180,14 @@ sudo ./docker/firewall.sh
 ```
 
 This starts PostgreSQL, the Yumak Bot server and the computer service with a read-only root file system, all
-capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`; for remote access, put a TLS
-reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to your domain and `YUMAKBOT_SECURE_COOKIES=1`.
-Have the proxy send `YUMAKBOT_PROXY_SECRET` in an `X-Yumakbot-Proxy` header and the client's address in
-`X-Forwarded-For`, so sign-in attempts are counted per person rather than all as the proxy's address
-(`docker/Caddyfile` shows how).
+capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`. To reach it from elsewhere
+without opening a port, add `--profile cloudflare` (a Cloudflare Tunnel, with `CLOUDFLARE_TUNNEL_TOKEN`) or
+`--profile tailscale` (your tailnet, with `TAILSCALE_AUTHKEY`) and set `YUMAKBOT_PUBLIC_URL` and
+`YUMAKBOT_SECURE_COOKIES=1`; or put a TLS reverse proxy (Caddy, nginx) in front of it and set `YUMAKBOT_ALLOWED_HOSTS`
+to your domain. Have such a proxy send `YUMAKBOT_PROXY_SECRET` in an `X-Yumakbot-Proxy` header and the client's
+address in `X-Forwarded-For`, so sign-in attempts are counted per person rather than all as the proxy's address
+(`docker/Caddyfile` shows how). To sign a phone or another computer in, get a one-time pairing code under Settings →
+Connection → Connect another device on a device already signed in.
 
 [docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
@@ -296,6 +305,7 @@ The server reads these environment variables:
 | `YUMAKBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
 | `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
 | `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
+| `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from

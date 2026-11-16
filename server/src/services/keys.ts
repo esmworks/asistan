@@ -1,10 +1,11 @@
 import { eq, like } from 'drizzle-orm';
-import type { Model } from '@earendil-works/pi-ai';
+import type { Model, ModelAuth } from '@earendil-works/pi-ai';
 import { getModels, getProviders } from '@earendil-works/pi-ai/compat';
 import type { CustomEndpointCreate, CustomEndpointUpdate, ProviderInfo } from '@yumakbot/shared';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError } from '../util';
+import type { SubscriptionService } from './subscriptions';
 import type { VaultService } from './vault';
 
 const PREFIX = 'secret.apikey.';
@@ -118,6 +119,8 @@ export class ProviderKeyService {
     private ctx: Ctx,
     private vault: VaultService,
     private fetcher: typeof fetch = fetch,
+    /** Sign-ins with the person's own plan (ChatGPT, Copilot), besides keys. */
+    private plans?: SubscriptionService,
   ) {}
 
   private builtIn(): string[] {
@@ -142,7 +145,8 @@ export class ProviderKeyService {
   }
 
   async providers(): Promise<string[]> {
-    return [...this.builtIn(), ...(await this.endpoints()).map((e) => e.id)];
+    const plans = (this.plans?.providers() ?? []).filter((p) => !this.builtIn().includes(p));
+    return [...this.builtIn(), ...plans, ...(await this.endpoints()).map((e) => e.id)];
   }
 
   private async check(provider: string) {
@@ -155,8 +159,21 @@ export class ProviderKeyService {
       .from(schema.kv)
       .where(like(schema.kv.key, `${PREFIX}%`));
     const hints = new Map(rows.map((r) => [r.key.slice(PREFIX.length), hint(this.unseal(String(r.value)))]));
+    const plans = this.plans?.providers() ?? [];
+    const signedIn = new Set<string>();
+    for (const p of plans) if (await this.plans!.signedIn(p)) signedIn.add(p);
+    const signIn = (id: string) => (plans.includes(id) ? { signIn: { signedIn: signedIn.has(id) } } : {});
     return [
-      ...this.builtIn().map((id) => ({ id, configured: hints.has(id), hint: hints.get(id) ?? null })),
+      ...this.builtIn().map((id) => ({
+        id,
+        configured: hints.has(id) || signedIn.has(id),
+        hint: hints.get(id) ?? null,
+        ...signIn(id),
+      })),
+      // A plan whose provider takes no key (Copilot) is listed for its sign-in alone.
+      ...plans
+        .filter((id) => !this.builtIn().includes(id))
+        .map((id) => ({ id, configured: signedIn.has(id), hint: null, ...signIn(id) })),
       ...(await this.endpoints()).map((e) => ({
         id: e.id,
         // Usable without a key: a local server needs none.
@@ -171,7 +188,10 @@ export class ProviderKeyService {
     await this.check(provider);
     const custom = await this.endpoint(provider);
     if (custom) return custom.models;
-    return (getModels(provider as never) as { id: string }[]).map((m) => m.id);
+    const ids = (getModels(provider as never) as { id: string }[]).map((m) => m.id);
+    // A Copilot plan opens only some models; without a key those are the ones offered.
+    const open = !(await this.get(provider)) ? await this.plans?.availableModels(provider) : null;
+    return open ? ids.filter((id) => open.has(id)) : ids;
   }
 
   /** A stored key in the clear. One saved before keys were sealed is sealed on the way. */
@@ -195,6 +215,18 @@ export class ProviderKeyService {
     return (await this.endpoint(provider)) ? NO_KEY : null;
   }
 
+  /**
+   * What the engine's requests to a provider carry: a saved key first, then a sign-in with the
+   * person's plan (with the address it gives), then the stand-in for an endpoint that takes none.
+   */
+  async auth(provider: string): Promise<ModelAuth | null> {
+    const key = await this.get(provider);
+    if (key) return { apiKey: key };
+    const plan = await this.plans?.auth(provider);
+    if (plan?.apiKey) return plan;
+    return (await this.endpoint(provider)) ? { apiKey: NO_KEY } : null;
+  }
+
   private unseal(value: string): string {
     if (!value.startsWith('v1:')) return value;
     try {
@@ -213,8 +245,15 @@ export class ProviderKeyService {
       .onConflictDoUpdate({ target: schema.kv.key, set: { value } });
   }
 
+  /** A provider that takes a key: a built-in one or the person's endpoint, not a plan alone. */
+  private async checkKey(provider: string) {
+    if (!this.builtIn().includes(provider) && !(await this.endpoint(provider))) {
+      throw new HttpError(404, 'error.unknownProvider');
+    }
+  }
+
   async set(provider: string, key: string) {
-    await this.check(provider);
+    await this.checkKey(provider);
     const value = key.trim();
     if (value.length < 8) throw new HttpError(400, 'error.keyTooShort');
     // Subscription tokens are never used through this path.

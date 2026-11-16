@@ -91,6 +91,11 @@ export const useMemory = () => {
   const api = useApi();
   return useQuery({ queryKey: ['memory', useOrigin()], queryFn: api.memory });
 };
+/** Under `memory`, so a change to any note brings the list up to date. */
+export const useStaleMemory = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['memory', useOrigin(), 'stale'], queryFn: api.staleMemory });
+};
 export const useRoutines = () => {
   const api = useApi();
   return useQuery({ queryKey: ['routines', useOrigin()], queryFn: api.routines });

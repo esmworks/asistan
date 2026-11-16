@@ -1,4 +1,7 @@
 import type {
+  TelegramStatus,
+  WhatsAppSet,
+  WhatsAppStatus,
   ApnsSet,
   ApnsStatus,
   PushDeviceSet,
@@ -49,6 +52,7 @@ import type {
   ConnectionUpdate,
   UsageRange,
   UsageReport,
+  ProviderSignIn,
 } from '@yumakbot/shared';
 import { locale, t } from '@/i18n';
 
@@ -192,6 +196,8 @@ export function apiFor(origin: string) {
     /** `account` is missing on servers older than username and password sign-in. */
     session: () => http.get<{ authenticated: boolean; account?: boolean }>('/api/session'),
     access: (key: string) => http.post<{ ok: true }>('/api/access', { key }),
+    /** Signs the phone in with a one-time pairing code from a signed-in device. */
+    pair: (code: string) => http.post<{ ok: true }>('/api/pair', { code }),
     login: (username: string, password: string) =>
       http.post<{ ok: true }>('/api/login', { username, password }),
     account: () => http.get<{ username: string | null }>('/api/account'),
@@ -215,6 +221,18 @@ export function apiFor(origin: string) {
     apns: () => http.get<ApnsStatus>('/api/push/apns'),
     setApns: (b: ApnsSet) => http.put<ApnsStatus>('/api/push/apns', b),
     clearApns: () => http.del<ApnsStatus>('/api/push/apns'),
+    /** A bot's own Telegram bot: never the token, which is write-only. */
+    telegram: (botId: string) => http.get<TelegramStatus>(`/api/bots/${botId}/telegram`),
+    connectTelegram: (botId: string, token: string) =>
+      http.put<TelegramStatus>(`/api/bots/${botId}/telegram`, { token }),
+    pairTelegram: (botId: string) => http.post<TelegramStatus>(`/api/bots/${botId}/telegram/pair`, {}),
+    updateTelegram: (botId: string, patch: { notices: boolean }) =>
+      http.patch<TelegramStatus>(`/api/bots/${botId}/telegram`, patch),
+    disconnectTelegram: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/telegram`),
+    whatsapp: () => http.get<WhatsAppStatus>('/api/whatsapp'),
+    setWhatsapp: (b: WhatsAppSet) => http.put<WhatsAppStatus>('/api/whatsapp', b),
+    linkWhatsapp: () => http.post<WhatsAppStatus>('/api/whatsapp/link', {}),
+    disconnectWhatsapp: () => http.del<WhatsAppStatus>('/api/whatsapp'),
     settings: () => http.get<Settings>('/api/settings'),
     updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
     providers: () => http.get<ProviderInfo[]>('/api/providers'),
@@ -229,6 +247,15 @@ export function apiFor(origin: string) {
         },
       ),
     removeProviderKey: (id: string) => http.del<{ ok: true }>(`/api/providers/${encodeURIComponent(id)}/key`),
+    /** Starts signing in to a provider with the person's plan; follow it with `signIn`. */
+    startSignIn: (provider: string, enterprise?: string) =>
+      http.post<ProviderSignIn>(`/api/providers/${encodeURIComponent(provider)}/sign-in`, { enterprise }),
+    signIn: (id: string) => http.get<ProviderSignIn>(`/api/sign-ins/${id}`),
+    pasteSignIn: (id: string, input: string) =>
+      http.post<ProviderSignIn>(`/api/sign-ins/${id}/paste`, { input }),
+    cancelSignIn: (id: string) => http.del<{ ok: true }>(`/api/sign-ins/${id}`),
+    signOut: (provider: string) =>
+      http.del<{ ok: true }>(`/api/providers/${encodeURIComponent(provider)}/sign-in`),
     addEndpoint: (input: CustomEndpointCreate) => http.post<ProviderInfo>('/api/providers/custom', input),
     discoverEndpoints: () =>
       http.get<{ name: string; baseUrl: string; models: string[] }[]>('/api/providers/discover'),
@@ -382,6 +409,8 @@ export function apiFor(origin: string) {
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
     /** Deletes every note the bot keeps for itself. */
     removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),
+    staleMemory: () => http.get<Memory[]>('/api/memory-stale'),
+    removeStaleMemory: (ids: string[]) => http.post<{ count: number }>('/api/memory-stale/delete', { ids }),
 
     routines: () => http.get<Routine[]>('/api/routines'),
     createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),

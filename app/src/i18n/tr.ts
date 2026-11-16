@@ -35,6 +35,20 @@ export const tr = {
   'login.password': 'Şifre',
   'login.enterUsername': 'Kullanıcı adını girin',
   'login.enterPassword': 'Şifreyi girin',
+  'pair.title': 'Başka bir cihaz bağla',
+  'pair.label': 'Eşleştirme kodu',
+  'pair.hint':
+    'Bir telefonda ya da başka bir bilgisayarda şifresiz oturum açın: orada Yumak Bot’u açıp "Eşleştirme koduyla gir"i seçin ve kodu yazın. Kod bir kez ve beş dakika içinde çalışır.',
+  'pair.make': 'Kod al',
+  'pair.again': 'Yeni kod',
+  'pair.left': '{minutes}:{seconds} daha geçerli',
+  'pair.where': 'Orada girilecek sunucu adresi: {address}',
+  'login.useCode': 'Eşleştirme koduyla gir',
+  'login.codeHint':
+    'Oturumu açık bir cihazdan kod alın: Ayarlar → Bağlantı → Başka bir cihaz bağla. Kod bir kez ve beş dakika içinde çalışır.',
+  'login.code': 'Eşleştirme kodu',
+  'login.enterCode': 'Eşleştirme kodunu yazın',
+  'login.back': 'Geri',
   'login.useKey': 'Şifremi unuttum, erişim anahtarıyla gir',
   'login.usePassword': 'Kullanıcı adı ve şifreyle gir',
   'account.createTitle': 'Hesabınızı oluşturun',
@@ -197,6 +211,12 @@ export const tr = {
   'general.density.comfortable': 'Son mesajla',
   'general.density.compact': 'Sıkışık',
   'usage.routines': 'Rutinlere göre',
+  'bot.toolsOnly': 'Yalnız listedeki araçlar',
+  'bot.toolsHint':
+    'Daha az araç küçük bir yerel modele çalışacak yer bırakır, botu da işine bağlı tutar. Araçları onay kartlarındaki adlarıyla, her satıra bir tane yazın; sondaki * o adla başlayan bütün araçları alır, ör. mcp__gmail__*.',
+  'bot.toolsAllow': 'Alacağı araçlar',
+  'bot.toolsExclude': 'Hiç almayacağı araçlar',
+  'bot.toolsInvalid': 'Her satıra bir ad: harf, rakam, _ . - ve en fazla sonda bir *',
   'bot.memory': 'Hafıza',
   'bot.memoryHint':
     'Kapalıyken bot not okumaz ve tutmaz, ortak notlarınızı da görmez: her sohbet kendi başınadır.',
@@ -221,6 +241,8 @@ export const tr = {
   'today.runs': 'Rutinler',
   'today.runsNone': 'Bugün hiçbir rutin çalışmadı.',
   'today.failed': '{count} hata',
+  'today.staleMemory': 'Hiçbir botun kullanmadığı {count} hafıza notu',
+  'today.staleMemoryReview': 'Gözden geçir',
   'sidebarMenu.clearThreads': 'Diğer sohbetleri sil…',
   'sidebarMenu.clearThreadsConfirm':
     '{name} botunun ana sohbet dışındaki bütün sohbetleri dosyalarıyla silinsin mi? Geri alınamaz.',
@@ -265,6 +287,9 @@ export const tr = {
   'approval.heldBy': 'Bot kendi başına ilerleyebilir, ama “{rule}” kuralınız önce sormasını istiyor.',
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
+  'chat.dictation': 'Yazmak yerine konuş',
+  'chat.dictationStop': 'Durdur ve yazıya dök',
+  'chat.dictationFailed': 'Konuşma alınamadı: {message}',
   'chat.copyLink': 'Bu sohbetin bağlantısını kopyala',
   'chat.linkCopied': 'Bağlantı kopyalandı',
   'chat.linkGone': 'Bağlantıdaki sohbet artık burada değil.',
@@ -709,7 +734,7 @@ export const tr = {
     'Bütün botlara yazabilir, bot oluşturup düzenleyebilir. İzin gevşetmek için yine size sorar.',
   'bot.archive': 'Arşivle',
   'bot.advanced': 'Gelişmiş ayarlar',
-  'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot',
+  'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot, araçlar',
   'bot.create': 'Oluştur',
   'bot.engine': 'Model kaynağı',
   'bot.engine.claude': 'Claude',
@@ -894,6 +919,13 @@ export const tr = {
   'memory.noteCount': '{count} not',
   'memory.deleteAll': 'Hepsini sil',
   'memory.deleteAllConfirm': '{name} botunun {count} notunun hepsi silinsin mi? Geri alınamaz.',
+  'memory.stale': 'Hiçbir botun kullanmadığı notlar',
+  'memory.staleHint':
+    '{days} gündür bunları kimse değiştirmedi, hiçbir bot da bakmadı; her turda okuyan bir bot da yok. Artık gerekmeyenleri silin; kalanlar durur, botlar onları aramayla yine bulur.',
+  'memory.staleShared': 'Sizin hakkınızda',
+  'memory.lastUsed': 'en son {when} bakıldı',
+  'memory.neverUsed': 'hiç bakılmadı, son değişiklik {when}',
+  'memory.staleDeleteAllConfirm': 'Hiçbir botun kullanmadığı {count} notun hepsi silinsin mi? Geri alınamaz.',
 
   'routines.empty': 'Rutin yok. Bir botun sağ panelinden ekleyebilirsiniz.',
   'routines.lastRun': 'son {when}',
@@ -1157,7 +1189,22 @@ export const tr = {
   'ai.other': 'Başka bir sağlayıcı',
   'ai.otherHint':
     'OpenAI, Google Gemini, OpenRouter, DeepSeek… API anahtarıyla, kullandıkça ücretlendirilir.',
-  'provider.pick': 'Sağlayıcıyı seçip API anahtarını yapıştırın',
+  'provider.signedIn': 'Planınızla oturum açıldı',
+  'provider.signOut': 'Oturumu kapat',
+  'provider.signInWith': '{provider} ile oturum aç',
+  'provider.signInDone': '{provider} ile oturum açıldı',
+  'provider.signInWaiting': 'Oturum açmanın bitmesi bekleniyor…',
+  'provider.chatgptHint':
+    'API anahtarı yerine ChatGPT planınızı kullanın: OpenAI, Yumak Bot’un planınızı kullanmasına izin vermenizi ister; botlar planınızdaki OpenAI modelleriyle çalışır.',
+  'provider.copilotHint':
+    'GitHub Copilot planınızı kullanın: GitHub’da bir kodla oturum açarsınız; botlar planınızın açtığı modellerle çalışır.',
+  'provider.enterprise': 'GitHub Enterprise alan adı (github.com için boş bırakın)',
+  'provider.deviceCode': 'Aşağıdaki sayfayı açıp bu kodu yazın:',
+  'provider.openSignIn': 'Oturum açma sayfasını aç',
+  'provider.pasteHint':
+    'Bu bilgisayarda oturum kendiliğinden döner. Tarayıcı açılmayan bir sayfada kalırsa (sunucu başka bir bilgisayardaysa) o sayfanın adresini kopyalayıp buraya yapıştırın.',
+  'provider.pastePlaceholder': 'http://127.0.0.1:1455/auth/callback?code=…',
+  'provider.pick': 'Planınızla oturum açın ya da bir sağlayıcı seçip API anahtarını yapıştırın',
   'provider.addAnother': 'Başka bir sağlayıcı ekle',
   'provider.other': 'Diğer',
   'provider.keyFor': '{provider} API anahtarı',
@@ -1324,6 +1371,76 @@ export const tr = {
   'panel.addApp': 'Bağla',
   'panel.noApps':
     'Bağlı uygulama yok. Notion, Slack, Gmail gibi servisleri bağladığınızda tüm botlar kullanabilir.',
+  'telegram.title': 'Telegram',
+  'telegram.off': 'Bağlı değil',
+  'telegram.waiting': 'Eşleşme bekliyor',
+  'telegram.paired': 'Bağlı',
+  'telegram.error': 'Telegram bağlantısı çalışmıyor: {error}',
+  'telegram.step1':
+    "Telegram'da yeni bir bot oluşturun: /newbot yazın, bir ad ve sonu bot ile biten bir kullanıcı adı seçin.",
+  'telegram.botFather': '@BotFather',
+  'telegram.step2': "BotFather'ın gönderdiği anahtarı (ya da mesajın tamamını) buraya yapıştırın.",
+  'telegram.tokenPlaceholder': '123456789:AA…',
+  'telegram.connect': 'Bağla',
+  'telegram.connected': '@{bot} bağlandı. Şimdi Telegram hesabınızı eşleştirin.',
+  'telegram.pairedWith':
+    "@{bot} yalnızca {name} hesabından gelen mesajları okur. Yanıtlar, siz en son Telegram'dan yazdıysanız oraya gider.",
+  'telegram.qrAlt': 'Telegram eşleşme bağlantısının QR kodu',
+  'telegram.pairHint':
+    "Telefonla QR kodu tarayın ya da bağlantıyı açın, sonra Başlat'a basın. Bağlantı 15 dakika geçerli; ona basan hesap botla konuşabilen tek hesap olur.",
+  'telegram.openToPair': "Telegram'da aç",
+  'telegram.newLink': 'Yeni eşleşme bağlantısı al',
+  'telegram.notices': 'Diğer konuşmalardan da haber ver',
+  'telegram.noticesHint': "Rutin raporları ve botun sizi beklediği kartlar Telegram'a da gelir.",
+  'telegram.openChat': 'Sohbeti aç',
+  'telegram.otherAccount': 'Başka bir hesapla eşleştir',
+  'telegram.disconnect': 'Bağlantıyı kes',
+  'telegram.disconnectConfirm':
+    "Telegram bağlantısı kesilsin mi? Anahtar ve eşleşen hesap unutulur; Telegram'daki bot olduğu gibi kalır.",
+  'settings.tab.channels': 'Sohbet uygulamaları',
+  'settings.keywords.channels': 'whatsapp, telegram, mesaj, telefon, qr',
+  'channels.telegram': 'Telegram',
+  'channels.telegramHint':
+    'Her bot kendi Telegram botuyla bağlanır; bunu botun ayarlarında, Telegram bölümünde yaparsınız.',
+  'whatsapp.title': 'WhatsApp',
+  'whatsapp.state.off': 'Bağlı değil',
+  'whatsapp.state.linking': 'QR kodu okutulmayı bekliyor',
+  'whatsapp.state.connecting': 'Bağlanıyor…',
+  'whatsapp.state.connected': 'Bağlı',
+  'whatsapp.state.error': 'Bağlantı durdu',
+  'whatsapp.error.expired': 'QR kodu zamanında okutulmadı. Yeniden bağlayıp yeni bir kod alın.',
+  'whatsapp.error.ownNumber':
+    'Bağlanan hesap sizin kendi numaranız. Başka bir numarayı bağlayın ya da "Kendi numaram"ı seçin.',
+  'whatsapp.error.loggedOut': 'WhatsApp bu cihazın bağlantısını kaldırdı. Yeniden bağlayıp QR kodunu okutun.',
+  'whatsapp.mode.separate': 'Ayrı bir bot numarası',
+  'whatsapp.modeHint.separate':
+    'Önerilen. İkinci bir numara bağlanır; siz kendi numaranızdan ona yazarsınız.',
+  'whatsapp.mode.own': 'Kendi numaram',
+  'whatsapp.modeHint.own': 'Kendi hesabınız bağlanır; botlara "Kendine mesaj" sohbetinden yazarsınız.',
+  'whatsapp.phone': 'Kendi numaranız',
+  'whatsapp.phoneHint.separate': 'Ülke koduyla, yalnızca rakam. Yalnızca bu numaradan gelen mesajlar okunur.',
+  'whatsapp.phoneHint.own': 'Ülke koduyla, yalnızca rakam. Bağlanan hesabın numarası.',
+  'whatsapp.bot': 'Mesajların gittiği bot',
+  'whatsapp.botPick': 'Bir bot seçin',
+  'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
+  'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
+  'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
+  'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',
+  'whatsapp.qrWaiting': 'QR kodu hazırlanıyor…',
+  'whatsapp.scan':
+    "Bağlanacak hesabın telefonunda WhatsApp → Ayarlar → Bağlı cihazlar → Cihaz bağla'ya dokunun ve bu kodu okutun. Kod kendiliğinden yenilenir; kurulum 5 dakika içinde tamamlanmalı.",
+  'whatsapp.howTo.separate':
+    'Kendi numaranızdan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+  'whatsapp.howTo.own':
+    'WhatsApp\'ta "Kendine mesaj" sohbetine yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+  'whatsapp.risk':
+    'WhatsApp, resmi olmayan bir bağlı cihaz yoluyla (WhatsApp Web gibi) bağlanır. Hesabın kısıtlanma riski küçük de olsa vardır; ayrı bir numara kendi sohbetlerinizi bunun dışında tutar. Gruplar ve başkalarının mesajları hiç okunmaz.',
+  'whatsapp.link': 'QR kodunu göster',
+  'whatsapp.relink': 'Yeniden bağla',
+  'whatsapp.saved': 'WhatsApp ayarları kaydedildi',
+  'whatsapp.disconnect': 'Bağlantıyı kes',
+  'whatsapp.disconnectConfirm':
+    'WhatsApp bağlantısı kesilsin mi? Cihaz Bağlı cihazlar listesinden çıkar ve anahtarları silinir.',
 } satisfies Catalog;
 
 export type MessageKey = keyof typeof tr;

@@ -5,6 +5,55 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Running it
+
+- Sign a phone or another computer in with a one-time pairing code from a device already signed in (Settings →
+  Connection → Connect another device), instead of the password or the access key. A code works once, within five
+  minutes; wrong codes are slowed like wrong passwords. The web, the phone and the desktop app's server window take
+  it.
+- Docker Compose profiles reach the server from elsewhere without opening a port: `--profile cloudflare` runs a
+  Cloudflare Tunnel, `--profile tailscale` serves it on your tailnet with HTTPS. The tunnel reaches the server over a
+  network of its own with no way out.
+
+### Connections and models
+
+- Sign in with your ChatGPT plan instead of an OpenAI API key, through OpenAI's "Sign in with ChatGPT", which lets an
+  app use a person's plan with its name on the consent page. On the computer that runs the server the sign-in comes
+  back by itself; on a server elsewhere you paste the address the browser ended on.
+- Sign in with your GitHub Copilot plan with a code typed on GitHub (GitHub Enterprise too); bots get the models your
+  plan opens.
+- Both are sealed like keys, refreshed when they run out, and signed out from the connection page. A saved API key for
+  the same provider comes first.
+
+### Chat
+
+- A microphone button in the message box: speak instead of typing. With an OpenAI or Groq key saved, the recording is
+  written out by that provider (on the web and in the desktop app); without one, a browser with its own speech
+  recognition (Chrome, Safari) writes as you speak. The desktop app may use the microphone and nothing else of the
+  camera or screen; on macOS it asks first. On the phone, the keyboard's own dictation does the same.
+
+### Bots
+
+- Each bot's settings have a Tools section: give it only the tools listed, or leave some out, named as approval cards
+  name them (`Read`, `mcp__gmail__search_threads`), with `*` at the end for a whole app. A small local model gets
+  room to work, and a bot stays to its job. Both engines leave the other tools out of the request, and one the engine
+  offers anyway is refused.
+
+### Chat apps
+
+- Each bot can have a Telegram bot of its own: paste the token BotFather gives in the bot's settings, then open the
+  pairing link (or scan its QR code) and press Start. Only the paired Telegram account is read. What it writes goes to
+  the bot's main conversation; while the person last wrote from Telegram, replies, files, "typing…" and approval and
+  question cards (with buttons) go back there. `/stop` stops the work in progress and `/new` starts afresh. Routine
+  reports and cards from the bot's other conversations can come to Telegram too.
+- WhatsApp connects as a linked device, the way WhatsApp Web does, from the new "Chat apps" settings section: with a
+  separate bot number only the person's own number is read, and with their own number only "Message yourself". The
+  messages go to one chosen bot and `/bot <name>` switches it; cards come with numbered choices that a typed number
+  answers. Groups and other people's messages are never read. This uses Baileys, an unofficial WhatsApp client, so a
+  separate number is recommended.
+- Sign-in cards, secret answers and cards with several questions are left to the Yumak Bot app; passwords never go
+  through a chat app.
+
 ### Memory
 
 - A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is
@@ -54,6 +103,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
   the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps
   its folder name; renaming `YumakBot.app` to `Yumak Bot.app` in Applications fixes the name the Dock shows.
+
+### Memory
+
+- When memory outgrows the prompt, the notes a bot wrote, changed or looked up most recently go in, rather than the
+  newest ones. An old note a bot keeps finding by search stays in the prompt, and one nobody needed makes room. A
+  search with a query and a site the bot opens count as looking a note up; being in the prompt does not.
+- The memory screen lists the notes no bot uses: nobody changed them and no bot looked them up in 30 days, and no bot reads them on
+  every turn. They can be deleted one by one or all at once; a note a bot uses again before that stays. Today shows
+  how many there are and opens the memory screen from there.
 
 ## 0.2.1 — 2026-11-16
 

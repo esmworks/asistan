@@ -93,7 +93,9 @@ export function buildSystemPrompt(opts: {
 
   const profile = opts.profile ? profileLines(opts.profile, t) : [];
   if (profile.length) lines.push('', t('prompt.profile'), ...profile);
-  // Memory grows without end; past a budget the newest notes come and the rest are left to search.
+  // Memory grows without end; past a budget the notes most recently written, changed or looked up
+  // come and the rest are left to search. Each list keeps its order, so a lookup of a note already
+  // here changes nothing and the model's cache of the prompt holds.
   const { user, bot: own, left } = withinBudget(memory.user, memory.bot, MEMORY_PROMPT_CHARS);
   // Each note carries the day it was last written, so the bot can tell an old fact from a new one
   // ("moved to Izmir" in 2024 against "lives in Ankara" today).
@@ -230,16 +232,35 @@ export function handoffPrompt(opts: {
 /** How much memory text goes into a prompt; about 6,000 tokens. */
 export const MEMORY_PROMPT_CHARS = 24_000;
 
+/** What a note's place in the prompt and its staleness go by. */
+export type MemoryActivity = {
+  content: string;
+  createdAt: string;
+  updatedAt?: string;
+  lastUsedAt?: string | null;
+};
+
 /**
- * The memories that fit in `budget` characters, newest first within each list (the lists keep
- * their order), and how many were left out. The shared notes and the bot's own share the budget.
+ * The last time a note was written, changed or looked up by a bot, as an ISO string. Every time
+ * comes from `toISOString`, so the strings compare in time order.
  */
-export function withinBudget<M extends { content: string; createdAt: string }>(
+export function lastActive(m: MemoryActivity): string {
+  const written = m.updatedAt ?? m.createdAt;
+  return m.lastUsedAt && m.lastUsedAt > written ? m.lastUsedAt : written;
+}
+
+/**
+ * The memories that fit in `budget` characters, most recently active first (see `lastActive`;
+ * the lists keep their order), and how many were left out. The shared notes and the bot's own
+ * share the budget. An old note a bot keeps looking up stays in, while one nobody needed since it
+ * was written makes room; a left-out note a bot finds by search comes back on the next turn.
+ */
+export function withinBudget<M extends MemoryActivity>(
   user: M[],
   bot: M[],
   budget: number,
 ): { user: M[]; bot: M[]; left: number } {
-  const all = [...user, ...bot].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const all = [...user, ...bot].sort((a, b) => lastActive(b).localeCompare(lastActive(a)));
   const kept = new Set<M>();
   let used = 0;
   for (const m of all) {

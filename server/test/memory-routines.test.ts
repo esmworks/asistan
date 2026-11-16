@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { schema } from '../src/db';
+import { MEMORY_PROMPT_CHARS } from '../src/runtime/prompt';
 import { newId } from '../src/util';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -233,6 +234,129 @@ describe('hafıza', () => {
     expect((await t.services.memory.forSite(bot.id, 'www.ornek.com')).map((m) => m.content)).toEqual([
       'Giriş /giris adresinde',
     ]);
+  });
+});
+
+describe('hafızanın kullanımı', () => {
+  let t: TestServer;
+  beforeEach(async () => {
+    t = await testServer();
+  });
+  afterEach(() => t.dispose());
+
+  const main = async (botId: string) => (await t.api<Thread>('GET', `/api/bots/${botId}/main-thread`)).body;
+  const post = async (body: object) => (await t.api<Memory>('POST', '/api/memory', body)).body;
+  const note = async (id: string) =>
+    (await t.api<Memory[]>('GET', '/api/memory')).body.find((m) => m.id === id)!;
+  /** Moves a note's every time `days` days back, as if it had been left alone that long. */
+  const age = async (id: string, days: number) => {
+    const then = new Date(Date.now() - days * 86_400_000);
+    await t.db.db
+      .update(schema.memories)
+      .set({ createdAt: then, updatedAt: then, lastUsedAt: null })
+      .where(eq(schema.memories.id, id));
+  };
+
+  it('aramanın bulduğu ve açılan sitenin notu kullanılmış sayılır; hepsini listelemek ve istemde olmak sayılmaz', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const kahve = await post({ scope: 'user', content: 'Kahveyi şekersiz içer' });
+    const ofis = await post({ scope: 'user', content: 'Ofis Kadıköyde' });
+    const site = await post({
+      scope: 'bot',
+      botId: a.id,
+      content: 'Giriş /giris adresinde',
+      site: 'ornek.com',
+    });
+    const ta = await main(a.id);
+
+    await t.send(ta.id, 'merhaba');
+    await t.services.turns.idle();
+    await t.send(ta.id, '[araç:memory_search {}]');
+    await t.services.turns.idle();
+    expect((await note(kahve.id)).useCount).toBe(0);
+    expect((await note(kahve.id)).lastUsedAt).toBeNull();
+
+    await t.send(ta.id, '[araç:memory_search {"query":"kahve"}]');
+    await t.services.turns.idle();
+    const used = await note(kahve.id);
+    expect(used.useCount).toBe(1);
+    expect(used.lastUsedAt).not.toBeNull();
+    // A lookup is not a change: the note keeps its time of change and gets no history line.
+    expect(used.updatedAt).toBe(kahve.updatedAt);
+    expect((await note(ofis.id)).useCount).toBe(0);
+
+    await t.services.memory.forSite(a.id, 'www.ornek.com');
+    expect((await note(site.id)).useCount).toBe(1);
+
+    // Saving a fact already kept writes no second note, but the first one is in use again.
+    await t.send(ta.id, '[araç:memory_write {"content":"Ofis Kadıköyde","scope":"user"}]');
+    await t.services.turns.idle();
+    expect((await note(ofis.id)).useCount).toBe(1);
+    const history = (await t.api<{ action: string }[]>('GET', '/api/memory-history')).body;
+    expect(history.map((h) => h.action)).toEqual(['create', 'create', 'create']);
+  });
+
+  it('istemde yer olmayınca, uzun süre kimsenin kullanmadığı not kullanılmayanlar listesine düşer; istemdeki eski not düşmez', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const kept = await post({ scope: 'user', content: 'Adı Erhan' });
+    // Longer than the room a filler leaves when the looked-up note pushes it out.
+    const dropped = await post({
+      scope: 'bot',
+      botId: a.id,
+      content: 'Eski proje Zeytin '.padEnd(1995, '.'),
+    });
+    const site = await post({
+      scope: 'bot',
+      botId: a.id,
+      content: 'Giriş /giris adresinde',
+      site: 'ornek.com',
+    });
+    for (const m of [kept, dropped, site]) await age(m.id, 40);
+    // Twelve newer notes fill the prompt to the last character, so an old note gets in only by
+    // being looked up lately.
+    for (let i = 0; i < 12; i++)
+      await post({ scope: 'bot', botId: a.id, content: String(i).padEnd(MEMORY_PROMPT_CHARS / 12 - 3, 'x') });
+
+    let stale = (await t.api<Memory[]>('GET', '/api/memory-stale')).body;
+    expect(stale.map((m) => m.id).sort()).toEqual([kept.id, dropped.id, site.id].sort());
+
+    await t.services.memory.markUsed([kept.id]);
+    stale = (await t.api<Memory[]>('GET', '/api/memory-stale')).body;
+    expect(stale.map((m) => m.id).sort()).toEqual([dropped.id, site.id].sort());
+    expect((await t.api<{ staleMemory?: number }>('GET', '/api/today')).body.staleMemory).toBe(2);
+
+    // A note used again after the list was shown is not deleted with it.
+    await t.services.memory.markUsed([site.id]);
+    const r = await t.api<{ count: number }>('POST', '/api/memory-stale/delete', {
+      ids: stale.map((m) => m.id),
+    });
+    expect(r.body.count).toBe(1);
+    const left = (await t.api<Memory[]>('GET', '/api/memory')).body.map((m) => m.id);
+    expect(left).toContain(kept.id);
+    expect(left).toContain(site.id);
+    expect(left).not.toContain(dropped.id);
+    const history = (
+      await t.api<{ action: string; actor: string; targetId: string }[]>('GET', '/api/memory-history')
+    ).body;
+    expect(history.filter((h) => h.action === 'delete')).toMatchObject([
+      { actor: 'user', targetId: dropped.id },
+    ]);
+  });
+
+  it('istemine giren eski not, hafızası kapalı ya da arşivlenmiş botun notu olunca kullanılmayanlara düşer', async () => {
+    const on = await t.bot({ name: 'Açık' });
+    const off = await t.bot({ name: 'Kapalı', memory: false });
+    const shared = await post({ scope: 'user', content: 'Adı Erhan' });
+    const onNote = await post({ scope: 'bot', botId: on.id, content: 'Rapor cuma' });
+    const offNote = await post({ scope: 'bot', botId: off.id, content: 'Fatura ayın biri' });
+    for (const m of [shared, onNote, offNote]) await age(m.id, 40);
+
+    let stale = (await t.api<Memory[]>('GET', '/api/memory-stale')).body;
+    expect(stale.map((m) => m.id)).toEqual([offNote.id]);
+
+    await t.api('POST', `/api/bots/${on.id}/archive`);
+    stale = (await t.api<Memory[]>('GET', '/api/memory-stale')).body;
+    expect(stale.map((m) => m.id).sort()).toEqual([shared.id, onNote.id, offNote.id].sort());
   });
 });
 

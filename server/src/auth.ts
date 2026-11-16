@@ -98,8 +98,19 @@ export function checkHostOrigin(meta: RequestMeta, config: Config): HttpError | 
   return refuse('error.originNotAllowed', { origin });
 }
 
+/** How long a pairing code works, and how many may wait at once. */
+export const PAIRING_MS = 5 * 60_000;
+const MAX_PAIRING_CODES = 5;
+/** Letters and digits that cannot be mistaken for each other when read off a screen. */
+const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+/** A pairing code as typed: case, spaces and dashes do not matter. */
+export const normalizePairingCode = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 export class Auth {
   private cache = new Map<string, number>();
+  /** Pairing codes waiting to be used, by hash, with when each stops working. */
+  private pairing = new Map<string, number>();
   readonly account: Account;
   readonly throttle = new LoginThrottle();
   constructor(
@@ -111,6 +122,30 @@ export class Auth {
 
   checkKey(candidate: string): boolean {
     return sameSecret(candidate, this.key);
+  }
+
+  /**
+   * A code that signs one more device in, once, within five minutes: typed on a phone or another
+   * computer instead of the password or the access key. Only a signed-in device makes one.
+   */
+  createPairingCode(now = Date.now()): { code: string; expiresAt: string } {
+    for (const [h, until] of this.pairing) if (until <= now) this.pairing.delete(h);
+    // The oldest goes first when too many wait.
+    while (this.pairing.size >= MAX_PAIRING_CODES) this.pairing.delete(this.pairing.keys().next().value!);
+    const bytes = randomBytes(8);
+    const raw = [...bytes].map((b) => PAIRING_ALPHABET[b % PAIRING_ALPHABET.length]).join('');
+    const until = now + PAIRING_MS;
+    this.pairing.set(hashSession(raw), until);
+    return { code: `${raw.slice(0, 4)}-${raw.slice(4)}`, expiresAt: new Date(until).toISOString() };
+  }
+
+  /** Spends a pairing code: true once for a code that is still good, false otherwise. */
+  usePairingCode(code: string, now = Date.now()): boolean {
+    const h = hashSession(normalizePairingCode(code));
+    const until = this.pairing.get(h);
+    if (until === undefined) return false;
+    this.pairing.delete(h);
+    return until > now;
   }
 
   async createSession(userAgent?: string): Promise<string> {

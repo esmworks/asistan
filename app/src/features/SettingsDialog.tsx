@@ -4,6 +4,7 @@ import {
   INTL_LOCALE,
   LOCALE_NAMES,
   LOCALES,
+  STALE_MEMORY_DAYS,
   type BotNoteGroup,
   type Locale,
   type Memory,
@@ -27,9 +28,11 @@ import {
   Link2,
   Loader2,
   LogOut,
+  MessageCircle,
   Plus,
   RefreshCw,
   Shield,
+  Smartphone,
   Sparkles,
   SlidersHorizontal,
   Trash2,
@@ -56,6 +59,7 @@ import {
   useGroups,
   useInfo,
   useMemory,
+  useStaleMemory,
   useRoutines,
   useRules,
   useSettings,
@@ -86,6 +90,7 @@ import { ruleLabel } from '@/lib/ruleLabel';
 import { settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
+import { ChannelsTab } from './ChannelsTab';
 import { ImportTab } from './ImportTab';
 import { ProfileTab } from './ProfileTab';
 import { SkillsTab } from './SkillsTab';
@@ -109,6 +114,7 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'profile', icon: <UserRound /> },
   { id: 'general', icon: <SlidersHorizontal /> },
   { id: 'connection', icon: <Link2 /> },
+  { id: 'channels', icon: <MessageCircle /> },
   { id: 'permissions', icon: <Shield /> },
   { id: 'vault', icon: <KeyRound /> },
   { id: 'memory', icon: <Brain /> },
@@ -265,6 +271,7 @@ export function SettingsDialog() {
               {current.id === 'profile' && <ProfileTab />}
               {current.id === 'general' && <General />}
               {current.id === 'connection' && <Connection />}
+              {current.id === 'channels' && <ChannelsTab />}
               {current.id === 'permissions' && <Permissions />}
               {current.id === 'vault' && <VaultTab />}
               {current.id === 'memory' && <MemoryTab />}
@@ -646,9 +653,75 @@ function Connection() {
           </Button>
         </Row>
       </Card>
+      <PairDevice />
       <Devices />
       <ApnsCard />
     </>
+  );
+}
+
+/**
+ * A one-time code for signing in a phone or another computer, typed there instead of the password.
+ * It works once, within five minutes; the address is the one the other device reaches this
+ * server at.
+ */
+function PairDevice() {
+  const t = useT();
+  const qc = useQueryClient();
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string; url: string | null } | null>(
+    null,
+  );
+  const [now, setNow] = useState(() => Date.now());
+  const make = useMutation({
+    mutationFn: api.pairingCode,
+    onSuccess: (p) => {
+      setPairing(p);
+      setNow(Date.now());
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const left = pairing ? Math.max(0, Math.round((Date.parse(pairing.expiresAt) - now) / 1000)) : 0;
+  useEffect(() => {
+    if (!pairing || left <= 0) return;
+    const timer = setTimeout(() => {
+      setNow(Date.now());
+      // A device that used the code shows up in the list below.
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [pairing, left, qc]);
+  const address = pairing?.url ?? window.location.origin;
+  return (
+    <Card title={t('pair.title')}>
+      <Row label={t('pair.label')} hint={t('pair.hint')}>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="rounded-full"
+          onClick={() => make.mutate()}
+          disabled={make.isPending}
+        >
+          {make.isPending ? <Loader2 className="animate-spin" /> : <Smartphone />}
+          {pairing && left > 0 ? t('pair.again') : t('pair.make')}
+        </Button>
+      </Row>
+      {pairing && left > 0 && (
+        <div className="space-y-2 px-4 pb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="rounded-xl bg-secondary px-4 py-2 font-mono text-2xl tracking-widest">
+              {pairing.code}
+            </code>
+            <span className="text-xs text-muted-foreground">
+              {t('pair.left', {
+                minutes: String(Math.floor(left / 60)),
+                seconds: String(left % 60).padStart(2, '0'),
+              })}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('pair.where', { address })}</p>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -1075,6 +1148,7 @@ function Permissions() {
 
 function MemoryTab() {
   const t = useT();
+  const { dayLabel } = useFormat();
   const { data: memory = [] } = useMemory();
   const { data: bots = [] } = useBots();
   // Notes of an archived bot stay until deleted; its name tells them apart.
@@ -1116,8 +1190,16 @@ function MemoryTab() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const { data: stale = [] } = useStaleMemory();
+  const clearStale = useMutation({
+    mutationFn: () => api.removeStaleMemory(stale.map((m) => m.id)),
+    onSuccess: refresh,
+    onError: (e) => toast.error((e as Error).message),
+  });
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
+  const botName = (id: string | null) =>
+    [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
   // Each bot's notes stay folded until opened, so a long list reads as one line per bot.
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
@@ -1146,6 +1228,49 @@ function MemoryTab() {
           {t('common.add')}
         </Button>
       </form>
+      {stale.length > 0 && (
+        <Card title={t('memory.stale')}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <p className="min-w-40 flex-1 text-xs text-muted-foreground">
+              {t('memory.staleHint', { days: STALE_MEMORY_DAYS })}
+            </p>
+            {stale.length > 1 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-full"
+                disabled={clearStale.isPending}
+                onClick={() =>
+                  confirm(t('memory.staleDeleteAllConfirm', { count: stale.length })) && clearStale.mutate()
+                }
+              >
+                {t('memory.deleteAll')}
+              </Button>
+            )}
+          </div>
+          {stale.map((m) => (
+            <Row
+              key={m.id}
+              label={m.site ? `${m.site} · ${m.content}` : m.content}
+              hint={`${m.scope === 'user' ? t('memory.staleShared') : botName(m.botId)} · ${
+                m.lastUsedAt
+                  ? t('memory.lastUsed', { when: dayLabel(m.lastUsedAt) })
+                  : t('memory.neverUsed', { when: dayLabel(m.updatedAt) })
+              }`}
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-full"
+                onClick={() => forget.mutate(m)}
+                aria-label={t('common.delete')}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </Row>
+          ))}
+        </Card>
+      )}
       <Card title={t('memory.user')}>
         {user.length === 0 && (
           <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>

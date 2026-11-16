@@ -80,6 +80,12 @@ export interface Config {
   stall: StallLimits;
   /** How long the person's emoji on a bot message must stay put before the bot is told of it. */
   reactionDelayMs: number;
+  /** Telegram's Bot API; a self-hosted Bot API server can stand in for it. */
+  telegramApi: string;
+  /** How long one request for new Telegram messages waits for one to arrive. */
+  telegramPollSeconds: number;
+  /** Whether chat apps (Telegram, WhatsApp) connect at all; tests that do not use them leave them off. */
+  channelsEnabled: boolean;
 }
 
 const list = (v: string | undefined) =>
@@ -177,6 +183,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
       shellMaxMs: BASH_MAX_TIMEOUT_MS,
     }),
     reactionDelayMs: 4000,
+    telegramApi: (env.YUMAKBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
+    telegramPollSeconds: 50,
+    channelsEnabled: true,
     ...overrides,
   };
 }

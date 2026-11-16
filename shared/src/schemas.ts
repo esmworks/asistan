@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { patchOf } from './patch';
+import { ALL_TOOLS, ToolSelection } from './tool-selection';
 
 export const Id = z.string().min(1).max(64);
 
@@ -45,6 +46,8 @@ export const Bot = z.object({
   memory: z.boolean(),
   /** Effort for this Claude bot; empty uses the setting for all bots. */
   effort: z.string(),
+  /** Which tools the bot gets (see `ToolSelection`). */
+  toolSelection: ToolSelection,
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -100,6 +103,8 @@ export const BotCreate = z.object({
   projectDir: z.string().max(1000).nullable().default(null),
   memory: z.boolean().default(true),
   effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
+  /** Which tools the bot gets; by default every tool its settings allow. */
+  toolSelection: ToolSelection.default(ALL_TOOLS),
 });
 export type BotCreate = z.infer<typeof BotCreate>;
 
@@ -403,10 +408,19 @@ export const Memory = z.object({
   /** Always `active`: every note is in use. Kept for phone builds made when notes could wait for approval. */
   status: z.literal('active'),
   source: z.string(),
+  /** When a bot last looked the note up (a search found it, or its site opened); null when never. */
+  lastUsedAt: z.string().nullable(),
+  /** How many times a bot looked the note up. */
+  useCount: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type Memory = z.infer<typeof Memory>;
+/**
+ * Days after which a note that no prompt carries, and that no bot changed or looked up, is offered
+ * to the user for deletion.
+ */
+export const STALE_MEMORY_DAYS = 30;
 export const MemoryCreate = z.object({
   scope: MemoryScope,
   botId: Id.nullable().default(null),
@@ -521,8 +535,29 @@ export const ProviderInfo = z.object({
   hint: z.string().nullable(),
   /** Set for the person's own OpenAI-compatible endpoints. */
   custom: z.object({ name: z.string(), baseUrl: z.string() }).optional(),
+  /** Set for a provider that takes a sign-in with the person's own plan (ChatGPT, Copilot). */
+  signIn: z.object({ signedIn: z.boolean() }).optional(),
 });
 export type ProviderInfo = z.infer<typeof ProviderInfo>;
+
+/** Where signing in to a provider with a plan stands, as the app shows it while the person signs in. */
+export const ProviderSignIn = z.object({
+  id: z.string(),
+  provider: z.string(),
+  status: z.enum(['starting', 'waiting', 'done', 'error', 'cancelled']),
+  /** The page to sign in on, opened in the person's browser. */
+  url: z.string().nullable(),
+  /** A code the person types on `url` (a device-code sign-in). */
+  userCode: z.string().nullable(),
+  /** The browser could not hand the sign-in back by itself: the person pastes the address it ended on. */
+  needsPaste: z.boolean(),
+  error: z.string().nullable(),
+});
+export type ProviderSignIn = z.infer<typeof ProviderSignIn>;
+export const ProviderSignInStart = z.object({
+  /** A GitHub Enterprise domain for Copilot; empty for github.com. */
+  enterprise: z.string().trim().max(200).optional(),
+});
 export const ProviderKeyInput = z.object({ key: z.string().min(1).max(1000) });
 
 /** An OpenAI-compatible endpoint; its models are asked from it unless named here. */
@@ -658,6 +693,8 @@ export const TodayReport = z.object({
       startedAt: z.string(),
     }),
   ),
+  /** Memory notes no bot uses any more, waiting for the user to keep or delete them. Missing from older servers. */
+  staleMemory: z.number().int().optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
 

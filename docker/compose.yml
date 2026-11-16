@@ -40,7 +40,7 @@ services:
     ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
     volumes:
       - data:/data
-    networks: [internal, egress, computer]
+    networks: [internal, egress, computer, edge]
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
@@ -101,6 +101,48 @@ services:
     # Chromium and office programs use shared memory.
     shm_size: 512m
 
+  # Optional: reach the server from anywhere through a Cloudflare Tunnel, with no port open on this
+  # host and HTTPS from Cloudflare. Started only with `--profile cloudflare`; see "Uzaktan erişim"
+  # in docker/README.md.
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    profiles: [cloudflare]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      yumakbot: { condition: service_healthy }
+    # `edge` reaches the server and nothing else; `outbound` reaches Cloudflare.
+    networks: [edge, outbound]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+
+  # Optional: reach the server from the devices on your tailnet at https://<name>.<tailnet>.ts.net,
+  # with no port open on this host. Started only with `--profile tailscale`; see "Uzaktan erişim"
+  # in docker/README.md.
+  tailscale:
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-latest}
+    profiles: [tailscale]
+    restart: unless-stopped
+    hostname: ${TAILSCALE_HOSTNAME:-yumakbot}
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      # No TUN device or extra capabilities: Tailscale runs in user space.
+      TS_USERSPACE: 'true'
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale:/var/lib/tailscale
+      - ./tailscale-serve.json:/config/serve.json:ro
+    depends_on:
+      yumakbot: { condition: service_healthy }
+    networks: [edge, outbound]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+
 networks:
   # Database traffic only; no route to the internet.
   internal:
@@ -113,7 +155,13 @@ networks:
   # Server to computer service only; no route out.
   computer:
     internal: true
+  # A tunnel (Cloudflare, Tailscale) to the server only; no route out, so it adds none for the server.
+  edge:
+    internal: true
+  # The tunnel's own way out to its service.
+  outbound: {}
 
 volumes:
   db:
   data:
+  tailscale:

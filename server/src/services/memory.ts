@@ -1,7 +1,8 @@
-import type { Memory, MemoryScope } from '@yumakbot/shared';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { STALE_MEMORY_DAYS, type Bot, type Memory, type MemoryScope } from '@yumakbot/shared';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
+import { lastActive, MEMORY_PROMPT_CHARS, withinBudget } from '../runtime/prompt';
 import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
 import { toMemory } from './mappers';
 import { noteKey } from './secrets';
@@ -37,7 +38,35 @@ export class MemoryService {
         ),
       )
       .orderBy(asc(schema.memories.createdAt));
-    return rows.map(toMemory).filter((m) => siteMatches(host, m.site!));
+    const notes = rows.map(toMemory).filter((m) => siteMatches(host, m.site!));
+    await this.markUsed(notes.map((m) => m.id));
+    return notes;
+  }
+
+  /**
+   * Records that a bot looked these notes up, which keeps them in the prompt and off the list of
+   * notes no bot uses. It is not a change to the note: no history line, no new `updatedAt`. The
+   * memory screen is not told either; a page opened in the browser would make it reload each time,
+   * and when a note was last used only matters over weeks.
+   */
+  async markUsed(ids: string[], now = new Date()) {
+    if (!ids.length) return;
+    await this.ctx.db
+      .update(schema.memories)
+      .set({ lastUsedAt: now, useCount: sql`${schema.memories.useCount} + 1` })
+      .where(inArray(schema.memories.id, ids));
+  }
+
+  /** The notes no bot uses any more (see `staleNotes`), the longest unused first. */
+  async stale(now = new Date()): Promise<Memory[]> {
+    const [notes, bots] = await Promise.all([
+      this.list(),
+      this.ctx.db
+        .select({ id: schema.bots.id, memory: schema.bots.memory })
+        .from(schema.bots)
+        .where(isNull(schema.bots.archivedAt)),
+    ]);
+    return staleNotes(notes, bots, now);
   }
 
   /** What a bot sees: its own memories and the shared user memory. */
@@ -62,7 +91,8 @@ export class MemoryService {
 
   /**
    * Notes whose text holds `query`, or every one of them when there is no query: the own notes of
-   * the bots in `botIds` and, unless `shared` is false, the shared user memory.
+   * the bots in `botIds` and, unless `shared` is false, the shared user memory. A search with a
+   * query counts as using the notes it finds; listing them all does not, as it picks none out.
    */
   async search(botIds: string[], query?: string, shared = true): Promise<Memory[]> {
     const own = and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds));
@@ -79,6 +109,7 @@ export class MemoryService {
       )
       .orderBy(asc(schema.memories.createdAt))
       .limit(q ? 50 : 500);
+    if (q) await this.markUsed(rows.map((r) => r.id));
     return rows.map(toMemory);
   }
 
@@ -164,11 +195,18 @@ export class MemoryService {
    * its own line in the history.
    */
   async removeForBot(botId: string, actor: string): Promise<{ count: number }> {
+    return this.removeWhere(and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId))!, actor);
+  }
+
+  /** Deletes the notes of `ids` in one go, each with its own line in the history. */
+  async removeMany(ids: string[], actor: string): Promise<{ count: number }> {
+    if (!ids.length) return { count: 0 };
+    return this.removeWhere(inArray(schema.memories.id, ids), actor);
+  }
+
+  private async removeWhere(where: SQL, actor: string): Promise<{ count: number }> {
     const rows = await this.ctx.db.transaction(async (tx) => {
-      const gone = await tx
-        .delete(schema.memories)
-        .where(and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)))
-        .returning();
+      const gone = await tx.delete(schema.memories).where(where).returning();
       if (gone.length) {
         await tx.insert(schema.auditLog).values(
           gone.map((m) => ({
@@ -208,4 +246,30 @@ export class MemoryService {
       after,
     });
   }
+}
+
+/**
+ * The notes no bot uses any more: none of them goes into the prompt of a bot that would see it,
+ * nobody wrote or changed one in `STALE_MEMORY_DAYS` days, and no bot looked one up in that time. A note in some prompt is
+ * never on the list, however old: the bot reads it on every turn, and whether that helps cannot be
+ * told from here. Site notes never go into a prompt, so for them only the time counts.
+ */
+export function staleNotes(
+  notes: Memory[],
+  bots: Pick<Bot, 'id' | 'memory'>[],
+  now: Date,
+  budget = MEMORY_PROMPT_CHARS,
+): Memory[] {
+  const cutoff = new Date(now.getTime() - STALE_MEMORY_DAYS * 86_400_000).toISOString();
+  const old = notes.filter((m) => lastActive(m) < cutoff);
+  if (!old.length) return [];
+  const inPrompt = new Set<string>();
+  const shared = notes.filter((m) => m.scope === 'user' && !m.site);
+  for (const b of bots) {
+    if (!b.memory) continue;
+    const own = notes.filter((m) => m.scope === 'bot' && m.botId === b.id && !m.site);
+    const fit = withinBudget(shared, own, budget);
+    for (const m of [...fit.user, ...fit.bot]) inPrompt.add(m.id);
+  }
+  return old.filter((m) => !inPrompt.has(m.id)).sort((a, b) => lastActive(a).localeCompare(lastActive(b)));
 }

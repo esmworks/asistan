@@ -28,6 +28,40 @@ describe('erişim', () => {
     expect((await req({ url: '/api/health' })).statusCode).toBe(200);
   });
 
+  it('eşleştirme kodu bir cihazı bir kez, beş dakika içinde içeri alır', async () => {
+    const auth = { authorization: `Bearer ${KEY}` };
+    expect((await req({ method: 'POST', url: '/api/pairing' })).statusCode).toBe(401);
+    const made = await req({ method: 'POST', url: '/api/pairing', headers: auth });
+    const { code } = made.json() as { code: string };
+    expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    // Typed loosely: lower case, without the dash.
+    const ok = await req({
+      method: 'POST',
+      url: '/api/pair',
+      payload: { code: code.replace('-', ' ').toLowerCase() },
+    });
+    expect(ok.statusCode).toBe(200);
+    const cookie = String(ok.headers['set-cookie']).split(';')[0]!;
+    expect((await req({ headers: { cookie } })).statusCode).toBe(200);
+    // Once only.
+    expect((await req({ method: 'POST', url: '/api/pair', payload: { code } })).statusCode).toBe(401);
+    // The desktop app asks for the session itself, to keep it with its window's cookies.
+    const second = (await req({ method: 'POST', url: '/api/pairing', headers: auth })).json() as {
+      code: string;
+    };
+    const withToken = await req({
+      method: 'POST',
+      url: '/api/pair',
+      payload: { code: second.code, token: true },
+    });
+    const given = withToken.json() as { token: string; cookie: string };
+    expect(given.cookie).toBe('yumakbot_session');
+    expect((await req({ headers: { cookie: `yumakbot_session=${given.token}` } })).statusCode).toBe(200);
+    // And not after five minutes.
+    const late = t.auth.createPairingCode(Date.now() - 6 * 60_000).code;
+    expect(t.auth.usePairingCode(late)).toBe(false);
+  });
+
   it('anahtarı sorgu dizesinde kabul etmez', async () => {
     expect((await req({ url: `/api/bots?token=${KEY}` })).statusCode).toBe(401);
   });
