@@ -410,6 +410,11 @@ describe('rutinler', () => {
     await runAgain(r.id);
     await t.services.turns.idle();
     expect(await failed()).toBeNull();
+    // The routine's answer is in its own conversation, which the chat has to lead to.
+    const summary = (await t.api<BotSummary[]>('GET', '/api/summaries')).body.find((x) => x.botId === a.id)!;
+    const [run] = (await t.api<RoutineRun[]>('GET', `/api/routines/${r.id}/runs`)).body;
+    expect(summary.repliedThreadId).toBe(run!.threadId);
+    expect(summary.repliedThreadId).not.toBe(summary.threadId);
   });
 
   it('betik rutine veri gönderebilir; veri istemde talimattan ayrı durur', async () => {

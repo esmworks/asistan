@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeCount, isUnread, nextSeen, titleWithCount } from './unread';
+import { badgeCount, isUnread, nextSeen, replyElsewhere, titleWithCount } from './unread';
 
 const s = (botId: string, repliedAt: string | null) => ({ botId, repliedAt });
 
@@ -29,5 +29,17 @@ describe('okunmamış yanıtlar', () => {
     expect(badgeCount(Number.NaN)).toBe(0);
     expect(titleWithCount('Yumak Bot', 0)).toBe('Yumak Bot');
     expect(titleWithCount('Yumak Bot', 3)).toBe('(3) Yumak Bot');
+  });
+
+  it('açık olmayan sohbetteki yanıtı, o sohbet açılana ya da burada sonra yazılana dek gösterir', () => {
+    const at = '2026-11-16T10:00:59.000Z';
+    const reply = { repliedAt: at, repliedThreadId: 'rutin' };
+    const open = { id: 'ana', updatedAt: '2026-11-16T08:09:36.000Z' };
+    expect(replyElsewhere(reply, open, {})).toBe('rutin');
+    expect(replyElsewhere(reply, { id: 'rutin' }, {})).toBeNull();
+    expect(replyElsewhere(reply, open, { rutin: at })).toBeNull();
+    expect(replyElsewhere(reply, { id: 'ana', updatedAt: '2026-11-16T10:05:00.000Z' }, {})).toBeNull();
+    expect(replyElsewhere({ repliedAt: null, repliedThreadId: null }, open, {})).toBeNull();
+    expect(replyElsewhere(undefined, open, {})).toBeNull();
   });
 });

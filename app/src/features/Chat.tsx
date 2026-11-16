@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   Clock,
   Download,
+  MessageSquareText,
   MessageSquarePlus,
   PanelRight,
   Paperclip,
@@ -65,12 +66,13 @@ import {
   useRooms,
   useSettings,
   useSkills,
+  useSummaries,
   useThreads,
 } from '@/lib/queries';
 import { useLayout } from '@/lib/layout';
 import { PHONE } from '@/lib/media';
 import { useUi } from '@/lib/store';
-import { useSeen } from '@/lib/unread';
+import { replyElsewhere, useSeen, useThreadSeen } from '@/lib/unread';
 import { FileLinks } from '@/lib/fileLink';
 import { continueList } from '@/lib/listContinue';
 import { keyAction, useSendKey } from '@/lib/sendKey';
@@ -120,7 +122,17 @@ export function Chat({ bot }: { bot: Bot }) {
           threadId={threadId}
           thread={thread}
           readUntil={readUntil}
-          elsewhere={<WaitingElsewhere threadId={threadId} threads={threads} waiting={waiting} />}
+          elsewhere={
+            <>
+              <WaitingElsewhere threadId={threadId} threads={threads} waiting={waiting} />
+              <ReplyElsewhere
+                bot={bot}
+                open={thread ?? { id: threadId }}
+                threads={threads}
+                mainId={main.data?.id}
+              />
+            </>
+          }
         />
       ) : (
         <div className="flex-1" />
@@ -248,6 +260,55 @@ function WaitingElsewhere({
           onClick={() => (rooms.some((r) => r.id === firstId) ? openRoom(firstId) : selectThread(firstId))}
         >
           {t('chat.showWaiting')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The bot's latest reply when it landed in another of its conversations (a routine's, say): the
+ * sidebar shows it, so the chat has to lead to it.
+ */
+function ReplyElsewhere({
+  bot,
+  open,
+  threads,
+  mainId,
+}: {
+  bot: Bot;
+  open: { id: string; updatedAt?: string };
+  threads: Thread[];
+  mainId?: string;
+}) {
+  const t = useT();
+  const selectThread = useUi((s) => s.selectThread);
+  const name = useThreadName(mainId);
+  const { data: summaries } = useSummaries();
+  const summary = summaries?.find((x) => x.botId === bot.id);
+  const seenIn = useThreadSeen((s) => s.seenIn);
+  // Having the conversation open is having seen its replies.
+  useEffect(() => {
+    if (summary?.repliedAt && summary.repliedThreadId === open.id)
+      useThreadSeen.getState().mark(open.id, summary.repliedAt);
+  }, [summary?.repliedAt, summary?.repliedThreadId, open.id]);
+  const where = replyElsewhere(summary, open, seenIn);
+  const target = where ? threads.find((th) => th.id === where) : undefined;
+  if (!target) return null;
+  return (
+    <div className="mx-auto w-full max-w-(--chat-width) px-3 pb-2 sm:px-6">
+      <div className="flex items-center gap-3 rounded-2xl border bg-muted/40 py-2 pr-2 pl-4 text-sm">
+        <MessageSquareText className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">
+          {t('chat.replyElsewhere', { bot: bot.name, place: name(target) })}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="rounded-full"
+          onClick={() => selectThread(target.id)}
+        >
+          {t('chat.showReply')}
         </Button>
       </div>
     </div>

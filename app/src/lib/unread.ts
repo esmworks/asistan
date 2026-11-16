@@ -103,6 +103,36 @@ function looking() {
 }
 
 /**
+ * The bot's latest reply when it is in a conversation other than the open one, and the person has
+ * neither had that conversation open since nor written on here after it. Opening the bot marks
+ * it read wherever the reply is, so without this a routine's answer would go unseen.
+ */
+export function replyElsewhere(
+  summary: Pick<BotSummary, 'repliedAt' | 'repliedThreadId'> | undefined,
+  open: { id: string; updatedAt?: string },
+  seenIn: Readonly<Record<string, string>>,
+): string | null {
+  const at = summary?.repliedAt;
+  const where = summary?.repliedThreadId;
+  if (!at || !where || where === open.id) return null;
+  if ((seenIn[where] ?? '') >= at) return null;
+  if (open.updatedAt && open.updatedAt >= at) return null;
+  return where;
+}
+
+/** Per conversation, the latest reply of its bot the person has had open, for this page only. */
+export const useThreadSeen = create<{
+  seenIn: Record<string, string>;
+  mark(threadId: string, at: string): void;
+}>((set, get) => ({
+  seenIn: {},
+  mark: (threadId, at) => {
+    if ((get().seenIn[threadId] ?? '') >= at) return;
+    set({ seenIn: { ...get().seenIn, [threadId]: at } });
+  },
+}));
+
+/**
  * Marks the open bot's replies as read while the person looks at its chat, and puts the number
  * of bots with unread replies in the page title and on the desktop app's icon.
  */

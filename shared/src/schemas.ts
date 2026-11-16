@@ -163,6 +163,8 @@ export const BotSummary = z.object({
   previewAt: z.string().nullable(),
   /** When the bot last wrote in any of its conversations; the app marks it unread after that. */
   repliedAt: z.string().nullable(),
+  /** The conversation that reply is in, which may not be the one the bot opens to. */
+  repliedThreadId: Id.nullable(),
   state: TurnState,
   pendingApprovals: z.number(),
   /** A routine of the bot whose latest run failed, by name; null when none did. */

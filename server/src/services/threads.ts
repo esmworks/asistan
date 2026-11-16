@@ -686,14 +686,18 @@ export class ThreadService {
       // A bot answering another bot is not something the person has to read.
       const replied = own
         .filter((t) => t.kind !== 'bot')
-        .map((t) => replies.get(t.id))
-        .reduce<Date | null>((a, b) => (b && (!a || b > a) ? b : a), null);
+        .map((t) => ({ threadId: t.id, at: replies.get(t.id) }))
+        .reduce<{ threadId: string; at: Date } | null>(
+          (a, b) => (b.at && (!a || b.at > a.at) ? { threadId: b.threadId, at: b.at } : a),
+          null,
+        );
       return {
         botId: id,
         threadId: userThread?.id ?? null,
         preview: latest ? (previews.get(latest.id) ?? null) : null,
         previewAt: latest ? latest.updatedAt.toISOString() : null,
-        repliedAt: replied?.toISOString() ?? null,
+        repliedAt: replied?.at.toISOString() ?? null,
+        repliedThreadId: replied?.threadId ?? null,
         state: busy ?? 'idle',
         pendingApprovals: pendingBy.get(id) ?? 0,
         failedRoutine: failedBy.get(id) ?? null,
