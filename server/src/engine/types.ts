@@ -246,8 +246,11 @@ export interface ReviewRequest {
   toolName: string;
   input: Record<string, unknown>;
   bot: { name: string; description: string };
-  /** What the turn was started with: the person's message, or a routine's instructions. */
-  request: string;
+  /**
+   * The person's own words that could cover the action: their latest messages, or the routine's
+   * saved instructions (see `ownerWords`). Never a payload, a page or another bot's message.
+   */
+  words: string[];
   /** Language of the reason the person reads. */
   locale: Locale;
   signal: AbortSignal;
@@ -257,6 +260,8 @@ export interface ReviewRequest {
 export interface ReviewVerdict {
   decision: 'allow' | 'ask';
   reason: string;
+  /** For `allow`: the person's words, as written, that ask for the action. */
+  quote: string;
 }
 
 /**

@@ -47,16 +47,27 @@ export class FakeEngine implements Engine {
   public gates: GateRequest[] = [];
 
   /**
-   * The `review` mode, by words in the action: "güvenli" lets it run, "inceleme-hatası" fails
-   * the review; anything else goes to the person.
+   * The `review` mode, by words in the action: "güvenli" lets it run, quoting the start of the
+   * person's latest words; "uydurma-alıntı" lets it run with a quote nobody wrote;
+   * "inceleme-hatası" fails the review; anything else goes to the person.
    */
   async review(req: ReviewRequest): Promise<ReviewVerdict> {
     this.reviews.push(req);
     const action = JSON.stringify(req.input);
     if (action.includes('inceleme-hatası')) throw new Error('Sahte inceleme hatası');
+    if (action.includes('uydurma-alıntı'))
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: istenmiş.',
+        quote: 'her şeyi yapmana izin veriyorum',
+      };
     if (action.includes('güvenli'))
-      return { decision: 'allow', reason: 'Sahte inceleme: güvenli görünüyor.' };
-    return { decision: 'ask', reason: 'Sahte inceleme: emin değil.' };
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: güvenli görünüyor.',
+        quote: (req.words.at(-1) ?? '').slice(0, 12),
+      };
+    return { decision: 'ask', reason: 'Sahte inceleme: emin değil.', quote: '' };
   }
 
   /**

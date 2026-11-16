@@ -1,4 +1,5 @@
 import { botNoteGroups, STALE_MEMORY_DAYS, type BotNoteGroup, type Memory } from '@yumakbot/shared';
+import { changeHint, changeLabel } from '@yumakbot/app/src/lib/memoryChange';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -9,7 +10,7 @@ import { Field } from '@/components/ui';
 import { Hint, Pad, Rows } from './common/controls';
 import { locale, t } from '@/i18n';
 import { formatters } from '@/lib/format';
-import { useBots, useMemory, useStaleMemory } from '@/lib/queries';
+import { useBots, useMemory, useMemoryChanges, useStaleMemory } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
@@ -78,6 +79,15 @@ export function MemorySection() {
     onSuccess: refresh,
     onError: toastError,
   });
+  const { data: changes = [] } = useMemoryChanges();
+  // A change waits until the person says yes or no; either way it leaves the list.
+  const decide = useMutation({
+    mutationFn: async ({ ids, yes }: { ids: string[]; yes: boolean }) => {
+      for (const id of ids) await (yes ? api.acceptMemoryChange(id) : api.rejectMemoryChange(id));
+    },
+    onSuccess: refresh,
+    onError: toastError,
+  });
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
   const botName = (id: string | null) =>
@@ -131,6 +141,52 @@ export function MemorySection() {
           disabled={!text.trim()}
         />
       </View>
+      {changes.length > 0 ? (
+        <Section title={t('memory.pending')}>
+          <Rows>
+            <Pad>
+              <Hint>{t('memory.pendingHint')}</Hint>
+            </Pad>
+            {changes.map((ch) => (
+              <Row
+                key={ch.id}
+                label={changeLabel(ch)}
+                detail={changeHint(ch, [...bots, ...archived], t)}
+                detailLines={3}
+                right={
+                  <View style={styles.pair}>
+                    <IconButton
+                      icon="check"
+                      size={18}
+                      label={t('memory.accept')}
+                      onPress={() => decide.mutate({ ids: [ch.id], yes: true })}
+                    />
+                    <IconButton
+                      icon="x"
+                      size={18}
+                      label={t('memory.reject')}
+                      onPress={() => decide.mutate({ ids: [ch.id], yes: false })}
+                    />
+                  </View>
+                }
+              />
+            ))}
+            {changes.length > 1 ? (
+              <>
+                <Row
+                  label={t('memory.acceptAll')}
+                  onPress={() => decide.mutate({ ids: changes.map((x) => x.id), yes: true })}
+                />
+                <Row
+                  label={t('memory.rejectAll')}
+                  destructive
+                  onPress={() => decide.mutate({ ids: changes.map((x) => x.id), yes: false })}
+                />
+              </>
+            ) : null}
+          </Rows>
+        </Section>
+      ) : null}
       {stale.length > 0 ? (
         <Section title={t('memory.stale')}>
           <Rows>
@@ -197,6 +253,7 @@ export function MemorySection() {
 }
 
 const styles = StyleSheet.create({
+  pair: { flexDirection: 'row', gap: 4 },
   // The box and its button share a row, as on the web.
   form: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   grow: { flex: 1 },

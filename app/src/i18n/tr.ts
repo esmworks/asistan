@@ -1442,6 +1442,21 @@ export const tr = {
   'whatsapp.disconnect': 'Bağlantıyı kes',
   'whatsapp.disconnectConfirm':
     'WhatsApp bağlantısı kesilsin mi? Cihaz Bağlı cihazlar listesinden çıkar ve anahtarları silinir.',
+  'memory.pending': 'Onay bekleyenler',
+  'memory.pendingHint':
+    'Kimsenin izlemediği işlerde (rutinler, başka bir botun isteği) botların istediği hafıza değişiklikleri. Bir webhook ya da okunan bir sayfa hafızaya sizden habersiz bir şey yazamasın diye, siz kabul edene kadar hiçbiri yapılmaz.',
+  'memory.change.write': 'Yeni not',
+  'memory.change.update': 'Düzeltme',
+  'memory.change.forget': 'Silme',
+  'memory.origin.routine': '“{name}” rutini',
+  'memory.origin.bot': '{name} botunun isteği',
+  'memory.origin.unknown': 'kimsenin izlemediği bir iş',
+  'memory.accept': 'Kabul et',
+  'memory.reject': 'Reddet',
+  'memory.acceptAll': 'Tümünü kabul et',
+  'memory.rejectAll': 'Tümünü reddet',
+  'today.pendingMemory': 'Onay bekleyen {count} hafıza değişikliği',
+  'today.pendingMemoryReview': 'Gözden geçir',
 } satisfies Catalog;
 
 export type MessageKey = keyof typeof tr;

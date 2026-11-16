@@ -600,3 +600,34 @@ export const whatsappKeys = pgTable('whatsapp_keys', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+/**
+ * A memory change a bot asked for while nobody was watching (a routine, another bot's request):
+ * it waits here until the person accepts or rejects it, so what a webhook call or a page the bot
+ * read says cannot turn into memory every later turn trusts.
+ */
+export const memoryChanges = pgTable(
+  'memory_changes',
+  {
+    id: text('id').primaryKey(),
+    action: text('action', { enum: ['write', 'update', 'forget'] }).notNull(),
+    /** The note an update or a forget is about; the change goes when the note does. */
+    memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
+    botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
+    site: text('site'),
+    /** The note's words after the change (for a forget, the words that would go). */
+    content: text('content').notNull(),
+    /** The note's words before an update. */
+    before: text('before'),
+    /** The bot that asked for it. */
+    proposedBy: text('proposed_by')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** Why nobody was watching: a routine's run or another bot's request, with its name. */
+    origin: jsonb('origin').$type<{ kind: 'routine' | 'bot'; name: string }>().notNull(),
+    threadId: text('thread_id'),
+    createdAt: created(),
+  },
+  (t) => [index('memory_changes_created_idx').on(t.createdAt)],
+);

@@ -1446,4 +1446,22 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.disconnect': 'Disconnect',
   'whatsapp.disconnectConfirm':
     'Disconnect WhatsApp? The device leaves Linked devices and its keys are deleted.',
+  'memory.pending': 'Waiting for approval',
+  'memory.pendingHint':
+    "Memory changes bots asked for in work nobody watched (routines, another bot's request). None is made until you accept it, so a webhook call or a page a bot read cannot write to memory behind your back.",
+  'memory.change.write': 'New note',
+  'memory.change.update': 'Correction',
+  'memory.change.forget': 'Deletion',
+  'memory.origin.routine': 'the “{name}” routine',
+  'memory.origin.bot': 'a request from {name}',
+  'memory.origin.unknown': 'work nobody watched',
+  'memory.accept': 'Accept',
+  'memory.reject': 'Reject',
+  'memory.acceptAll': 'Accept all',
+  'memory.rejectAll': 'Reject all',
+  'today.pendingMemory': {
+    one: '{count} memory change waiting for approval',
+    other: '{count} memory changes waiting for approval',
+  },
+  'today.pendingMemoryReview': 'Review',
 };

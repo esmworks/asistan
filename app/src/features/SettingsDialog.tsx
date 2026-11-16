@@ -91,6 +91,7 @@ import { settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
 import { ChannelsTab } from './ChannelsTab';
+import { PendingMemory } from './PendingMemory';
 import { ImportTab } from './ImportTab';
 import { ProfileTab } from './ProfileTab';
 import { SkillsTab } from './SkillsTab';
@@ -1228,6 +1229,7 @@ function MemoryTab() {
           {t('common.add')}
         </Button>
       </form>
+      <PendingMemory bots={[...bots, ...archived]} />
       {stale.length > 0 && (
         <Card title={t('memory.stale')}>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">

@@ -4,6 +4,7 @@ import {
   type Bot,
   type BotSummary,
   type Memory,
+  type MemoryChange,
   type Routine,
   type RoutineRun,
   type Thread,
@@ -83,31 +84,93 @@ describe('hafıza', () => {
     expect(again.tools.some((x) => x.name === 'memory_write')).toBe(true);
   });
 
-  it('bot ve rutin hafızaya sormadan yazar; yazdığı hemen istemine girer', async () => {
+  it('kişinin başındaki bot hafızaya sormadan yazar; yazdığı hemen istemine girer', async () => {
     const a = await t.bot({ name: 'Ali' });
     const ta = await main(a.id);
     await t.send(ta.id, '[araç:memory_write {"content":"Kahveyi şekersiz içer","scope":"user"}]');
     await t.services.turns.idle();
     await t.send(ta.id, '[araç:memory_write {"content":"Ali notu","scope":"bot"}]');
     await t.services.turns.idle();
-    // A routine's turn writes the shared memory straight away too; nothing waits for approval.
-    await t.services.turns.enqueue({
-      threadId: ta.id,
-      botId: a.id,
-      source: 'routine',
-      prompt: '[araç:memory_write {"content":"Pazartesi toplantısı var","scope":"user"}]',
-    });
-    await t.services.turns.idle();
     expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
+    expect((await t.api<MemoryChange[]>('GET', '/api/memory-changes')).body).toHaveLength(0);
     const all = (await t.api<Memory[]>('GET', '/api/memory')).body;
-    expect(all.map((m) => m.content)).toEqual([
-      'Kahveyi şekersiz içer',
-      'Ali notu',
-      'Pazartesi toplantısı var',
-    ]);
+    expect(all.map((m) => m.content)).toEqual(['Kahveyi şekersiz içer', 'Ali notu']);
     await t.send(ta.id, 'kontrol');
     await t.services.turns.idle();
-    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('Pazartesi');
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('şekersiz');
+  });
+
+  it('kimsenin izlemediği turun hafıza değişikliği onay bekler; kabul edilince yapılır', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const b = await t.bot({ name: 'Veli' });
+    const ta = await main(a.id);
+    await t.send(ta.id, '[araç:memory_write {"content":"Eski adres Kadıköy","scope":"user"}]');
+    await t.services.turns.idle();
+    const [old] = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    const routine = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: a.id,
+        name: 'Gelen kutusu',
+        prompt: [
+          '[araç:memory_write {"content":"Pazartesi toplantısı var","scope":"user"}]',
+          `[araç:memory_update {"id":"${old!.id}","content":"Adres Beşiktaş"}]`,
+          '[araç:memory_write {"content":"Pazartesi toplantısı var","scope":"user"}]',
+        ].join(' '),
+        schedule: { type: 'weekly', days: [0], time: '18:00' },
+      })
+    ).body;
+    await t.api('POST', `/api/routines/${routine.id}/run`);
+    await t.services.turns.idle();
+    // Nothing changed yet; the bot was told the change waits for the person.
+    expect((await t.api<Memory[]>('GET', '/api/memory')).body.map((m) => m.content)).toEqual([
+      'Eski adres Kadıköy',
+    ]);
+    const runThread = (await t.api<{ threadId: string }[]>('GET', `/api/routines/${routine.id}/runs`))
+      .body[0]!.threadId;
+    expect((await t.messages(runThread)).at(-1)!.text).toContain('onayına bırakıldı');
+    const waiting = (await t.api<MemoryChange[]>('GET', '/api/memory-changes')).body;
+    // The same note asked for twice waits once.
+    expect(waiting.map((c) => [c.action, c.content, c.before, c.origin])).toEqual([
+      ['write', 'Pazartesi toplantısı var', null, { kind: 'routine', name: 'Gelen kutusu' }],
+      ['update', 'Adres Beşiktaş', 'Eski adres Kadıköy', { kind: 'routine', name: 'Gelen kutusu' }],
+    ]);
+    // Another bot's request to forget a note waits too.
+    const tb = await main(b.id);
+    await t.send(tb.id, 'işe başla');
+    await t.services.turns.idle();
+    const asked = (await t.messages(tb.id)).find((m) => m.role === 'user')!;
+    await t.services.jobs.send({
+      from: b,
+      fromThreadId: tb.id,
+      fromTurnId: asked.turnId!,
+      parentJobId: null,
+      to: a,
+      text: `[araç:memory_forget {"id":"${old!.id}"}]`,
+      kind: 'send',
+      approvalId: null,
+    });
+    await t.services.turns.idle();
+    const forget = (await t.api<MemoryChange[]>('GET', '/api/memory-changes')).body.find(
+      (c) => c.action === 'forget',
+    )!;
+    expect(forget.origin).toEqual({ kind: 'bot', name: 'Veli' });
+
+    expect((await t.api('POST', `/api/memory-changes/${waiting[0]!.id}/accept`, {})).status).toBe(200);
+    expect(
+      (
+        await t.api('POST', `/api/memory-changes/${waiting[1]!.id}/accept`, {
+          content: 'Adres: Beşiktaş, 3. kat',
+        })
+      ).status,
+    ).toBe(200);
+    expect((await t.api('DELETE', `/api/memory-changes/${forget.id}`)).status).toBe(200);
+    const notes = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(notes.map((m) => m.content).sort()).toEqual([
+      'Adres: Beşiktaş, 3. kat',
+      'Pazartesi toplantısı var',
+    ]);
+    expect(notes.find((m) => m.content.startsWith('Pazartesi'))!.source).toBe(`bot:${a.id}`);
+    expect((await t.api<MemoryChange[]>('GET', '/api/memory-changes')).body).toHaveLength(0);
   });
 
   it('bot aynı notu ikinci kez açmaz, gizli değerleri hafızaya yazmaz; notlar tarihiyle isteme girer', async () => {

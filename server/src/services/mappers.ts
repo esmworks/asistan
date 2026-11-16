@@ -3,6 +3,7 @@ import type {
   Bot,
   Group,
   Memory,
+  MemoryChange,
   Message,
   PermissionRule,
   Routine,
@@ -154,3 +155,20 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   finishedAt: iso(r.finishedAt),
   gate: r.gateDecision ? { decision: r.gateDecision, reason: r.gateReason ?? '' } : null,
 });
+
+export function toMemoryChange(r: typeof schema.memoryChanges.$inferSelect): MemoryChange {
+  return {
+    id: r.id,
+    action: r.action,
+    memoryId: r.memoryId,
+    scope: r.scope,
+    botId: r.botId,
+    site: r.site,
+    content: r.content,
+    before: r.before,
+    proposedBy: r.proposedBy,
+    origin: r.origin,
+    threadId: r.threadId,
+    createdAt: r.createdAt.toISOString(),
+  };
+}

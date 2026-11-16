@@ -13,6 +13,7 @@ import {
   skillSlug,
   type Bot,
   type Memory,
+  type MemoryChange,
   type PermissionMode,
   type Routine,
   type Skill,
@@ -227,6 +228,44 @@ export class ToolFactory {
     const fromUser = attended(turn.source) || thread.kind === 'room';
     // Nobody may be watching a routine's or another bot's turn: its cards close unanswered in time.
     const unattended = fromUser ? undefined : this.ctx.config.unattendedApprovalMs;
+    /**
+     * Why nobody watches this turn, for a memory change it asks for: such a change waits for the
+     * person, since a webhook's payload, a page or another bot's message may be behind it.
+     */
+    let away: Promise<MemoryChange['origin']> | null = null;
+    const awayFrom = () =>
+      (away ??= (async (): Promise<MemoryChange['origin']> => {
+        if (turn.source === 'routine' && turn.routineRunId) {
+          const [r] = await this.ctx.db
+            .select({ name: schema.routines.name })
+            .from(schema.routineRuns)
+            .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+            .where(eq(schema.routineRuns.id, turn.routineRunId))
+            .limit(1);
+          return { kind: 'routine', name: r?.name ?? '' };
+        }
+        if (turn.jobId) {
+          const [j] = await this.ctx.db
+            .select({ name: schema.bots.name })
+            .from(schema.jobs)
+            .innerJoin(schema.bots, eq(schema.bots.id, schema.jobs.fromBotId))
+            .where(eq(schema.jobs.id, turn.jobId))
+            .limit(1);
+          return { kind: 'bot', name: j?.name ?? '' };
+        }
+        return { kind: 'bot', name: '' };
+      })());
+    const propose = async (
+      change: Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId'>,
+    ) => {
+      await s.memory.propose({
+        ...change,
+        proposedBy: bot.id,
+        origin: await awayFrom(),
+        threadId: thread.id,
+      });
+      return t('tool.memoryProposed');
+    };
     /**
      * The routine a bot names, by name or id: one of its own, or, for a manager, one of another
      * bot's too, but not another manager's. A reason when there is none or more than one.
@@ -741,6 +780,9 @@ export class ToolFactory {
             await s.memory.markUsed([same.id]);
             return t('tool.memoryAlreadySaved', { id: same.id });
           }
+          if (!fromUser) {
+            return propose({ action: 'write', memoryId: null, before: null, ...note });
+          }
           const m = await s.memory.create({ ...note, source: `bot:${bot.id}` });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
@@ -757,6 +799,18 @@ export class ToolFactory {
           const m = await s.memory.get(id);
           if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
           const clean = redactSecrets(content, t('memory.redacted'));
+          if (!fromUser) {
+            const { scope, botId, site } = m;
+            return propose({
+              action: 'update',
+              memoryId: m.id,
+              before: m.content,
+              content: clean.text,
+              scope,
+              botId,
+              site,
+            });
+          }
           await s.memory.update(id, { content: clean.text }, `bot:${bot.id}`);
           return clean.redacted
             ? `${t('tool.memoryUpdated')} ${t('tool.memoryRedacted')}`
@@ -771,6 +825,10 @@ export class ToolFactory {
           const m = await s.memory.get(id);
           const owners = await memoryOwners();
           if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
+          if (!fromUser) {
+            const { scope, botId, site, content } = m;
+            return propose({ action: 'forget', memoryId: m.id, before: null, content, scope, botId, site });
+          }
           await s.memory.remove(id, `bot:${bot.id}`);
           // A manager deleting another bot's note is told what that bot loses.
           return m.botId && m.botId !== bot.id

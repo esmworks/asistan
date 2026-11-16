@@ -67,23 +67,42 @@ export function TodayDialog() {
               empty={t('today.waitingNone')}
               items={waiting}
               extra={
-                // Notes no bot uses wait for the person to keep or delete them in the memory screen.
-                data.staleMemory ? (
-                  <Item
-                    onClick={() => {
-                      useUi.getState().openSettings('memory');
-                      setOpen(false);
-                    }}
-                  >
-                    <Brain className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {t('today.staleMemory', { count: data.staleMemory })}
-                    </span>
-                    <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
-                      {t('today.staleMemoryReview')}
-                    </span>
-                  </Item>
-                ) : null
+                <>
+                  {/* Memory changes asked for while nobody watched wait for the person's yes. */}
+                  {data.pendingMemory ? (
+                    <Item
+                      onClick={() => {
+                        useUi.getState().openSettings('memory');
+                        setOpen(false);
+                      }}
+                    >
+                      <Brain className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('today.pendingMemory', { count: data.pendingMemory })}
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
+                        {t('today.pendingMemoryReview')}
+                      </span>
+                    </Item>
+                  ) : null}
+                  {/* Notes no bot uses wait for the person to keep or delete them in the memory screen. */}
+                  {data.staleMemory ? (
+                    <Item
+                      onClick={() => {
+                        useUi.getState().openSettings('memory');
+                        setOpen(false);
+                      }}
+                    >
+                      <Brain className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('today.staleMemory', { count: data.staleMemory })}
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
+                        {t('today.staleMemoryReview')}
+                      </span>
+                    </Item>
+                  ) : null}
+                </>
               }
             >
               {(s) => (

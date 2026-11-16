@@ -714,9 +714,9 @@ export class ClaudeEngine implements Engine {
     } catch (err) {
       // A reviewer that cannot answer hands every request to the person; say so in the log.
       if (!req.signal.aborted) console.warn(`Review failed, asking instead: ${(err as Error).message}`);
-      return { decision: 'ask', reason: '' };
+      return { decision: 'ask', reason: '', quote: '' };
     }
-    return req.signal.aborted ? { decision: 'ask', reason: '' } : parseVerdict(text);
+    return req.signal.aborted ? { decision: 'ask', reason: '', quote: '' } : parseVerdict(text);
   }
 
   /**
