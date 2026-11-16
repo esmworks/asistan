@@ -349,24 +349,10 @@ function Notifications() {
   );
 }
 
-export function Card({
-  title,
-  action,
-  children,
-}: {
-  title?: string;
-  /** A control beside the title that acts on the whole card. */
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+export function Card({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section className="mb-6">
-      {(title || action) && (
-        <div className="mb-2 flex min-h-7 items-center justify-between gap-2 px-1">
-          {title && <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>}
-          {action}
-        </div>
-      )}
+      {title && <h3 className="mb-2 px-1 text-sm font-medium text-muted-foreground">{title}</h3>}
       <div className="divide-y rounded-2xl border bg-card/50">{children}</div>
     </section>
   );
@@ -1133,8 +1119,14 @@ function MemoryTab() {
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
-  const title = (g: BotNoteGroup) =>
-    t('memory.botNotes', { name: g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g) });
+  // Each bot's notes stay folded until opened, so a long list reads as one line per bot.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   return (
     <>
       <form
@@ -1172,48 +1164,72 @@ function MemoryTab() {
           </Row>
         ))}
       </Card>
-      {groups.length === 0 && (
-        <Card title={t('memory.bots')}>
+      <Card title={t('memory.bots')}>
+        {groups.length === 0 && (
           <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>
-        </Card>
-      )}
-      {groups.map((g) => (
-        <Card
-          key={g.botId}
-          title={title(g)}
-          action={
-            g.notes.length > 1 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 rounded-full"
-                disabled={clearBot.isPending}
-                onClick={() =>
-                  confirm(
-                    t('memory.deleteAllConfirm', { name: g.name ?? t('common.bot'), count: g.notes.length }),
-                  ) && clearBot.mutate(g.botId)
-                }
-              >
-                {t('memory.deleteAll')}
-              </Button>
-            )
-          }
-        >
-          {g.notes.map((m) => (
-            <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 rounded-full"
-                onClick={() => forget.mutate(m)}
-                aria-label={t('common.delete')}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </Row>
-          ))}
-        </Card>
-      ))}
+        )}
+        {groups.map((g) => {
+          const isOpen = open.has(g.botId);
+          return (
+            <div key={g.botId}>
+              <div className="flex min-h-14 items-center gap-2 px-4 py-2">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => toggle(g.botId)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <ChevronRight
+                    className={cn(
+                      'size-4 shrink-0 text-muted-foreground transition-transform',
+                      isOpen && 'rotate-90',
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g)}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('memory.noteCount', { count: g.notes.length })}
+                    </span>
+                  </span>
+                </button>
+                {isOpen && g.notes.length > 1 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-full"
+                    disabled={clearBot.isPending}
+                    onClick={() =>
+                      confirm(t('memory.deleteAllConfirm', { name: name(g), count: g.notes.length })) &&
+                      clearBot.mutate(g.botId)
+                    }
+                  >
+                    {t('memory.deleteAll')}
+                  </Button>
+                )}
+              </div>
+              {isOpen && (
+                <div className="divide-y border-t">
+                  {g.notes.map((m) => (
+                    <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-full"
+                        onClick={() => forget.mutate(m)}
+                        aria-label={t('common.delete')}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </Row>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </Card>
     </>
   );
 }

@@ -865,7 +865,7 @@ export const en: Catalog<MessageKey> = {
   'memory.bots': "The bots' own notes",
   'memory.empty': 'Nothing yet.',
   'memory.archivedBot': '{name} (archived)',
-  'memory.botNotes': "{name}'s own notes",
+  'memory.noteCount': '{count} notes',
   'memory.deleteAll': 'Delete all',
   'memory.deleteAllConfirm': "Delete all {count} of {name}'s notes? This cannot be undone.",
 

@@ -866,7 +866,7 @@ export const tr = {
   'memory.bots': 'Botların kendi notları',
   'memory.empty': 'Henüz kayıt yok.',
   'memory.archivedBot': '{name} (arşivde)',
-  'memory.botNotes': '{name} botunun kendi notları',
+  'memory.noteCount': '{count} not',
   'memory.deleteAll': 'Hepsini sil',
   'memory.deleteAllConfirm': '{name} botunun {count} notunun hepsi silinsin mi? Geri alınamaz.',
 
