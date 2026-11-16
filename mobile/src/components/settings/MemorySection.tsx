@@ -1,4 +1,5 @@
 import { botNoteGroups, type BotNoteGroup, type Memory } from '@yumakbot/shared';
+import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -9,6 +10,7 @@ import { Hint, Pad, Rows } from './common/controls';
 import { t } from '@/i18n';
 import { useBots, useMemory } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
+import { useColors } from '@/lib/theme';
 
 /** The "memory" settings section's content, under the section's own title bar. */
 export function MemorySection() {
@@ -22,7 +24,16 @@ export function MemorySection() {
     queryFn: api.archivedBots,
   });
   const qc = useQueryClient();
+  const c = useColors();
   const [text, setText] = useState('');
+  // Each bot's notes stay folded until opened, so a long list reads as one line per bot.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory', origin] });
   const add = useMutation({
     mutationFn: () => api.addMemory({ scope: 'user', content: text }),
@@ -61,8 +72,6 @@ export function MemorySection() {
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
-  const title = (g: BotNoteGroup) =>
-    t('memory.botNotes', { name: g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g) });
   const clear = async (g: BotNoteGroup) => {
     const ok = await confirm({
       title: t('memory.deleteAllConfirm', { name: name(g), count: g.notes.length }),
@@ -109,27 +118,40 @@ export function MemorySection() {
           ))}
         </Rows>
       </Section>
-      {groups.length === 0 ? (
-        <Section title={t('memory.bots')}>
-          <Rows>
+      <Section title={t('memory.bots')}>
+        <Rows>
+          {groups.length === 0 ? (
             <Pad>
               <Hint>{t('memory.empty')}</Hint>
             </Pad>
-          </Rows>
-        </Section>
-      ) : null}
-      {groups.map((g) => (
-        <Section key={g.botId} title={title(g)}>
-          <Rows>
-            {g.notes.map((m) => (
-              <Row key={m.id} label={label(m)} right={trash(m)} />
-            ))}
-            {g.notes.length > 1 ? (
-              <Row label={t('memory.deleteAll')} destructive onPress={() => void clear(g)} />
-            ) : null}
-          </Rows>
-        </Section>
-      ))}
+          ) : null}
+          {groups.map((g) => {
+            const isOpen = open.has(g.botId);
+            return (
+              // The bot's line and its open notes share the card's dividers.
+              <Rows key={g.botId}>
+                <Row
+                  label={g.archived ? t('memory.archivedBot', { name: name(g) }) : name(g)}
+                  detail={t('memory.noteCount', { count: g.notes.length })}
+                  onPress={() => toggle(g.botId)}
+                  chevron={false}
+                  right={
+                    <Feather
+                      name={isOpen ? 'chevron-up' : 'chevron-down'}
+                      size={22}
+                      color={c.mutedForeground}
+                    />
+                  }
+                />
+                {isOpen ? g.notes.map((m) => <Row key={m.id} label={label(m)} right={trash(m)} />) : null}
+                {isOpen && g.notes.length > 1 ? (
+                  <Row label={t('memory.deleteAll')} destructive onPress={() => void clear(g)} />
+                ) : null}
+              </Rows>
+            );
+          })}
+        </Rows>
+      </Section>
     </>
   );
 }
