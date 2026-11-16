@@ -605,6 +605,10 @@ export const en: Catalog<MessageKey> = {
   'routine.onStartupHint':
     'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
   'routine.watchUrl': 'Only when this page changes (optional)',
+  'routine.checkOn': 'Runs only when {app} · {tool} answers something new; checked without the AI.',
+  'routine.checkRemove': 'Remove check',
+  'routine.checkHint':
+    'To run only when something happens in an app (a new email, a new issue), ask the bot: it sets up a check that costs nothing while nothing changes.',
   'routine.watchUrlHint':
     'At each time the page is read without the AI; the bot runs only when its text changed, and gets the new text. Costs nothing while the page stays the same.',
   'routine.watchUrlInvalid': 'An address starting with https://',
@@ -881,7 +885,7 @@ export const en: Catalog<MessageKey> = {
   'groups.empty': 'No groups.',
   'groups.count': { one: '{count} bot', other: '{count} bots' },
 
-  'settings.tab.import': 'Import',
+  'settings.tab.import': 'Import and backup',
   'import.hint':
     'Bring your Grok Bot bots here with their instructions, routines, memories and groups. You see everything in the file before anything is saved.',
   'import.step1': '1. Export from Grok Bot',
@@ -905,6 +909,22 @@ export const en: Catalog<MessageKey> = {
   'import.skills': 'Skills',
   'import.skillExists': 'already here; linked as it is',
   'import.warn.skill': '{bot}: the "{skill}" skill was left out (its name or description is not valid)',
+  'backup.title': 'Full backup',
+  'backup.hint':
+    "One file with everything on this server: bots, conversations, memory, routines, skills, connections, the bots' files, and the saved logins and keys. It is sealed with the password you choose here; without it nobody can open the file, you included, so keep the password somewhere safe.",
+  'backup.password': 'Backup password',
+  'backup.passwordPlaceholder': 'Backup password (at least {count} characters)',
+  'backup.download': 'Download backup',
+  'backup.ready': 'Backup ready ({size}); the download has started.',
+  'backup.restoreTitle': 'Restore from a backup',
+  'backup.restoreHint':
+    'Replaces everything on this server with what the file holds. Nothing changes if the password is wrong or the file is damaged.',
+  'backup.pick': 'Choose file',
+  'backup.restore': 'Restore',
+  'backup.restoreConfirm':
+    'Everything on this server will be replaced with this backup: bots, conversations, memory and files. The server starts again afterwards. Continue?',
+  'backup.restored': 'Restored. The server is starting again; the page reloads in a moment.',
+  'backup.phoneRestore': 'To restore a backup, open Yumak Bot on a computer: Settings → Import and backup.',
   'export.title': 'Export bots',
   'export.hint':
     'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Yumak Bot imports it from this page. Conversations, permissions and folders stay out of the file.',

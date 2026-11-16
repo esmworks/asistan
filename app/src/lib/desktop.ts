@@ -20,6 +20,10 @@ interface DesktopBridge {
   openAtLogin?(on?: boolean): Promise<boolean | null>;
   /** Calls `fn` when Settings is chosen in the menu bar; returns a function that stops it. Missing in older shells. */
   onOpenSettings?(fn: () => void): () => void;
+  /** The chat a `yumakbot://` link asked to open, once. Missing in older shells. */
+  takeLink?(): Promise<{ kind: 'thread' | 'bot' | 'room'; id: string } | null>;
+  /** Calls `fn` when a link arrives while the page is open. Missing in older shells. */
+  onOpenLink?(fn: () => void): () => void;
   /** The window has no title bar; the page leaves room for the window buttons. Missing in older shells. */
   framelessTitleBar?: boolean;
 }

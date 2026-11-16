@@ -109,6 +109,24 @@ describe('hafıza', () => {
     expect(t.engine.requests.at(-1)!.systemPrompt).toContain('Pazartesi');
   });
 
+  it('bot aynı notu ikinci kez açmaz, gizli değerleri hafızaya yazmaz; notlar tarihiyle isteme girer', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const ta = await main(a.id);
+    await t.send(ta.id, '[araç:memory_write {"content":"Kahveyi şekersiz içer","scope":"user"}]');
+    await t.services.turns.idle();
+    await t.send(ta.id, '[araç:memory_write {"content":"kahveyi  şekersiz içer.","scope":"user"}]');
+    await t.services.turns.idle();
+    expect((await t.messages(ta.id)).at(-1)!.text).toContain('zaten kayıtlı');
+    await t.send(ta.id, '[araç:memory_write {"content":"Gmail şifresi: Kedi1234","scope":"bot"}]');
+    await t.services.turns.idle();
+    expect((await t.messages(ta.id)).at(-1)!.text).toContain('kasaya');
+    const all = (await t.api<Memory[]>('GET', '/api/memory')).body.map((m) => m.content);
+    expect(all).toEqual(['Kahveyi şekersiz içer', 'Gmail şifresi: «gizli değer silindi»']);
+    await t.send(ta.id, 'kontrol');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).toMatch(/- \(\d{4}-\d{2}-\d{2}\) Kahveyi şekersiz içer/);
+  });
+
   it('bot kendi notunu ve ortak hafızayı düzeltir, siler; başka botun notuna dokunamaz', async () => {
     const a = await t.bot({ name: 'Ali', permissionMode: 'auto' });
     const b = await t.bot({ name: 'Ayşe' });

@@ -6,6 +6,7 @@ import type { Page } from 'playwright-core';
 import { z } from 'zod';
 import { VIEWPORT, webUrl, type BrowserManager } from '../browser/manager';
 import { browserErrorText } from '../browser/text';
+import { waitOutWall, type WallState } from '../browser/wall';
 import type { AppTool, ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import type { LoginAnswer } from '../services/approvals';
@@ -183,15 +184,28 @@ export function browserTools(opts: {
       ].join('\n');
     });
   const at = (page: Page, r: string) => page.locator(`aria-ref=${r}`);
+  /** What the bot is told when the page is still a bot check or a refusal after the wait. */
+  const wallNote = (out: ToolResult, wall: WallState): ToolResult => {
+    if (wall === 'clear') return out;
+    const note = t(wall === 'blocked' ? 'browser.wallBlocked' : 'browser.wallCheck');
+    return typeof out === 'string' ? `${note}\n\n${out}` : { ...out, text: `${note}\n\n${out.text}` };
+  };
 
   return [
     def(
       'browser_open',
       { url: z.string().min(1).max(2000) },
       async ({ url }) => {
-        const out = await act(async (page) => {
-          await page.goto(webUrl(url).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        let wall: WallState = 'clear';
+        const opened = await act(async (page) => {
+          const res = await page.goto(webUrl(url).toString(), {
+            waitUntil: 'domcontentloaded',
+            timeout: 30_000,
+          });
+          // A "Just a moment..." page clears by itself: wait it out here, so the bot sees the site.
+          wall = await waitOutWall(page, res?.status() ?? null);
         });
+        const out = wallNote(opened, wall);
         // The bot's notes on this site come before the page, so it works the way that worked before.
         const host = (() => {
           try {
@@ -520,10 +534,16 @@ export function browserTools(opts: {
           if (action === 'list') return list();
           if (action === 'new') {
             const page = await browser.newPage(bot.id);
-            if (url)
-              await page.goto(webUrl(url).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+            let wall: WallState = 'clear';
+            if (url) {
+              const res = await page.goto(webUrl(url).toString(), {
+                waitUntil: 'domcontentloaded',
+                timeout: 30_000,
+              });
+              wall = await waitOutWall(page, res?.status() ?? null);
+            }
             await settle(page);
-            return outline(page);
+            return wallNote(await outline(page), wall);
           }
           const target = index ? browser.pages(bot.id)?.pages[index - 1] : undefined;
           if (!target) return `${t('browser.noSuchTab')}\n${list()}`;

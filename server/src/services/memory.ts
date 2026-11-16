@@ -4,6 +4,7 @@ import type { Ctx } from '../context';
 import { schema } from '../db';
 import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
 import { toMemory } from './mappers';
+import { noteKey } from './secrets';
 import { siteMatches } from './vault';
 
 export class MemoryService {
@@ -84,6 +85,28 @@ export class MemoryService {
   /** Whether the note is the shared memory or the own note of one of `botIds`. */
   canEdit(m: Memory, botIds: Iterable<string>) {
     return m.scope === 'user' || (!!m.botId && new Set(botIds).has(m.botId));
+  }
+
+  /**
+   * A note already saved with the same words (see `noteKey`), in the same place: the shared memory
+   * or one bot's own notes, about the same site or none. Writing it again would only repeat it.
+   */
+  async findSame(input: { scope: MemoryScope; botId: string | null; content: string; site?: string | null }) {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.memories)
+      .where(
+        and(
+          eq(schema.memories.scope, input.scope),
+          input.scope === 'bot' && input.botId
+            ? eq(schema.memories.botId, input.botId)
+            : isNull(schema.memories.botId),
+          input.site ? eq(schema.memories.site, input.site) : isNull(schema.memories.site),
+        ),
+      );
+    const key = noteKey(input.content);
+    const row = rows.find((r) => noteKey(r.content) === key);
+    return row ? toMemory(row) : null;
   }
 
   async get(id: string): Promise<Memory> {
