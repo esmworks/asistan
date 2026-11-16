@@ -130,7 +130,40 @@ quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml
 `.zip` and the `.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update
 only into a signed app. On Linux only the AppImage updates itself; a `.deb` is updated by installing the new one. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
 
-## Running on a server (Docker)
+## Quick start: your own server
+
+On a fresh Ubuntu (22.04 or later) or Debian (12 or later) server with at least 2 GB of memory (4 GB recommended):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash
+```
+
+The script installs Docker, fills in `docker/.env` with random secrets, sets up AppArmor and the egress firewall (kept
+across reboots), puts Caddy in front for HTTPS with a Let's Encrypt certificate, and prints the address and access key.
+Without a domain it uses a name made from the server's IP address (`1-2-3-4.sslip.io`); with one, point its DNS record
+at the server first and pass it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash -s -- --domain bot.example.com
+```
+
+Ports 80 and 443 must be open in the provider's firewall. Afterwards `yumakbot update`, `yumakbot status`,
+`yumakbot logs` and `yumakbot access-key` manage the installation; `--computer` turns on the bots' desktops (8 GB
+recommended) and `--help` lists the rest.
+
+Most providers (Hetzner, DigitalOcean, Vultr and others) also take a script when the server is created, under "Cloud
+config" or "User data", which installs it with no SSH session at all:
+
+```yaml
+#cloud-config
+runcmd:
+  - curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | bash -s -- --access-key CHOOSE-A-LONG-RANDOM-KEY
+```
+
+The access key is chosen there because the script's output goes to a log file on the server; it needs at least 24
+letters, digits or `- _ . ~`. Open `https://<server IP with dashes>.sslip.io` a few minutes later.
+
+## Running on a server (Docker, by hand)
 
 ```bash
 cp docker/.env.example docker/.env
@@ -151,8 +184,10 @@ capabilities dropped and resource limits. The server listens only on `127.0.0.1:
 without opening a port, add `--profile cloudflare` (a Cloudflare Tunnel, with `CLOUDFLARE_TUNNEL_TOKEN`) or
 `--profile tailscale` (your tailnet, with `TAILSCALE_AUTHKEY`) and set `YUMAKBOT_PUBLIC_URL` and
 `YUMAKBOT_SECURE_COOKIES=1`; or put a TLS reverse proxy (Caddy, nginx) in front of it and set `YUMAKBOT_ALLOWED_HOSTS`
-to your domain. To sign a phone or another computer in, get a one-time pairing code under Settings → Connection →
-Connect another device on a device already signed in.
+to your domain. Have such a proxy send `YUMAKBOT_PROXY_SECRET` in an `X-Yumakbot-Proxy` header and the client's
+address in `X-Forwarded-For`, so sign-in attempts are counted per person rather than all as the proxy's address
+(`docker/Caddyfile` shows how). To sign a phone or another computer in, get a one-time pairing code under Settings →
+Connection → Connect another device on a device already signed in.
 
 [docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
@@ -256,6 +291,7 @@ The server reads these environment variables:
 | `YUMAKBOT_ALLOWED_ORIGINS`       | —                   | Comma-separated extra browser origins                                   |
 | `YUMAKBOT_SECURE_COOKIES`        | `0`                 | `1` when served over HTTPS                                              |
 | `YUMAKBOT_PUBLIC_URL`            | —                   | Public address for routine webhooks and sign-in callbacks               |
+| `YUMAKBOT_PROXY_SECRET`          | —                   | Secret the reverse proxy sends, so its `X-Forwarded-For` is trusted     |
 | `YUMAKBOT_APP_DIR`               | `app/dist` if built | Built web UI to serve                                                   |
 | `YUMAKBOT_CLAUDE_MODEL`          | —                   | Default Claude model                                                    |
 | `YUMAKBOT_MAX_TURNS`             | `3`                 | Bot turns running at once                                               |

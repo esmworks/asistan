@@ -446,12 +446,17 @@ export class TelegramChannels {
     const t = await this.services.settings.translator();
     const api = this.api(this.vault.open(row.secret));
     const chat = row.owner;
+    // A routine's report is written in the routine's conversation and copied to the main one; the
+    // copy is the one sent, so it arrives once.
+    const report = m.props.routineReport === true;
+    const headed = () => `📋 **${String(m.props.routineName ?? '') || t('channel.routine')}**\n\n${m.text}`;
+    // Turned off, routine reports stay in the app wherever the person talks from.
+    if (report && settings.notices === false) return;
     if (!here) {
       // A routine's report from another conversation, when the person wants those here too.
-      if (settings.notices === false || thread.kind !== 'routine' || m.role !== 'assistant' || !m.text.trim())
-        return;
+      if (settings.notices === false || !report || m.role !== 'assistant' || !m.text.trim()) return;
       await this.sends.run(row.id, async () => {
-        await this.text(api, chat, `📋 **${thread.title || t('channel.routine')}**\n\n${m.text}`);
+        await this.text(api, chat, headed());
       });
       return;
     }
@@ -475,7 +480,7 @@ export class TelegramChannels {
       }
       if (m.author !== `bot:${thread.botId}`) return;
       if (m.text.trim()) {
-        const sent = await this.text(api, chat, m.text);
+        const sent = await this.text(api, chat, report ? headed() : m.text);
         if (sent) await this.remember(row.id, sent, m.id);
       }
       for (const f of messageFiles(m)) {

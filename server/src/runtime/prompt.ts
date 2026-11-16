@@ -182,10 +182,19 @@ export const HANDOFF_MESSAGES = 40;
 export const HANDOFF_MESSAGE_CHARS = 2_000;
 export const HANDOFF_CHARS = 30_000;
 
-/** A webhook post as the bot reads it: whose webhook it came through, fenced as data. */
-export function postedText(m: { text: string; props?: { routineName?: unknown } }, t: T): string {
+/**
+ * A message that reached the conversation without a turn of the bot there, as the bot reads it: a
+ * webhook post, fenced as data, or the report the bot itself wrote in one of its routine's runs.
+ */
+export function postedText(
+  m: { text: string; props?: { routineName?: unknown; posted?: unknown; routineReport?: unknown } },
+  t: T,
+): string {
   const text = m.text.length > HANDOFF_MESSAGE_CHARS ? `${cutAt(m.text, HANDOFF_MESSAGE_CHARS)}…` : m.text;
-  return t('prompt.posted', { name: String(m.props?.routineName ?? ''), text });
+  const name = String(m.props?.routineName ?? '');
+  return m.props?.routineReport && !m.props.posted
+    ? t('prompt.routineReport', { name, text })
+    : t('prompt.posted', { name, text });
 }
 
 /**

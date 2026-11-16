@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { checkHostOrigin, SESSION_IDLE_MS } from '../src/auth';
+import { checkHostOrigin, clientAddress, SESSION_IDLE_MS } from '../src/auth';
 import { loadConfig, publicUrl } from '../src/config';
 import { KEY, testServer, type TestServer } from './helpers';
 
@@ -187,5 +187,54 @@ describe('genel adres', () => {
     expect(
       checkHostOrigin({ host: 'baska.example.com', origin: undefined, method: 'GET' }, config),
     ).not.toBeNull();
+  });
+});
+
+describe('ters vekil arkasında', () => {
+  const config = { proxySecret: 'vekil-sirri-0123456789' };
+  it('X-Forwarded-For yalnızca vekilin sırrıyla gelen istekte okunur', () => {
+    const forwarded = { 'x-forwarded-for': '198.51.100.7, 203.0.113.1' };
+    expect(
+      clientAddress({ ...forwarded, 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', config),
+    ).toBe('203.0.113.1');
+    expect(clientAddress(forwarded, '172.18.0.1', config)).toBe('172.18.0.1');
+    expect(clientAddress({ ...forwarded, 'x-yumakbot-proxy': 'yanlis' }, '172.18.0.1', config)).toBe(
+      '172.18.0.1',
+    );
+    expect(
+      clientAddress({ ...forwarded, 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', {
+        proxySecret: null,
+      }),
+    ).toBe('172.18.0.1');
+    expect(clientAddress({ 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', config)).toBe(
+      '172.18.0.1',
+    );
+  });
+
+  // Behind Caddy every request arrives from the same address; without the proxy's word, ten wrong
+  // passwords from one person would lock everyone out.
+  it('giriş sınırı vekilin bildirdiği adrese göre sayılır', async () => {
+    const t = await testServer(config);
+    try {
+      const account = await t.app.inject({
+        method: 'PUT',
+        url: '/api/account',
+        headers: { host: 'localhost', authorization: `Bearer ${KEY}` },
+        payload: { username: 'erhan', password: 'gizli-sifre' },
+      });
+      expect(account.statusCode).toBe(200);
+      const login = (from: string) =>
+        t.app.inject({
+          method: 'POST',
+          url: '/api/login',
+          headers: { host: 'localhost', 'x-forwarded-for': from, 'x-yumakbot-proxy': config.proxySecret },
+          payload: { username: 'erhan', password: 'yanlis-sifre' },
+        });
+      for (let i = 0; i < 10; i++) expect((await login('203.0.113.1')).statusCode).toBe(401);
+      expect((await login('203.0.113.1')).statusCode).toBe(429);
+      expect((await login('203.0.113.2')).statusCode).toBe(401);
+    } finally {
+      await t.dispose();
+    }
   });
 });

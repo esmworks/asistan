@@ -621,11 +621,66 @@ describe('rutinler', () => {
     await t.services.turns.idle();
     expect(await failed()).toBeNull();
     expect(await ids()).toEqual([]);
-    // The routine's answer is in its own conversation, which the chat has to lead to.
+    // The routine's answer reaches the main conversation, with the way to the run's own steps.
     const summary = (await t.api<BotSummary[]>('GET', '/api/summaries')).body.find((x) => x.botId === a.id)!;
     const [run] = (await t.api<RoutineRun[]>('GET', `/api/routines/${r.id}/runs`)).body;
-    expect(summary.repliedThreadId).toBe(run!.threadId);
-    expect(summary.repliedThreadId).not.toBe(summary.threadId);
+    expect(summary.repliedThreadId).toBe(summary.threadId);
+    const copy = (await t.messages(summary.threadId!)).at(-1)!;
+    expect(copy.role).toBe('assistant');
+    expect(copy.props).toMatchObject({
+      routineReport: true,
+      routineName: 'Gece raporu',
+      routineThreadId: run!.threadId,
+    });
+  });
+
+  it('rutinin raporu ana sohbete düşer, bot orada sonraki mesajda onu bilir; sessiz çalışma bir şey yazmaz', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const main = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;
+    await t.send(main.id, 'merhaba');
+    await t.services.turns.idle();
+    const r = await routine(a.id);
+    const run = (await t.api<RoutineRun>('POST', `/api/routines/${r.id}/run`, {})).body;
+    await t.services.turns.idle();
+    expect(run.threadId).not.toBe(main.id);
+    const report = (await t.messages(run.threadId!)).at(-1)!;
+    const copy = (await t.messages(main.id)).at(-1)!;
+    expect(copy).toMatchObject({ role: 'assistant', author: `bot:${a.id}`, text: report.text });
+    expect(copy.props).toMatchObject({
+      routineReport: true,
+      routineName: 'Rapor',
+      routineThreadId: run.threadId,
+    });
+    // The routine's own conversation stays out of the list unless it waits on the person.
+    const threads = (await t.api<Thread[]>('GET', `/api/bots/${a.id}/threads`)).body;
+    expect(threads.find((x) => x.id === run.threadId)?.kind).toBe('routine');
+
+    await t.send(main.id, 'raporda ne vardı');
+    await t.services.turns.idle();
+    const asked = t.engine.requests.at(-1)!.prompt;
+    expect(asked).toContain('"Rapor" rutininin bir çalışmasında yazdığın rapor');
+    expect(asked).toContain('raporda ne vardı');
+
+    const before = (await t.messages(main.id)).length;
+    await t.api('PATCH', `/api/routines/${r.id}`, { prompt: '[sessiz]' });
+    await runAgain(r.id);
+    await t.services.turns.idle();
+    expect(await t.messages(main.id)).toHaveLength(before);
+  });
+
+  it('ana sohbetten kendi sohbetine dönen rutin ana sohbeti kendi sohbeti saymaz', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const r = await routine(a.id);
+    const main = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;
+    await t.api('PATCH', `/api/routines/${r.id}`, { inMain: true });
+    const first = (await t.api<RoutineRun>('POST', `/api/routines/${r.id}/run`, {})).body;
+    await t.services.turns.idle();
+    expect(first.threadId).toBe(main.id);
+    await t.api('PATCH', `/api/routines/${r.id}`, { inMain: false });
+    const second = (await runAgain(r.id))!;
+    await t.services.turns.idle();
+    expect(second.threadId).not.toBe(main.id);
+    expect((await t.api<Thread>('GET', `/api/threads/${second.threadId}`)).body.kind).toBe('routine');
   });
 
   it('betik rutine veri gönderebilir; veri istemde talimattan ayrı durur', async () => {

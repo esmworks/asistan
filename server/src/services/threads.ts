@@ -707,9 +707,10 @@ export class ThreadService {
       const userThread = own.find((t) => t.kind === 'user') ?? null;
       const latest = own.find((t) => previews.has(t.id)) ?? null;
       const busy = own.map((t) => states.get(t.id)).find((s) => s && s !== 'idle');
-      // A bot answering another bot is not something the person has to read.
+      // A bot answering another bot is not something the person has to read; a routine's report
+      // is read in the main conversation it is copied to.
       const replied = own
-        .filter((t) => t.kind !== 'bot')
+        .filter((t) => t.kind !== 'bot' && t.kind !== 'routine')
         .map((t) => ({ threadId: t.id, at: replies.get(t.id) }))
         .reduce<{ threadId: string; at: Date } | null>(
           (a, b) => (b.at && (!a || b.at > a.at) ? { threadId: b.threadId, at: b.at } : a),

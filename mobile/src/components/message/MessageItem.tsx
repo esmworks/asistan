@@ -667,6 +667,7 @@ function AssistantRow({
     );
   return (
     <View style={styles.assistantCol}>
+      {m.props.routineReport === true ? <RoutineReportLine m={m} botId={bot?.id} /> : null}
       {!page && files.length ? (
         // Files the bot sent with send_file, with its note if it wrote one.
         <View style={styles.assistantFiles}>
@@ -688,6 +689,32 @@ function AssistantRow({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/** Over a routine's report in the main conversation: which routine wrote it, opening the run's steps. */
+function RoutineReportLine({ m, botId }: { m: Message; botId?: string }) {
+  const c = useColors();
+  const name = typeof m.props.routineName === 'string' ? m.props.routineName : '';
+  const run = typeof m.props.routineThreadId === 'string' ? m.props.routineThreadId : null;
+  const line = (
+    <>
+      <Feather name="clock" size={12} color={c.mutedForeground} />
+      <Text style={[styles.small, { color: c.mutedForeground }]}>
+        {name ? t('message.routineNamed', { name }) : t('message.routine')}
+      </Text>
+    </>
+  );
+  if (!run || !botId) return <View style={[styles.routine, styles.routineReport]}>{line}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t('message.openRoutineRun')}
+      onPress={() => nav.replaceChat(botId, { threadId: run })}
+      style={[styles.routine, styles.routineReport]}
+    >
+      {line}
+    </Pressable>
   );
 }
 
@@ -938,6 +965,7 @@ const styles = StyleSheet.create({
   },
   withReaction: { marginBottom: 16 },
   routine: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8 },
+  routineReport: { alignSelf: 'flex-start', paddingBottom: 4 },
   reaction: {
     position: 'absolute',
     bottom: -16,

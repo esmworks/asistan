@@ -61,7 +61,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
-import { SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
+import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
@@ -210,12 +210,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.post('/api/login', async (req, reply) => {
     const { username, password } = LoginRequest.parse(req.body);
-    if (d.auth.throttle.blocked(req.ip)) throw new HttpError(429, 'error.loginBlocked');
+    const from = clientAddress(req.headers, req.ip, d.config);
+    if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
     if (!(await d.auth.account.check(password, username))) {
-      d.auth.throttle.failed(req.ip);
+      d.auth.throttle.failed(from);
       throw new HttpError(401, 'error.loginWrong');
     }
-    d.auth.throttle.succeeded(req.ip);
+    d.auth.throttle.succeeded(from);
     reply.setCookie(SESSION_COOKIE, await d.auth.createSession(req.headers['user-agent']), sessionCookie);
     return { ok: true };
   });
@@ -231,13 +232,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .object({ code: z.string().min(1).max(40), token: z.boolean().optional() })
       .parse(req.body);
     // Wrong codes count with wrong passwords: guessing either is slowed the same way.
-    if (d.auth.throttle.blocked(req.ip)) throw new HttpError(429, 'error.loginBlocked');
+    const from = clientAddress(req.headers, req.ip, d.config);
+    if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
     if (!d.auth.usePairingCode(code)) {
-      d.auth.throttle.failed(req.ip);
+      d.auth.throttle.failed(from);
       await new Promise((r) => setTimeout(r, 300));
       throw new HttpError(401, 'error.pairingWrong');
     }
-    d.auth.throttle.succeeded(req.ip);
+    d.auth.throttle.succeeded(from);
     const token = await d.auth.createSession(req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     // The desktop app pairs from its own process and puts the session in its window's cookies.
@@ -254,10 +256,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     // Changing it takes the current password, or the access key when that is forgotten.
     if ((await d.auth.account.username()) !== null) {
-      if (d.auth.throttle.blocked(req.ip)) throw new HttpError(429, 'error.loginBlocked');
+      const from = clientAddress(req.headers, req.ip, d.config);
+      if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
       const ok = !!current && (d.auth.checkKey(current) || (await d.auth.account.check(current)));
       if (!ok) {
-        d.auth.throttle.failed(req.ip);
+        d.auth.throttle.failed(from);
         throw new HttpError(403, 'error.currentPasswordWrong');
       }
     }
@@ -787,11 +790,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     stopped: await s.rooms.stop(IdParams.parse(req.params).id),
   }));
 
-  // Bot-to-bot conversation behind a marker line.
+  // Bot-to-bot exchange behind a marker line: that one request, not the pair's whole history.
   app.get('/api/jobs/:id', async (req) => {
     const job = await s.jobs.get(IdParams.parse(req.params).id);
-    const messages = await s.threads.messages(job.toThreadId);
-    return { job, messages };
+    return { job, messages: await s.jobs.exchange(job) };
   });
   app.get('/api/bots/:id/conversations', async (req) => {
     const id = IdParams.parse(req.params).id;

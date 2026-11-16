@@ -28,6 +28,9 @@ export function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
     : 0;
   // Opens by itself for a waiting card, until the person closes it.
   const open = chosen ?? waiting > 0;
+  // Once read, the exchange counts itself: markers written before it was cut to one request
+  // counted the pair's whole history.
+  const said = job.data?.messages.filter((x) => x.role === 'user' || x.role === 'assistant').length;
   const palette = bubblePalette(c);
   return (
     <View style={styles.root}>
@@ -38,7 +41,7 @@ export function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
         style={({ pressed }) => [styles.head, pressed && { backgroundColor: c.accent }]}
       >
         <Text style={[styles.small, { color: c.mutedForeground }]}>
-          {t('message.count', { count: props.count ?? 1 })}
+          {t('message.count', { count: said || props.count || 1 })}
         </Text>
         <Text style={[styles.small, { color: c.mutedForeground }]}>·</Text>
         {peer ? <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} size={18} /> : null}

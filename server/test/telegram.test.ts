@@ -201,6 +201,36 @@ describe('Telegram', () => {
     expect(tg.sent().some((c) => String(c.body.text).includes('uygulamadan'))).toBe(false);
   });
 
+  it("rutin raporu Telegram'a bir kez gider; diğer konuşmalardan haber kapalıyken gitmez", async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    tg.write('ilk');
+    await waitFor(async () => tg.sent().find((c) => String(c.body.text).includes('ilk')));
+    await t.services.turns.idle();
+    const r = (
+      await t.api<{ id: string }>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Akşam Ciro',
+        prompt: 'ciroyu yaz',
+        schedule: { type: 'interval', minutes: 60 },
+      })
+    ).body;
+    const reports = () => tg.sent().filter((c) => String(c.body.text).includes('ciroyu yaz'));
+    await t.api('POST', `/api/routines/${r.id}/run`, {});
+    await t.services.turns.idle();
+    await waitFor(async () => reports().length > 0);
+    await new Promise((res) => setTimeout(res, 100));
+    expect(reports()).toHaveLength(1);
+    expect(String(reports()[0]!.body.text)).toContain('Akşam Ciro');
+
+    await t.api('PATCH', `/api/bots/${bot.id}/telegram`, { notices: false });
+    t.now.value = new Date(t.now.value.getTime() + 60 * 60_000);
+    await t.api('POST', `/api/routines/${r.id}/run`, {});
+    await t.services.turns.idle();
+    await new Promise((res) => setTimeout(res, 100));
+    expect(reports()).toHaveLength(1);
+  });
+
   it('izin kartını düğmelerle gönderir; düğmeye basmak kartı yanıtlar', async () => {
     const { bot, code } = await setUp();
     await pair(code);

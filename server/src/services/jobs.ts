@@ -1,11 +1,12 @@
-import type { Bot } from '@yumakbot/shared';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { Bot, Message } from '@yumakbot/shared';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
 import { HttpError, newId, notFound, truncate } from '../util';
 import type { Services } from '.';
+import { toMessage } from './mappers';
 import { serverTranslator } from './settings';
 
 type JobRow = typeof schema.jobs.$inferSelect;
@@ -188,6 +189,62 @@ export class JobService {
     });
   }
 
+  /**
+   * The messages of one request and the work it started: the request itself and what the target
+   * bot wrote in the turns it ran for it, including the turns that read the answers of bots it
+   * asked in turn. The thread of a pair of bots holds every request they ever exchanged; a marker
+   * opens only to its own.
+   */
+  async exchange(job: JobRow): Promise<Message[]> {
+    const thread = job.toThreadId;
+    const turns = new Set(
+      (
+        await this.ctx.db
+          .select({ id: schema.turns.id })
+          .from(schema.turns)
+          .where(and(eq(schema.turns.jobId, job.id), eq(schema.turns.threadId, thread)))
+      ).map((r) => r.id),
+    );
+    // Answers to what those turns asked other bots come back as further turns here.
+    let asking = [...turns];
+    for (let i = 0; asking.length && i <= this.ctx.config.maxJobDepth; i++) {
+      const asked = await this.ctx.db
+        .select({ id: schema.jobs.id })
+        .from(schema.jobs)
+        .where(and(eq(schema.jobs.fromThreadId, thread), inArray(schema.jobs.fromTurnId, asking)));
+      const answered = asked.length
+        ? await this.ctx.db
+            .select({ id: schema.turns.id })
+            .from(schema.turns)
+            .where(
+              and(
+                eq(schema.turns.threadId, thread),
+                inArray(
+                  schema.turns.jobId,
+                  asked.map((j) => j.id),
+                ),
+              ),
+            )
+        : [];
+      asking = answered.map((r) => r.id).filter((id) => !turns.has(id));
+      for (const id of asking) turns.add(id);
+    }
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, thread),
+          or(
+            turns.size ? inArray(schema.messages.turnId, [...turns]) : undefined,
+            sql`${schema.messages.props}->>'jobId' = ${job.id}`,
+          ),
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id));
+    return rows.map(toMessage);
+  }
+
   private async markReplied(job: JobRow) {
     const rows = await this.ctx.db
       .select()
@@ -195,17 +252,11 @@ export class JobService {
       .where(and(eq(schema.messages.threadId, job.fromThreadId), eq(schema.messages.role, 'marker')));
     const marker = rows.find((m) => (m.props as { jobId?: string }).jobId === job.id);
     if (!marker) return;
-    const count = await this.ctx.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(schema.messages)
-      .where(
-        and(
-          eq(schema.messages.threadId, job.toThreadId),
-          sql`${schema.messages.role} in ('user','assistant')`,
-        ),
-      );
+    const count = (await this.exchange(job)).filter(
+      (m) => m.role === 'user' || m.role === 'assistant',
+    ).length;
     await this.services.threads.updateMessage(marker.id, {
-      props: { ...(marker.props as object), count: Number(count[0]?.n ?? 2), replied: true },
+      props: { ...(marker.props as object), count: Math.max(count, 1), replied: true },
     });
   }
 

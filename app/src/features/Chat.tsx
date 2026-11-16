@@ -359,7 +359,11 @@ function Header({
   const snoozed = threads.filter((th) => !th.archivedAt && away(th));
   const userThreads = listed.filter((th) => th.kind === 'user');
   const botThreads = listed.filter((th) => th.kind === 'bot');
-  const routineThreads = listed.filter((th) => th.kind === 'routine');
+  // A routine's reports reach the main conversation; its own is listed only while it needs the
+  // person (a card waiting) or they pinned it. Each run opens from its report and from the routine.
+  const routineThreads = listed.filter(
+    (th) => th.kind === 'routine' && (waiting.has(th.id) || !!th.pinnedAt),
+  );
   const apiThreads = listed.filter((th) => th.kind === 'api');
   const refresh = () => qc.invalidateQueries({ queryKey: ['threads', bot.id] });
   const fail = (e: Error) => toast.error(e.message);

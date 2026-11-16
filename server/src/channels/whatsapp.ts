@@ -592,12 +592,16 @@ export class WhatsAppChannel {
     if (!thread) return;
     const here = settings.threadId === m.threadId && (await lastWroteVia(this.ctx, m.threadId, 'whatsapp'));
     const t = await this.services.settings.translator();
+    // A routine's report is written in the routine's conversation and copied to the main one; the
+    // copy is the one sent, so it arrives once.
+    const report = m.props.routineReport === true;
+    const headed = () => `📋 **${String(m.props.routineName ?? '') || t('channel.routine')}**\n\n${m.text}`;
+    // Turned off, routine reports stay in the app wherever the person talks from.
+    if (report && settings.notices === false) return;
     if (!here) {
       if (settings.notices === false || thread.botId !== row.botId) return;
-      if (thread.kind !== 'routine' || m.role !== 'assistant' || !m.text.trim()) return;
-      await this.sends.run('wa', () =>
-        this.markdown(jid, `📋 **${thread.title || t('channel.routine')}**\n\n${m.text}`),
-      );
+      if (!report || m.role !== 'assistant' || !m.text.trim()) return;
+      await this.sends.run('wa', () => this.markdown(jid, headed()));
       return;
     }
     await this.sends.run('wa', async () => {
@@ -617,7 +621,7 @@ export class WhatsAppChannel {
       }
       if (m.role === 'error') return this.markdown(jid, `⚠️ ${m.text}`);
       if (m.author !== `bot:${thread.botId}`) return;
-      if (m.text.trim()) await this.markdown(jid, m.text);
+      if (m.text.trim()) await this.markdown(jid, report ? headed() : m.text);
       for (const f of messageFiles(m)) {
         const path = join(this.ctx.config.dataDir, 'workspaces', f.path);
         const size = await stat(path).then(

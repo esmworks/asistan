@@ -46,6 +46,51 @@ describe('botlar arası', () => {
     expect(job.body.messages).toHaveLength(2);
   });
 
+  it('işaret satırı yalnız kendi isteğinin konuşmasını açar, iki botun bütün geçmişini değil', async () => {
+    const g = await group('Ekip');
+    const a = await t.bot({ name: 'Ali', groupId: g.id });
+    await t.bot({ name: 'Ayşe', groupId: g.id });
+    const ta = await main(a.id);
+    await t.send(ta.id, '[araç:bot_send {"bot":"Ayşe","message":"ilk soru"}]');
+    await t.services.turns.idle();
+    await t.send(ta.id, '[araç:bot_send {"bot":"Ayşe","message":"ikinci soru"}]');
+    await t.services.turns.idle();
+
+    const markers = (await t.messages(ta.id)).filter((m) => m.role === 'marker');
+    expect(markers).toHaveLength(2);
+    for (const [i, question] of ['ilk soru', 'ikinci soru'].entries()) {
+      const marker = markers[i]!;
+      expect(marker.props).toMatchObject({ replied: true, count: 2 });
+      const job = await t.api<{ messages: Message[] }>(
+        'GET',
+        `/api/jobs/${(marker.props as { jobId: string }).jobId}`,
+      );
+      expect(job.body.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+      expect(job.body.messages[0]!.text).toBe(question);
+    }
+  });
+
+  it('aracı bot başka bota sorarsa gelen cevap ve devamı da aynı işaret satırında görünür', async () => {
+    const g = await group('Ekip');
+    const a = await t.bot({ name: 'Ali', groupId: g.id });
+    await t.bot({ name: 'Ayşe', groupId: g.id });
+    await t.bot({ name: 'Can', groupId: g.id });
+    const ta = await main(a.id);
+    await t.send(
+      ta.id,
+      '[araç:bot_send {"bot":"Ayşe","message":"[araç:bot_send {\\"bot\\":\\"Can\\",\\"message\\":\\"sayıları ver\\"}]"}]',
+    );
+    await t.services.turns.idle();
+    const marker = (await t.messages(ta.id)).find((m) => m.role === 'marker')!;
+    const job = await t.api<{ messages: Message[] }>(
+      'GET',
+      `/api/jobs/${(marker.props as { jobId: string }).jobId}`,
+    );
+    const said = job.body.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    expect(said[0]!.role).toBe('user');
+    expect(said.at(-1)!.text).toContain('Can cevap verdi');
+  });
+
   it('bir turda birden çok bota sorulursa cevaplar hepsi bitince tek turda gelir', async () => {
     const g = await group('Ekip');
     const a = await t.bot({ name: 'Ali', groupId: g.id });
