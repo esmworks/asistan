@@ -365,7 +365,7 @@ function Typing() {
   const c = useColors();
   return (
     <View style={styles.botRow}>
-      <Avatar name="" color={c.brand} avatar="shape:blob" size={32} />
+      <Avatar name="" color={c.brand} avatar="shape:blob" size={32} activity="thinking" motion="always" />
       <View style={[styles.botBubble, styles.typing, { backgroundColor: c.muted }]} accessible={false}>
         {[0, 1, 2].map((i) => (
           <View key={i} style={[styles.dot, { backgroundColor: c.mutedForeground }]} />

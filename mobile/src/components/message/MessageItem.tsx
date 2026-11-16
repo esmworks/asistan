@@ -870,7 +870,15 @@ export function Working({
       : null;
   return (
     <View style={styles.working} accessibilityRole="progressbar">
-      <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={28} />
+      <Avatar
+        name={bot.name}
+        color={bot.color}
+        avatar={bot.avatar}
+        size={28}
+        seed={bot.id}
+        activity={activity}
+        motion="always"
+      />
       <Text style={[styles.workingText, { color: c.mutedForeground }]}>
         {doing ?? t(`activity.${activity}`)}
       </Text>

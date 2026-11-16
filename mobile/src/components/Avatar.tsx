@@ -1,7 +1,9 @@
+import type { BotActivity } from '@yumakbot/app/src/lib/activity';
 import type { AvatarShape } from '@yumakbot/shared';
 import { INTL_LOCALE } from '@yumakbot/shared/i18n';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
+import { PlushEyes, type EyeMotion } from '@/components/PlushEyes';
 import { locale } from '@/i18n';
 import { initialOf } from '@/lib/bots';
 import BLOB from '../../assets/plush/blob.webp';
@@ -46,18 +48,29 @@ const ART_ZOOM = 1.38;
 /**
  * A bot's mark: its uploaded picture, or its shape as a felt plush in its color with two eyes, as
  * the web app draws its bots. Without an avatar (a profile, an app) it is the first letter on a disc.
+ * A plush given `motion` looks around and blinks; without it the plush is a picture, as where the
+ * avatar only names the bot.
  */
 export function Avatar({
   name,
   color,
   size,
   avatar,
+  motion,
+  seed,
+  activity,
 }: {
   name: string;
   color: string;
   size: number;
   /** The bot's avatar field: `shape:<name>` or an uploaded picture as a data URL. */
   avatar?: string;
+  /** How a plush's eyes move; left out, they hold still. */
+  motion?: EyeMotion;
+  /** The bot's id: its avatars look and blink together, and act out what it is doing. */
+  seed?: string;
+  /** What the bot is doing, where the screen knows better than the bot's own conversation. */
+  activity?: BotActivity;
 }) {
   const round = { width: size, height: size, borderRadius: size / 2 };
   if (avatar?.startsWith('data:image/')) {
@@ -73,13 +86,29 @@ export function Avatar({
     const eye = { width: span * 0.057, height: span * 0.126, borderRadius: size };
     // Eye centres, as fractions of the body picture.
     const at = (f: number, length: number) => offset + f * span - length / 2;
+    const leftEye = { top: at(0.476, eye.height), left: at(0.448, eye.width) };
+    const rightEye = { top: at(0.476, eye.height), left: at(0.587, eye.width) };
     return (
       <View style={[styles.plush, { width: size, height: size }]} accessible={false}>
         {/* The colour fills the shape, then the grey fur lights and shades it. */}
         <Image source={body} style={[styles.layer, art]} tintColor={color} />
         <Image source={body} style={[styles.layer, styles.fur, art]} />
-        <View style={[styles.eye, eye, { top: at(0.476, eye.height), left: at(0.448, eye.width) }]} />
-        <View style={[styles.eye, eye, { top: at(0.476, eye.height), left: at(0.587, eye.width) }]} />
+        {motion ? (
+          <PlushEyes
+            seed={seed}
+            activity={activity}
+            motion={motion}
+            span={span}
+            eye={[styles.eye, eye]}
+            left={leftEye}
+            right={rightEye}
+          />
+        ) : (
+          <>
+            <View style={[styles.eye, eye, leftEye]} />
+            <View style={[styles.eye, eye, rightEye]} />
+          </>
+        )}
       </View>
     );
   }

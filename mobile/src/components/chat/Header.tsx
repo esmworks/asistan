@@ -52,7 +52,14 @@ export function ChatHeader({
             { borderColor: c.border, backgroundColor: pressed ? c.accent : c.background },
           ]}
         >
-          <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={32} />
+          <Avatar
+            name={bot.name}
+            color={bot.color}
+            avatar={bot.avatar}
+            size={32}
+            seed={bot.id}
+            motion="always"
+          />
           <Text style={[styles.pillName, { color: c.foreground }]} numberOfLines={1}>
             {bot.name}
           </Text>

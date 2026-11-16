@@ -70,7 +70,7 @@ function AvatarWithBadges({
   const c = useColors();
   return (
     <View>
-      <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={size} />
+      <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={size} seed={bot.id} motion="busy" />
       {unread ? <UnreadDot style={[styles.unreadCorner, { borderColor: c.sidebar }]} /> : null}
       {bot.isManager ? (
         <View style={[styles.manager, { backgroundColor: c.background, borderColor: c.border }]}>

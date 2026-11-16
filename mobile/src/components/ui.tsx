@@ -36,7 +36,7 @@ export function Mark() {
   const c = useColors();
   return (
     <View style={styles.mark}>
-      <Avatar name="" color={c.brand} avatar="shape:blob" size={64} />
+      <Avatar name="" color={c.brand} avatar="shape:blob" size={64} motion="always" />
     </View>
   );
 }

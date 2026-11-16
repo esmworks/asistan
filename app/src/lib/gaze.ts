@@ -1,5 +1,5 @@
 import type { ExpressionId, Look } from '@norbert_bodziony/bloub';
-import type { BotActivity } from './botActivity';
+import type { BotActivity } from './activity';
 
 /**
  * A direction in degrees: right and up are positive. `AT_YOU` is looking at the person. Its own looks

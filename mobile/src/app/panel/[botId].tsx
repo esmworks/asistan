@@ -38,7 +38,14 @@ export default function PanelScreen() {
           accessibilityLabel={t('panel.editBot')}
           onPress={() => nav.botEdit(bot.id)}
         >
-          <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={72} />
+          <Avatar
+            name={bot.name}
+            color={bot.color}
+            avatar={bot.avatar}
+            size={72}
+            seed={bot.id}
+            motion="always"
+          />
           <View style={[styles.pencil, { backgroundColor: c.background, borderColor: c.border }]}>
             <Feather name="edit-2" size={16} color={c.foreground} />
           </View>

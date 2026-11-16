@@ -377,7 +377,14 @@ export function Conversation({
           </View>
         ) : rows.length === 0 ? (
           <Pressable style={styles.empty} onPress={Keyboard.dismiss} accessible={false}>
-            <Avatar name={bot.name} color={bot.color} avatar={bot.avatar} size={72} />
+            <Avatar
+              name={bot.name}
+              color={bot.color}
+              avatar={bot.avatar}
+              size={72}
+              seed={bot.id}
+              motion="always"
+            />
             <Text style={[styles.emptyName, { color: c.foreground }]}>{bot.name}</Text>
             <Text style={[styles.hint, { color: c.mutedForeground }]}>
               {bot.description || t('chat.emptyHint')}
