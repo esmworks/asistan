@@ -263,9 +263,10 @@ ensure_packages() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
 }
 
+# The highest vX.Y.Z tag, or nothing when there is none (or the repository cannot be reached).
 latest_release() {
-  git ls-remote --tags --refs "$1" 'v*' |
-    sed -n 's|.*refs/tags/||p' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
+  { git ls-remote --tags --refs "$1" 'v*' || true; } |
+    sed -n 's|.*refs/tags/||p' | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V | tail -n 1
 }
 
 # Stage 1: puts the chosen release into DIR.
@@ -277,6 +278,7 @@ fetch_source() {
   REF=${REF:-main}
   checkout "$REF"
   if [ ! -f "$DIR/docker/install.sh" ]; then
+    [ "$REF" != main ] || die "$REPO deposunda kurulum betiği yok." "$REPO has no installer."
     [ -z "$VERSION" ] ||
       die "$REF bu kurulum betiğinden eski; daha yeni bir sürüm seçin ya da --version main." \
         "$REF is older than this installer; choose a newer release, or --version main."
