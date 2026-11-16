@@ -100,8 +100,9 @@ in Settings → Connection → Claude).
 
 The desktop app can also connect to a remote Yumak Bot server: enter its URL and access key in the connection settings.
 
-Installers for macOS (`.dmg`, Apple silicon) and Windows (`.exe`) are attached to each
-[release](https://github.com/esmworks/yumakbot/releases). To build one yourself on the platform it is for:
+Installers for macOS (`.dmg`, Apple silicon), Windows (`.exe`) and Linux (`.AppImage`, and a `.deb` for Debian and
+Ubuntu) are attached to each [release](https://github.com/esmworks/yumakbot/releases). On Linux, install `bubblewrap`
+and `socat` too for the bots' shell sandbox (the `.deb` recommends them). To build one yourself on the platform it is for:
 
 ```bash
 pnpm build && pnpm --filter @yumakbot/desktop dist
@@ -118,9 +119,9 @@ signed yet, so Windows shows a SmartScreen warning before it runs.
 
 The installed app updates itself from the latest published release: it looks for a new version at start and every six
 hours, downloads it in the background and offers to restart into it; a version left waiting installs when the app
-quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, the macOS `.zip` and the
-`.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update only into a
-signed app. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
+quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, `latest-linux.yml`, the macOS
+`.zip` and the `.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update
+only into a signed app. On Linux only the AppImage updates itself; a `.deb` is updated by installing the new one. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
 
 ## Running on a server (Docker)
 
@@ -201,6 +202,12 @@ changing `server/src/db/schema.ts`, run `pnpm --filter @yumakbot/server db:gener
 
 User-visible text goes through the translation tables in `shared/src/i18n.ts`, `server/src/i18n.ts` and
 `desktop/src/i18n.ts`; a test fails on hard-coded strings.
+
+## Opening a chat from outside the app
+
+The desktop app opens `yumakbot://` links: `yumakbot://bot/<bot id>` shows a bot's chat, `yumakbot://thread/<id>` one
+conversation and `yumakbot://room/<id>` a room. "Copy a link to this conversation" in the desktop app copies such a
+link, for a bookmark, a dashboard or a script. Opening one only shows the chat; it never sends anything.
 
 ## Calling a bot from a script
 

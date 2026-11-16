@@ -28,6 +28,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Apps
 
+- The desktop app for Linux: an AppImage that updates itself, and a `.deb` for Debian and Ubuntu, built by the release
+  workflow with the others.
+- `yumakbot://` links open a bot, a conversation or a room in the desktop app from outside it (a bookmark, a dashboard,
+  a script). In the desktop app, "Copy a link to this conversation" copies one, and such a link pasted into a chat
+  opens the conversation in place.
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes
   the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps

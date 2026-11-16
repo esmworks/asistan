@@ -15,6 +15,12 @@ publish:
   provider: github
   owner: esmworks
   repo: yumakbot
+# `yumakbot://` links open a chat in the app (desktop/src/links.ts). macOS reads the scheme from the
+# bundle and Linux from the desktop file; Windows registers it when the app starts.
+protocols:
+  - name: Yumak Bot
+    schemes:
+      - yumakbot
 files:
   - dist/**
   - package.json
@@ -50,6 +56,34 @@ mac:
 win:
   icon: assets/icon.png
   target: nsis
+linux:
+  icon: assets/icon.png
+  category: Office
+  # The AppImage runs on most distributions and updates itself (latest-linux.yml); the .deb is
+  # for Debian and Ubuntu, installed and updated by hand.
+  target:
+    - AppImage
+    - deb
+  artifactName: YumakBot-${version}-${arch}.${ext}
+  maintainer: esmworks <info@yumakbot.com>
+  synopsis: Your own team of AI bots
+  executableName: yumakbot
+deb:
+  # Chromium's sandbox and the bots' browser need these on a minimal install.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  # The sandbox that keeps a bot's shell commands to its own folders.
+  recommends:
+    - bubblewrap
+    - socat
 nsis:
   # A per-user install needs no administrator rights; the user still picks the folder.
   oneClick: false

@@ -17,6 +17,15 @@ contextBridge.exposeInMainWorld('yumakbotDesktop', {
   showLogs: (): Promise<void> => ipcRenderer.invoke('yumakbot:show-logs'),
   /** Whether the app opens at login; with `on`, sets it first. */
   openAtLogin: (on?: boolean): Promise<boolean | null> => ipcRenderer.invoke('yumakbot:open-at-login', on),
+  /** The chat a `yumakbot://` link asked to open, once; null when there is none. */
+  takeLink: (): Promise<{ kind: 'thread' | 'bot' | 'room'; id: string } | null> =>
+    ipcRenderer.invoke('yumakbot:take-link'),
+  /** Calls `fn` when a link arrives while the page is open; returns a function that stops it. */
+  onOpenLink: (fn: () => void): (() => void) => {
+    const listener = () => fn();
+    ipcRenderer.on('yumakbot:open-link', listener);
+    return () => ipcRenderer.removeListener('yumakbot:open-link', listener);
+  },
   /** Calls `fn` when the menu bar's Settings item is chosen; returns a function that stops it. */
   onOpenSettings: (fn: () => void): (() => void) => {
     const listener = () => fn();
