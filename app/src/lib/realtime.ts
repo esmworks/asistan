@@ -129,6 +129,10 @@ function refresh(qc: QueryClient, e: RefreshScope) {
     case 'connections':
       inv('connections');
       break;
+    case 'channels':
+      inv('telegram');
+      inv('whatsapp');
+      break;
     case 'info':
       inv('info');
       inv('providers');

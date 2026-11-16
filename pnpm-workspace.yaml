@@ -11,6 +11,7 @@ allowBuilds:
   esbuild: true
   '@google/genai': false
   protobufjs: false
+  '@whiskeysockets/baileys': false
 minimumReleaseAgeExclude:
   - '@hookform/resolvers@7.0.6'
   - electron@45.3.1

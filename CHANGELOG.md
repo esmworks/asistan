@@ -39,6 +39,21 @@ version is 0.x, a minor release may change the data format or the API; the serve
   room to work, and a bot stays to its job. Both engines leave the other tools out of the request, and one the engine
   offers anyway is refused.
 
+### Chat apps
+
+- Each bot can have a Telegram bot of its own: paste the token BotFather gives in the bot's settings, then open the
+  pairing link (or scan its QR code) and press Start. Only the paired Telegram account is read. What it writes goes to
+  the bot's main conversation; while the person last wrote from Telegram, replies, files, "typing…" and approval and
+  question cards (with buttons) go back there. `/stop` stops the work in progress and `/new` starts afresh. Routine
+  reports and cards from the bot's other conversations can come to Telegram too.
+- WhatsApp connects as a linked device, the way WhatsApp Web does, from the new "Chat apps" settings section: with a
+  separate bot number only the person's own number is read, and with their own number only "Message yourself". The
+  messages go to one chosen bot and `/bot <name>` switches it; cards come with numbered choices that a typed number
+  answers. Groups and other people's messages are never read. This uses Baileys, an unofficial WhatsApp client, so a
+  separate number is recommended.
+- Sign-in cards, secret answers and cards with several questions are left to the Yumak Bot app; passwords never go
+  through a chat app.
+
 ### Memory
 
 - A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is
@@ -52,6 +67,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   issues) without the AI, and the bot runs only when the answer changed, with the new answer. A quiet tick costs
   nothing. Bots set it up when asked ("tell me when a new invoice email arrives"); the routine screen shows the check
   and removes it. Only a tool that reads, of an app open to the bot, can be a check.
+- A routine pre-check on the usage page: before a run that a watched page, an app's check or a webhook call started, the
+  cheapest Claude model says whether the run has anything new to work on (only page noise changed, an event the
+  routine does not care about, nothing beyond the last report). "Watch" only records what it said, beside the run and
+  as a total on the usage page with what those runs cost; "On" skips such runs with the reason before the bot starts.
+  When it is unsure or fails, the run goes ahead, and reminders always run. It is off by default.
+- A watched page keeps its last text, so the pre-check reads the sentences that were removed and added instead of the
+  whole page.
 
 ### Browser
 
@@ -81,6 +103,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
   the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps
   its folder name; renaming `YumakBot.app` to `Yumak Bot.app` in Applications fixes the name the Dock shows.
+
+### Memory
+
+- When memory outgrows the prompt, the notes a bot wrote, changed or looked up most recently go in, rather than the
+  newest ones. An old note a bot keeps finding by search stays in the prompt, and one nobody needed makes room. A
+  search with a query and a site the bot opens count as looking a note up; being in the prompt does not.
+- The memory screen lists the notes no bot uses: nobody changed them and no bot looked them up in 30 days, and no bot reads them on
+  every turn. They can be deleted one by one or all at once; a note a bot uses again before that stays. Today shows
+  how many there are and opens the memory screen from there.
 
 ## 0.2.1 — 2026-11-16
 

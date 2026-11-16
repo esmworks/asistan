@@ -1,5 +1,5 @@
 import { wallClock, zonedTime, type TodayReport, type UsageRange, type UsageReport } from '@yumakbot/shared';
-import { and, asc, desc, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { SettingsService } from './settings';
@@ -215,6 +215,52 @@ export class UsageService {
         .map(([routineId, sum]) => ({ routineId, ...sum }))
         .sort((a, b) => b.costUsd - a.costUsd || b.turns - a.turns),
       daily: keys.map((date) => ({ date, ...perDay.get(date)! })),
+      gate: await this.gate(since, new Set(keys), timezone, botId),
     };
+  }
+
+  /**
+   * The routine pre-check over the period: the runs it looked at and what that cost, the runs it
+   * would have skipped while only watching with what their turns cost, and the runs it skipped.
+   * Undefined when it looked at none.
+   */
+  private async gate(
+    since: Date,
+    days: Set<string>,
+    timezone: string,
+    botId?: string,
+  ): Promise<UsageReport['gate']> {
+    const rows = await this.ctx.db
+      .select({
+        startedAt: schema.routineRuns.startedAt,
+        decision: schema.routineRuns.gateDecision,
+        costUsd: schema.routineRuns.gateCostUsd,
+        status: schema.routineRuns.status,
+        turnCostUsd: sql<
+          number | null
+        >`(select sum(${schema.turns.costUsd}) from ${schema.turns} where ${schema.turns.routineRunId} = ${schema.routineRuns.id})`,
+      })
+      .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(
+        and(
+          isNotNull(schema.routineRuns.gateDecision),
+          gte(schema.routineRuns.startedAt, since),
+          botId ? eq(schema.routines.botId, botId) : undefined,
+        ),
+      );
+    const sum = { checks: 0, costUsd: 0, skippable: 0, skippableCostUsd: 0, skipped: 0 };
+    for (const r of rows) {
+      if (!days.has(dayKey(r.startedAt, timezone))) continue;
+      sum.checks++;
+      sum.costUsd += r.costUsd ?? 0;
+      if (r.decision !== 'skip') continue;
+      if (r.status === 'skipped') sum.skipped++;
+      else {
+        sum.skippable++;
+        sum.skippableCostUsd += Number(r.turnCostUsd ?? 0);
+      }
+    }
+    return sum.checks ? sum : undefined;
   }
 }

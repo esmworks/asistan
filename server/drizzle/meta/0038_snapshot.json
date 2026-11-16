@@ -1,5 +1,5 @@
 {
-  "id": "a948dea3-16e1-4f34-bfb4-15241a0cde07",
+  "id": "878e0f72-f9ac-4dc6-9a42-1395007a937f",
   "prevId": "f09d3492-e2bd-4f68-aa32-bb4b3c511fb8",
   "version": "7",
   "dialect": "postgresql",
@@ -520,12 +520,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
-        },
-        "tool_selection": {
-          "name": "tool_selection",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "archived_at": {
           "name": "archived_at",
@@ -1576,6 +1570,24 @@
           "notNull": true,
           "default": false
         },
+        "gate_decision": {
+          "name": "gate_decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate_reason": {
+          "name": "gate_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate_cost_usd": {
+          "name": "gate_cost_usd",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1758,6 +1770,12 @@
         },
         "watch_hash": {
           "name": "watch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "watch_text": {
+          "name": "watch_text",
           "type": "text",
           "primaryKey": false,
           "notNull": false

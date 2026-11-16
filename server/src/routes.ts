@@ -29,16 +29,12 @@ import {
   MAX_BOT_IMPORT_BYTES,
   MemoryCreate,
   MemoryUpdate,
-  type Message,
-  type MessageFile,
   MessageReaction,
   patchOf,
   PermissionRuleCreate,
   ProviderKeyInput,
   ProviderSignInStart,
   LOCALES,
-  quoteExcerpt,
-  type ReplyQuote,
   RoutineCreate,
   RoutineUpdate,
   RoomCreate,
@@ -48,13 +44,15 @@ import {
   SkillBot,
   SkillCreate,
   SkillUpdate,
+  TelegramConnect,
+  TelegramUpdate,
+  WhatsAppSet,
   type ServerInfo,
   ThreadCreate,
   USAGE_RANGES,
   type UsageRange,
   VaultLoginCreate,
   VaultLoginUpdate,
-  titleFrom,
   frameCsp,
   frameDocument,
   frameHeader,
@@ -74,15 +72,8 @@ import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile } from './services/skill-link';
 import { Settings } from './services/settings';
 import { EMOJI } from './tools';
-import {
-  attachedFiles,
-  moveIntoThread,
-  promptWithFiles,
-  promptWithReply,
-  saveUpload,
-  stagingDir,
-} from './uploads';
-import { HttpError, isStopRequest, truncate } from './util';
+import { attachedFiles, saveUpload, stagingDir } from './uploads';
+import { HttpError, truncate } from './util';
 import { findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
@@ -117,15 +108,6 @@ interface Deps {
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
-
-/** How much of the answered message goes into the bot's prompt. */
-const MAX_QUOTED = 2000;
-
-const fileNames = (m: Message) =>
-  Array.isArray(m.props.files) ? (m.props.files as MessageFile[]).map((f) => f.name).join(', ') : '';
-
-/** What a reply keeps of the message it answers, for the page to show above it. */
-const replyQuote = (m: Message): ReplyQuote => ({ id: m.id, text: quoteExcerpt(m.text || fileNames(m)) });
 
 /** Library files the page may show as pictures. */
 /** What the page may show in place: raster images, and PDFs in the browser's own viewer. */
@@ -441,7 +423,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
-  app.get('/api/today', async () => s.usage.today());
+  app.get('/api/today', async () => ({
+    ...(await s.usage.today()),
+    staleMemory: (await s.memory.stale()).length,
+  }));
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
   // turn's id to ask again later when the wait runs out).
@@ -636,91 +621,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       return reply.code(created ? 201 : 200).send(message);
     }
     const body = SendMessage.parse(req.body);
-    const bot = await s.bots.get(thread.botId);
-    if (bot.archivedAt) throw new HttpError(409, 'error.botArchived');
-    // A repeat of a message already sent: its files have moved on, so answer with it as it is.
-    const earlier = await s.threads.byClientId(id, body.clientId);
-    if (earlier) return reply.code(200).send(earlier);
-    // The message answered must be in this conversation; its text is read here, not taken from the page.
-    const answered = body.replyTo ? await s.threads.message(body.replyTo) : undefined;
-    if (answered && answered.threadId !== id) throw new HttpError(404, 'error.notFound.message');
-    const dir = threadDir(bot, id);
-    const staged = attachedFiles(stagingDir(d.config.dataDir, id), body.files);
-    const files = (await moveIntoThread(stagingDir(d.config.dataDir, id), dir, staged)).map((f) => ({
-      ...f,
-      path: relative(workspacesRoot, join(dir, f.name)),
-    }));
-    // Sent while the bot is busy: it waits its turn, and until then the person may change it.
-    const queued = (await s.threads.state(id)) !== 'idle';
-    // A bare "stop" while it works stops it, as the Stop button does, instead of waiting behind it.
-    if (queued && !files.length && !answered && isStopRequest(body.text)) {
-      const { message } = await s.threads.addMessage({
-        threadId: id,
-        role: 'user',
-        author: 'user',
-        text: body.text,
-        clientId: body.clientId,
-      });
-      await s.turns.interrupt(id);
-      await s.jobs.stopFrom(id);
-      return reply.code(201).send(message);
-    }
-    // Typed while the bot waits on its one-question card: the words are the answer to it.
-    const card = queued && !files.length && !answered ? await s.approvals.typedAnswerable(id) : null;
-    if (card) {
-      const { message } = await s.threads.addMessage({
-        threadId: id,
-        role: 'user',
-        author: 'user',
-        text: body.text,
-        clientId: body.clientId,
-      });
-      await s.approvals.answer(card.id, { decision: 'allow', answer: body.text, remember: false });
-      return reply.code(201).send(message);
-    }
-    // Typed while the bot waits on a step or sign-in card: the person chose to say something else
-    // instead of pressing a button. The cards give way and the bot goes on with their words.
-    const waiting = queued && !files.length && !answered ? await s.approvals.redirectable(id) : [];
-    if (waiting.length) {
-      const { message } = await s.threads.addMessage({
-        threadId: id,
-        role: 'user',
-        author: 'user',
-        text: body.text,
-        clientId: body.clientId,
-      });
-      for (const c of waiting) await s.approvals.redirect(c.id, body.text);
-      return reply.code(201).send(message);
-    }
-    const { message, created } = await s.threads.addMessage({
-      threadId: id,
-      role: 'user',
-      author: 'user',
-      text: body.text,
-      clientId: body.clientId,
-      props: {
-        ...(files.length ? { files } : {}),
-        ...(answered ? { replyTo: replyQuote(answered) } : {}),
-        ...(queued ? { queued: true } : {}),
-      },
-    });
-    if (created) {
-      // A conversation is named after the words its first message opens with.
-      if (!thread.title) await s.threads.rename(id, titleFrom(body.text) || files[0]!.name.slice(0, 60));
-      const prompt = await userPrompt(body.text, dir, files, answered);
-      const turn = await s.turns.enqueue({ threadId: id, botId: bot.id, source: 'user', prompt });
-      await s.threads.updateMessage(message.id, { turnId: turn.id });
-      return reply.code(201).send({ ...message, turnId: turn.id });
-    }
-    return reply.code(200).send(message);
+    const { message, created } = await s.inbox.send(id, body);
+    return reply.code(created ? 201 : 200).send(message);
   });
-
-  /** The prompt a person's message becomes: the quoted message first, the attached files after. */
-  const userPrompt = async (text: string, dir: string, files: { name: string }[], answered?: Message) => {
-    const t = await s.settings.translator();
-    const quoted = answered ? truncate(answered.text || fileNames(answered), MAX_QUOTED) : undefined;
-    return promptWithFiles(promptWithReply(text, quoted, t), dir, files, t);
-  };
 
   /** A message still waiting for its turn, or a 409 once the bot has started on it. */
   const queuedMessage = async (id: string) => {
@@ -741,7 +644,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const bot = await s.bots.get(thread.botId);
     const quotedId = (m.props.replyTo as { id?: string } | undefined)?.id;
     const answered = quotedId ? await s.threads.message(quotedId).catch(() => undefined) : undefined;
-    const prompt = await userPrompt(text.trim(), threadDir(bot, m.threadId), files, answered);
+    const prompt = await s.inbox.prompt(text.trim(), s.inbox.threadDir(bot, m.threadId), files, answered);
     if (!(await s.turns.editQueued(m.turnId!, prompt))) throw new HttpError(409, 'error.messageStarted');
     await s.threads.editText(m.id, text.trim());
     return s.threads.message(m.id);
@@ -805,9 +708,6 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // Files the person attaches wait in a staging folder; sending the message moves them into the
   // conversation's folder.
-  const workspacesRoot = resolve(d.config.dataDir, 'workspaces');
-  const threadDir = (bot: { id: string; groupId: string | null }, threadId: string) =>
-    workspacePaths(d.config.dataDir, bot.id, threadId, bot.groupId).threadDir;
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
   // A recording from the message box's microphone button, as the browser made it.
   app.addContentTypeParser(/^audio\//, (_req, payload, done) => done(null, payload));
@@ -1004,6 +904,26 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
 
+  // Chat apps: a bot's own Telegram bot.
+  app.get('/api/bots/:id/telegram', async (req) => s.telegram.status(IdParams.parse(req.params).id));
+  app.put('/api/bots/:id/telegram', async (req) =>
+    s.telegram.connect(IdParams.parse(req.params).id, TelegramConnect.parse(req.body).token),
+  );
+  app.patch('/api/bots/:id/telegram', async (req) =>
+    s.telegram.update(IdParams.parse(req.params).id, TelegramUpdate.parse(req.body)),
+  );
+  app.post('/api/bots/:id/telegram/pair', async (req) => s.telegram.pair(IdParams.parse(req.params).id));
+  app.delete('/api/bots/:id/telegram', async (req) => {
+    await s.telegram.disconnect(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+
+  // Chat apps: WhatsApp through a linked device, for whichever bot is chosen.
+  app.get('/api/whatsapp', async () => s.whatsapp.status());
+  app.put('/api/whatsapp', async (req) => s.whatsapp.configure(WhatsAppSet.parse(req.body)));
+  app.post('/api/whatsapp/link', async () => s.whatsapp.link());
+  app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
+
   // Memory
   app.get('/api/memory', async (req) => {
     const q = z
@@ -1030,6 +950,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.get('/api/memory-history', async () => s.memory.history());
+  // Notes no bot uses any more, offered to the user to keep or delete.
+  app.get('/api/memory-stale', async () => s.memory.stale());
+  // Deletes the ones of `ids` that are still unused; a note a bot used since the list was shown stays.
+  app.post('/api/memory-stale/delete', async (req) => {
+    const { ids } = z.object({ ids: z.array(z.string().min(1).max(64)).max(5000) }).parse(req.body);
+    const still = new Set((await s.memory.stale()).map((m) => m.id));
+    return s.memory.removeMany(
+      ids.filter((id) => still.has(id)),
+      'user',
+    );
+  });
 
   // Routines
   // Bots exported from another assistant app, sent as the file itself. `preview` saves nothing.

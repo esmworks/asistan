@@ -114,6 +114,8 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   site: r.site,
   status: 'active',
   source: r.source,
+  lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
+  useCount: r.useCount,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -150,4 +152,5 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   threadId: r.threadId,
   startedAt: r.startedAt.toISOString(),
   finishedAt: iso(r.finishedAt),
+  gate: r.gateDecision ? { decision: r.gateDecision, reason: r.gateReason ?? '' } : null,
 });

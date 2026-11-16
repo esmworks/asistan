@@ -56,19 +56,38 @@ export function TodayView() {
               cost: usd.format(data.costUsd),
             })}
           </Text>
-          <Block title={t('today.waiting')} empty={t('today.waitingNone')} count={waiting.length}>
-            {waiting.map((s) => (
-              <Item key={s.botId} onPress={() => nav.chat(s.botId, { threadId: s.waiting!.threadId })}>
-                {avatar(s.botId)}
-                <Text style={[styles.grow, { color: c.mutedForeground }]} numberOfLines={1}>
-                  <Text style={[styles.name, { color: c.foreground }]}>{byId.get(s.botId)?.name}</Text>{' '}
-                  {s.waiting!.summary}
-                </Text>
-                <Text style={[styles.note, { color: c.amber }]}>
-                  {t(`sidebar.waitingFor.${s.waiting!.kind}`)}
-                </Text>
-              </Item>
-            ))}
+          <Block
+            title={t('today.waiting')}
+            empty={t('today.waitingNone')}
+            count={waiting.length + (data.staleMemory ? 1 : 0)}
+          >
+            {[
+              ...waiting.map((s) => (
+                <Item key={s.botId} onPress={() => nav.chat(s.botId, { threadId: s.waiting!.threadId })}>
+                  {avatar(s.botId)}
+                  <Text style={[styles.grow, { color: c.mutedForeground }]} numberOfLines={1}>
+                    <Text style={[styles.name, { color: c.foreground }]}>{byId.get(s.botId)?.name}</Text>{' '}
+                    {s.waiting!.summary}
+                  </Text>
+                  <Text style={[styles.note, { color: c.amber }]}>
+                    {t(`sidebar.waitingFor.${s.waiting!.kind}`)}
+                  </Text>
+                </Item>
+              )),
+              // Notes no bot uses wait for the person to keep or delete them in the memory screen.
+              // One list with the bots' lines, so the card draws a divider between each.
+              ...(data.staleMemory
+                ? [
+                    <Item key="stale-memory" onPress={() => nav.settings('memory')}>
+                      <Feather name="archive" size={24} color={c.mutedForeground} />
+                      <Text style={[styles.grow, { color: c.foreground }]} numberOfLines={1}>
+                        {t('today.staleMemory', { count: data.staleMemory })}
+                      </Text>
+                      <Text style={[styles.note, { color: c.amber }]}>{t('today.staleMemoryReview')}</Text>
+                    </Item>,
+                  ]
+                : []),
+            ]}
           </Block>
           <Block title={t('today.bots')} empty={t('today.botsNone')} count={data.bots.length}>
             {data.bots.map((b) => (

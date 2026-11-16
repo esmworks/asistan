@@ -237,6 +237,10 @@ function refresh(origin: string, e: RefreshScope, inv: (...key: unknown[]) => vo
     case 'connections':
       inv('connections', origin);
       break;
+    case 'channels':
+      inv('telegram', origin);
+      inv('whatsapp', origin);
+      break;
     case 'info':
       inv('info', origin);
       inv('providers', origin);

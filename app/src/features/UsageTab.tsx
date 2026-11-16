@@ -1,4 +1,4 @@
-import { USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
+import { ROUTINE_GATE_MODES, USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
 import { Download, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { useT } from '@/i18n';
 import { useFormat } from '@/lib/format';
 import { useBots, useSettings, useUsage } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { Chip } from './onboarding/Chip';
 import { Card, Row, useSaveSettings } from './SettingsDialog';
 
 /** What the bots cost over a period: a total, the cost per day and the cost per bot. */
@@ -68,6 +69,7 @@ export function UsageTab() {
         <Report data={data} filtered={botId !== null} onPickBot={setBotId} />
       )}
       <MonthLimit month={data?.month} />
+      <RoutineGate gate={data?.gate} />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
         <a href={`/api/usage/turns.csv?days=${days}`} download>
           <Download /> {t('usage.downloadCsv')}
@@ -129,6 +131,44 @@ function MonthLimit({ month }: { month?: UsageReport['month'] }) {
               style={{ width: `${share * 100}%` }}
             />
           </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The small-model check before routine runs that a watched page or a webhook started: off,
+ * watching only, or on; and over the period, what it cost and what it would have saved.
+ */
+function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
+  const t = useT();
+  const f = useFormat();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const mode = settings?.routineGate;
+  // A server older than the check does not offer it.
+  if (!mode) return null;
+  return (
+    <Card title={t('usage.gate')}>
+      <Row label={t(`usage.gate.${mode}`)} hint={t(`usage.gate.${mode}Hint`)}>
+        <div className="flex flex-wrap gap-2">
+          {ROUTINE_GATE_MODES.map((m) => (
+            <Chip key={m} on={mode === m} onClick={() => m !== mode && save.mutate({ routineGate: m })}>
+              {t(`usage.gate.choice.${m}`)}
+            </Chip>
+          ))}
+        </div>
+      </Row>
+      {gate && (
+        <div className="space-y-1 px-4 pb-4 text-sm text-muted-foreground tabular-nums">
+          <div>{t('usage.gate.checks', { count: gate.checks, cost: f.usd(gate.costUsd) })}</div>
+          {gate.skippable > 0 && (
+            <div>
+              {t('usage.gate.skippable', { count: gate.skippable, cost: f.usd(gate.skippableCostUsd) })}
+            </div>
+          )}
+          {gate.skipped > 0 && <div>{t('usage.gate.skipped', { count: gate.skipped })}</div>}
         </div>
       )}
     </Card>

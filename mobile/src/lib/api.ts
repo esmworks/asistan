@@ -1,4 +1,7 @@
 import type {
+  TelegramStatus,
+  WhatsAppSet,
+  WhatsAppStatus,
   ApnsSet,
   ApnsStatus,
   PushDeviceSet,
@@ -218,6 +221,18 @@ export function apiFor(origin: string) {
     apns: () => http.get<ApnsStatus>('/api/push/apns'),
     setApns: (b: ApnsSet) => http.put<ApnsStatus>('/api/push/apns', b),
     clearApns: () => http.del<ApnsStatus>('/api/push/apns'),
+    /** A bot's own Telegram bot: never the token, which is write-only. */
+    telegram: (botId: string) => http.get<TelegramStatus>(`/api/bots/${botId}/telegram`),
+    connectTelegram: (botId: string, token: string) =>
+      http.put<TelegramStatus>(`/api/bots/${botId}/telegram`, { token }),
+    pairTelegram: (botId: string) => http.post<TelegramStatus>(`/api/bots/${botId}/telegram/pair`, {}),
+    updateTelegram: (botId: string, patch: { notices: boolean }) =>
+      http.patch<TelegramStatus>(`/api/bots/${botId}/telegram`, patch),
+    disconnectTelegram: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/telegram`),
+    whatsapp: () => http.get<WhatsAppStatus>('/api/whatsapp'),
+    setWhatsapp: (b: WhatsAppSet) => http.put<WhatsAppStatus>('/api/whatsapp', b),
+    linkWhatsapp: () => http.post<WhatsAppStatus>('/api/whatsapp/link', {}),
+    disconnectWhatsapp: () => http.del<WhatsAppStatus>('/api/whatsapp'),
     settings: () => http.get<Settings>('/api/settings'),
     updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
     providers: () => http.get<ProviderInfo[]>('/api/providers'),
@@ -394,6 +409,8 @@ export function apiFor(origin: string) {
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
     /** Deletes every note the bot keeps for itself. */
     removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),
+    staleMemory: () => http.get<Memory[]>('/api/memory-stale'),
+    removeStaleMemory: (ids: string[]) => http.post<{ count: number }>('/api/memory-stale/delete', { ids }),
 
     routines: () => http.get<Routine[]>('/api/routines'),
     createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),

@@ -5,6 +5,7 @@ import { isSection } from '@/components/settings/sections';
 import { ProfileSection } from '@/components/settings/ProfileSection';
 import { GeneralSection } from '@/components/settings/GeneralSection';
 import { ConnectionSection } from '@/components/settings/ConnectionSection';
+import { ChannelsSection } from '@/components/settings/ChannelsSection';
 import { PermissionsSection } from '@/components/settings/PermissionsSection';
 import { VaultSection } from '@/components/settings/VaultSection';
 import { MemorySection } from '@/components/settings/MemorySection';
@@ -25,6 +26,7 @@ export default function SettingsSection() {
       {section === 'profile' && <ProfileSection />}
       {section === 'general' && <GeneralSection />}
       {section === 'connection' && <ConnectionSection />}
+      {section === 'channels' && <ChannelsSection />}
       {section === 'permissions' && <PermissionsSection />}
       {section === 'vault' && <VaultSection />}
       {section === 'memory' && <MemorySection />}

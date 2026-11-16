@@ -20,6 +20,7 @@ import { Empty, Loading, Note, Page, Row, Section, SwitchRow, back } from '@/com
 import { ChipRow, ChoiceRow, Pad, Rows } from '@/components/settings/common/controls';
 import { ModelDefaults } from '@/components/settings/connect/ModelDefaults';
 import { PiModelPicker } from '@/components/settings/connect/ProviderConnect';
+import { TelegramSection } from '@/components/settings/TelegramSection';
 import { t, type MessageKey } from '@/i18n';
 import { nav } from '@/lib/nav';
 import { useBots, useGroups, useInfo, useProviders, useSettings } from '@/lib/queries';
@@ -490,6 +491,8 @@ function BotFormPage({ bot }: { bot?: Bot }) {
           </FormField>
         </>
       ) : null}
+
+      {bot ? <TelegramSection botId={bot.id} /> : null}
 
       {bot ? (
         <Section>

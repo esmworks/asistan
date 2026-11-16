@@ -17,6 +17,8 @@ await build({
     '@electric-sql/pglite',
     '@electric-sql/pglite/*',
     'playwright-core',
+    // Loaded only once WhatsApp is set up; it brings its own protocol files and native helpers.
+    '@whiskeysockets/baileys',
   ],
   banner: {
     js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
