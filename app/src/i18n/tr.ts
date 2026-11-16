@@ -885,6 +885,13 @@ export const tr = {
   'browserInfo.okHint': 'Her bot kendi profiliyle bu tarayıcıyı kullanır: {path}',
   'browserInfo.missingHint':
     'Sunucuda Chrome, Edge ya da Chromium bulunamadı; botlar web sitelerinde iş yapamaz. Birini kurun ya da yolunu YUMAKBOT_BROWSER ile verin.',
+  'egress.label': 'Botların tarayıcısı bilgisayarımdan çıksın',
+  'egress.hint':
+    'Siteler sunucunun değil, Yumak Bot uygulaması bu sunucuya bağlı olan bilgisayarın bağlantısını görür. O bilgisayar kapalıyken tarayıcı sunucudan çıkar. Yalnızca tarayıcı: botların komutları yine sunucudan çıkar.',
+  'egress.connected': 'Şu an {device} üzerinden çıkıyor.',
+  'egress.connectedUnnamed': 'Şu an bağlı bilgisayarın üzerinden çıkıyor.',
+  'egress.waiting':
+    'Bağlı bilgisayar yok, şu an sunucudan çıkıyor. Masaüstü uygulamasını bu sunucuya bağlı olarak açık tutun.',
   'sandbox.label': 'Bash yalıtımı',
   'sandbox.okHint':
     'Claude botlarının Bash komutları yalnızca kendi klasörlerini görebilen bir yalıtımda çalışır.',

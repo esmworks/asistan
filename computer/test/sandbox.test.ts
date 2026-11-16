@@ -123,6 +123,13 @@ describe('collectBinds', () => {
 });
 
 describe('sessionEnv', () => {
+  it("hands the browser the controller's proxy only when the session has internet", () => {
+    const proxy = 'socks5://127.0.0.1:4321';
+    expect(sessionEnv({ ...opts(start()), proxy }).YUMAKBOT_PROXY).toBe(proxy);
+    expect(sessionEnv({ ...opts(start({ internet: false })), proxy }).YUMAKBOT_PROXY).toBeUndefined();
+    expect(sessionEnv(opts(start())).YUMAKBOT_PROXY).toBeUndefined();
+  });
+
   it('sets language, display and the workdir', () => {
     const tr = sessionEnv(opts(start()));
     expect(tr).toMatchObject({

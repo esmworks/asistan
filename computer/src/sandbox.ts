@@ -15,6 +15,8 @@ export interface SandboxOptions {
   node: string;
   helperScript: string;
   sessionScript: string;
+  /** The proxy the session's browser goes through (`socks5://…`); none when unset. */
+  proxy?: string;
 }
 
 const isInside = (child: string, parent: string) => child === parent || child.startsWith(`${parent}/`);
@@ -71,6 +73,7 @@ export function sessionEnv(o: SandboxOptions): Record<string, string> {
     YUMAKBOT_GEOMETRY: `${DESKTOP_SIZE.width}x${DESKTOP_SIZE.height}`,
     YUMAKBOT_NODE: o.node,
     YUMAKBOT_HELPER: o.helperScript,
+    ...(o.proxy && o.start.internet ? { YUMAKBOT_PROXY: o.proxy } : {}),
   };
 }
 

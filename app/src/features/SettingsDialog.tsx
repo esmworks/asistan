@@ -641,6 +641,7 @@ function Connection() {
       <Card title={t('connection.environment')}>
         <ShellSandboxRow sandbox={info?.shellSandbox} />
         <BrowserRow browser={info?.browser} />
+        <EgressRow egress={info?.egress} />
       </Card>
       <Card title={t('connection.server')}>
         <Row label={t('connection.address')} hint={window.location.origin} />
@@ -1614,6 +1615,28 @@ function ShellSandboxRow({ sandbox }: { sandbox: ServerInfo['shellSandbox'] | un
         )}
         {t(`sandbox.status.${status}`)}
       </span>
+    </Row>
+  );
+}
+
+/**
+ * The bots' browsers reach the web through the person's own computer, so sites see its connection
+ * instead of the server's. Offered only when the server runs elsewhere.
+ */
+function EgressRow({ egress }: { egress: ServerInfo['egress'] | undefined }) {
+  const t = useT();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  if (!egress || settings?.browserViaComputer === undefined) return null;
+  const on = settings.browserViaComputer;
+  const now = egress.connected
+    ? egress.device
+      ? t('egress.connected', { device: egress.device })
+      : t('egress.connectedUnnamed')
+    : t('egress.waiting');
+  return (
+    <Row label={t('egress.label')} hint={on ? `${t('egress.hint')} ${now}` : t('egress.hint')}>
+      <Switch checked={on} onCheckedChange={(v) => save.mutate({ browserViaComputer: v })} />
     </Row>
   );
 }

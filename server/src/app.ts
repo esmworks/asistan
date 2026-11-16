@@ -17,7 +17,7 @@ import {
   type ServerToClientEvents,
 } from '@yumakbot/shared';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { Server as IOServer } from 'socket.io';
+import { Server as IOServer, type Namespace } from 'socket.io';
 import { ZodError } from 'zod';
 import { Auth, checkHostOrigin, loadAccessKey, parseCookie, SESSION_COOKIE } from './auth';
 import { BrowserManager } from './browser/manager';
@@ -26,6 +26,8 @@ import { Bus } from './bus';
 import { ComputerService } from './computer/service';
 import { RfbClientFilter } from './computer/rfb-filter';
 import { computerErrorText } from './tools/computer';
+import { linkComputer } from './egress/computer-link';
+import { EgressHub, startLocalSocks } from './egress/hub';
 import type { Config } from './config';
 import { appPolicy } from './csp';
 import type { Ctx } from './context';
@@ -120,6 +122,15 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
         },
       })
     : null;
+  // The person's own computer as the bots' way out to the web, when this server runs elsewhere.
+  const egress = config.onUserComputer ? null : new EgressHub();
+  // Without a computer service this server starts the browsers itself, behind a proxy of its own;
+  // with one, the desktops' browsers reach that way through the service.
+  const localSocks =
+    egress && !computer && config.browserPath
+      ? await startLocalSocks(egress, config.browserLocalHosts)
+      : null;
+  const stopComputerLink = egress && config.computer ? linkComputer(egress, config.computer) : null;
   const browser = new BrowserManager({
     executable: config.browserPath,
     profileDir: (botId) => join(config.dataDir, 'browsers', botId),
@@ -129,6 +140,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     callMs: config.browserCallMs,
     localHosts: config.browserLocalHosts,
     windows: config.onUserComputer,
+    ...(localSocks && { proxy: `socks5://127.0.0.1:${localSocks.port}` }),
     ...(computer && {
       connect: async (botId: string) => {
         await computer.ensure(botId);
@@ -138,7 +150,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       hold: (botId: string) => computer.hold(botId),
     }),
   });
-  const ctx: Ctx = { db: db.db, bus, config, browser, computer };
+  const ctx: Ctx = { db: db.db, bus, config, browser, computer, egress };
   const accessKey = loadAccessKey(config);
   setToolCallTimeout(config.mcpCallTimeoutMs);
   const auth = new Auth(db.db, accessKey);
@@ -165,6 +177,16 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   });
   const engineFor = (bot: Bot): Engine => opts.engine ?? fake ?? (bot.engine === 'pi' ? pi : claude);
   const services: Services = new Services(ctx, engineFor, opts.clock, () => opts.engine ?? fake ?? claude);
+  if (egress) {
+    const syncEgress = async () =>
+      egress.setEnabled((await services.settings.get('browserViaComputer')) === true);
+    await syncEgress();
+    // A settings change refreshes the info; the switch is read again then.
+    bus.on('refresh', (e) => {
+      if (e.scope === 'info') void syncEgress().catch(() => {});
+    });
+    egress.on(() => bus.refresh({ scope: 'info' }));
+  }
 
   let claudeStatus: ServerInfo['claude'] = { status: 'unknown', detail: null };
   const claudeEngine = (): Engine => opts.engine ?? fake ?? claude;
@@ -276,6 +298,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       : { status: 'unavailable', detail: null },
     computer: computerStatus,
     publicUrl: config.publicUrl,
+    ...(egress && { egress: egress.state() }),
   });
 
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
@@ -385,6 +408,23 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
         .catch(() => refuse(new HttpError(500, 'error.authCheckFailed')));
     },
   });
+  // The desktop app offers its computer as the bots' way out to the web. Frames are binary
+  // messages of the egress protocol; the sign-in is the same as for every socket.
+  const egressSockets = io.of('/egress') as unknown as Namespace;
+  egressSockets.on('connection', (socket) => {
+    if (!egress) return void socket.disconnect(true);
+    const device: unknown = socket.handshake.auth?.device;
+    const link = egress.attach(
+      typeof device === 'string' ? device : '',
+      (f) => socket.emit('f', f),
+      () => socket.disconnect(true),
+    );
+    socket.on('f', (f: unknown) => {
+      if (Buffer.isBuffer(f)) link.receive(f);
+    });
+    socket.on('disconnect', () => link.detach());
+  });
+
   io.on('connection', (socket) => {
     socket.emit('hello', { bootId, buildId });
 
@@ -580,6 +620,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       clearInterval(sweepTimer);
       clearInterval(retryApps);
       await computer?.shutdown();
+      stopComputerLink?.();
+      localSocks?.close();
+      egress?.close();
       io.disconnectSockets(true);
       dropAllClients();
       await app.close();

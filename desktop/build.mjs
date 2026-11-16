@@ -6,7 +6,8 @@ const common = {
   platform: 'node',
   target: 'node22',
   format: 'cjs',
-  external: ['electron'],
+  // ws (under socket.io-client) loads these optional speedups only if present.
+  external: ['electron', 'bufferutil', 'utf-8-validate'],
   sourcemap: true,
 };
 await build({ ...common, entryPoints: ['src/main.ts'], outfile: 'dist/main.cjs' });

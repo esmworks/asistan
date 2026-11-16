@@ -3,6 +3,7 @@ import type { Bus } from './bus';
 import type { ComputerService } from './computer/service';
 import type { Config } from './config';
 import type { Db } from './db';
+import type { EgressHub } from './egress/hub';
 
 export interface Ctx {
   db: Db;
@@ -12,4 +13,9 @@ export interface Ctx {
   browser: BrowserManager;
   /** The bots' desktops; null when no computer service is configured. */
   computer: ComputerService | null;
+  /**
+   * The person's own computer as the way out for the bots' browsers; null when the server itself
+   * runs on that computer.
+   */
+  egress?: EgressHub | null;
 }

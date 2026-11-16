@@ -154,6 +154,8 @@ export interface Settings {
   monthlyLimitUsd?: number;
   /** The routine pre-check; missing on older servers. */
   routineGate?: RoutineGateMode;
+  /** The bots' browsers go out through the person's own computer; missing on older servers. */
+  browserViaComputer?: boolean;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }

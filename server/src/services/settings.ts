@@ -69,6 +69,11 @@ export const Settings = z.object({
    * watching only (it records what it would do), or on (it skips runs with nothing new).
    */
   routineGate: z.enum(ROUTINE_GATE_MODES).default('off'),
+  /**
+   * The bots' browsers reach the web through the person's own computer while its desktop app is
+   * connected, so sites see that connection instead of the server's; otherwise from the server.
+   */
+  browserViaComputer: z.boolean().default(false),
   /** Unset until someone picks one; the app then stores the language it opened in. */
   language: z.enum(LOCALES).optional(),
 });

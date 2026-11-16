@@ -105,6 +105,8 @@ export function browserTools(opts: {
   askLogin: AskLogin;
   /** What the bot noted earlier about how a site works. */
   siteNotes?: (host: string) => Promise<string[]>;
+  /** Where the browser's traffic now leaves, if that changed since the bot last heard. */
+  exitNote?: () => 'computer' | 'server' | null;
 }): AppTool[] {
   const { def, bot, dataDir, threadId, t, browser, vault, askLogin } = opts;
   const outline = async (page: Page): Promise<string> => {
@@ -138,8 +140,11 @@ export function browserTools(opts: {
       const asked = browser.takeDialogs(bot.id);
       // Addresses on this computer or a private network the page tried to reach, which were refused.
       const refused = browser.takeRefused(bot.id);
-      if (!asked.length && !refused.length) return r;
+      // The connection the sites see changed: the person's computer came or went.
+      const exit = opts.exitNote?.() ?? null;
+      if (!asked.length && !refused.length && !exit) return r;
       const note = [
+        ...(exit ? [t(exit === 'computer' ? 'browser.exitComputer' : 'browser.exitServer')] : []),
         ...asked.map((d) =>
           t(d.accepted ? 'browser.dialogAccepted' : 'browser.dialogDismissed', {
             type: d.type,
