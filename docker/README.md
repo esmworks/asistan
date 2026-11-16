@@ -1,5 +1,82 @@
 # Yumak Bot'u sunucuda çalıştırma (Docker)
 
+## Tek komutla kurulum
+
+Boş bir Ubuntu (22.04 ve sonrası) ya da Debian (12 ve sonrası) sunucuda, en az 2 GB bellekle (4 GB önerilir):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash -s -- --lang tr
+```
+
+`install.sh` sırasıyla:
+
+1. En son sürümü `/opt/yumakbot` altına indirir ve işin geri kalanını o sürümün kendi betiğine bırakır.
+2. Docker'ı kurar (26 ya da sonrası gerekir).
+3. `docker/.env` dosyasını rastgele parola ve anahtarlarla doldurur; yeniden çalıştırınca bunlar değişmez.
+4. `apparmor.sh` ile AppArmor'u ayarlar (bkz. "AppArmor").
+5. Hazır imajları indirir; o sürümün imajı yoksa sunucuda derler (10–20 dakika, 4 GB'tan az bellekte yarıda
+   kalabilir).
+6. Kapsayıcıları `compose.yml` ile `compose.vps.yml` birlikte başlatır. İkincisi Caddy'yi ekler; Caddy 80 ve 443
+   numaralı bağlantı noktalarında dinler ve Let's Encrypt sertifikasını kendisi alıp yeniler.
+7. `firewall.sh` kurallarını uygular ve her açılışta ve Docker her yeniden başladığında yeniden uygulayan
+   `yumakbot-firewall` systemd servisini kurar. `ufw` açıksa 80 ve 443'e izin verir.
+8. Adresi ve erişim anahtarını yazar.
+
+Alan adı verilmezse sunucunun genel IP adresinden bir ad kullanılır: `203.0.113.7` için `203-0-113-7.sslip.io`. Bu ad
+sslip.io'nun DNS hizmetine dayanır. Kendi alan adınız varsa önce DNS kaydını sunucuya yönlendirin, sonra
+`--domain bot.example.com` verin. Sağlayıcının güvenlik duvarında 80 ve 443 açık olmalıdır.
+
+| Seçenek                | Anlamı                                                                  |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `--domain AD`          | Sunucunun alan adı                                                      |
+| `--version vX.Y.Z`     | Kurulacak sürüm (varsayılan: en son sürüm)                              |
+| `--computer`           | Botların bilgisayarını açar (8 GB önerilir); `--no-computer` kapatır    |
+| `--access-key ANAHTAR` | Erişim anahtarını siz seçin (en az 24 karakter: harf, rakam, `- _ . ~`) |
+| `--dir KLASÖR`         | Kurulum klasörü (varsayılan: `/opt/yumakbot`)                           |
+| `--lang tr`            | İletiler Türkçe                                                         |
+
+Kurulumdan sonra aynı betik `yumakbot` komutuyla çalışır:
+
+```bash
+sudo yumakbot update        # en son sürüme günceller; ayarlar ve veriler kalır
+sudo yumakbot status        # kapsayıcılar ve sunucunun yanıtı
+sudo yumakbot logs [servis] # kayıtlar (yumakbot, caddy, db, computer)
+sudo yumakbot access-key    # erişim anahtarı
+sudo yumakbot compose ...   # bu kurulumun dosyalarıyla docker compose
+```
+
+`update` seçenek alır: `sudo yumakbot update --computer` botların bilgisayarını sonradan açar.
+
+### Sunucuyu oluştururken (cloud-init)
+
+Hetzner, DigitalOcean, Vultr gibi sağlayıcılar sunucu oluşturma ekranında "Cloud config" ya da "User data" kutusu
+verir. Oraya yapıştırılan metin kurulumu SSH'a hiç girmeden yapar:
+
+```yaml
+#cloud-config
+runcmd:
+  - curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | bash -s -- --lang tr --access-key UZUN-RASTGELE-BIR-ANAHTAR
+```
+
+Erişim anahtarını burada siz seçersiniz, çünkü betiğin çıktısı sunucuda bir kayıt dosyasına yazılır ve anahtar oraya
+yazdırılmaz. Birkaç dakika sonra `https://<IP-adresi-tireli>.sslip.io` adresini açın. Kurulumun gidişi sunucuda
+`/var/log/cloud-init-output.log` dosyasındadır.
+
+### Ters vekil ve giriş sınırı
+
+Aynı adresten 15 dakikada 10 yanlış şifre o adresi bekletir. Ters vekilin arkasında bütün istekler vekilin adresinden
+gelir; vekil tanıtılmazsa bir kişinin yanlış denemeleri herkesi bekletir. Bunun için vekil `YUMAKBOT_PROXY_SECRET`
+değerini `X-Yumakbot-Proxy` başlığında, kişinin adresini `X-Forwarded-For` başlığında gönderir; sunucu
+`X-Forwarded-For`'a yalnızca bu sırla gelen isteklerde güvenir. `install.sh` bunu kendisi ayarlar. Elle kurulan bir
+nginx için:
+
+```nginx
+proxy_set_header X-Yumakbot-Proxy <YUMAKBOT_PROXY_SECRET değeri>;
+proxy_set_header X-Forwarded-For $remote_addr;
+```
+
+## Elle kurulum
+
 ```bash
 cp docker/.env.example docker/.env      # değerleri doldurun
 sudo ./docker/apparmor.sh --env docker/.env   # Linux ana makinede, bir kez; bkz. "AppArmor"

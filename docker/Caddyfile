@@ -1,0 +1,15 @@
+# HTTPS in front of the Yumak Bot server, for the setup docker/install.sh makes (docker/compose.vps.yml).
+# Caddy gets and renews the Let's Encrypt certificate for YUMAKBOT_DOMAIN by itself; port 80 must be
+# reachable from the internet for that.
+{
+	# Caddy runs on the host's network; its admin API would otherwise listen on the host's loopback.
+	admin off
+}
+
+{$YUMAKBOT_DOMAIN} {
+	reverse_proxy 127.0.0.1:{$YUMAKBOT_PORT:4319} {
+		# Tells the server this request came through the proxy, so it may count sign-in attempts by
+		# the address Caddy writes into X-Forwarded-For instead of the proxy's own.
+		header_up X-Yumakbot-Proxy {$YUMAKBOT_PROXY_SECRET}
+	}
+}

@@ -2,9 +2,18 @@
 # Blocks traffic from the Yumak Bot container network to private and link-local addresses
 # (home/office network, cloud metadata), IPv4 and IPv6. Run on the Linux host as root
 # after `docker compose up` created the yumakbot0 bridge; rerun after reboots.
+#   --wait  waits up to three minutes for the bridge first; the yumakbot-firewall service that
+#           docker/install.sh sets up uses it at boot, when Docker brings the containers up after itself.
 set -eu
 BRIDGE=${BRIDGE:-yumakbot0}
 
+if [ "${1:-}" = --wait ]; then
+  i=0
+  while ! ip link show "$BRIDGE" >/dev/null 2>&1 && [ "$i" -lt 90 ]; do
+    i=$((i + 1))
+    sleep 2
+  done
+fi
 ip link show "$BRIDGE" >/dev/null 2>&1 || { echo "Köprü $BRIDGE yok; önce docker compose up" >&2; exit 1; }
 
 for cmd in iptables ip6tables; do

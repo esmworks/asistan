@@ -1,0 +1,46 @@
+# Additions to compose.yml for a server set up with docker/install.sh: ready-made images instead of a
+# build on the server, HTTPS through Caddy, and the bots' desktops only when they were asked for.
+#   docker compose -f docker/compose.yml -f docker/compose.vps.yml --env-file docker/.env up -d
+# The installer's `yumakbot` command runs compose with these files and options.
+services:
+  yumakbot:
+    # Pulled for a release; built from the checkout when the image is not published (a branch, or a
+    # release from before images were published).
+    image: ghcr.io/esmworks/yumakbot-server:${YUMAKBOT_VERSION:-latest}
+    environment:
+      # Empty, so off, unless the installer turned the bots' desktops on.
+      YUMAKBOT_COMPUTER_URL: ${YUMAKBOT_COMPUTER_URL:-}
+
+  computer:
+    image: ghcr.io/esmworks/yumakbot-computer:${YUMAKBOT_VERSION:-latest}
+    # Needs about 6 GB of memory of its own, more than a small server has; started only with
+    # `--profile computer`.
+    profiles: [computer]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # On the host's network: it answers on ports 80 and 443 and reaches the server on the loopback
+    # port compose.yml publishes, without joining the bots' networks.
+    network_mode: host
+    environment:
+      YUMAKBOT_DOMAIN: ${YUMAKBOT_DOMAIN:?YUMAKBOT_DOMAIN gerekli}
+      YUMAKBOT_PORT: ${YUMAKBOT_PORT:-4319}
+      YUMAKBOT_PROXY_SECRET: ${YUMAKBOT_PROXY_SECRET:?YUMAKBOT_PROXY_SECRET gerekli}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account; kept so a restart does not ask Let's Encrypt again.
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    pids_limit: 128
+
+volumes:
+  caddy-data:
+  caddy-config:

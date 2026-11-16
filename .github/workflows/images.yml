@@ -1,0 +1,120 @@
+name: Images
+
+# Publishes the server and computer images of a version tag to the GitHub Container Registry, so a
+# server set up with docker/install.sh pulls them in a minute instead of building them for 10-20
+# minutes, which also fails on small servers with too little memory. Each architecture is built on
+# its own runner (amd64 and arm64, as cheap ARM servers are common) and the two are then joined
+# under one tag: the version without the v, and latest for a release that is not a pre-release.
+#
+# After the first run, check under the repository's Packages that yumakbot-server and
+# yumakbot-computer are public; servers pull them without signing in.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build, e.g. v0.3.0
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ inputs.tag || github.ref_name }}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: ${{ matrix.image }} (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [server, computer]
+        arch: [amd64, arm64]
+        include:
+          - image: server
+            dockerfile: Dockerfile
+          - image: computer
+            dockerfile: computer/Dockerfile
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Image name
+        # Registry names must be lower case; the owner's name may not be.
+        run: |
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          echo "IMAGE=ghcr.io/$owner/yumakbot-${{ matrix.image }}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.licenses=PolyForm-Noncommercial-1.0.0
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+      - name: Keep the digest
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: digests/*
+          retention-days: 1
+
+  publish:
+    name: Publish ${{ matrix.image }}
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        image: [server, computer]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.image }}-*
+          path: digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Join the architectures under the version tags
+        working-directory: digests
+        run: |
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          image=ghcr.io/$owner/yumakbot-${{ matrix.image }}
+          tags=(-t "$image:${TAG#v}")
+          # A pre-release (v1.2.0-beta.1) does not become what new installations get.
+          [[ $TAG == *-* ]] || tags+=(-t "$image:latest")
+          sources=()
+          for digest in *; do sources+=("$image@sha256:$digest"); done
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          docker buildx imagetools inspect "$image:${TAG#v}"
