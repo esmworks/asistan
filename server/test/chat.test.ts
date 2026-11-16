@@ -1135,6 +1135,8 @@ describe('sohbet', () => {
     expect(msgs.at(-1)!.role).toBe('assistant');
     const after = (await t.services.threads.row(thread.id)).engineSessionId;
     expect(after).toBe(before);
+    // The turns and runs above were stamped by the real clock, so the report must count from it too.
+    t.now.value = new Date();
     const turns = await t.api<{ models: { model: string }[] }>('GET', '/api/usage');
     expect(JSON.stringify(turns.body)).toContain('openrouter/yedek');
   });

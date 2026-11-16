@@ -146,6 +146,8 @@ describe('kullanım raporu', () => {
     await t.send(thread.id, '[maliyet:0.25]');
     await t.services.turns.idle();
     expect(await costs(thread.id)).toEqual([0.25, 0.5, 0.125, 0.25]);
+    // The turns and runs above were stamped by the real clock, so the report must count from it too.
+    t.now.value = new Date();
     const report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
     expect(report.total.costUsd).toBe(1.125);
     expect(report.month?.costUsd).toBe(1.125);
@@ -249,6 +251,8 @@ describe('kullanım raporu', () => {
     await t.services.turns.idle();
     await t.db.db.update(schema.turns).set({ costUsd: 0.4 }).where(eq(schema.turns.routineRunId, run!.id));
     await turn(a.id, '2026-11-16T04:00:00.000Z', 1);
+    // The turns and runs above were stamped by the real clock, so the report must count from it too.
+    t.now.value = new Date();
     const report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
     expect(report.routines).toEqual([
       { routineId: r.id, name: 'Sabah özeti', botId: a.id, costUsd: 0.4, turns: 1, unpriced: 0 },

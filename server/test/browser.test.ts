@@ -341,10 +341,16 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     expect(metadata).toContain('169.254.169.254');
     // A page that sends its subrequests to this computer gets them refused too.
     const browser = t.services.ctx.browser;
-    await browser.use(bot.id, async (page) => {
-      await page.waitForLoadState().catch(() => {});
-      await page.setContent('<p>boş</p>');
-    });
+    // The refused address leaves Chromium moving to its own error page after the step returned, which
+    // would wipe a page set before it lands; the blank page is set again until it holds.
+    await waitFor(() =>
+      browser.use(bot.id, (page) =>
+        page.setContent('<p>boş</p>').then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
     const status = await browser.use(bot.id, (page) =>
       page.evaluate(
         (u) =>

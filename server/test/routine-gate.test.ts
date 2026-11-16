@@ -77,6 +77,8 @@ describe('rutin ön kontrolü', () => {
     expect(second).toMatchObject({ status: 'done', gate: { decision: 'run' } });
 
     await t.db.db.update(schema.turns).set({ costUsd: 0.3 }).where(eq(schema.turns.routineRunId, first!.id));
+    // The turns and runs above were stamped by the real clock, so the report must count from it too.
+    t.now.value = new Date();
     const report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
     expect(report.gate).toEqual({
       checks: 2,
@@ -101,6 +103,8 @@ describe('rutin ön kontrolü', () => {
     expect(run!.reason).toContain('Sahte ön kontrol: yeni bir şey yok.');
     expect(run!.threadId).not.toBeNull();
     expect(await t.messages(run!.threadId!)).toHaveLength(0);
+    // The turns and runs above were stamped by the real clock, so the report must count from it too.
+    t.now.value = new Date();
     const report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
     expect(report.gate).toMatchObject({ checks: 1, skippable: 0, skipped: 1 });
   });
