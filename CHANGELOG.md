@@ -11,6 +11,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   and the app offers to restart into it or installs it when it quits. Apps from 0.2.0 and earlier have no updater, so
   this version is installed by hand once.
 
+### Memory
+
+- A manager bot also sees, corrects and deletes the own notes of bots that are not managers, archived ones included;
+  `memory_search` names the bot each note belongs to and takes a bot to list one bot's notes alone. It is told that
+  the other bots still see only their own notes, so a fact is not deleted from a bot just because it exists elsewhere.
+- The memory screen shows one line per bot with its number of notes; a bot's notes open below it when tapped.
+
 ## 0.2.0 — 2026-11-16
 
 ### Apps
