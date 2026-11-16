@@ -45,7 +45,7 @@ The interface is available in English and Turkish.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a
-  filtered webhook, or only when a watched page changes; they can build on their last report and run in the main
+  filtered webhook, or only when a watched page or a connected app's answer changes; they can build on their last report and run in the main
   conversation.
 - **Today and usage** — a Today page of what the bots did and what waits for you; spending by bot, model and routine,
   a monthly limit and a CSV export.

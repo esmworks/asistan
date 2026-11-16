@@ -605,6 +605,10 @@ export const en: Catalog<MessageKey> = {
   'routine.onStartupHint':
     'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
   'routine.watchUrl': 'Only when this page changes (optional)',
+  'routine.checkOn': 'Runs only when {app} · {tool} answers something new; checked without the AI.',
+  'routine.checkRemove': 'Remove check',
+  'routine.checkHint':
+    'To run only when something happens in an app (a new email, a new issue), ask the bot: it sets up a check that costs nothing while nothing changes.',
   'routine.watchUrlHint':
     'At each time the page is read without the AI; the bot runs only when its text changed, and gets the new text. Costs nothing while the page stays the same.',
   'routine.watchUrlInvalid': 'An address starting with https://',

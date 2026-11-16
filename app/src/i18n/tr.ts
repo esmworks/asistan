@@ -602,6 +602,10 @@ export const tr = {
   'routine.onStartupHint':
     'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Yumak Bot’u başlattığınızda.',
   'routine.watchUrl': 'Yalnız bu sayfa değişince (isteğe bağlı)',
+  'routine.checkOn': 'Yalnız {app} · {tool} yeni bir cevap verince çalışır; yapay zekâsız denetlenir.',
+  'routine.checkRemove': 'Denetimi kaldır',
+  'routine.checkHint':
+    'Yalnız bir uygulamada bir şey olunca (yeni e-posta, yeni issue) çalışsın istiyorsan bota söyle: bir şey değişmedikçe hiçbir şeye mal olmayan bir denetim kurar.',
   'routine.watchUrlHint':
     'Her zamanında sayfa yapay zekâsız okunur; bot yalnız metni değişince çalışır ve yeni metni alır. Sayfa aynı kaldıkça hiçbir şeye mal olmaz.',
   'routine.watchUrlInvalid': 'https:// ile başlayan bir adres',

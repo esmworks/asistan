@@ -12,6 +12,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Writing a note that is already saved, give or take case, spacing and closing punctuation, makes no second copy.
 - Each note reaches the bot with the day it was last written, so of two notes that disagree it can trust the newer.
 
+### Routines
+
+- A routine can wait on an app: before each run it calls a read-only tool of a connected app (unread mail, open
+  issues) without the AI, and the bot runs only when the answer changed, with the new answer. A quiet tick costs
+  nothing. Bots set it up when asked ("tell me when a new invoice email arrives"); the routine screen shows the check
+  and removes it. Only a tool that reads, of an app open to the bot, can be a check.
+
 ### Apps
 
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes

@@ -18,7 +18,7 @@ import { Chip, ChipRow, ChoiceRow, Hint, Pad, Rows } from '@/components/settings
 import { locale, t, type MessageKey } from '@/i18n';
 import { formatters } from '@/lib/format';
 import { nav } from '@/lib/nav';
-import { useBots, useClaudeModels, useInfo, useRoutines, useSettings } from '@/lib/queries';
+import { useBots, useClaudeModels, useConnections, useInfo, useRoutines, useSettings } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 import { ordered } from '@/lib/bots';
@@ -499,6 +499,7 @@ function RoutinePage({ routine, initialBotId }: { routine?: Routine; initialBotI
         />
       </FormField>
 
+      {routine ? <Check routine={routine} /> : null}
       {routine ? <Webhook routine={routine} /> : null}
       {routine?.webhookToken ? (
         <>
@@ -622,6 +623,57 @@ function RecentRuns({ routineId, botId }: { routineId: string; botId: string }) 
 }
 
 /** The routine's secret address for other services, with buttons to make, copy, renew or remove it. */
+/** The app tool the routine calls before each run, set up by its bot; the person can remove it. */
+function Check({ routine: given }: { routine: Routine }) {
+  const api = useApi();
+  const { origin } = useServer();
+  const qc = useQueryClient();
+  const { data: routines } = useRoutines();
+  const routine = routines?.find((r) => r.id === given.id) ?? given;
+  const { data: connections = [] } = useConnections();
+  const remove = useMutation({
+    mutationFn: () => api.updateRoutine(routine.id, { check: null }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routines', origin] }),
+    onError: toastError,
+  });
+  const check = routine.check;
+  if (!check) {
+    return (
+      <Section>
+        <Rows>
+          <Pad>
+            <Hint>{t('routine.checkHint')}</Hint>
+          </Pad>
+        </Rows>
+      </Section>
+    );
+  }
+  const app = connections.find((c) => c.id === check.connectionId)?.name ?? check.connectionId;
+  const args = Object.keys(check.args).length ? JSON.stringify(check.args) : null;
+  return (
+    <Section>
+      <Rows>
+        <Pad>
+          <Hint>{t('routine.checkOn', { app, tool: check.tool })}</Hint>
+          {args ? (
+            <Text selectable style={styles.url} numberOfLines={3}>
+              {args}
+            </Text>
+          ) : null}
+          <View style={styles.buttons}>
+            <PillButton
+              label={t('routine.checkRemove')}
+              variant="ghost"
+              busy={remove.isPending}
+              onPress={() => remove.mutate()}
+            />
+          </View>
+        </Pad>
+      </Rows>
+    </Section>
+  );
+}
+
 function Webhook({ routine: given }: { routine: Routine }) {
   const api = useApi();
   const { origin } = useServer();
