@@ -15,6 +15,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Both are sealed like keys, refreshed when they run out, and signed out from the connection page. A saved API key for
   the same provider comes first.
 
+### Bots
+
+- Each bot's settings have a Tools section: give it only the tools listed, or leave some out, named as approval cards
+  name them (`Read`, `mcp__gmail__search_threads`), with `*` at the end for a whole app. A small local model gets
+  room to work, and a bot stays to its job. Both engines leave the other tools out of the request, and one the engine
+  offers anyway is refused.
+
 ### Memory
 
 - A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is

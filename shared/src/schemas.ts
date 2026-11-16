@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { patchOf } from './patch';
+import { ALL_TOOLS, ToolSelection } from './tool-selection';
 
 export const Id = z.string().min(1).max(64);
 
@@ -45,6 +46,8 @@ export const Bot = z.object({
   memory: z.boolean(),
   /** Effort for this Claude bot; empty uses the setting for all bots. */
   effort: z.string(),
+  /** Which tools the bot gets (see `ToolSelection`). */
+  toolSelection: ToolSelection,
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -100,6 +103,8 @@ export const BotCreate = z.object({
   projectDir: z.string().max(1000).nullable().default(null),
   memory: z.boolean().default(true),
   effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
+  /** Which tools the bot gets; by default every tool its settings allow. */
+  toolSelection: ToolSelection.default(ALL_TOOLS),
 });
 export type BotCreate = z.infer<typeof BotCreate>;
 

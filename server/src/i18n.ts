@@ -148,11 +148,14 @@ const tr = {
   'thread.forkTitle': '{title} (dal)',
   'thread.untitled': 'Sohbet',
   'turn.compacted': 'Sohbet buraya kadar özetlendi; bot öncesini bu özetten hatırlıyor.',
+  'turn.toolOff': 'Bu araç bu botta kapalı (botun ayarları → Araçlar).',
   'turn.safetyFloor':
     'Bu komut hiçbir izinle çalıştırılmaz: bir diski ya da bütün ev klasörünü silebilir, bilgisayarı kapatabilir. Daha dar bir hedefle (belirli bir klasör ya da dosya) yeniden dene.',
   'turn.spendLimit':
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
+  'validation.toolSelector':
+    'Araç adı harf, rakam, _ . - içerebilir; sonda tek bir * ile o adla başlayan bütün araçları seçer',
   'validation.cron': 'Beş alanlı bir cron ifadesi olmalı (dakika saat gün ay haftagünü)',
   'validation.timeWindow': 'Saat aralığının başı ve sonu birlikte verilmeli; baş sondan önce olmalı',
   'validation.timezone': 'Geçersiz saat dilimi',
@@ -856,11 +859,14 @@ const en: Catalog<ServerKey> = {
   'thread.forkTitle': '{title} (branch)',
   'thread.untitled': 'Conversation',
   'turn.compacted': 'The conversation up to here was summarised; the bot remembers it from that summary.',
+  'turn.toolOff': "This tool is off for this bot (the bot's settings → Tools).",
   'turn.safetyFloor':
     'This command is never run, whatever is allowed: it could wipe a disk or a whole home folder, or stop the machine. Try again with a narrower target (a particular folder or file).',
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
+  'validation.toolSelector':
+    'A tool name may hold letters, digits, _ . -; one * at the end picks every tool it starts',
   'validation.cron': 'Must be a five-field cron expression (minute hour day month weekday)',
   'validation.timeWindow': 'A time window needs both a start and an end, the start before the end',
   'validation.timezone': 'Invalid time zone',

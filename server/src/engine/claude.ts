@@ -330,6 +330,8 @@ export class ClaudeEngine implements Engine {
         ...(req.shell === 'computer' ? ['Bash', 'BashOutput', 'KillShell', 'KillBash'] : []),
         ...(req.sandbox.internet ? [] : ['WebFetch', 'WebSearch']),
       ],
+      // A bot's tool selection lists the built-in tools it keeps; without one it gets them all.
+      ...(req.pickTool && { tools: CLAUDE_BUILTIN_TOOLS.filter(req.pickTool) }),
       mcpServers: mcpServers(req.tools),
       maxTurns: MAX_TURNS,
       hooks: {
@@ -714,6 +716,31 @@ export class ClaudeEngine implements Engine {
 const TIMEOUT = new Error('timeout');
 
 /** Shown when the CLI cannot list models, e.g. before any login works. */
+/**
+ * Claude Code's own tools, by name, for a bot whose tool selection keeps only some of them. A
+ * tool missing here is left out for such a bot, and also refused if Claude offers it anyway.
+ */
+export const CLAUDE_BUILTIN_TOOLS = [
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Read',
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Glob',
+  'Grep',
+  'LS',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+  'Task',
+  'Agent',
+  'Skill',
+  'ToolSearch',
+];
+
 export const FALLBACK_MODELS: ClaudeModel[] = [
   { value: 'sonnet', name: 'Sonnet', description: '', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { value: 'opus', name: 'Opus', description: '', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },

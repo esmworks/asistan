@@ -177,6 +177,12 @@ export const en: Catalog<MessageKey> = {
   'general.density.comfortable': 'With last message',
   'general.density.compact': 'Compact',
   'usage.routines': 'By routine',
+  'bot.toolsOnly': 'Only the tools listed',
+  'bot.toolsHint':
+    'Fewer tools leave a small local model room to work, and keep a bot to its job. Name tools as approval cards do, one per line; a * at the end takes every tool it starts, such as mcp__gmail__*.',
+  'bot.toolsAllow': 'Tools it gets',
+  'bot.toolsExclude': 'Tools it never gets',
+  'bot.toolsInvalid': 'One name per line: letters, digits, _ . -, and one * at the end at most',
   'bot.memory': 'Memory',
   'bot.memoryHint':
     'Off, the bot neither reads nor keeps notes, not even your shared ones: each conversation stands alone.',

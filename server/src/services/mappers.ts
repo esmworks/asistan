@@ -11,7 +11,9 @@ import type {
   Schedule,
   Thread,
   TurnState,
+  ToolSelection,
 } from '@yumakbot/shared';
+import { ALL_TOOLS } from '@yumakbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
 
@@ -41,6 +43,7 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   projectDir: r.projectDir,
   memory: r.memory,
   effort: r.effort,
+  toolSelection: (r.toolSelection as ToolSelection | null) ?? ALL_TOOLS,
   archivedAt: iso(r.archivedAt),
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),

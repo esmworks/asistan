@@ -1,4 +1,12 @@
-import { AVATAR_SHAPES, EFFORTS, PERMISSION_MODES, type Bot, type Effort } from '@yumakbot/shared';
+import {
+  AVATAR_SHAPES,
+  EFFORTS,
+  PERMISSION_MODES,
+  selectorLines,
+  ToolSelection,
+  type Bot,
+  type Effort,
+} from '@yumakbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Archive, ChevronDown, Upload } from 'lucide-react';
@@ -48,6 +56,10 @@ export const COLORS = [
 
 const NO_GROUP = '__none__';
 
+/** Tool names as cards name them; examples, the same in every language. */
+const TOOLS_EXAMPLE = 'Read\nmcp__yumakbot__memory_*\nmcp__gmail__search_threads';
+const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__yumakbot__browser_*';
+
 /** Validation messages are message keys; `Field` shows them in the current language. */
 const Form = z
   .object({
@@ -62,6 +74,9 @@ const Form = z
     isManager: z.boolean(),
     memory: z.boolean(),
     effort: z.string(),
+    toolsOnly: z.boolean(),
+    toolsAllow: z.string().max(80_000),
+    toolsExclude: z.string().max(80_000),
     internet: z.boolean(),
     projectDir: z.string().max(1000),
     engine: z.enum(['claude', 'pi']),
@@ -71,6 +86,10 @@ const Form = z
   .superRefine((f, ctx) => {
     if (f.engine === 'pi' && !f.model)
       ctx.addIssue({ code: 'custom', path: ['model'], message: 'bot.modelRequired' });
+    for (const field of ['toolsAllow', 'toolsExclude'] as const) {
+      if (!ToolSelection.shape.allow.safeParse(selectorLines(f[field])).success)
+        ctx.addIssue({ code: 'custom', path: [field], message: 'bot.toolsInvalid' });
+    }
   });
 type Form = z.infer<typeof Form>;
 
@@ -87,6 +106,9 @@ function initial(bot?: Bot, start: BotEngine = { engine: 'claude', model: '' }):
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
     effort: bot?.effort ?? '',
+    toolsOnly: bot?.toolSelection.only ?? false,
+    toolsAllow: bot?.toolSelection.allow.join('\n') ?? '',
+    toolsExclude: bot?.toolSelection.exclude.join('\n') ?? '',
     internet: bot?.internet ?? true,
     projectDir: bot?.projectDir ?? '',
     engine: bot?.engine ?? start.engine,
@@ -220,6 +242,11 @@ function BotForm({
         isManager: f.isManager,
         memory: f.memory,
         effort: f.effort as Effort | '',
+        toolSelection: {
+          only: f.toolsOnly,
+          allow: selectorLines(f.toolsAllow),
+          exclude: selectorLines(f.toolsExclude),
+        },
         internet: f.internet,
         projectDir: f.projectDir.trim() || null,
         engine: f.engine,
@@ -435,6 +462,38 @@ function BotForm({
                 onCheckedChange={(c) => form.setValue('memory', c, { shouldDirty: true })}
               />
             </label>
+            <div className="space-y-3 rounded-2xl bg-secondary/60 px-4 py-3">
+              <label className="flex items-center justify-between gap-4">
+                <span>
+                  <span className="block text-sm font-medium">{t('bot.toolsOnly')}</span>
+                  <span className="block text-xs text-muted-foreground">{t('bot.toolsHint')}</span>
+                </span>
+                <Switch
+                  checked={v.toolsOnly}
+                  onCheckedChange={(c) => form.setValue('toolsOnly', c, { shouldDirty: true })}
+                />
+              </label>
+              {v.toolsOnly && (
+                <Field label={t('bot.toolsAllow')} error={err.toolsAllow?.message}>
+                  <Textarea
+                    {...form.register('toolsAllow')}
+                    rows={4}
+                    spellCheck={false}
+                    placeholder={TOOLS_EXAMPLE}
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </Field>
+              )}
+              <Field label={t('bot.toolsExclude')} error={err.toolsExclude?.message}>
+                <Textarea
+                  {...form.register('toolsExclude')}
+                  rows={2}
+                  spellCheck={false}
+                  placeholder={TOOLS_EXCLUDE_EXAMPLE}
+                  className="rounded-xl font-mono text-xs"
+                />
+              </Field>
+            </div>
           </div>
         )}
       </div>

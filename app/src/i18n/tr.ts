@@ -181,6 +181,12 @@ export const tr = {
   'general.density.comfortable': 'Son mesajla',
   'general.density.compact': 'Sıkışık',
   'usage.routines': 'Rutinlere göre',
+  'bot.toolsOnly': 'Yalnız listedeki araçlar',
+  'bot.toolsHint':
+    'Daha az araç küçük bir yerel modele çalışacak yer bırakır, botu da işine bağlı tutar. Araçları onay kartlarındaki adlarıyla, her satıra bir tane yazın; sondaki * o adla başlayan bütün araçları alır, ör. mcp__gmail__*.',
+  'bot.toolsAllow': 'Alacağı araçlar',
+  'bot.toolsExclude': 'Hiç almayacağı araçlar',
+  'bot.toolsInvalid': 'Her satıra bir ad: harf, rakam, _ . - ve en fazla sonda bir *',
   'bot.memory': 'Hafıza',
   'bot.memoryHint':
     'Kapalıyken bot not okumaz ve tutmaz, ortak notlarınızı da görmez: her sohbet kendi başınadır.',

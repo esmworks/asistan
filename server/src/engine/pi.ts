@@ -286,7 +286,11 @@ export class PiEngine implements Engine {
 
     // A local model built without tool use refuses any request that lists tools: it only talks.
     const toolless = (await this.opts.takesTools?.(target.provider, target.id)) === false;
-    const files = toolless ? [] : fileTools(req.sandbox, t, { seesImages: model.input.includes('image') });
+    const files = toolless
+      ? []
+      : fileTools(req.sandbox, t, { seesImages: model.input.includes('image') }).filter(
+          (f) => req.pickTool?.(f.permissionName) ?? true,
+        );
     const byName = new Map<string, { perm: string; file?: FileTool; app?: AppTool }>();
     const tools: AgentTool[] = [];
     for (const f of files) {

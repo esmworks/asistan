@@ -1,4 +1,12 @@
-import { AVATAR_SHAPES, EFFORTS, PERMISSION_MODES, type Bot, type Effort } from '@yumakbot/shared';
+import {
+  AVATAR_SHAPES,
+  EFFORTS,
+  PERMISSION_MODES,
+  selectorLines,
+  ToolSelection,
+  type Bot,
+  type Effort,
+} from '@yumakbot/shared';
 import { availableStarters, starterBot, type StarterId } from '@yumakbot/app/src/features/onboarding/profile';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,6 +27,12 @@ import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
 const NO_GROUP = '';
+/** Tool names as cards name them; examples, the same in every language. */
+const TOOLS_EXAMPLE = 'Read\nmcp__yumakbot__memory_*\nmcp__gmail__search_threads';
+const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__yumakbot__browser_*';
+/** The message for tool lines the server would refuse, or nothing. */
+const toolsError = (text: string): MessageKey | undefined =>
+  ToolSelection.shape.allow.safeParse(selectorLines(text)).success ? undefined : 'bot.toolsInvalid';
 /** The effort row's value for "as set for all bots"; efforts never take this form. */
 const DEFAULT_EFFORT = '*';
 
@@ -41,6 +55,10 @@ interface Form {
   isManager: boolean;
   memory: boolean;
   effort: Effort | '';
+  toolsOnly: boolean;
+  /** Tool names, one per line, as approval cards name them. */
+  toolsAllow: string;
+  toolsExclude: string;
   internet: boolean;
   projectDir: string;
   engine: 'claude' | 'pi';
@@ -61,6 +79,9 @@ function initial(bot: Bot | undefined, start: { engine: 'claude' | 'pi'; model: 
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
     effort: (bot?.effort as Effort | '' | undefined) ?? '',
+    toolsOnly: bot?.toolSelection.only ?? false,
+    toolsAllow: bot?.toolSelection.allow.join('\n') ?? '',
+    toolsExclude: bot?.toolSelection.exclude.join('\n') ?? '',
     internet: bot?.internet ?? true,
     projectDir: bot?.projectDir ?? '',
     engine: bot?.engine ?? start.engine,
@@ -162,6 +183,11 @@ function BotFormPage({ bot }: { bot?: Bot }) {
         isManager: v.isManager,
         memory: v.memory,
         effort: v.effort,
+        toolSelection: {
+          only: v.toolsOnly,
+          allow: selectorLines(v.toolsAllow),
+          exclude: selectorLines(v.toolsExclude),
+        },
         internet: v.internet,
         projectDir: v.projectDir.trim() || null,
         engine: v.engine,
@@ -429,9 +455,41 @@ function BotFormPage({ bot }: { bot?: Bot }) {
               value={v.memory}
               onChange={(on) => set('memory', on)}
             />
+            <SwitchRow
+              label={t('bot.toolsOnly')}
+              detail={t('bot.toolsHint')}
+              value={v.toolsOnly}
+              onChange={(on) => set('toolsOnly', on)}
+            />
           </Rows>
         ) : null}
       </Section>
+      {advanced ? (
+        <>
+          {v.toolsOnly ? (
+            <FormField label={t('bot.toolsAllow')} error={toolsError(v.toolsAllow)}>
+              <AreaBox
+                value={v.toolsAllow}
+                onChangeText={(x) => set('toolsAllow', x)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                placeholder={TOOLS_EXAMPLE}
+              />
+            </FormField>
+          ) : null}
+          <FormField label={t('bot.toolsExclude')} error={toolsError(v.toolsExclude)}>
+            <AreaBox
+              value={v.toolsExclude}
+              onChangeText={(x) => set('toolsExclude', x)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              placeholder={TOOLS_EXCLUDE_EXAMPLE}
+            />
+          </FormField>
+        </>
+      ) : null}
 
       {bot ? (
         <Section>
