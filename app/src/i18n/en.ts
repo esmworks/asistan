@@ -265,6 +265,9 @@ export const en: Catalog<MessageKey> = {
   'approval.heldBy': 'The bot may go ahead by itself, but your rule “{rule}” asks first.',
   'approval.askRule':
     'Your rule “{rule}” asks every time; while it stands, "Always allow" would change nothing.',
+  'chat.dictation': 'Speak instead of typing',
+  'chat.dictationStop': 'Stop and write it out',
+  'chat.dictationFailed': 'Could not take the speech: {message}',
   'chat.copyLink': 'Copy a link to this conversation',
   'chat.linkCopied': 'Link copied',
   'chat.linkGone': 'The linked conversation is not here any more.',
@@ -711,7 +714,7 @@ export const en: Catalog<MessageKey> = {
     'Can write to every bot and create and edit bots. Still asks you before loosening permissions.',
   'bot.archive': 'Archive',
   'bot.advanced': 'Advanced settings',
-  'bot.advancedHint': 'Permissions, project folder, internet access, manager bot',
+  'bot.advancedHint': 'Permissions, project folder, internet access, manager bot, tools',
   'bot.create': 'Create',
   'bot.engine': 'Model source',
   'bot.engine.claude': 'Claude',
@@ -1170,7 +1173,7 @@ export const en: Catalog<MessageKey> = {
   'provider.pasteHint':
     'On this computer the sign-in comes back by itself. If the browser ends on a page that does not load (the server is on another computer), copy that page’s address and paste it here.',
   'provider.pastePlaceholder': 'http://127.0.0.1:1455/auth/callback?code=…',
-  'provider.pick': 'Pick a provider and paste its API key',
+  'provider.pick': 'Sign in with your plan, or pick a provider and paste its API key',
   'provider.addAnother': 'Add another provider',
   'provider.other': 'Other',
   'provider.keyFor': '{provider} API key',

@@ -40,6 +40,7 @@ import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
 import { BackupService } from './services/backup';
+import { TranscribeService } from './services/transcribe';
 import { probeShellSandbox } from './shell-sandbox';
 import { isServerKey, translator, type T } from './i18n';
 import { serverLocale } from './services/settings';
@@ -321,6 +322,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   registerMcpServer(app, services);
   registerRoutes(app, {
     services,
+    transcribe: new TranscribeService(services.keys),
     backup: new BackupService(
       ctx,
       opts.restart ?? (() => console.warn('backup restored; start the server again')),

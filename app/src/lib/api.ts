@@ -384,6 +384,21 @@ export const api = {
   previewBotImport: (file: File) => http.post<BotImportPlan>('/api/import/bots?preview=1', file),
   steerMessage: (id: string) => http.post<Message>(`/api/messages/${id}/steer`),
   importBots: (file: File) => http.post<BotImportResult>('/api/import/bots', file),
+  /** Whether the server can turn speech into text (an OpenAI or Groq key is saved). */
+  transcribeStatus: () => http.get<{ available: boolean }>('/api/transcribe'),
+  /** A recording from the message box, written out by the provider whose key the server has. */
+  transcribe: async (audio: Blob, lang: string) => {
+    const res = await fetch(`/api/transcribe?lang=${encodeURIComponent(lang)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': audio.type || 'audio/webm', 'accept-language': useLocale.getState().locale },
+      body: audio,
+    });
+    const data = (await res.json().catch(() => null)) as { text?: string; error?: string } | null;
+    if (!res.ok)
+      throw new ApiError(res.status, data?.error ?? getT()('error.requestFailed', { status: res.status }));
+    return { text: data?.text ?? '' };
+  },
   /** Writes a sealed backup of everything on the server, ready for one download at `/api/backup/<id>`. */
   createBackup: (password: string) => http.post<{ id: string; size: number }>('/api/backup', { password }),
   /** Replaces everything with a backup; the server starts again after. The body is the file itself. */

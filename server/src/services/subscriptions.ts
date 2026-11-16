@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AuthEvent, AuthPrompt, ModelAuth, OAuthAuth, OAuthCredential } from '@earendil-works/pi-ai';
+import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth';
 import { githubCopilotProvider } from '@earendil-works/pi-ai/providers/github-copilot';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import type { ProviderSignIn } from '@yumakbot/shared';
@@ -31,6 +32,9 @@ export type SubscriptionFlows = Record<string, OAuthAuth>;
 
 /** The plans that can be signed in to, by the provider whose models they open. */
 export function defaultFlows(): SubscriptionFlows {
+  // The library loads each sign-in flow from a file next to its own on first use, which the bundled
+  // server does not have; this hands it the flows bundled in instead.
+  registerBunOAuthFlows();
   return {
     openai: openaiProvider().auth.oauth!,
     'github-copilot': githubCopilotProvider().auth.oauth!,

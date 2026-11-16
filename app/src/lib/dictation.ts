@@ -1,0 +1,139 @@
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { INTL_LOCALE, type Locale } from '@yumakbot/shared';
+import { api } from './api';
+import { desktop } from './desktop';
+
+/**
+ * Speaking a message instead of typing it. With an OpenAI or Groq key saved on the server, the
+ * recording goes there to be written out, which works in every browser and in the desktop app.
+ * Without one, a browser with its own speech recognition (Chrome, Safari) writes as the person
+ * speaks; the desktop app has none of its own. Elsewhere there is no microphone button.
+ */
+export type DictationState = 'idle' | 'recording' | 'working';
+
+interface Recognition {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult:
+    | ((e: {
+        resultIndex: number;
+        results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+      }) => void)
+    | null;
+  onerror: ((e: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+function browserRecognition(): (new () => Recognition) | null {
+  if (typeof window === 'undefined' || desktop) return null;
+  const w = window as unknown as {
+    SpeechRecognition?: new () => Recognition;
+    webkitSpeechRecognition?: new () => Recognition;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+const canRecord = () =>
+  typeof navigator !== 'undefined' &&
+  !!navigator.mediaDevices?.getUserMedia &&
+  typeof MediaRecorder !== 'undefined';
+
+/** Picks a recording format the browser makes and the providers read. */
+function recordingType(): string | undefined {
+  for (const type of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']) {
+    if (MediaRecorder.isTypeSupported?.(type)) return type;
+  }
+  return undefined;
+}
+
+export function useDictation(opts: {
+  locale: Locale;
+  /** Text to add to the message box: each finished phrase, or the whole recording at once. */
+  onText(text: string): void;
+  onError(message: string): void;
+}) {
+  const { data } = useQuery({ queryKey: ['transcribe'], queryFn: api.transcribeStatus, staleTime: 60_000 });
+  const server = !!data?.available && canRecord();
+  const Browser = browserRecognition();
+  const supported = server || !!Browser;
+  const [state, setState] = useState<DictationState>('idle');
+  const stopRef = useRef<(() => void) | null>(null);
+  const latest = useRef(opts);
+  useEffect(() => {
+    latest.current = opts;
+  });
+  // Leaving the conversation stops listening.
+  useEffect(() => () => stopRef.current?.(), []);
+
+  const startServer = async () => {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      latest.current.onError((e as Error).message);
+      return;
+    }
+    const type = recordingType();
+    const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      stopRef.current = null;
+      const blob = new Blob(chunks, { type: recorder.mimeType || type || 'audio/webm' });
+      if (!blob.size) return setState('idle');
+      setState('working');
+      try {
+        const { text } = await api.transcribe(blob, latest.current.locale);
+        if (text) latest.current.onText(text);
+      } catch (e) {
+        latest.current.onError((e as Error).message);
+      } finally {
+        setState('idle');
+      }
+    };
+    recorder.start();
+    stopRef.current = () => {
+      if (recorder.state !== 'inactive') recorder.stop();
+    };
+    setState('recording');
+  };
+
+  const startBrowser = () => {
+    const r = new Browser!();
+    r.lang = INTL_LOCALE[latest.current.locale];
+    r.continuous = true;
+    r.interimResults = false;
+    r.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i]!;
+        if (result.isFinal) latest.current.onText(result[0].transcript.trim());
+      }
+    };
+    r.onerror = (e) => {
+      if (e.error !== 'no-speech' && e.error !== 'aborted') latest.current.onError(e.error);
+    };
+    r.onend = () => {
+      stopRef.current = null;
+      setState('idle');
+    };
+    r.start();
+    stopRef.current = () => r.stop();
+    setState('recording');
+  };
+
+  const toggle = () => {
+    if (state === 'recording') return stopRef.current?.();
+    if (state !== 'idle') return;
+    if (server) void startServer();
+    else if (Browser) startBrowser();
+  };
+
+  return { supported, state, toggle };
+}

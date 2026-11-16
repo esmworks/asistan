@@ -548,11 +548,15 @@ async function switchTo(next: DesktopConfig) {
 }
 
 function hardenSessions() {
-  // Everything is refused except writing to the clipboard from the app's own page; copying a
-  // picture has no other route there.
-  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) =>
-    cb(perm === 'clipboard-sanitized-write' && isAppOrigin(details.requestingUrl)),
-  );
+  // Everything is refused except, for the app's own page, writing to the clipboard (copying a
+  // picture has no other route there) and the microphone alone (speaking a message instead of
+  // typing it). The camera and the screen stay closed.
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) => {
+    if (!isAppOrigin(details.requestingUrl)) return cb(false);
+    if (perm === 'clipboard-sanitized-write') return cb(true);
+    const media = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
+    cb(perm === 'media' && media.length > 0 && media.every((m) => m === 'audio'));
+  });
   app.on('web-contents-created', (_e, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
       if (/^https?:\/\//.test(url)) void shell.openExternal(url);

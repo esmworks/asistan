@@ -269,7 +269,7 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
       {current === CUSTOM ? (
         <EndpointForm onAdded={onAdded} />
       ) : PLANS.some((x) => x.chip === current) ? (
-        <PlanSignIn plan={PLANS.find((x) => x.chip === current)!} onDone={onAdded} />
+        <PlanSignIn key={current} plan={PLANS.find((x) => x.chip === current)!} onDone={onAdded} />
       ) : (
         <div className="flex flex-wrap gap-2">
           <Input

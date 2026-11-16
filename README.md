@@ -42,7 +42,8 @@ The interface is available in English and Turkish.
   Copilot plan.
 - **Live chat** — streamed replies, file attachments, stop at any time, and turns that pick up where they left off
   after a server restart. Unread marks, find in a conversation (⌘F), `/` commands, quick replies, a goal per
-  conversation, branching from a reply, Markdown export, sortable tables and Mermaid diagrams.
+  conversation, branching from a reply, Markdown export, sortable tables, Mermaid diagrams, and speaking a message
+  instead of typing it.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a

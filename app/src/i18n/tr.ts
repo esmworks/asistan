@@ -269,6 +269,9 @@ export const tr = {
   'approval.heldBy': 'Bot kendi başına ilerleyebilir, ama “{rule}” kuralınız önce sormasını istiyor.',
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
+  'chat.dictation': 'Yazmak yerine konuş',
+  'chat.dictationStop': 'Durdur ve yazıya dök',
+  'chat.dictationFailed': 'Konuşma alınamadı: {message}',
   'chat.copyLink': 'Bu sohbetin bağlantısını kopyala',
   'chat.linkCopied': 'Bağlantı kopyalandı',
   'chat.linkGone': 'Bağlantıdaki sohbet artık burada değil.',
@@ -711,7 +714,7 @@ export const tr = {
     'Bütün botlara yazabilir, bot oluşturup düzenleyebilir. İzin gevşetmek için yine size sorar.',
   'bot.archive': 'Arşivle',
   'bot.advanced': 'Gelişmiş ayarlar',
-  'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot',
+  'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot, araçlar',
   'bot.create': 'Oluştur',
   'bot.engine': 'Model kaynağı',
   'bot.engine.claude': 'Claude',
@@ -1174,7 +1177,7 @@ export const tr = {
   'provider.pasteHint':
     'Bu bilgisayarda oturum kendiliğinden döner. Tarayıcı açılmayan bir sayfada kalırsa (sunucu başka bir bilgisayardaysa) o sayfanın adresini kopyalayıp buraya yapıştırın.',
   'provider.pastePlaceholder': 'http://127.0.0.1:1455/auth/callback?code=…',
-  'provider.pick': 'Sağlayıcıyı seçip API anahtarını yapıştırın',
+  'provider.pick': 'Planınızla oturum açın ya da bir sağlayıcı seçip API anahtarını yapıştırın',
   'provider.addAnother': 'Başka bir sağlayıcı ekle',
   'provider.other': 'Diğer',
   'provider.keyFor': '{provider} API anahtarı',

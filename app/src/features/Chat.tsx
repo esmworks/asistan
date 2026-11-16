@@ -5,6 +5,8 @@ import {
   ArrowDown,
   ArrowUp,
   Bot as BotIcon,
+  Loader2,
+  Mic,
   ChevronDown,
   ChevronLeft,
   Clock,
@@ -52,7 +54,8 @@ import { copyText } from '@/lib/clipboard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useBotActivityById, useThreadActivity } from '@/lib/botActivity';
-import { useT } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
+import { useDictation } from '@/lib/dictation';
 import { newClientId, useFormat } from '@/lib/format';
 
 /** Mirrors the server's page of messages: a full page means there may be older ones. */
@@ -1158,6 +1161,13 @@ function Composer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
+  const locale = useLocale((s) => s.locale);
+  // Spoken text joins what is already typed, with a space between.
+  const dictation = useDictation({
+    locale,
+    onText: (spoken) => setText((now) => (now && !/\s$/.test(now) ? `${now} ${spoken}` : `${now}${spoken}`)),
+    onError: (message) => toast.error(t('chat.dictationFailed', { message })),
+  });
 
   // Typing `$` lists the bot's skills; the picked one is named in the message for the bot to read.
   const { data: allSkills = [] } = useSkills();
@@ -1581,6 +1591,36 @@ function Composer({
             placeholder={replyTo ? t('chat.replyPlaceholder') : t('chat.placeholder', { name: bot.name })}
             className="scroll-thin max-h-60 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-base outline-none sm:text-[15px] placeholder:text-muted-foreground"
           />
+          {dictation.supported && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant={dictation.state === 'recording' ? 'destructive' : 'ghost'}
+                  className={cn(
+                    'size-9 shrink-0 rounded-full',
+                    dictation.state !== 'recording' && 'text-muted-foreground',
+                  )}
+                  onClick={dictation.toggle}
+                  disabled={dictation.state === 'working'}
+                  aria-pressed={dictation.state === 'recording'}
+                  aria-label={t(dictation.state === 'recording' ? 'chat.dictationStop' : 'chat.dictation')}
+                >
+                  {dictation.state === 'working' ? (
+                    <Loader2 className="size-[18px] animate-spin" />
+                  ) : dictation.state === 'recording' ? (
+                    <Square className="size-3.5 fill-current" />
+                  ) : (
+                    <Mic className="size-[18px]" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t(dictation.state === 'recording' ? 'chat.dictationStop' : 'chat.dictation')}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {busy && !text.trim() && !attachments.items.length ? (
             <Button
               type="button"

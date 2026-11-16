@@ -25,6 +25,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Both are sealed like keys, refreshed when they run out, and signed out from the connection page. A saved API key for
   the same provider comes first.
 
+### Chat
+
+- A microphone button in the message box: speak instead of typing. With an OpenAI or Groq key saved, the recording is
+  written out by that provider (on the web and in the desktop app); without one, a browser with its own speech
+  recognition (Chrome, Safari) writes as you speak. The desktop app may use the microphone and nothing else of the
+  camera or screen; on macOS it asks first. On the phone, the keyboard's own dictation does the same.
+
 ### Bots
 
 - Each bot's settings have a Tools section: give it only the tools listed, or leave some out, named as approval cards

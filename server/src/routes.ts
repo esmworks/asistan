@@ -1,6 +1,7 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
+import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { Readable } from 'node:stream';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
@@ -35,6 +36,7 @@ import {
   PermissionRuleCreate,
   ProviderKeyInput,
   ProviderSignInStart,
+  LOCALES,
   quoteExcerpt,
   type ReplyQuote,
   RoutineCreate,
@@ -98,6 +100,7 @@ import { eq } from 'drizzle-orm';
 interface Deps {
   services: Services;
   backup: BackupService;
+  transcribe: TranscribeService;
   auth: Auth;
   config: Config;
   info(): ServerInfo;
@@ -806,6 +809,28 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   const threadDir = (bot: { id: string; groupId: string | null }, threadId: string) =>
     workspacePaths(d.config.dataDir, bot.id, threadId, bot.groupId).threadDir;
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+  // A recording from the message box's microphone button, as the browser made it.
+  app.addContentTypeParser(/^audio\//, (_req, payload, done) => done(null, payload));
+  app.get('/api/transcribe', async () => ({ available: await d.transcribe.available() }));
+  app.post('/api/transcribe', async (req) => {
+    if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req.body) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_AUDIO_BYTES) {
+        throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_AUDIO_BYTES / 1024 / 1024) });
+      }
+      chunks.push(chunk as Buffer);
+    }
+    const { lang } = z.object({ lang: z.enum(LOCALES).optional() }).parse(req.query);
+    const text = await d.transcribe.transcribe(
+      Buffer.concat(chunks),
+      String(req.headers['content-type'] ?? 'audio/webm'),
+      lang,
+    );
+    return { text };
+  });
   app.post('/api/threads/:id/files', async (req) => {
     const id = IdParams.parse(req.params).id;
     const { name } = z.object({ name: z.string().min(1).max(500) }).parse(req.query);
