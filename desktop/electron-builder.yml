@@ -4,8 +4,9 @@ productName: YumakBot
 copyright: Copyright (C) 2026 esmworks (Erhan Erbaş)
 directories:
   output: out
-# Where releases live. The release workflow uploads the installers itself (--publish never), but
-# electron-builder still writes update information for this target and stops without one.
+# Where releases live. The release workflow uploads the installers itself (--publish never), along
+# with the update information electron-builder writes for this target (latest*.yml, *.blockmap):
+# an installed app reads it from the latest published release to update itself.
 publish:
   provider: github
   owner: esmworks
@@ -27,7 +28,10 @@ mac:
   # and makes the .icns earlier macOS versions read from it.
   icon: assets/icon.icon
   category: public.app-category.productivity
-  target: dmg
+  target:
+    - dmg
+    # The zip is what an installed app downloads to update itself; macOS cannot update from a dmg.
+    - zip
   extendInfo:
     LSUIElement: false
   # Signed with the Developer ID in the keychain, or the one in CSC_LINK / CSC_KEY_PASSWORD on CI,

@@ -3,6 +3,9 @@ name: Release
 # Builds the desktop installers for a version tag and attaches them to that tag's GitHub release,
 # so people download the app instead of building it. A new tag gets a draft release, published by
 # hand once the notes are written; an existing release just gets its installers replaced.
+# Installed apps update themselves from the latest published release, through the latest*.yml
+# files and the zip (macOS) or installer (Windows) they name, so those are attached too; a draft
+# reaches no one until it is published.
 on:
   push:
     tags: ['v*']
@@ -40,9 +43,9 @@ jobs:
         include:
           # Xcode 26 compiles the Icon Composer icon; this image has it as the default.
           - os: macos-26
-            files: desktop/out/*.dmg
+            files: desktop/out/*.dmg desktop/out/*.zip desktop/out/*.blockmap desktop/out/latest-mac.yml
           - os: windows-latest
-            files: desktop/out/*.exe
+            files: desktop/out/*.exe desktop/out/*.blockmap desktop/out/latest.yml
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:

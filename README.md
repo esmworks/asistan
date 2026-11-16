@@ -116,6 +116,12 @@ repository secrets: `MAC_CERTIFICATE` (the Developer ID Application certificate 
 `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. The Windows installer is not
 signed yet, so Windows shows a SmartScreen warning before it runs.
 
+The installed app updates itself from the latest published release: it looks for a new version at start and every six
+hours, downloads it in the background and offers to restart into it; a version left waiting installs when the app
+quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, the macOS `.zip` and the
+`.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update only into a
+signed app. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
+
 ## Running on a server (Docker)
 
 ```bash
