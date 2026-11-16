@@ -838,6 +838,16 @@ export class RoutineService {
     return row?.name ?? null;
   }
 
+  /** The person opened the routine and saw its failed run: the bot's mark for it goes out. */
+  async failureSeen(id: string) {
+    await this.get(id);
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ failureSeenAt: this.clock() })
+      .where(eq(schema.routines.id, id));
+    this.ctx.bus.refresh({ scope: 'routines' });
+  }
+
   /** The bot says its run could not do the task; the run ends as failed with that reason. */
   async markFailed(runId: string, reason: string) {
     await this.ctx.db

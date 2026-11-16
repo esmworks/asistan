@@ -682,7 +682,8 @@ export class ThreadService {
         });
       }
     }
-    // Each enabled routine's latest finished run; a failed one marks its bot until a run succeeds.
+    // Each enabled routine's latest finished run; a failed one marks its bot until a run succeeds
+    // or the person opens the routine and sees it.
     const latestRuns = await this.ctx.db
       .selectDistinctOn([schema.routineRuns.routineId], {
         routineId: schema.routineRuns.routineId,
@@ -690,6 +691,8 @@ export class ThreadService {
         name: schema.routines.name,
         status: schema.routineRuns.status,
         startedAt: schema.routineRuns.startedAt,
+        finishedAt: schema.routineRuns.finishedAt,
+        seenAt: schema.routines.failureSeenAt,
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
@@ -697,8 +700,10 @@ export class ThreadService {
       .orderBy(schema.routineRuns.routineId, desc(schema.routineRuns.startedAt));
     // Newest failure first: that one names the bot's mark.
     const failedBy = new Map<string, { id: string; name: string }[]>();
+    const unseen = (r: (typeof latestRuns)[number]) =>
+      !r.seenAt || r.seenAt.getTime() < (r.finishedAt ?? r.startedAt).getTime();
     for (const r of latestRuns
-      .filter((r) => r.status === 'error')
+      .filter((r) => r.status === 'error' && unseen(r))
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())) {
       failedBy.set(r.botId, [...(failedBy.get(r.botId) ?? []), { id: r.routineId, name: r.name }]);
     }

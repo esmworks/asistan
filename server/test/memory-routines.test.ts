@@ -571,6 +571,30 @@ describe('rutinler', () => {
     });
   });
 
+  it('rutin açılıp görülen hata botu işaretlemez; sonraki yeni hata yine işaretler', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const r = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: a.id,
+        name: 'Telegram grubu',
+        prompt: '[hata]',
+        schedule: { type: 'interval', minutes: 5 },
+      })
+    ).body;
+    const failed = async () =>
+      (await t.api<BotSummary[]>('GET', '/api/summaries')).body.find((x) => x.botId === a.id)!.failedRoutine;
+    await t.api('POST', `/api/routines/${r.id}/run`);
+    await t.services.turns.idle();
+    expect(await failed()).toBe('Telegram grubu');
+    // Later runs a check skips leave no new result; seeing the failure is what clears the mark.
+    t.now.value = new Date(t.now.value.getTime() + 60_000);
+    expect((await t.api('POST', `/api/routines/${r.id}/failure-seen`)).status).toBe(200);
+    expect(await failed()).toBeNull();
+    await runAgain(r.id);
+    await t.services.turns.idle();
+    expect(await failed()).toBe('Telegram grubu');
+  });
+
   it('rutinin raporu ana sohbete düşer, bot orada sonraki mesajda onu bilir; sessiz çalışma bir şey yazmaz', async () => {
     const a = await t.bot({ name: 'Ali' });
     const main = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;

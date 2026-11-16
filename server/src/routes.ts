@@ -1023,6 +1023,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   // A script may start a routine and hand it some text: `{ "payload": "…" }`, or a text body.
+  app.post('/api/routines/:id/failure-seen', async (req) => {
+    await s.routines.failureSeen(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
   app.post('/api/routines/:id/run', async (req) => {
     const body = req.body;
     const payload =
