@@ -482,6 +482,7 @@ export const en: Catalog<MessageKey> = {
   'activity.tool.shell': 'Running a command',
   'activity.tool.files': 'Looking through files',
   'activity.tool.image': 'Creating a picture',
+  'activity.tool.pageImage': 'Turning a page into a picture',
   'activity.tool.write': 'Writing a file',
   'activity.tool.web': 'Searching the web',
   'activity.tool.agent': 'A helper agent is working',

@@ -412,7 +412,7 @@ const tr = {
   'tool.pageShown': '{name} sohbette gösterildi.',
   'tool.pageShownMain': '{name} kullanıcıyla olan sohbetinde gösterildi; bu botlar arası konuşmada görünmez.',
   'tool.image_create':
-    'Yazılı bir tariften resim oluştur (fotoğraf, çizim, logo, illüstrasyon) ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. prompt: resmin ayrıntılı tarifi (konu, üslup, renkler, kompozisyon; resimde yazı olacaksa tam metni tırnak içinde), shape: square, landscape ya da portrait, caption: isteğe bağlı kısa not. Her resim kullanıcının API hesabından ücretlendirilir: istenmeyen ya da gereksiz resim yapma. Grafik ve şema için bunun yerine HTML sayfası ya da Mermaid kullan.',
+    'Yazılı bir tariften resim oluştur (fotoğraf, çizim, logo, illüstrasyon) ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. prompt: resmin ayrıntılı tarifi (konu, üslup, renkler, kompozisyon; resimde yazı olacaksa tam metni tırnak içinde), shape: square, landscape ya da portrait, caption: isteğe bağlı kısa not. Her resim kullanıcının API hesabından ücretlendirilir: istenmeyen ya da gereksiz resim yapma. Yazılı tasarımlar (afiş, kapak, sosyal medya kartı) için page_to_image, grafik ve şema için HTML sayfası ya da Mermaid kullan.',
   'tool.imageCreated':
     'Resim oluşturuldu ({provider}) ve kullanıcıya gönderildi: {name}. Sohbette resim olarak görünüyor. Dosya: {path}',
   'tool.imageCreatedMain':
@@ -424,6 +424,12 @@ const tr = {
   'tool.imageFailed.tooLarge': '{provider} çok büyük bir dosya döndürdü; kaydedilmedi.',
   'tool.imageLimit': 'Bir turda en çok {max} resim oluşturulabilir; bu turda daha fazlası yapılmaz.',
   'tool.imageFileBase': 'resim',
+  'tool.page_to_image':
+    "Yaptığın bir HTML sayfasını istenen boyutta PNG resme çevir ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. Afiş, kapak görseli, sosyal medya kartı, davetiye, logo yazısı gibi yazı ve düzen içeren tasarımlar için image_create yerine bunu kullan: yazılar kusursuz çıkar ve ücretsizdir. Önce sayfayı tam o boyutta tasarla (body'nin genişliğini ve yüksekliğini ver, kenar boşluğunu sıfırla). path: .html dosyası ya da index.html'li klasör, width ve height: piksel (en çok 4096; height verilmezse sayfanın boyu), scale: daha keskin resim için 2, caption: isteğe bağlı kısa not. Resim kullanacaksan (image_create ile yaptığın ya da kayıtlı bir PNG) dosyayı sayfanın klasörüne koy ve img ya da CSS url() ile göreli yoluyla ver; internetten resim yüklenmez. Kitaplıklar ve Google Fonts yazı tipleri sohbetteki gibi yüklenir; başka adreslere ulaşılmaz.",
+  'tool.pageImageSent':
+    'Sayfa resme çevrildi ve kullanıcıya gönderildi: {name}. Sohbette resim olarak görünüyor. Dosya: {path}',
+  'tool.pageImageSentMain':
+    'Sayfa resme çevrildi: {name}. Bu konuşma botlar arasında; resim senin kullanıcıyla olan sohbetine kondu, karşıdaki bot görmez. Dosya: {path}',
   'tool.send_file':
     'Klasörlerindeki dosyaları kullanıcıya gönder; sohbette indirilebilir kart olarak görünür (resimler resim olarak). paths: dosya yolları (göreli yollar çalışma klasörüne göre), caption: isteğe bağlı kısa açıklama.',
   'tool.browser_open':
@@ -1204,6 +1210,12 @@ const en: Catalog<ServerKey> = {
   'tool.imageFailed.tooLarge': '{provider} returned a file too large to keep; it was not saved.',
   'tool.imageLimit': 'At most {max} pictures can be created in one turn; no more in this one.',
   'tool.imageFileBase': 'image',
+  'tool.page_to_image':
+    'Turn an HTML page you made into a PNG picture of the size asked for and send it to the user as a picture; do not call send_file as well. For designs with text and layout (a banner, a cover, a social card, an invitation, a wordmark) use this instead of image_create: the text comes out exact and it costs nothing. Design the page at exactly that size first (give the body its width and height, zero margins). path: an .html file or a folder with index.html, width and height: pixels (at most 4096; without height, the height of the page), scale: 2 for a sharper picture, caption: an optional short note. To use a picture (one made with image_create, or a saved PNG), put the file in the folder of the page and give its relative path in an img or a CSS url(); pictures from the internet do not load. Libraries and Google Fonts load as in the chat; no other address is reached.',
+  'tool.pageImageSent':
+    'The page was turned into a picture and sent to the user: {name}. It shows in the conversation as a picture. File: {path}',
+  'tool.pageImageSentMain':
+    'The page was turned into a picture: {name}. This conversation is between bots; the picture went to your conversation with the user, and the other bot does not see it. File: {path}',
   'tool.send_file':
     'Send files from your folders to the user; they show in the conversation as download cards (images as pictures). paths: file paths (relative ones are from your working folder), caption: an optional short note.',
   'tool.browser_open':
