@@ -621,7 +621,10 @@ const tr = {
   'tool.memorySaved': 'Kaydedildi ({id}).',
   'tool.memoryUpdated': 'Güncellendi.',
   'tool.memoryNotYours': 'Bu kayıt başka bir botun kendi notu; ona dokunamazsın.',
+  'tool.memoryManager':
+    'Yöneticisin: yönetici olmayan botların (arşivdekiler dahil) kendi notlarını da görür, düzeltir ve silersin. memory_search içinde bot (ad ya da kimlik) verirsen yalnızca o botun notlarını listeler. Başka bir yöneticinin notlarına dokunamazsın. Unutma: bir botun notunu yalnızca o bot görür; senin notlarını ve diğer botlarınkini göremez, herkesin gördüğü tek yer ortak (kullanıcı) hafızadır. Bu yüzden aynı bilgi birkaç botta ayrı ayrı durabilir ve durmalıdır. Bir botun notunu, aynı bilgi sende, başka bir botta ya da Leafdesk gibi o botun okumadığı bir yerde var diye silme: sildiğin bilgi o bota bir daha ulaşmaz. Başka bir botun notunu yalnızca o bot için yanlış ya da eskimişse veya o botun kendi notları arasında tekrarlanıyorsa düzelt ya da sil. Bütün botların bilmesi gereken bir bilgiyi tek yerde toplamak istersen önce memory_write ile scope "user" olarak ortak hafızaya yaz, sonra botlardaki kopyaları sil.',
   'tool.deleted': 'Silindi.',
+  'tool.memoryForgotOther': '{bot} botunun notu silindi. {bot} bu bilgiyi artık hiçbir yerden göremez.',
   'tool.noPeers': 'Yazabileceğin bot yok.',
   'tool.sent': '{to} adlı bota gönderildi (iş {id}). Cevap gelince sana iletilecek.',
   'tool.notified': '{to} adlı bota bildirildi (iş {id}). Cevap beklenmiyor.',
@@ -1292,7 +1295,10 @@ const en: Catalog<ServerKey> = {
   'tool.memorySaved': 'Saved ({id}).',
   'tool.memoryUpdated': 'Updated.',
   'tool.memoryNotYours': "That entry is another bot's own note; you cannot touch it.",
+  'tool.memoryManager':
+    "You are a manager: you also see, correct and delete the own notes of bots that are not managers, archived ones included. Give bot (a name or an id) in memory_search to list that bot's notes alone. You cannot touch another manager's notes. Keep in mind: a bot's note is seen by that bot alone; it sees neither your notes nor another bot's, and the shared (user) memory is the only place every bot sees. So the same fact may, and should, sit in several bots' notes separately. Never delete a bot's note because the same fact is in your notes, in another bot's or somewhere that bot does not read, such as Leafdesk: what you delete never reaches that bot again. Correct or delete another bot's note only when it is wrong or outdated for that bot, or repeated among that bot's own notes. To keep a fact every bot needs in one place, first write it to the shared memory with memory_write and scope \"user\", then delete the copies in the bots.",
   'tool.deleted': 'Deleted.',
+  'tool.memoryForgotOther': "{bot}'s note is deleted. {bot} can no longer see this from anywhere.",
   'tool.noPeers': 'There are no bots you can write to.',
   'tool.sent': 'Sent to {to} (job {id}). The reply will be passed to you when it arrives.',
   'tool.notified': 'Told {to} (job {id}). No reply is expected.',

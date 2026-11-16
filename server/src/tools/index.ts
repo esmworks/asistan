@@ -10,6 +10,7 @@ import {
   searchCatalog,
   skillSlug,
   type Bot,
+  type Memory,
   type PermissionMode,
   type Routine,
   type Skill,
@@ -42,6 +43,7 @@ const Choice = z.union([
 const choiceLabel = (c: z.infer<typeof Choice>) => (typeof c === 'string' ? c : c.label);
 
 const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_update', 'memory_forget']);
+const MANAGER_MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_update', 'memory_forget']);
 
 const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
 
@@ -257,6 +259,15 @@ export class ToolFactory {
         });
       }
       return t('tool.routineNotFound', { name: ref, names: routines.map(label).join(', ') || '-' });
+    };
+    /**
+     * The bots whose own notes this bot may read and change, by id with their names: itself, and for
+     * a manager every bot that is not a manager, archived ones too so their notes can be cleared.
+     */
+    const memoryOwners = async (): Promise<Map<string, string>> => {
+      if (!bot.isManager) return new Map([[bot.id, bot.name]]);
+      const all = await s.bots.list({ includeArchived: true });
+      return new Map(all.filter((b) => b.id === bot.id || !b.isManager).map((b) => [b.id, b.name]));
     };
     const tools: AppTool[] = [
       def(
@@ -653,15 +664,26 @@ export class ToolFactory {
       ),
       def(
         'memory_search',
-        { query: z.string().optional() },
-        async ({ query }) => {
-          const found = await s.memory.search(bot.id, query?.trim() || undefined);
+        { query: z.string().optional(), bot: z.string().optional() },
+        async ({ query, bot: botRef }) => {
+          const owners = await memoryOwners();
+          let ids = [...owners.keys()];
+          if (botRef?.trim()) {
+            const ref = botRef.trim();
+            ids = ids.filter((id) => id === ref || owners.get(id)!.toLowerCase() === ref.toLowerCase());
+            if (!ids.length) return t('tool.memoryNotYours');
+          }
+          // Narrowed to one bot, the list is that bot's notes alone.
+          const found = await s.memory.search(ids, query?.trim() || undefined, !botRef?.trim());
           if (!found.length) return t('tool.notFound');
+          const whose = (m: Memory) =>
+            m.scope === 'user'
+              ? t('tool.scopeUser')
+              : m.botId === bot.id
+                ? t('tool.scopeBot')
+                : owners.get(m.botId!);
           return found
-            .map(
-              (m) =>
-                `- [${m.id}] (${t(m.scope === 'user' ? 'tool.scopeUser' : 'tool.scopeBot')}${m.site ? ` · ${m.site}` : ''}) ${m.content}`,
-            )
+            .map((m) => `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}`)
             .join('\n');
         },
         'read',
@@ -700,7 +722,7 @@ export class ToolFactory {
         { id: z.string(), content: z.string().trim().min(1).max(2000) },
         async ({ id, content }) => {
           const m = await s.memory.get(id);
-          if (!s.memory.canEdit(m, bot.id)) return t('tool.memoryNotYours');
+          if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
           await s.memory.update(id, { content }, `bot:${bot.id}`);
           return t('tool.memoryUpdated');
         },
@@ -711,9 +733,13 @@ export class ToolFactory {
         { id: z.string() },
         async ({ id }) => {
           const m = await s.memory.get(id);
-          if (!s.memory.canEdit(m, bot.id)) return t('tool.memoryNotYours');
+          const owners = await memoryOwners();
+          if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
           await s.memory.remove(id, `bot:${bot.id}`);
-          return t('tool.deleted');
+          // A manager deleting another bot's note is told what that bot loses.
+          return m.botId && m.botId !== bot.id
+            ? t('tool.memoryForgotOther', { bot: owners.get(m.botId)! })
+            : t('tool.deleted');
         },
         'internal',
       ),
@@ -898,7 +924,13 @@ export class ToolFactory {
       // folder is; the desktop does not see it.
       tools.push(...(bot.projectDir ? desk.filter((x) => x.name !== 'run_command') : desk));
     }
-    if (bot.isManager) tools.push(...this.managerTools(bot, signal, t, unattended));
+    if (bot.isManager) {
+      tools.push(...this.managerTools(bot, signal, t, unattended));
+      // A manager also reads and tidies the other bots' own notes.
+      for (const x of tools) {
+        if (MANAGER_MEMORY_TOOLS.has(x.name)) x.description = `${x.description} ${t('tool.memoryManager')}`;
+      }
+    }
     // With memory off the bot can neither read nor write it.
     return bot.memory ? tools : tools.filter((x) => !MEMORY_TOOLS.has(x.name));
   }
