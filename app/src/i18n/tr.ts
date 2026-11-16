@@ -402,6 +402,7 @@ export const tr = {
   // Messages
   'message.routine': 'Rutin',
   'message.routineNamed': 'Rutin: {name}',
+  'message.openRoutineRun': 'Rutinin çalışma adımlarını aç',
   'message.partial': 'Yarıda kaldı',
   'message.download': '{name} dosyasını indir',
   'preview.open': '{name} dosyasını aç',
@@ -638,7 +639,7 @@ export const tr = {
   'routine.cronInvalid': 'Beş alanlı bir cron ifadesi değil',
   'routine.inMain': 'Ana sohbette çalıştır',
   'routine.inMainHint':
-    'Bot orada konuştuklarınızı bilerek çalışır ve raporunu rutinin kendi sohbeti yerine sizin yazıştığınız yere yazar.',
+    'Bot ana sohbette, orada konuştuklarınızı bilerek çalışır; adımları da orada görünür. Kapalıyken rutin kendi sohbetinde çalışır, ana sohbete yalnız raporu düşer.',
   'routine.onStartup': 'Sunucu açılınca da çalıştır',
   'routine.onStartupHint':
     'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Yumak Bot’u başlattığınızda.',

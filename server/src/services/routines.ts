@@ -15,11 +15,11 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, notExists,
 import type { z } from 'zod';
 import type { Ctx } from '../context';
 import type { T } from '../i18n';
-import { SILENT_REPLY } from '../engine/types';
+import { isSilentReply, SILENT_REPLY } from '../engine/types';
 import { schema } from '../db';
 import type { Engine, GateRequest, GateVerdict, TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
-import { cutAt, HttpError, isUniqueViolation, newId, notFound } from '../util';
+import { cutAt, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
 import { fetchPublicText } from './skill-link';
 import type { Services } from '.';
@@ -510,13 +510,18 @@ export class RoutineService {
       .update(schema.routines)
       .set({ lastRunAt: this.clock() })
       .where(eq(schema.routines.id, routine.id));
+    const text = payload.trim()
+      ? cutAt(payload.trim(), POST_MAX)
+      : t('routine.postEmpty', { name: routine.name });
+    const props = { routineRunId: run.id, routineName: routine.name, posted: true };
     await this.services.threads.addMessage({
       threadId: thread.id,
       role: 'assistant',
       author: `bot:${bot.id}`,
-      text: payload.trim() ? cutAt(payload.trim(), POST_MAX) : t('routine.postEmpty', { name: routine.name }),
-      props: { routineRunId: run.id, routineName: routine.name, posted: true },
+      text,
+      props,
     });
+    if (thread.kind === 'routine') await this.report(bot.id, thread.id, text, props);
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRun(run);
   }
@@ -530,16 +535,42 @@ export class RoutineService {
     return this.fire(routine, `manual:${this.clock().toISOString()}`, payload);
   }
 
-  /** Where a routine's runs write: the bot's main conversation, or the routine's own, reused. */
+  /**
+   * Where a routine's runs work: the bot's main conversation, or the routine's own, reused. A run
+   * made while the routine ran in the main conversation does not make that one its own.
+   */
   private async threadFor(routine: Routine, botId: string) {
     if (routine.inMain) return this.services.threads.row((await this.services.threads.main(botId)).id);
     const [last] = await this.ctx.db
       .select({ threadId: schema.routineRuns.threadId })
       .from(schema.routineRuns)
-      .where(and(eq(schema.routineRuns.routineId, routine.id), isNotNull(schema.routineRuns.threadId)))
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.routineRuns.threadId))
+      .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.threads.kind, 'routine')))
       .orderBy(desc(schema.routineRuns.startedAt))
       .limit(1);
     return this.services.threads.routineThread(botId, routine.name, last?.threadId ?? null);
+  }
+
+  /**
+   * What a run wrote in the routine's own conversation reaches the bot's main one: the person reads
+   * every report in one place, and the bot knows of it when they talk there next. The run's steps
+   * stay in the routine's conversation, a click away.
+   */
+  private async report(
+    botId: string,
+    routineThreadId: string,
+    text: string,
+    props: { routineRunId: string; routineName: string; posted?: boolean },
+  ) {
+    const main = await this.services.threads.main(botId);
+    await this.services.threads.addMessage({
+      threadId: main.id,
+      role: 'assistant',
+      author: `bot:${botId}`,
+      text,
+      props: { ...props, routineReport: true, routineThreadId },
+    });
+    this.ctx.bus.notice({ kind: 'reply', botId, threadId: main.id, text: truncate(text.trim(), 200) });
   }
 
   /**
@@ -819,9 +850,23 @@ export class RoutineService {
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.routineRunId) return;
     const [run] = await this.ctx.db
-      .select({ failedByBot: schema.routineRuns.failedByBot })
+      .select({ failedByBot: schema.routineRuns.failedByBot, routineName: schema.routines.name })
       .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
       .where(eq(schema.routineRuns.id, turn.routineRunId));
+    const thread = await this.services.threads.row(turn.threadId).catch(() => null);
+    if (
+      run &&
+      thread?.kind === 'routine' &&
+      outcome.ok &&
+      outcome.text.trim() &&
+      !isSilentReply(outcome.text)
+    ) {
+      await this.report(turn.botId, thread.id, outcome.text, {
+        routineRunId: turn.routineRunId,
+        routineName: run.routineName,
+      });
+    }
     await this.ctx.db
       .update(schema.routineRuns)
       .set(

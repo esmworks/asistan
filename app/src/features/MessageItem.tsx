@@ -146,6 +146,7 @@ export function MessageItem({
       return (
         // The actions sit right under the message; the row's own height takes most of the gap to the next one.
         <div className="group/message -mb-2 flex flex-col" data-message-id={m.id}>
+          {m.props.routineReport === true && <RoutineReportLine m={m} />}
           {page ? (
             <BotPage
               botId={botId ?? ''}
@@ -979,6 +980,31 @@ function IncomingBot({ m, bot }: { m: Message; bot: Bot }) {
   );
 }
 
+/** Over a routine's report in the main conversation: which routine wrote it, opening the run's steps. */
+function RoutineReportLine({ m }: { m: Message }) {
+  const t = useT();
+  const name = typeof m.props.routineName === 'string' ? m.props.routineName : '';
+  const run = typeof m.props.routineThreadId === 'string' ? m.props.routineThreadId : null;
+  const label = name ? t('message.routineNamed', { name }) : t('message.routine');
+  const inner = (
+    <>
+      <Clock className="size-3.5" /> {label}
+    </>
+  );
+  if (!run)
+    return <span className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">{inner}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => useUi.getState().selectThread(run)}
+      title={t('message.openRoutineRun')}
+      className="mb-1 flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+    >
+      {inner}
+    </button>
+  );
+}
+
 /** Where a conversation the bot opened came from, with the way back to it. */
 function OpenedFrom({ threadId }: { threadId: string }) {
   const t = useT();
@@ -1017,13 +1043,16 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
     : 0;
   // Opens by itself for a waiting card, until the person closes it.
   const open = chosen ?? waiting > 0;
+  // Once read, the exchange counts itself: markers written before it was cut to one request
+  // counted the pair's whole history.
+  const said = job.data?.messages.filter((x) => x.role === 'user' || x.role === 'assistant').length;
   return (
     <div className="flex flex-col items-center">
       <button
         onClick={() => setChosen(!open)}
         className="flex items-center gap-2 rounded-full px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <span>{t('message.count', { count: props.count ?? 1 })}</span>
+        <span>{t('message.count', { count: said || props.count || 1 })}</span>
         <span>·</span>
         {peer && <BotAvatar avatar={peer.avatar} color={peer.color} seed={peer.id} size={18} />}
         <span className="font-medium">{peer?.name ?? t('common.bot')}</span>

@@ -415,6 +415,7 @@ export const en: Catalog<MessageKey> = {
 
   'message.routine': 'Routine',
   'message.routineNamed': 'Routine: {name}',
+  'message.openRoutineRun': 'Open the routine’s steps',
   'message.partial': 'Cut short',
   'message.download': 'Download {name}',
   'preview.open': 'Open {name}',
@@ -649,7 +650,7 @@ export const en: Catalog<MessageKey> = {
   'routine.cronInvalid': 'Not a five-field cron expression',
   'routine.inMain': 'Run in the main conversation',
   'routine.inMainHint':
-    'The bot works with what you talked about there and writes its report where you chat, instead of in a conversation of the routine’s own.',
+    'The bot works in the main conversation, with what you talked about there, and its steps show there too. When off, the routine works in a conversation of its own and only its report lands in the main one.',
   'routine.onStartup': 'Also run when the server starts',
   'routine.onStartupHint':
     'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',

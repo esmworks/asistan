@@ -860,8 +860,9 @@ export class TurnManager {
     const asked = tagged.length
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
-    // Webhook posts land in the conversation without a turn, so a live session never saw them; the
-    // ones since the bot last ran here come with this message. A handoff carries them already.
+    // Webhook posts and routine reports land in the conversation without a turn, so a live session
+    // never saw them; the ones since the bot last ran here come with this message. A handoff
+    // carries them already.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
         .select({ createdAt: schema.turns.createdAt })
@@ -872,7 +873,11 @@ export class TurnManager {
       const posts = (await threads.messages(thread.id, { limit: 50 }))
         .filter((m) => {
           const at = new Date(m.createdAt);
-          return m.props.posted && at <= turn.createdAt && (!before || at > before.createdAt);
+          return (
+            (m.props.posted || m.props.routineReport) &&
+            at <= turn.createdAt &&
+            (!before || at > before.createdAt)
+          );
         })
         .slice(-5);
       if (!posts.length) return prompt;
@@ -1140,7 +1145,8 @@ export class TurnManager {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);
     }
-    // Bot-to-bot exchanges run on their own; the person hears of the ones that reach them.
+    // Bot-to-bot exchanges run on their own; the person hears of the ones that reach them. A
+    // routine's report is heard from the main conversation it is copied to.
     const heard = kind !== 'bot';
     if (outcome.text.trim() && !isSilentReply(outcome.text)) {
       await threads.addMessage({
@@ -1151,7 +1157,7 @@ export class TurnManager {
         turnId: turn.id,
         props: outcome.ok ? {} : { partial: true },
       });
-      if (heard && outcome.ok) {
+      if (heard && outcome.ok && kind !== 'routine') {
         this.ctx.bus.notice({
           kind: 'reply',
           botId: turn.botId,

@@ -789,11 +789,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     stopped: await s.rooms.stop(IdParams.parse(req.params).id),
   }));
 
-  // Bot-to-bot conversation behind a marker line.
+  // Bot-to-bot exchange behind a marker line: that one request, not the pair's whole history.
   app.get('/api/jobs/:id', async (req) => {
     const job = await s.jobs.get(IdParams.parse(req.params).id);
-    const messages = await s.threads.messages(job.toThreadId);
-    return { job, messages };
+    return { job, messages: await s.jobs.exchange(job) };
   });
   app.get('/api/bots/:id/conversations', async (req) => {
     const id = IdParams.parse(req.params).id;
