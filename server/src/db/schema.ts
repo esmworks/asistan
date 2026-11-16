@@ -243,6 +243,12 @@ export const memories = pgTable(
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
     source: text('source').notNull().default('user'),
+    /**
+     * When a bot last looked the note up: a search that found it, or the site it is about opened.
+     * Being in the prompt does not count, or every note there would stay in use for good.
+     */
+    lastUsedAt: ts('last_used_at'),
+    useCount: integer('use_count').notNull().default(0),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

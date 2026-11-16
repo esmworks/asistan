@@ -221,6 +221,8 @@ export const tr = {
   'today.runs': 'Rutinler',
   'today.runsNone': 'Bugün hiçbir rutin çalışmadı.',
   'today.failed': '{count} hata',
+  'today.staleMemory': 'Hiçbir botun kullanmadığı {count} hafıza notu',
+  'today.staleMemoryReview': 'Gözden geçir',
   'sidebarMenu.clearThreads': 'Diğer sohbetleri sil…',
   'sidebarMenu.clearThreadsConfirm':
     '{name} botunun ana sohbet dışındaki bütün sohbetleri dosyalarıyla silinsin mi? Geri alınamaz.',
@@ -894,6 +896,13 @@ export const tr = {
   'memory.noteCount': '{count} not',
   'memory.deleteAll': 'Hepsini sil',
   'memory.deleteAllConfirm': '{name} botunun {count} notunun hepsi silinsin mi? Geri alınamaz.',
+  'memory.stale': 'Hiçbir botun kullanmadığı notlar',
+  'memory.staleHint':
+    '{days} gündür bunları kimse değiştirmedi, hiçbir bot da bakmadı; her turda okuyan bir bot da yok. Artık gerekmeyenleri silin; kalanlar durur, botlar onları aramayla yine bulur.',
+  'memory.staleShared': 'Sizin hakkınızda',
+  'memory.lastUsed': 'en son {when} bakıldı',
+  'memory.neverUsed': 'hiç bakılmadı, son değişiklik {when}',
+  'memory.staleDeleteAllConfirm': 'Hiçbir botun kullanmadığı {count} notun hepsi silinsin mi? Geri alınamaz.',
 
   'routines.empty': 'Rutin yok. Bir botun sağ panelinden ekleyebilirsiniz.',
   'routines.lastRun': 'son {when}',

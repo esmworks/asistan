@@ -111,6 +111,8 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   site: r.site,
   status: 'active',
   source: r.source,
+  lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
+  useCount: r.useCount,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });

@@ -735,7 +735,11 @@ export class ToolFactory {
           const clean = redactSecrets(content, t('memory.redacted'));
           const note = { scope, botId: scope === 'bot' ? bot.id : null, content: clean.text, site: host };
           const same = await s.memory.findSame(note);
-          if (same) return t('tool.memoryAlreadySaved', { id: same.id });
+          if (same) {
+            // The fact came up again: the note is in use, though no new one is written.
+            await s.memory.markUsed([same.id]);
+            return t('tool.memoryAlreadySaved', { id: same.id });
+          }
           const m = await s.memory.create({ ...note, source: `bot:${bot.id}` });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`

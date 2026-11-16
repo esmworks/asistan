@@ -74,4 +74,15 @@ describe('hafıza bütçesi', () => {
     expect(r.bot.map((x) => x.content[0])).toEqual(['c']);
     expect(r.left).toBe(1);
   });
+
+  it('eski ama yakında aranıp bulunan ya da düzeltilen not, kimsenin bakmadığı yeni notun önüne geçer', () => {
+    const day = (d: number) => `2026-11-${String(d).padStart(2, '0')}T00:00:00.000Z`;
+    const looked = { content: 'a'.repeat(10), createdAt: day(1), updatedAt: day(1), lastUsedAt: day(15) };
+    const edited = { content: 'b'.repeat(10), createdAt: day(2), updatedAt: day(14), lastUsedAt: null };
+    const fresh = { content: 'c'.repeat(10), createdAt: day(10), updatedAt: day(10), lastUsedAt: null };
+    const r = withinBudget([looked, fresh], [edited], 27);
+    expect(r.user).toEqual([looked]);
+    expect(r.bot).toEqual([edited]);
+    expect(r.left).toBe(1);
+  });
 });

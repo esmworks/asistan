@@ -1,4 +1,4 @@
-import { botNoteGroups, type BotNoteGroup, type Memory } from '@yumakbot/shared';
+import { botNoteGroups, STALE_MEMORY_DAYS, type BotNoteGroup, type Memory } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -7,10 +7,13 @@ import { confirm, toast, toastError } from '@/components/overlay';
 import { IconButton, PillButton, Row, Section } from '@/components/page';
 import { Field } from '@/components/ui';
 import { Hint, Pad, Rows } from './common/controls';
-import { t } from '@/i18n';
-import { useBots, useMemory } from '@/lib/queries';
+import { locale, t } from '@/i18n';
+import { formatters } from '@/lib/format';
+import { useBots, useMemory, useStaleMemory } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
+
+const fmt = formatters(locale, t);
 
 /** The "memory" settings section's content, under the section's own title bar. */
 export function MemorySection() {
@@ -69,8 +72,30 @@ export function MemorySection() {
     },
     onError: toastError,
   });
+  const { data: stale = [] } = useStaleMemory();
+  const clearStale = useMutation({
+    mutationFn: () => api.removeStaleMemory(stale.map((m) => m.id)),
+    onSuccess: refresh,
+    onError: toastError,
+  });
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
+  const botName = (id: string | null) =>
+    [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
+  const staleDetail = (m: Memory) =>
+    `${m.scope === 'user' ? t('memory.staleShared') : botName(m.botId)} · ${
+      m.lastUsedAt
+        ? t('memory.lastUsed', { when: fmt.dayLabel(m.lastUsedAt) })
+        : t('memory.neverUsed', { when: fmt.dayLabel(m.updatedAt) })
+    }`;
+  const clearAllStale = async () => {
+    const ok = await confirm({
+      title: t('memory.staleDeleteAllConfirm', { count: stale.length }),
+      destructive: true,
+      confirmLabel: t('common.delete'),
+    });
+    if (ok) clearStale.mutate();
+  };
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
   const clear = async (g: BotNoteGroup) => {
     const ok = await confirm({
@@ -106,6 +131,21 @@ export function MemorySection() {
           disabled={!text.trim()}
         />
       </View>
+      {stale.length > 0 ? (
+        <Section title={t('memory.stale')}>
+          <Rows>
+            <Pad>
+              <Hint>{t('memory.staleHint', { days: STALE_MEMORY_DAYS })}</Hint>
+            </Pad>
+            {stale.map((m) => (
+              <Row key={m.id} label={label(m)} detail={staleDetail(m)} right={trash(m)} />
+            ))}
+            {stale.length > 1 ? (
+              <Row label={t('memory.deleteAll')} destructive onPress={() => void clearAllStale()} />
+            ) : null}
+          </Rows>
+        </Section>
+      ) : null}
       <Section title={t('memory.user')}>
         <Rows>
           {user.length === 0 ? (

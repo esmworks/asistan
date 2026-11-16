@@ -397,6 +397,8 @@ export function apiFor(origin: string) {
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
     /** Deletes every note the bot keeps for itself. */
     removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),
+    staleMemory: () => http.get<Memory[]>('/api/memory-stale'),
+    removeStaleMemory: (ids: string[]) => http.post<{ count: number }>('/api/memory-stale/delete', { ids }),
 
     routines: () => http.get<Routine[]>('/api/routines'),
     createRoutine: (r: unknown) => http.post<Routine>('/api/routines', r),
