@@ -28,6 +28,7 @@ import {
   Link2,
   Loader2,
   LogOut,
+  MessageCircle,
   Plus,
   RefreshCw,
   Shield,
@@ -88,6 +89,7 @@ import { ruleLabel } from '@/lib/ruleLabel';
 import { settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
+import { ChannelsTab } from './ChannelsTab';
 import { ImportTab } from './ImportTab';
 import { ProfileTab } from './ProfileTab';
 import { SkillsTab } from './SkillsTab';
@@ -111,6 +113,7 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'profile', icon: <UserRound /> },
   { id: 'general', icon: <SlidersHorizontal /> },
   { id: 'connection', icon: <Link2 /> },
+  { id: 'channels', icon: <MessageCircle /> },
   { id: 'permissions', icon: <Shield /> },
   { id: 'vault', icon: <KeyRound /> },
   { id: 'memory', icon: <Brain /> },
@@ -267,6 +270,7 @@ export function SettingsDialog() {
               {current.id === 'profile' && <ProfileTab />}
               {current.id === 'general' && <General />}
               {current.id === 'connection' && <Connection />}
+              {current.id === 'channels' && <ChannelsTab />}
               {current.id === 'permissions' && <Permissions />}
               {current.id === 'vault' && <VaultTab />}
               {current.id === 'memory' && <MemoryTab />}

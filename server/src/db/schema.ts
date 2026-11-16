@@ -299,6 +299,12 @@ export const routines = pgTable('routines', {
   watchUrl: text('watch_url'),
   /** The fingerprint of the watched page's text when it was last read. */
   watchHash: text('watch_hash'),
+  /** The watched page's text when it was last read, cut short, so a change can be shown as what changed. */
+  watchText: text('watch_text'),
+  /** A connected app's read-only tool called before each scheduled run (`RoutineCheck`); null for none. */
+  check: jsonb('check'),
+  /** The fingerprint of the check's answer when it was last called. */
+  checkHash: text('check_hash'),
   /** Conditions a webhook call's JSON body must meet to start the routine; empty for none. */
   webhookFilter: text('webhook_filter').notNull().default(''),
   /** A webhook call only posts what it carries, as the bot's message, without running the bot. */
@@ -321,6 +327,11 @@ export const routineRuns = pgTable(
     promptSnapshot: text('prompt_snapshot').notNull(),
     /** The bot itself said the run could not do its task. */
     failedByBot: boolean('failed_by_bot').notNull().default(false),
+    /** What the routine pre-check said before the run; null when none ran. */
+    gateDecision: text('gate_decision', { enum: ['run', 'skip'] }),
+    gateReason: text('gate_reason'),
+    /** What the pre-check cost, as the engine reported it. */
+    gateCostUsd: real('gate_cost_usd'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },
@@ -518,3 +529,67 @@ export const botSkills = pgTable(
   },
   (t) => [uniqueIndex('bot_skills_uq').on(t.botId, t.skillId)],
 );
+
+/**
+ * A chat app the person talks to bots through. Telegram: one row per bot, with that bot's own
+ * Telegram bot (its token sealed with the vault key) and the one Telegram account paired with it.
+ * WhatsApp: a single row for the linked number; `botId` is the bot its messages go to now.
+ */
+export const channels = pgTable(
+  'channels',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: ['telegram', 'whatsapp'] }).notNull(),
+    botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    /** Telegram: the bot token, sealed. */
+    secret: text('secret'),
+    /** What the chat app says about the account the server uses (Telegram bot name, linked number). */
+    account: jsonb('account').$type<Record<string, unknown>>().notNull().default({}),
+    /** The person's id in the chat app; nobody else's messages are read. Null until paired. */
+    owner: text('owner'),
+    ownerName: text('owner_name'),
+    /** Telegram: the code the person sends with /start to pair; good until `pairUntil`. */
+    pairCode: text('pair_code'),
+    pairUntil: ts('pair_until'),
+    /** Choices of the person (WhatsApp: own number or a separate bot number). */
+    settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+    /** Telegram: the next update to read. */
+    cursor: text('cursor'),
+    /** Why the connection stopped working, in the chat app's words; null while it works. */
+    error: text('error'),
+    createdAt: created(),
+  },
+  (t) => [
+    uniqueIndex('channels_telegram_bot_uq')
+      .on(t.botId)
+      .where(sql`${t.kind} = 'telegram'`),
+    uniqueIndex('channels_whatsapp_uq')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'whatsapp'`),
+  ],
+);
+
+/** Which message in a chat app is which message here, so an answer to one finds its place. */
+export const channelMessages = pgTable(
+  'channel_messages',
+  {
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => channels.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    createdAt: created(),
+  },
+  (t) => [
+    uniqueIndex('channel_messages_uq').on(t.channelId, t.externalId),
+    index('channel_messages_message_idx').on(t.messageId),
+  ],
+);
+
+/** The linked WhatsApp device's keys, each sealed with the vault key. */
+export const whatsappKeys = pgTable('whatsapp_keys', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});

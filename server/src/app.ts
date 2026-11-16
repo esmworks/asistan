@@ -39,6 +39,7 @@ import { registerRoutes, WEBHOOK_PATH } from './routes';
 import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
+import { BackupService } from './services/backup';
 import { probeShellSandbox } from './shell-sandbox';
 import { isServerKey, translator, type T } from './i18n';
 import { serverLocale } from './services/settings';
@@ -50,6 +51,11 @@ export interface ServerOptions {
   engine?: Engine;
   clock?: () => Date;
   logger?: boolean;
+  /**
+   * Starts the server process again, after a backup was restored: what it holds in memory (the
+   * vault key, sign-ins to apps, queued work) belongs to the data it replaced.
+   */
+  restart?: () => void;
 }
 
 export interface YumakBotServer {
@@ -307,6 +313,10 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   registerMcpServer(app, services);
   registerRoutes(app, {
     services,
+    backup: new BackupService(
+      ctx,
+      opts.restart ?? (() => console.warn('backup restored; start the server again')),
+    ),
     auth,
     config,
     info,
@@ -529,6 +539,10 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   await services.turns.recover();
   await services.routines.recover();
   services.routines.start();
+  if (config.channelsEnabled) {
+    await services.telegram.start();
+    await services.whatsapp.start();
+  }
 
   return {
     app,
@@ -545,6 +559,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     },
     async close() {
       await services.routines.stop();
+      await services.telegram.stop();
+      await services.whatsapp.stop();
       await services.reactions.stop();
       services.push.stop();
       await services.turns.shutdown();

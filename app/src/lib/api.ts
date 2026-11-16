@@ -1,5 +1,9 @@
 import type {
+  TelegramStatus,
+  WhatsAppSet,
+  WhatsAppStatus,
   ApnsSet,
+  RoutineGateMode,
   ApnsStatus,
   PushDeviceSet,
   SkillWarning,
@@ -66,10 +70,15 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  extra: Record<string, string> = {},
+): Promise<T> {
   const hasBody = method !== 'GET' && method !== 'DELETE';
   // The server writes its error messages in the language the page asks in.
-  const headers: Record<string, string> = { 'accept-language': useLocale.getState().locale };
+  const headers: Record<string, string> = { ...extra, 'accept-language': useLocale.getState().locale };
   // A file goes as it is; everything else as JSON.
   const raw = body instanceof Blob;
   if (hasBody) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
@@ -142,6 +151,8 @@ export interface Settings {
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;
+  /** The routine pre-check; missing on older servers. */
+  routineGate?: RoutineGateMode;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -174,6 +185,18 @@ export const api = {
   apns: () => http.get<ApnsStatus>('/api/push/apns'),
   setApns: (b: ApnsSet) => http.put<ApnsStatus>('/api/push/apns', b),
   clearApns: () => http.del<ApnsStatus>('/api/push/apns'),
+  /** A bot's own Telegram bot: never the token, which is write-only. */
+  telegram: (botId: string) => http.get<TelegramStatus>(`/api/bots/${botId}/telegram`),
+  connectTelegram: (botId: string, token: string) =>
+    http.put<TelegramStatus>(`/api/bots/${botId}/telegram`, { token }),
+  pairTelegram: (botId: string) => http.post<TelegramStatus>(`/api/bots/${botId}/telegram/pair`, {}),
+  updateTelegram: (botId: string, patch: { notices: boolean }) =>
+    http.patch<TelegramStatus>(`/api/bots/${botId}/telegram`, patch),
+  disconnectTelegram: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/telegram`),
+  whatsapp: () => http.get<WhatsAppStatus>('/api/whatsapp'),
+  setWhatsapp: (b: WhatsAppSet) => http.put<WhatsAppStatus>('/api/whatsapp', b),
+  linkWhatsapp: () => http.post<WhatsAppStatus>('/api/whatsapp/link', {}),
+  disconnectWhatsapp: () => http.del<WhatsAppStatus>('/api/whatsapp'),
   settings: () => http.get<Settings>('/api/settings'),
   updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
   providers: () => http.get<ProviderInfo[]>('/api/providers'),
@@ -367,4 +390,11 @@ export const api = {
   previewBotImport: (file: File) => http.post<BotImportPlan>('/api/import/bots?preview=1', file),
   steerMessage: (id: string) => http.post<Message>(`/api/messages/${id}/steer`),
   importBots: (file: File) => http.post<BotImportResult>('/api/import/bots', file),
+  /** Writes a sealed backup of everything on the server, ready for one download at `/api/backup/<id>`. */
+  createBackup: (password: string) => http.post<{ id: string; size: number }>('/api/backup', { password }),
+  /** Replaces everything with a backup; the server starts again after. The body is the file itself. */
+  restoreBackup: (file: File, password: string) =>
+    request<{ tables: number; files: number }>('POST', '/api/backup/restore', file, {
+      'x-backup-password': encodeURIComponent(password),
+    }),
 };

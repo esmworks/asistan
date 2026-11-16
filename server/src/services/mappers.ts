@@ -6,6 +6,7 @@ import type {
   Message,
   PermissionRule,
   Routine,
+  RoutineCheck,
   RoutineRun,
   Schedule,
   Thread,
@@ -133,6 +134,7 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   inMain: r.inMain,
   onStartup: r.onStartup,
   watchUrl: r.watchUrl,
+  check: (r.check as RoutineCheck | null) ?? null,
   webhookFilter: r.webhookFilter,
   webhookPost: r.webhookPost,
   model: r.model,
@@ -147,4 +149,5 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   threadId: r.threadId,
   startedAt: r.startedAt.toISOString(),
   finishedAt: iso(r.finishedAt),
+  gate: r.gateDecision ? { decision: r.gateDecision, reason: r.gateReason ?? '' } : null,
 });

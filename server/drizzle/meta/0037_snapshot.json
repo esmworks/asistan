@@ -1,5 +1,5 @@
 {
-  "id": "5ffa3591-e5ae-4598-828e-348efefd8bed",
+  "id": "f09d3492-e2bd-4f68-aa32-bb4b3c511fb8",
   "prevId": "17af9b2c-a0ac-4a0a-8313-c9e4367c5b81",
   "version": "7",
   "dialect": "postgresql",
@@ -1034,19 +1034,6 @@
           "notNull": true,
           "default": "'user'"
         },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "use_count": {
-          "name": "use_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1765,6 +1752,18 @@
         },
         "watch_hash": {
           "name": "watch_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check": {
+          "name": "check",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_hash": {
+          "name": "check_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": false

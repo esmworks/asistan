@@ -8,6 +8,7 @@ import { toast, toastError } from '@/components/overlay';
 import { PillButton, Row, Section } from '@/components/page';
 import { shareFile } from '@/components/panel/files';
 import { Lead, Rows } from './common/controls';
+import { Backup } from './more/Backup';
 import { ExportBots } from './more/ExportBots';
 import { PlanBots } from './more/PlanBots';
 import { t, type MessageKey } from '@/i18n';
@@ -160,6 +161,7 @@ export function ImportSection() {
         </>
       ) : null}
       <ExportBots />
+      <Backup />
     </>
   );
 }

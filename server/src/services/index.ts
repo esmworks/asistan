@@ -8,6 +8,9 @@ import { BotImportService } from './bot-import';
 import { BotService } from './bots';
 import { ClaudeAuthService } from './claude-auth';
 import { ConnectionService } from './connections';
+import { TelegramChannels } from '../channels/telegram';
+import { WhatsAppChannel } from '../channels/whatsapp';
+import { Inbox } from './inbox';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -43,12 +46,18 @@ export class Services {
   readonly reactions: ReactionNotifier;
   readonly usage: UsageService;
   readonly botApi: BotApi;
+  readonly inbox: Inbox;
+  readonly telegram: TelegramChannels;
+  readonly whatsapp: WhatsAppChannel;
 
   constructor(
     readonly ctx: Ctx,
     engineFor: (bot: Bot) => Engine,
     clock?: () => Date,
-    /** Looks at permission requests of bots in the `review` mode, whatever engine they run on. */
+    /**
+     * Looks at permission requests of bots in the `review` mode, and at routine runs before they
+     * start, whatever engine the bot runs on.
+     */
     reviewer?: () => Engine,
   ) {
     this.bots = new BotService(ctx);
@@ -65,7 +74,7 @@ export class Services {
     this.keys = new ProviderKeyService(ctx, this.vault);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);
-    this.routines = new RoutineService(ctx, this, clock);
+    this.routines = new RoutineService(ctx, this, clock, reviewer);
     this.tools = new ToolFactory(ctx, this);
     this.turns = new TurnManager(ctx, this, engineFor, reviewer);
     this.turns.onFinished((t, o) => this.jobs.onTurnFinished(t, o));
@@ -74,5 +83,8 @@ export class Services {
     this.reactions = new ReactionNotifier(ctx, this);
     this.usage = new UsageService(ctx, this.settings, clock);
     this.botApi = new BotApi(ctx, this);
+    this.inbox = new Inbox(ctx, this);
+    this.telegram = new TelegramChannels(ctx, this, this.vault);
+    this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }
 }

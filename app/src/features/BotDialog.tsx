@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
+import { TelegramPanel } from './TelegramPanel';
 import { api } from '@/lib/api';
 import { newBotEngine, splitPiModel, type BotEngine } from '@/lib/new-bot';
 import {
@@ -364,6 +365,7 @@ function BotForm({
             </Select>
           </Field>
         )}
+        {bot && <TelegramPanel botId={bot.id} />}
         <button
           type="button"
           onClick={() => setAdvanced((a) => !a)}

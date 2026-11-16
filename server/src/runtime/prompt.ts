@@ -97,13 +97,17 @@ export function buildSystemPrompt(opts: {
   // come and the rest are left to search. Each list keeps its order, so a lookup of a note already
   // here changes nothing and the model's cache of the prompt holds.
   const { user, bot: own, left } = withinBudget(memory.user, memory.bot, MEMORY_PROMPT_CHARS);
+  // Each note carries the day it was last written, so the bot can tell an old fact from a new one
+  // ("moved to Izmir" in 2024 against "lives in Ankara" today).
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: opts.timezone, dateStyle: 'short' });
+  const note = (m: Memory) => `- (${day.format(new Date(m.updatedAt))}) ${m.content}`;
   if (user.length) {
     lines.push('', t('prompt.userMemory'));
-    for (const m of user) lines.push(`- ${m.content}`);
+    for (const m of user) lines.push(note(m));
   }
   if (own.length) {
     lines.push('', t('prompt.botMemory'));
-    for (const m of own) lines.push(`- ${m.content}`);
+    for (const m of own) lines.push(note(m));
   }
   if (left) lines.push('', t('prompt.memoryLeft', { count: left }));
 

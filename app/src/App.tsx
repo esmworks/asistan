@@ -40,6 +40,18 @@ import { cn } from '@/lib/utils';
 useChatWidth.getState();
 useFont.getState();
 
+/** Opens the conversation a link names, with its bot or room, or says it is gone. */
+function openLinkedThread(id: string, t: (key: 'chat.linkGone') => string) {
+  api
+    .thread(id)
+    .then((th) => {
+      if (th.kind === 'room') return useUi.getState().openRoom(th.id);
+      useUi.getState().openChat(th.botId);
+      useUi.getState().selectThread(th.id);
+    })
+    .catch(() => toast.error(t('chat.linkGone')));
+}
+
 export function App() {
   const authed = useUi((s) => s.authed);
   const setAuthed = useUi((s) => s.setAuthed);
@@ -179,15 +191,22 @@ function Workspace() {
   // A link to one conversation (…?thread=<id>) opens it, once the person is signed in.
   useEffect(() => {
     const linked = takeLinkedThread();
-    if (!linked) return;
-    api
-      .thread(linked)
-      .then((th) => {
-        if (th.kind === 'room') return useUi.getState().openRoom(th.id);
-        useUi.getState().openChat(th.botId);
-        useUi.getState().selectThread(th.id);
-      })
-      .catch(() => toast.error(t('chat.linkGone')));
+    if (linked) openLinkedThread(linked, t);
+  }, [t]);
+  // In the desktop app, a `yumakbot://` link opened from outside: now, and whenever one arrives.
+  useEffect(() => {
+    const take = () =>
+      void desktop
+        ?.takeLink?.()
+        .then((link) => {
+          if (!link) return;
+          if (link.kind === 'thread') return openLinkedThread(link.id, t);
+          if (link.kind === 'room') return useUi.getState().openRoom(link.id);
+          useUi.getState().openChat(link.id);
+        })
+        .catch(() => {});
+    take();
+    return desktop?.onOpenLink?.(take);
   }, [t]);
   useEffect(() => {
     document.documentElement.style.setProperty('--brand', bot?.color ?? '#4f6bed');

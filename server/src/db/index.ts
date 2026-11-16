@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as schema from './schema';
@@ -20,6 +20,14 @@ const migrationsFolder =
     resolve(import.meta.dirname, '../../drizzle'),
   ].find((p): p is string => !!p && existsSync(resolve(p, 'meta/_journal.json'))) ??
   resolve(import.meta.dirname, '../../drizzle');
+
+/** How many migrations the database has been through: a backup records it, a restore compares. */
+export function schemaVersion(): number {
+  const journal = JSON.parse(readFileSync(resolve(migrationsFolder, 'meta/_journal.json'), 'utf8')) as {
+    entries: unknown[];
+  };
+  return journal.entries.length;
+}
 
 export async function openDb(opts: {
   url: string | null;

@@ -1,13 +1,15 @@
 import { describeSchedule, type BotImportPlan } from '@yumakbot/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Copy, Download, FileUp, Loader2 } from 'lucide-react';
+import { ArchiveRestore, Copy, Download, FileUp, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
+import { useFormat } from '@/lib/format';
 import { useBots } from '@/lib/queries';
 import { Card, Row } from './SettingsDialog';
 
@@ -233,7 +235,115 @@ export function ImportTab() {
         </>
       )}
       <ExportCard />
+      <BackupCard />
     </>
+  );
+}
+
+/** The smallest backup password the server takes. */
+const MIN_PASSWORD = 12;
+
+/**
+ * Everything on the server in one file sealed with a password: to keep a copy, or to move to
+ * another computer. Restoring replaces everything with what the file holds.
+ */
+function BackupCard() {
+  const t = useT();
+  const fmt = useFormat();
+  const [password, setPassword] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restorePassword, setRestorePassword] = useState('');
+  const picker = useRef<HTMLInputElement>(null);
+  const create = useMutation({
+    mutationFn: () => api.createBackup(password),
+    onSuccess: ({ id, size }) => {
+      // A plain link, so a large file streams to disk instead of through the page.
+      const a = document.createElement('a');
+      a.href = `/api/backup/${id}`;
+      a.download = '';
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setPassword('');
+      toast.success(t('backup.ready', { size: fmt.fileSize(size) }));
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const restore = useMutation({
+    mutationFn: () => api.restoreBackup(restoreFile!, restorePassword),
+    onSuccess: () => {
+      toast.success(t('backup.restored'));
+      // The server starts again with the restored data; the page follows once it is back.
+      setTimeout(() => window.location.reload(), 4000);
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return (
+    <Card title={t('backup.title')}>
+      <p className="px-4 py-3 text-xs text-muted-foreground">{t('backup.hint')}</p>
+      <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+        <Input
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={t('backup.passwordPlaceholder', { count: MIN_PASSWORD })}
+          aria-label={t('backup.password')}
+          className="min-w-0 flex-1 rounded-xl"
+        />
+        <Button
+          size="sm"
+          className="rounded-full"
+          disabled={password.length < MIN_PASSWORD || create.isPending}
+          onClick={() => create.mutate()}
+        >
+          {create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+          {t('backup.download')}
+        </Button>
+      </div>
+      <Row label={t('backup.restoreTitle')} hint={t('backup.restoreHint')}>
+        <input
+          ref={picker}
+          type="file"
+          accept=".ybk"
+          className="hidden"
+          onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+        />
+        <Button variant="outline" size="sm" className="rounded-full" onClick={() => picker.current?.click()}>
+          <FileUp className="size-4" />
+          {restoreFile ? restoreFile.name : t('backup.pick')}
+        </Button>
+      </Row>
+      {restoreFile && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <Input
+            type="password"
+            autoComplete="off"
+            value={restorePassword}
+            onChange={(e) => setRestorePassword(e.target.value)}
+            placeholder={t('backup.password')}
+            aria-label={t('backup.password')}
+            className="min-w-0 flex-1 rounded-xl"
+          />
+          <Button
+            size="sm"
+            variant="destructive"
+            className="rounded-full"
+            disabled={!restorePassword || restore.isPending}
+            onClick={() => {
+              if (window.confirm(t('backup.restoreConfirm'))) restore.mutate();
+            }}
+          >
+            {restore.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ArchiveRestore className="size-4" />
+            )}
+            {t('backup.restore')}
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 

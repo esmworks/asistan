@@ -626,6 +626,19 @@ export const UsageReport = z.object({
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
   month: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
+  /**
+   * The routine pre-check over the period, when it looked at any run: what it cost, the runs it
+   * would have skipped while only watching and what those runs cost, and the runs it did skip.
+   */
+  gate: z
+    .object({
+      checks: z.number().int(),
+      costUsd: z.number(),
+      skippable: z.number().int(),
+      skippableCostUsd: z.number(),
+      skipped: z.number().int(),
+    })
+    .optional(),
 });
 export type UsageReport = z.infer<typeof UsageReport>;
 

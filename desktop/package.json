@@ -4,8 +4,9 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "version": "0.2.1",
-  "description": "Yumak Bot masaüstü",
+  "description": "Your own team of AI bots",
   "author": "esmworks",
+  "homepage": "https://github.com/esmworks/yumakbot",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",

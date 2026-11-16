@@ -6,6 +6,7 @@ import {
   Schedule,
   parseAnswers,
   PERMISSION_MODES,
+  type RoutineCheck,
   type RoutineUpdate,
   searchCatalog,
   skillSlug,
@@ -27,6 +28,7 @@ import { errorText, newId, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { sendFileTool, showPageTool } from './files';
+import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 
@@ -449,6 +451,9 @@ export class ToolFactory {
             .regex(/^https:\/\/\S+$/)
             .max(2000)
             .optional(),
+          /** A connected app's read-only tool called before each run with no AI; it runs only when the answer changed. */
+          check_tool: z.string().min(1).max(300).optional(),
+          check_args: z.record(z.string(), z.unknown()).optional(),
           /** Also give it a secret address another service can call to start it. */
           webhook: z.boolean().default(false),
           /** The model its runs use, on the bot's own engine; left out for the bot's own model. */
@@ -458,6 +463,8 @@ export class ToolFactory {
           const own = await s.routines.list(bot.id);
           const same = own.find((r) => r.name.toLowerCase() === a.name.trim().toLowerCase());
           if (same) return t('tool.routineExists', { name: same.name });
+          const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool) : null;
+          if (a.check_tool && !check) return t('tool.routineBadCheck', { tool: a.check_tool });
           const settings = await s.settings.all();
           const r = await s.routines.create({
             botId: bot.id,
@@ -471,6 +478,7 @@ export class ToolFactory {
             inMain: a.in_main,
             onStartup: a.on_startup,
             watchUrl: a.watch_url ?? null,
+            check: check && { ...check, args: a.check_args ?? {} },
             webhookFilter: '',
             webhookPost: false,
             model: a.model ?? '',
@@ -509,6 +517,9 @@ export class ToolFactory {
               z.literal(''),
             ])
             .optional(),
+          /** An empty string removes the check. */
+          check_tool: z.string().max(300).optional(),
+          check_args: z.record(z.string(), z.unknown()).optional(),
           /** An empty string goes back to the bot's own model. */
           model: z.string().trim().max(200).optional(),
         },
@@ -516,6 +527,17 @@ export class ToolFactory {
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           const { routine: r, routines } = found;
+          let check: RoutineCheck | null | undefined;
+          if (a.check_tool) {
+            // The check runs as the routine's own bot, which may be another one for a manager.
+            const named = await s.connections.checkFromName(r.botId, a.check_tool);
+            if (!named) return t('tool.routineBadCheck', { tool: a.check_tool });
+            check = { ...named, args: a.check_args ?? {} };
+          } else if (a.check_tool === '') {
+            check = null;
+          } else if (a.check_args && r.check) {
+            check = { ...r.check, args: a.check_args };
+          }
           const patch: z.infer<typeof RoutineUpdate> = {
             ...(a.enabled !== undefined && { enabled: a.enabled }),
             ...(a.name !== undefined && { name: a.name.trim() }),
@@ -526,6 +548,7 @@ export class ToolFactory {
             ...(a.in_main !== undefined && { inMain: a.in_main }),
             ...(a.on_startup !== undefined && { onStartup: a.on_startup }),
             ...(a.watch_url !== undefined && { watchUrl: a.watch_url || null }),
+            ...(check !== undefined && { check }),
             ...(a.model !== undefined && { model: a.model }),
           };
           if (!Object.keys(patch).length) return t('tool.routineNoChange');
@@ -709,14 +732,18 @@ export class ToolFactory {
               return t('tool.memoryBadSite', { site });
             }
           }
-          const m = await s.memory.create({
-            scope,
-            botId: scope === 'bot' ? bot.id : null,
-            content,
-            source: `bot:${bot.id}`,
-            site: host,
-          });
-          return t('tool.memorySaved', { id: m.id });
+          const clean = redactSecrets(content, t('memory.redacted'));
+          const note = { scope, botId: scope === 'bot' ? bot.id : null, content: clean.text, site: host };
+          const same = await s.memory.findSame(note);
+          if (same) {
+            // The fact came up again: the note is in use, though no new one is written.
+            await s.memory.markUsed([same.id]);
+            return t('tool.memoryAlreadySaved', { id: same.id });
+          }
+          const m = await s.memory.create({ ...note, source: `bot:${bot.id}` });
+          return clean.redacted
+            ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
+            : t('tool.memorySaved', { id: m.id });
         },
         // The bot keeps its memory itself; everything it writes shows in the memory screen, where the
         // user can change or delete it.
@@ -728,8 +755,11 @@ export class ToolFactory {
         async ({ id, content }) => {
           const m = await s.memory.get(id);
           if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
-          await s.memory.update(id, { content }, `bot:${bot.id}`);
-          return t('tool.memoryUpdated');
+          const clean = redactSecrets(content, t('memory.redacted'));
+          await s.memory.update(id, { content: clean.text }, `bot:${bot.id}`);
+          return clean.redacted
+            ? `${t('tool.memoryUpdated')} ${t('tool.memoryRedacted')}`
+            : t('tool.memoryUpdated');
         },
         'internal',
       ),

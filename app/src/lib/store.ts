@@ -5,6 +5,7 @@ export type SettingsTab =
   | 'profile'
   | 'general'
   | 'connection'
+  | 'channels'
   | 'permissions'
   | 'vault'
   | 'memory'

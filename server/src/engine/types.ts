@@ -254,6 +254,30 @@ export interface ReviewVerdict {
   reason: string;
 }
 
+/**
+ * One routine run a small model looks at before the bot starts on it (the routine pre-check): a
+ * watched page or app check that changed, or what a webhook call carried.
+ */
+export interface GateRequest {
+  routine: { name: string; prompt: string };
+  trigger: 'watch' | 'webhook';
+  /** What changed on the page or in the app's answer, or the webhook body. */
+  input: string;
+  /** What the routine's previous run reported, when it has one. */
+  lastReport: string | null;
+  /** Language of the reason the person reads. */
+  locale: Locale;
+  signal: AbortSignal;
+}
+
+/** `skip`: nothing in the input needs the bot's work. `run`: anything else, and every doubt. */
+export interface GateVerdict {
+  decision: 'run' | 'skip';
+  reason: string;
+  /** What the check cost in US dollars; null when the engine did not say. */
+  costUsd: number | null;
+}
+
 export interface Engine {
   readonly kind: string;
   run(req: TurnRequest): Promise<TurnOutcome>;
@@ -265,6 +289,8 @@ export interface Engine {
   testModel?(model: string, locale: Locale): Promise<ModelTest>;
   /** Looks at one permission request with a small model (the `review` mode). */
   review?(req: ReviewRequest): Promise<ReviewVerdict>;
+  /** Looks at one routine run with a small model before the bot starts on it. */
+  gate?(req: GateRequest): Promise<GateVerdict>;
 }
 
 export type ModelTest = { ok: true } | { ok: false; detail: string };

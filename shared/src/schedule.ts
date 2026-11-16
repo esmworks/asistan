@@ -49,6 +49,19 @@ export const Schedule = z.discriminatedUnion('type', [
 ]);
 export type Schedule = z.infer<typeof Schedule>;
 
+/**
+ * A connected app's read-only tool called before each scheduled run, with no AI: the bot runs only
+ * when the tool's answer differs from the last check (a new email, a new issue), and gets that
+ * answer. A quiet tick then costs nothing.
+ */
+export const RoutineCheck = z.object({
+  connectionId: z.string().min(1).max(64),
+  /** The tool's own name on the app's server. */
+  tool: z.string().min(1).max(200),
+  args: z.record(z.string(), z.unknown()).default({}),
+});
+export type RoutineCheck = z.infer<typeof RoutineCheck>;
+
 export const Routine = z.object({
   id: z.string(),
   botId: z.string(),
@@ -69,6 +82,8 @@ export const Routine = z.object({
   onStartup: z.boolean(),
   /** A page checked before each scheduled run, without the AI; the bot runs only when it changed. */
   watchUrl: z.string().nullable(),
+  /** A connected app's tool checked before each scheduled run; the bot runs only when its answer changed. */
+  check: RoutineCheck.nullable(),
   /** Conditions a webhook call's JSON body must meet to start the routine, one per line. */
   webhookFilter: z.string(),
   /** A webhook call only posts what it carries, as the bot's message, with no AI turn. */
@@ -115,6 +130,7 @@ export const RoutineCreate = z.object({
     .regex(/^https:\/\/\S+$/, 'validation.watchUrl')
     .nullable()
     .default(null),
+  check: RoutineCheck.nullable().default(null),
   /** `field=value`, `field!=value` or `field` lines; a webhook call must meet all of them. */
   webhookFilter: z.string().max(2000).default(''),
   webhookPost: z.boolean().default(false),
@@ -122,6 +138,15 @@ export const RoutineCreate = z.object({
 });
 export type RoutineCreate = z.infer<typeof RoutineCreate>;
 export const RoutineUpdate = patchOf(RoutineCreate.omit({ botId: true }));
+
+/**
+ * The pre-check before a routine run that a watched page change or a webhook started: `off` runs
+ * every time, `shadow` asks a small model and only records what it said, `on` skips the runs it
+ * says have nothing new to work on.
+ */
+export const ROUTINE_GATE_MODES = ['off', 'shadow', 'on'] as const;
+export type RoutineGateMode = (typeof ROUTINE_GATE_MODES)[number];
+export const RoutineGateDecision = z.enum(['run', 'skip']);
 
 export const RoutineRunStatus = z.enum(['running', 'done', 'error', 'skipped', 'waiting']);
 export const RoutineRun = z.object({
@@ -133,6 +158,11 @@ export const RoutineRun = z.object({
   threadId: z.string().nullable(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
+  /**
+   * What the small model said before the run, when the routine pre-check looked at it: `skip` means
+   * the run looked like it had nothing new to work on. Null when no pre-check ran.
+   */
+  gate: z.object({ decision: RoutineGateDecision, reason: z.string() }).nullable(),
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
 

@@ -45,10 +45,14 @@ The interface is available in English and Turkish.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a
-  filtered webhook, or only when a watched page changes; they can build on their last report and run in the main
+  filtered webhook, or only when a watched page or a connected app's answer changes; they can build on their last report and run in the main
   conversation.
 - **Today and usage** — a Today page of what the bots did and what waits for you; spending by bot, model and routine,
   a monthly limit and a CSV export.
+- **Telegram and WhatsApp** — each bot can have its own Telegram bot, paired with your Telegram account only;
+  WhatsApp links like WhatsApp Web, with a separate number or your own "Message yourself" chat, and `/bot <name>`
+  switches the bot it talks to. Replies, files and approval cards go back to the app you last wrote from; passwords
+  and sign-ins stay in the Yumak Bot app.
 - **A bot as an API** — call a bot from a script with the access key and get its reply.
 - **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
   choose which bots may use them.
@@ -60,7 +64,8 @@ The interface is available in English and Turkish.
   manager and LibreOffice, viewable from the app.
 - **Sandboxed shell** — Claude's Bash commands run in a bubblewrap sandbox that only sees the bot's own folders, and a
   few catastrophic commands are refused whatever is allowed.
-- **Import** — bring in bots exported from other assistants.
+- **Import and backup** — bring in bots exported from other assistants, and keep everything in one password-sealed
+  backup file that restores on another computer.
 
 ## How it fits together
 
@@ -100,8 +105,9 @@ in Settings → Connection → Claude).
 
 The desktop app can also connect to a remote Yumak Bot server: enter its URL and access key in the connection settings.
 
-Installers for macOS (`.dmg`, Apple silicon) and Windows (`.exe`) are attached to each
-[release](https://github.com/esmworks/yumakbot/releases). To build one yourself on the platform it is for:
+Installers for macOS (`.dmg`, Apple silicon), Windows (`.exe`) and Linux (`.AppImage`, and a `.deb` for Debian and
+Ubuntu) are attached to each [release](https://github.com/esmworks/yumakbot/releases). On Linux, install `bubblewrap`
+and `socat` too for the bots' shell sandbox (the `.deb` recommends them). To build one yourself on the platform it is for:
 
 ```bash
 pnpm build && pnpm --filter @yumakbot/desktop dist
@@ -118,9 +124,9 @@ signed yet, so Windows shows a SmartScreen warning before it runs.
 
 The installed app updates itself from the latest published release: it looks for a new version at start and every six
 hours, downloads it in the background and offers to restart into it; a version left waiting installs when the app
-quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, the macOS `.zip` and the
-`.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update only into a
-signed app. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
+quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, `latest-linux.yml`, the macOS
+`.zip` and the `.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update
+only into a signed app. On Linux only the AppImage updates itself; a `.deb` is updated by installing the new one. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
 
 ## Running on a server (Docker)
 
@@ -144,7 +150,8 @@ reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to you
 
 [docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the
-database — without it, saved passwords cannot be decrypted.
+database — without it, saved passwords cannot be decrypted. Settings → Import and backup writes both, with the
+bots' folders, into one password-sealed file that restores on another server.
 
 ## Phone app (early)
 
@@ -202,6 +209,12 @@ changing `server/src/db/schema.ts`, run `pnpm --filter @yumakbot/server db:gener
 User-visible text goes through the translation tables in `shared/src/i18n.ts`, `server/src/i18n.ts` and
 `desktop/src/i18n.ts`; a test fails on hard-coded strings.
 
+## Opening a chat from outside the app
+
+The desktop app opens `yumakbot://` links: `yumakbot://bot/<bot id>` shows a bot's chat, `yumakbot://thread/<id>` one
+conversation and `yumakbot://room/<id>` a room. "Copy a link to this conversation" in the desktop app copies such a
+link, for a bookmark, a dashboard or a script. Opening one only shows the chat; it never sends anything.
+
 ## Calling a bot from a script
 
 Each bot can be called over HTTP with the server's access key. The message is answered in a
@@ -250,6 +263,7 @@ The server reads these environment variables:
 | `YUMAKBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
 | `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
 | `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
+| `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from

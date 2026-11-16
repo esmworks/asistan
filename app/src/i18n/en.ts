@@ -158,6 +158,27 @@ export const en: Catalog<MessageKey> = {
   'usage.noLimit': 'No monthly limit',
   'usage.limit': 'Limit ($)',
   'usage.downloadCsv': 'Download every turn as CSV',
+  'usage.gate': 'Routine pre-check',
+  'usage.gate.off': 'Every routine run goes to the bot',
+  'usage.gate.offHint': "Runs that a watched page or a webhook starts all go to the bot's own model.",
+  'usage.gate.shadow': 'Watching only',
+  'usage.gate.shadowHint':
+    'Before such a run, a small model says whether there is anything new to work on. Every run still goes ahead; what it said is listed here and beside the run.',
+  'usage.gate.on': 'Runs with nothing new are skipped',
+  'usage.gate.onHint':
+    'A small model looks first; a run it finds nothing new in is skipped with its reason. When it is unsure or fails, the run goes ahead. Reminders always run.',
+  'usage.gate.choice.off': 'Off',
+  'usage.gate.choice.shadow': 'Watch',
+  'usage.gate.choice.on': 'On',
+  'usage.gate.checks': {
+    one: '1 run checked; the check cost {cost}',
+    other: '{count} runs checked; the checks cost {cost}',
+  },
+  'usage.gate.skippable': {
+    one: '1 of them would have been skipped; that run cost {cost}',
+    other: '{count} of them would have been skipped; those runs cost {cost}',
+  },
+  'usage.gate.skipped': { one: '1 run skipped', other: '{count} runs skipped' },
   'archive.title': 'Archived bots',
   'archive.empty': 'No archived bots. A bot archived from the sidebar waits here.',
   'archive.since': 'Archived {when}',
@@ -610,6 +631,10 @@ export const en: Catalog<MessageKey> = {
   'routine.onStartupHint':
     'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
   'routine.watchUrl': 'Only when this page changes (optional)',
+  'routine.checkOn': 'Runs only when {app} · {tool} answers something new; checked without the AI.',
+  'routine.checkRemove': 'Remove check',
+  'routine.checkHint':
+    'To run only when something happens in an app (a new email, a new issue), ask the bot: it sets up a check that costs nothing while nothing changes.',
   'routine.watchUrlHint':
     'At each time the page is read without the AI; the bot runs only when its text changed, and gets the new text. Costs nothing while the page stays the same.',
   'routine.watchUrlInvalid': 'An address starting with https://',
@@ -632,6 +657,8 @@ export const en: Catalog<MessageKey> = {
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
   'routine.run.skipped': 'skipped',
+  'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
+  'routine.gateWouldSkipNoReason': 'The pre-check would have skipped it',
   'routine.runCommandHint': 'A script or another service can start this routine and hand it some text.',
   'routine.copyRunCommand': 'Copy run command',
   'routine.runCommandCopied': 'Copied. Set YUMAKBOT_ACCESS_KEY to the server’s access key before running it.',
@@ -893,7 +920,7 @@ export const en: Catalog<MessageKey> = {
   'groups.empty': 'No groups.',
   'groups.count': { one: '{count} bot', other: '{count} bots' },
 
-  'settings.tab.import': 'Import',
+  'settings.tab.import': 'Import and backup',
   'import.hint':
     'Bring your Grok Bot bots here with their instructions, routines, memories and groups. You see everything in the file before anything is saved.',
   'import.step1': '1. Export from Grok Bot',
@@ -917,6 +944,22 @@ export const en: Catalog<MessageKey> = {
   'import.skills': 'Skills',
   'import.skillExists': 'already here; linked as it is',
   'import.warn.skill': '{bot}: the "{skill}" skill was left out (its name or description is not valid)',
+  'backup.title': 'Full backup',
+  'backup.hint':
+    "One file with everything on this server: bots, conversations, memory, routines, skills, connections, the bots' files, and the saved logins and keys. It is sealed with the password you choose here; without it nobody can open the file, you included, so keep the password somewhere safe.",
+  'backup.password': 'Backup password',
+  'backup.passwordPlaceholder': 'Backup password (at least {count} characters)',
+  'backup.download': 'Download backup',
+  'backup.ready': 'Backup ready ({size}); the download has started.',
+  'backup.restoreTitle': 'Restore from a backup',
+  'backup.restoreHint':
+    'Replaces everything on this server with what the file holds. Nothing changes if the password is wrong or the file is damaged.',
+  'backup.pick': 'Choose file',
+  'backup.restore': 'Restore',
+  'backup.restoreConfirm':
+    'Everything on this server will be replaced with this backup: bots, conversations, memory and files. The server starts again afterwards. Continue?',
+  'backup.restored': 'Restored. The server is starting again; the page reloads in a moment.',
+  'backup.phoneRestore': 'To restore a backup, open Yumak Bot on a computer: Settings → Import and backup.',
   'export.title': 'Export bots',
   'export.hint':
     'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Yumak Bot imports it from this page. Conversations, permissions and folders stay out of the file.',
@@ -1294,4 +1337,74 @@ export const en: Catalog<MessageKey> = {
   'panel.addApp': 'Connect',
   'panel.noApps':
     'No apps connected. Services you connect, like Notion, Slack or Gmail, are available to every bot.',
+  'telegram.title': 'Telegram',
+  'telegram.off': 'Not connected',
+  'telegram.waiting': 'Waiting to pair',
+  'telegram.paired': 'Connected',
+  'telegram.error': 'The Telegram connection is not working: {error}',
+  'telegram.step1':
+    'Make a new bot in Telegram: send /newbot, then choose a name and a username ending in bot.',
+  'telegram.botFather': '@BotFather',
+  'telegram.step2': 'Paste the token BotFather sends (or its whole message) here.',
+  'telegram.tokenPlaceholder': '123456789:AA…',
+  'telegram.connect': 'Connect',
+  'telegram.connected': '@{bot} is connected. Now pair your Telegram account.',
+  'telegram.pairedWith':
+    '@{bot} reads messages from {name} only. Replies go there when you last wrote from Telegram.',
+  'telegram.qrAlt': 'QR code of the Telegram pairing link',
+  'telegram.pairHint':
+    'Scan the QR code with your phone or open the link, then press Start. The link works for 15 minutes; the account that presses it becomes the only one that can talk to the bot.',
+  'telegram.openToPair': 'Open in Telegram',
+  'telegram.newLink': 'Get a new pairing link',
+  'telegram.notices': 'Also tell me about other conversations',
+  'telegram.noticesHint': 'Routine reports and cards where the bot waits for you come to Telegram too.',
+  'telegram.openChat': 'Open the chat',
+  'telegram.otherAccount': 'Pair another account',
+  'telegram.disconnect': 'Disconnect',
+  'telegram.disconnectConfirm':
+    'Disconnect Telegram? The token and the paired account are forgotten; the bot in Telegram stays as it is.',
+  'settings.tab.channels': 'Chat apps',
+  'settings.keywords.channels': 'whatsapp, telegram, message, phone, qr',
+  'channels.telegram': 'Telegram',
+  'channels.telegramHint':
+    "Each bot connects with its own Telegram bot; you set that up in the bot's settings, under Telegram.",
+  'whatsapp.title': 'WhatsApp',
+  'whatsapp.state.off': 'Not connected',
+  'whatsapp.state.linking': 'Waiting for the QR code to be scanned',
+  'whatsapp.state.connecting': 'Connecting…',
+  'whatsapp.state.connected': 'Connected',
+  'whatsapp.state.error': 'The connection stopped',
+  'whatsapp.error.expired': 'The QR code was not scanned in time. Link again to get a new code.',
+  'whatsapp.error.ownNumber':
+    'The linked account is your own number. Link another number, or choose "My own number".',
+  'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
+  'whatsapp.mode.separate': 'A separate bot number',
+  'whatsapp.modeHint.separate': 'Recommended. A second number is linked; you write to it from your own.',
+  'whatsapp.mode.own': 'My own number',
+  'whatsapp.modeHint.own': 'Your own account is linked; you write to the bots in "Message yourself".',
+  'whatsapp.phone': 'Your own number',
+  'whatsapp.phoneHint.separate':
+    'With the country code, digits only. Only messages from this number are read.',
+  'whatsapp.phoneHint.own': 'With the country code, digits only. The number of the account you link.',
+  'whatsapp.bot': 'The bot messages go to',
+  'whatsapp.botPick': 'Choose a bot',
+  'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
+  'whatsapp.notices': 'Also tell me about other conversations',
+  'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
+  'whatsapp.qrAlt': 'QR code of the WhatsApp link',
+  'whatsapp.qrWaiting': 'Preparing the QR code…',
+  'whatsapp.scan':
+    'On the phone of the account you link, open WhatsApp → Settings → Linked devices → Link a device and scan this code. The code renews itself; setup must finish within 5 minutes.',
+  'whatsapp.howTo.separate':
+    'Write to +{number} from your own number. /bot <name> switches to another bot, /stop stops work in progress.',
+  'whatsapp.howTo.own':
+    'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
+  'whatsapp.risk':
+    "WhatsApp is connected as an unofficial linked device (like WhatsApp Web). There is a small risk of the account being restricted; a separate number keeps your own chats out of it. Groups and other people's messages are never read.",
+  'whatsapp.link': 'Show the QR code',
+  'whatsapp.relink': 'Link again',
+  'whatsapp.saved': 'WhatsApp settings saved',
+  'whatsapp.disconnect': 'Disconnect',
+  'whatsapp.disconnectConfirm':
+    'Disconnect WhatsApp? The device leaves Linked devices and its keys are deleted.',
 };

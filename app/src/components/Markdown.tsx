@@ -13,7 +13,7 @@ import {
 } from 'react';
 import type { ThemedToken } from 'shiki/core';
 import { toast } from 'sonner';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import type { Options as MarkdownOptions } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -128,6 +128,11 @@ export function repairTables(text: string): string {
   return out.join('\n');
 }
 
+/** Addresses as the default keeps them, and the desktop app's own `yumakbot://` links too. */
+function keepAppLinks(url: string): string {
+  return /^yumakbot:\/\/(?:thread|bot|room)\/[\w-]{1,64}\/?$/.test(url) ? url : defaultUrlTransform(url);
+}
+
 /** A web address to open on request, or null for any other scheme. */
 export function webLink(src: string | undefined): URL | null {
   if (!src) return null;
@@ -198,7 +203,12 @@ export const Markdown = memo(function Markdown({
   text = mathDelimiters(repairTables(breaks ? hardBreaks(text) : text));
   return (
     <div className={className ?? 'prose-chat text-[15px] leading-relaxed break-words'}>
-      <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={COMPONENTS}>
+      <ReactMarkdown
+        remarkPlugins={REMARK}
+        rehypePlugins={REHYPE}
+        components={COMPONENTS}
+        urlTransform={keepAppLinks}
+      >
         {text}
       </ReactMarkdown>
     </div>

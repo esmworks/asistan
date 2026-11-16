@@ -12,6 +12,7 @@ import {
   patchOf,
   PROFILE_FOCUS,
   PROFILE_HELP,
+  ROUTINE_GATE_MODES,
   type Locale,
 } from '@yumakbot/shared';
 
@@ -63,6 +64,11 @@ export const Settings = z.object({
    * no limit. Turns wait for the next month once it is reached.
    */
   monthlyLimitUsd: z.number().min(0).max(1_000_000).default(0),
+  /**
+   * The small-model check before a routine run that a watched page or a webhook started: off,
+   * watching only (it records what it would do), or on (it skips runs with nothing new).
+   */
+  routineGate: z.enum(ROUTINE_GATE_MODES).default('off'),
   /** Unset until someone picks one; the app then stores the language it opened in. */
   language: z.enum(LOCALES).optional(),
 });
