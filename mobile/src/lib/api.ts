@@ -417,6 +417,7 @@ export function apiFor(origin: string) {
     updateRoutine: (id: string, p: unknown) => http.patch<Routine>(`/api/routines/${id}`, p),
     removeRoutine: (id: string) => http.del<{ ok: true }>(`/api/routines/${id}`),
     runRoutine: (id: string) => http.post<RoutineRun | null>(`/api/routines/${id}/run`),
+    routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
     routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
 
     library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),

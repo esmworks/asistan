@@ -8,7 +8,7 @@ import {
 } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AreaBox, FormField, SaveButton, TextBox } from '@/components/dialogs/common';
 import { isLoopback, runCommand, TIME, tomorrow } from '@/components/dialogs/model';
@@ -18,7 +18,15 @@ import { Chip, ChipRow, ChoiceRow, Hint, Pad, Rows } from '@/components/settings
 import { locale, t, type MessageKey } from '@/i18n';
 import { formatters } from '@/lib/format';
 import { nav } from '@/lib/nav';
-import { useBots, useClaudeModels, useConnections, useInfo, useRoutines, useSettings } from '@/lib/queries';
+import {
+  useBots,
+  useClaudeModels,
+  useConnections,
+  useInfo,
+  useRoutines,
+  useSettings,
+  useSummaries,
+} from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 import { ordered } from '@/lib/bots';
@@ -163,6 +171,14 @@ function RoutinePage({ routine, initialBotId }: { routine?: Routine; initialBotI
   const [v, setV] = useState<Form>(start);
   const [enabled, setEnabled] = useState(routine?.enabled ?? true);
   const [tried, setTried] = useState(false);
+  // Opening a routine whose latest run failed is seeing it: the bot's mark for it goes out until
+  // a run fails again.
+  const { data: summaries = [] } = useSummaries();
+  const routineId = routine?.id;
+  const failed = !!routineId && summaries.some((s) => s.failedRoutines?.includes(routineId));
+  useEffect(() => {
+    if (failed && routineId) void api.routineFailureSeen(routineId).catch(() => undefined);
+  }, [api, failed, routineId]);
   const set = <K extends keyof Form>(k: K, val: Form[K]) => setV((f) => ({ ...f, [k]: val }));
   const errors = validate(v);
   const err = (k: keyof Form) => (tried ? errors[k] : undefined);
