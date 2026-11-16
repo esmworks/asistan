@@ -3,7 +3,7 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
-## Unreleased
+## 0.3.0 — 2026-11-17
 
 ### Safety
 
@@ -28,6 +28,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Docker Compose profiles reach the server from elsewhere without opening a port: `--profile cloudflare` runs a
   Cloudflare Tunnel, `--profile tailscale` serves it on your tailnet with HTTPS. The tunnel reaches the server over a
   network of its own with no way out.
+- Install on a fresh Ubuntu or Debian server with one command (`docker/install.sh`, from curl or a provider's
+  cloud-init box): Docker, the `.env`, AppArmor, the firewall and HTTPS through Caddy (an sslip.io name when there is no
+  domain). Running it again, or `yumakbot update`, updates the installation and keeps its secrets and data. The
+  firewall rules come back after every reboot and Docker restart, and the server and computer images are published
+  for amd64 and arm64 on each version, so a server pulls them instead of building them.
 
 ### Connections and models
 
@@ -45,6 +50,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   written out by that provider (on the web and in the desktop app); without one, a browser with its own speech
   recognition (Chrome, Safari) writes as you speak. The desktop app may use the microphone and nothing else of the
   camera or screen; on macOS it asks first. On the phone, the keyboard's own dictation does the same.
+- Bots make pictures: with an OpenAI or xAI key saved, `image_create` draws what the bot describes and posts it as a
+  file in the chat (Telegram and WhatsApp too). The bot's own provider goes first; only bots with the internet on get
+  it, and asking bots open a card first. At most four pictures a turn.
+- Bots turn their pages into pictures: `page_to_image` renders a page the bot wrote (a banner, a cover, a social card)
+  at the size it asks for and posts the PNG. It costs nothing and runs without a card.
+- A file or page a bot hands over while talking to another bot comes to its conversation with the person.
+- When a bot's latest reply is in another of its conversations, the chat shows a bar that opens it.
 
 ### Bots
 
@@ -74,6 +86,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   told to ask for the vault instead: memory reaches the model on every turn, so a secret there would leak with it.
 - Writing a note that is already saved, give or take case, spacing and closing punctuation, makes no second copy.
 - Each note reaches the bot with the day it was last written, so of two notes that disagree it can trust the newer.
+- When memory outgrows the prompt, the notes a bot wrote, changed or looked up most recently go in, rather than the
+  newest ones. An old note a bot keeps finding by search stays in the prompt, and one nobody needed makes room. A
+  search with a query and a site the bot opens count as looking a note up; being in the prompt does not.
+- The memory screen lists the notes no bot uses: nobody changed them and no bot looked them up in 30 days, and no bot reads them on
+  every turn. They can be deleted one by one or all at once; a note a bot uses again before that stays. Today shows
+  how many there are and opens the memory screen from there.
 
 ### Routines
 
@@ -88,6 +106,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   When it is unsure or fails, the run goes ahead, and reminders always run. It is off by default.
 - A watched page keeps its last text, so the pre-check reads the sentences that were removed and added instead of the
   whole page.
+- A routine's report lands in the bot's main chat under a label that opens the run's steps, and the bot reads the
+  reports that came since its last turn there. Routine conversations leave the list unless a card waits in them or
+  they are pinned.
+- Bots set the model a routine runs with, and the approval card names it.
+- The red mark of a failed routine opens that routine at its latest runs, and goes away once the person has seen the
+  failure.
 
 ### Browser
 
@@ -95,6 +119,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
   once, before the bot reads the page. When a site still shows a check a person has to answer, or turns the browser
   away, the bot is told so plainly: hand the step to the person with Take control, or use another source. It is
   never to get past a check itself.
+- The bots' browsers can go out through the person's own computer (Settings, one switch for the server): sites that
+  refuse sign-ins from a datacenter see the home connection while the desktop app is connected, and the server's
+  while that computer is off. The desktop app reaches only web ports on public addresses, so the server never reaches
+  the person's own machine or home network. The bots' commands still go out from the server.
 
 ### Backups
 
@@ -117,15 +145,7 @@ version is 0.x, a minor release may change the data format or the API; the serve
   the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps
   its folder name; renaming `YumakBot.app` to `Yumak Bot.app` in Applications fixes the name the Dock shows.
-
-### Memory
-
-- When memory outgrows the prompt, the notes a bot wrote, changed or looked up most recently go in, rather than the
-  newest ones. An old note a bot keeps finding by search stays in the prompt, and one nobody needed makes room. A
-  search with a query and a site the bot opens count as looking a note up; being in the prompt does not.
-- The memory screen lists the notes no bot uses: nobody changed them and no bot looked them up in 30 days, and no bot reads them on
-  every turn. They can be deleted one by one or all at once; a note a bot uses again before that stays. Today shows
-  how many there are and opens the memory screen from there.
+- On the phone, the bots' avatars look around and blink like on the web and the desktop.
 
 ## 0.2.1 — 2026-11-16
 
