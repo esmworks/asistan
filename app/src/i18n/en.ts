@@ -1135,6 +1135,21 @@ export const en: Catalog<MessageKey> = {
     'A Claude subscription or an Anthropic API key. Recommended: bots can also use the command line.',
   'ai.other': 'Another provider',
   'ai.otherHint': 'OpenAI, Google Gemini, OpenRouter, DeepSeek… with an API key, paid per use.',
+  'provider.signedIn': 'Signed in with your plan',
+  'provider.signOut': 'Sign out',
+  'provider.signInWith': 'Sign in with {provider}',
+  'provider.signInDone': 'Signed in with {provider}',
+  'provider.signInWaiting': 'Waiting for the sign-in to finish…',
+  'provider.chatgptHint':
+    'Use your ChatGPT plan instead of an API key: OpenAI asks you to let Yumak Bot use it, and the bots run on OpenAI models from your plan.',
+  'provider.copilotHint':
+    'Use your GitHub Copilot plan: you sign in on GitHub with a code, and the bots run on the models your plan opens.',
+  'provider.enterprise': 'GitHub Enterprise domain (leave empty for github.com)',
+  'provider.deviceCode': 'Open the page below and type this code:',
+  'provider.openSignIn': 'Open the sign-in page',
+  'provider.pasteHint':
+    'On this computer the sign-in comes back by itself. If the browser ends on a page that does not load (the server is on another computer), copy that page’s address and paste it here.',
+  'provider.pastePlaceholder': 'http://127.0.0.1:1455/auth/callback?code=…',
   'provider.pick': 'Pick a provider and paste its API key',
   'provider.addAnother': 'Add another provider',
   'provider.other': 'Other',

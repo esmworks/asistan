@@ -1139,6 +1139,21 @@ export const tr = {
   'ai.other': 'Başka bir sağlayıcı',
   'ai.otherHint':
     'OpenAI, Google Gemini, OpenRouter, DeepSeek… API anahtarıyla, kullandıkça ücretlendirilir.',
+  'provider.signedIn': 'Planınızla oturum açıldı',
+  'provider.signOut': 'Oturumu kapat',
+  'provider.signInWith': '{provider} ile oturum aç',
+  'provider.signInDone': '{provider} ile oturum açıldı',
+  'provider.signInWaiting': 'Oturum açmanın bitmesi bekleniyor…',
+  'provider.chatgptHint':
+    'API anahtarı yerine ChatGPT planınızı kullanın: OpenAI, Yumak Bot’un planınızı kullanmasına izin vermenizi ister; botlar planınızdaki OpenAI modelleriyle çalışır.',
+  'provider.copilotHint':
+    'GitHub Copilot planınızı kullanın: GitHub’da bir kodla oturum açarsınız; botlar planınızın açtığı modellerle çalışır.',
+  'provider.enterprise': 'GitHub Enterprise alan adı (github.com için boş bırakın)',
+  'provider.deviceCode': 'Aşağıdaki sayfayı açıp bu kodu yazın:',
+  'provider.openSignIn': 'Oturum açma sayfasını aç',
+  'provider.pasteHint':
+    'Bu bilgisayarda oturum kendiliğinden döner. Tarayıcı açılmayan bir sayfada kalırsa (sunucu başka bir bilgisayardaysa) o sayfanın adresini kopyalayıp buraya yapıştırın.',
+  'provider.pastePlaceholder': 'http://127.0.0.1:1455/auth/callback?code=…',
   'provider.pick': 'Sağlayıcıyı seçip API anahtarını yapıştırın',
   'provider.addAnother': 'Başka bir sağlayıcı ekle',
   'provider.other': 'Diğer',

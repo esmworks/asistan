@@ -1,8 +1,18 @@
-import type { ProviderInfo } from '@yumakbot/shared';
+import type { ProviderInfo, ProviderSignIn } from '@yumakbot/shared';
+import * as Clipboard from 'expo-clipboard';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { IconButton, PillButton, usePageScroll } from '@/components/page';
 import { toast, toastError } from '@/components/overlay';
 import { Chip, ChipRow, ChoiceRow } from '@/components/settings/common/controls';
@@ -39,6 +49,7 @@ const POPULAR = ['openai', 'google', 'openrouter', 'deepseek', 'xai', 'mistral',
  */
 const NAMES: Record<string, string> = {
   openai: 'OpenAI',
+  'github-copilot': 'GitHub Copilot',
   google: 'Google Gemini',
   openrouter: 'OpenRouter',
   deepseek: 'DeepSeek',
@@ -74,6 +85,13 @@ const modelList = (text: string) =>
 const SHOWN_MODELS = 8;
 /** The chip that opens the form for the person's own endpoint; never a provider id. */
 const CUSTOM = '+custom';
+/** Plans signed in to instead of a key; the chip value is not a provider id (OpenAI also takes keys). */
+const PLANS = [
+  { chip: '+chatgpt', provider: 'openai', name: 'ChatGPT' },
+  { chip: '+copilot', provider: 'github-copilot', name: 'GitHub Copilot' },
+] as const;
+/** Providers reached only by signing in to a plan: no key chip for them. */
+const PLAN_ONLY = new Set(['github-copilot']);
 /** Ollama's address on the same computer; an address, not a word to translate. */
 const EXAMPLE_URL = 'http://localhost:11434/v1';
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
@@ -147,9 +165,167 @@ export function ProviderKeyForm() {
 /** The providers that can be used: those with a key, and the person's own endpoints. */
 export function ProviderRows({ plain = false }: { plain?: boolean }) {
   const { data: providers = [] } = useProviders();
+  // A provider can have both: a saved key and a sign-in with the person's plan.
   return providers
     .filter((p) => p.configured)
-    .map((p) => <ProviderRow key={p.id} provider={p} plain={plain} />);
+    .flatMap((p) => [
+      ...(p.signIn?.signedIn ? [<PlanRow key={`${p.id}-plan`} provider={p} plain={plain} />] : []),
+      ...(p.custom || p.hint ? [<ProviderRow key={p.id} provider={p} plain={plain} />] : []),
+    ]);
+}
+
+/** A sign-in with the person's plan, with sign-out. */
+function PlanRow({ provider: p, plain }: { provider: ProviderInfo; plain: boolean }) {
+  const api = useApi();
+  const refresh = useRefreshProviders();
+  const out = useMutation({ mutationFn: api.signOut, onSuccess: () => void refresh(), onError: toastError });
+  return (
+    <SavedLine
+      icon="check"
+      plain={plain}
+      title={PLANS.find((x) => x.provider === p.id)?.name ?? providerName(p.id)}
+      sub={t('provider.signedIn')}
+    >
+      <IconButton
+        icon="log-out"
+        size={18}
+        label={t('provider.signOut')}
+        onPress={() => out.mutate(p.id)}
+        disabled={out.isPending}
+      />
+    </SavedLine>
+  );
+}
+
+/**
+ * Signing in with the person's own plan: the server runs it; the phone opens the page, shows a
+ * code to type there (Copilot), or takes the address the browser ended on (ChatGPT, whose page
+ * cannot come back to a phone by itself).
+ */
+function PlanSignIn({ plan, onDone }: { plan: (typeof PLANS)[number]; onDone?: () => void }) {
+  const c = useColors();
+  const api = useApi();
+  const refresh = useRefreshProviders();
+  const [session, setSession] = useState<ProviderSignIn | null>(null);
+  const [enterprise, setEnterprise] = useState('');
+  const [pasted, setPasted] = useState('');
+  const copilot = plan.provider === 'github-copilot';
+  const start = useMutation({
+    mutationFn: () => api.startSignIn(plan.provider, copilot ? enterprise.trim() : undefined),
+    onSuccess: setSession,
+    onError: toastError,
+  });
+  const live = session && (session.status === 'starting' || session.status === 'waiting');
+  const { data: polled } = useQuery({
+    queryKey: ['sign-in', session?.id],
+    queryFn: () => api.signIn(session!.id),
+    enabled: !!live,
+    refetchInterval: 1500,
+  });
+  const now = polled && polled.id === session?.id ? polled : session;
+  const done = now?.status === 'done';
+  useEffect(() => {
+    if (!done) return;
+    toast(t('provider.signInDone', { provider: plan.name }));
+    void refresh();
+    onDone?.();
+  }, [done, plan.name, refresh, onDone]);
+  // Ends a sign-in left half-way when the form closes or another provider is picked.
+  useEffect(() => {
+    const id = session?.id;
+    return () => {
+      if (id) void api.cancelSignIn(id).catch(() => {});
+    };
+  }, [session?.id, api]);
+  const paste = useMutation({
+    mutationFn: () => api.pasteSignIn(now!.id, pasted.trim()),
+    onSuccess: (s) => {
+      setSession(s);
+      setPasted('');
+    },
+    onError: toastError,
+  });
+
+  if (!now || now.status === 'cancelled' || now.status === 'error' || now.status === 'done') {
+    return (
+      <View style={styles.root}>
+        <Text style={[styles.sub, { color: c.mutedForeground }]}>
+          {t(copilot ? 'provider.copilotHint' : 'provider.chatgptHint')}
+        </Text>
+        {copilot ? (
+          <Field
+            value={enterprise}
+            onChangeText={setEnterprise}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder={t('provider.enterprise')}
+            accessibilityLabel={t('provider.enterprise')}
+          />
+        ) : null}
+        {now?.status === 'error' ? (
+          <Text style={[styles.sub, { color: c.destructive }]}>{now.error}</Text>
+        ) : null}
+        <View style={styles.start}>
+          <PillButton
+            variant="primary"
+            icon="log-in"
+            label={t('provider.signInWith', { provider: plan.name })}
+            onPress={() => start.mutate()}
+            busy={start.isPending}
+          />
+        </View>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.root}>
+      {now.userCode ? (
+        <>
+          <Text style={[styles.sub, { color: c.foreground }]}>{t('provider.deviceCode')}</Text>
+          <Pressable
+            onPress={() => void Clipboard.setStringAsync(now.userCode!)}
+            accessibilityLabel={t('message.copy')}
+          >
+            <Text selectable style={[styles.title, styles.code, { color: c.foreground }]}>
+              {now.userCode}
+            </Text>
+          </Pressable>
+        </>
+      ) : null}
+      {now.url ? (
+        <View style={styles.start}>
+          <PillButton
+            icon="external-link"
+            label={t('provider.openSignIn')}
+            onPress={() => void Linking.openURL(now.url!)}
+          />
+        </View>
+      ) : null}
+      {now.needsPaste ? (
+        <>
+          <Text style={[styles.sub, { color: c.mutedForeground }]}>{t('provider.pasteHint')}</Text>
+          <Field
+            value={pasted}
+            onChangeText={setPasted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder={t('provider.pastePlaceholder')}
+            accessibilityLabel={t('provider.pastePlaceholder')}
+          />
+          <View style={styles.start}>
+            <PillButton
+              variant="primary"
+              label={t('common.save')}
+              onPress={() => pasted.trim() && paste.mutate()}
+              busy={paste.isPending}
+              disabled={!pasted.trim()}
+            />
+          </View>
+        </>
+      ) : null}
+      <Text style={[styles.sub, { color: c.mutedForeground }]}>{t('provider.signInWaiting')}</Text>
+    </View>
+  );
 }
 
 /** One provider that can be used: a key's provider with remove, or the person's own endpoint. */
@@ -192,7 +368,8 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
   const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const refresh = useRefreshProviders();
-  const ids = providers.filter((p) => !p.custom).map((p) => p.id);
+  const ids = providers.filter((p) => !p.custom && !PLAN_ONLY.has(p.id)).map((p) => p.id);
+  const plans = PLANS.filter((x) => providers.some((p) => p.id === x.provider && p.signIn));
   const popular = POPULAR.filter((id) => ids.includes(id));
   const others = ids.filter((id) => !popular.includes(id)).sort(byName);
   const current = provider || popular[0] || ids[0] || '';
@@ -215,6 +392,15 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
     <View style={styles.root}>
       <Text style={[styles.title, { color: c.foreground }]}>{t('provider.pick')}</Text>
       <ChipRow>
+        {plans.map((x) => (
+          <Chip
+            key={x.chip}
+            on={current === x.chip}
+            onPress={() => pick(x.chip)}
+            icon="log-in"
+            label={x.name}
+          />
+        ))}
         {popular.map((id) => (
           <Chip key={id} on={current === id} onPress={() => pick(id)} label={providerName(id)} />
         ))}
@@ -237,6 +423,8 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
       ) : null}
       {current === CUSTOM ? (
         <EndpointForm onAdded={onAdded} />
+      ) : PLANS.some((x) => x.chip === current) ? (
+        <PlanSignIn plan={PLANS.find((x) => x.chip === current)!} onDone={onAdded} />
       ) : (
         <>
           <Field
@@ -672,6 +860,7 @@ export function useSavePiModel(onSaved?: () => void, backup = false) {
 }
 
 const styles = StyleSheet.create({
+  code: { fontFamily: MONO, letterSpacing: 3, fontSize: 22 },
   root: { gap: 12 },
   plain: { borderWidth: 0, borderRadius: 0, paddingLeft: 16, paddingRight: 8, paddingVertical: 10 },
   saved: {

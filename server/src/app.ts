@@ -151,6 +151,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   const pi = new PiEngine({
     sessionsDir: join(config.dataDir, 'pi-sessions'),
     apiKey: (provider) => services.keys.credential(provider),
+    auth: (provider) => services.keys.auth(provider),
     customModel: (provider, id) => services.keys.customModel(provider, id),
     takesTools: (provider, id) => services.keys.takesTools(provider, id),
   });
@@ -557,6 +558,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.routines.stop();
       await services.reactions.stop();
       services.push.stop();
+      services.subscriptions.stop();
       await services.turns.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);

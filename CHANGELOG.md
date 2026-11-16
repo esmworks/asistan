@@ -5,6 +5,16 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Connections and models
+
+- Sign in with your ChatGPT plan instead of an OpenAI API key, through OpenAI's "Sign in with ChatGPT", which lets an
+  app use a person's plan with its name on the consent page. On the computer that runs the server the sign-in comes
+  back by itself; on a server elsewhere you paste the address the browser ended on.
+- Sign in with your GitHub Copilot plan with a code typed on GitHub (GitHub Enterprise too); bots get the models your
+  plan opens.
+- Both are sealed like keys, refreshed when they run out, and signed out from the connection page. A saved API key for
+  the same provider comes first.
+
 ### Memory
 
 - A password, key or token a bot writes to memory is replaced with a marker before the note is saved, and the bot is

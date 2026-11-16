@@ -1,6 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronDown, Loader2, Pencil, RefreshCw, Server, X } from 'lucide-react';
-import type { ProviderInfo } from '@yumakbot/shared';
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  Loader2,
+  LogIn,
+  Pencil,
+  RefreshCw,
+  Server,
+  X,
+} from 'lucide-react';
+import type { ProviderInfo, ProviderSignIn } from '@yumakbot/shared';
 import {
   useEffect,
   useId,
@@ -16,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
+import { copyText } from '@/lib/clipboard';
 import { splitPiModel } from '@/lib/new-bot';
 import { useProviderModels, useProviders } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -29,6 +41,7 @@ const POPULAR = ['openai', 'google', 'openrouter', 'deepseek', 'xai', 'mistral',
  */
 const NAMES: Record<string, string> = {
   openai: 'OpenAI',
+  'github-copilot': 'GitHub Copilot',
   google: 'Google Gemini',
   openrouter: 'OpenRouter',
   deepseek: 'DeepSeek',
@@ -56,6 +69,16 @@ export const providerName = (id: string) => NAMES[id] ?? id;
 const byName = (a: string, b: string) => providerName(a).localeCompare(providerName(b));
 /** The chip that opens the form for the person's own endpoint; never a provider id. */
 const CUSTOM = '+custom';
+/**
+ * Plans the person signs in to instead of pasting a key, first among the chips. The chip value is
+ * not a provider id for ChatGPT, whose provider (OpenAI) also takes a key.
+ */
+const PLANS = [
+  { chip: '+chatgpt', provider: 'openai', name: 'ChatGPT' },
+  { chip: '+copilot', provider: 'github-copilot', name: 'GitHub Copilot' },
+] as const;
+/** Providers reached only by signing in to a plan: no key chip for them. */
+const PLAN_ONLY = new Set(['github-copilot']);
 /** Ollama's address on the same computer; an address, not a word to translate. */
 const EXAMPLE_URL = 'http://localhost:11434/v1';
 
@@ -87,34 +110,65 @@ export function ProviderRows({ plain = false }: { plain?: boolean }) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['providers'] }),
     onError: (e) => toast.error((e as Error).message),
   });
+  const signOut = useMutation({
+    mutationFn: api.signOut,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['providers'] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const planRow = (p: ProviderInfo) => (
+    <div
+      key={`${p.id}-plan`}
+      className={cn('flex items-center gap-3 px-4 py-3', !plain && 'rounded-2xl border')}
+    >
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+        <Check className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">
+          {PLANS.find((x) => x.provider === p.id)?.name ?? providerName(p.id)}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">{t('provider.signedIn')}</span>
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="rounded-full text-muted-foreground"
+        onClick={() => signOut.mutate(p.id)}
+        disabled={signOut.isPending}
+      >
+        <X /> {t('provider.signOut')}
+      </Button>
+    </div>
+  );
+  const keyRow = (p: ProviderInfo) => (
+    <div key={p.id} className={cn('flex items-center gap-3 px-4 py-3', !plain && 'rounded-2xl border')}>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+        <Check className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{providerName(p.id)}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {t('provider.keySaved', { hint: p.hint ?? '' })}
+        </span>
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="rounded-full text-muted-foreground"
+        onClick={() => remove.mutate(p.id)}
+        disabled={remove.isPending}
+      >
+        <X /> {t('common.remove')}
+      </Button>
+    </div>
+  );
+  // A provider can have both: a saved key and a sign-in with the person's plan.
   return providers
     .filter((p) => p.configured)
-    .map((p) =>
-      p.custom ? (
-        <EndpointRow key={p.id} provider={p} plain={plain} />
-      ) : (
-        <div key={p.id} className={cn('flex items-center gap-3 px-4 py-3', !plain && 'rounded-2xl border')}>
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-            <Check className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{providerName(p.id)}</span>
-            <span className="block truncate text-xs text-muted-foreground">
-              {t('provider.keySaved', { hint: p.hint ?? '' })}
-            </span>
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="rounded-full text-muted-foreground"
-            onClick={() => remove.mutate(p.id)}
-            disabled={remove.isPending}
-          >
-            <X /> {t('common.remove')}
-          </Button>
-        </div>
-      ),
-    );
+    .flatMap((p) => [
+      ...(p.signIn?.signedIn ? [planRow(p)] : []),
+      ...(p.custom ? [<EndpointRow key={p.id} provider={p} plain={plain} />] : p.hint ? [keyRow(p)] : []),
+    ]);
 }
 
 /**
@@ -138,7 +192,8 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
     },
     onError: (e) => setError((e as Error).message),
   });
-  const ids = providers.filter((p) => !p.custom).map((p) => p.id);
+  const ids = providers.filter((p) => !p.custom && !PLAN_ONLY.has(p.id)).map((p) => p.id);
+  const plans = PLANS.filter((x) => providers.some((p) => p.id === x.provider && p.signIn));
   const popular = POPULAR.filter((id) => ids.includes(id));
   const others = ids.filter((id) => !popular.includes(id)).sort(byName);
   const current = provider || popular[0] || ids[0] || '';
@@ -151,6 +206,18 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
     <form onSubmit={submit} className="space-y-3">
       <div className="text-sm font-medium">{t('provider.pick')}</div>
       <div className="flex flex-wrap items-center gap-2">
+        {plans.map((x) => (
+          <Chip
+            key={x.chip}
+            on={current === x.chip}
+            onClick={() => {
+              setProvider(x.chip);
+              setError(null);
+            }}
+          >
+            <LogIn className="size-3.5" /> {x.name}
+          </Chip>
+        ))}
         {popular.map((id) => (
           <Chip
             key={id}
@@ -201,6 +268,8 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
       </div>
       {current === CUSTOM ? (
         <EndpointForm onAdded={onAdded} />
+      ) : PLANS.some((x) => x.chip === current) ? (
+        <PlanSignIn plan={PLANS.find((x) => x.chip === current)!} onDone={onAdded} />
       ) : (
         <div className="flex flex-wrap gap-2">
           <Input
@@ -222,8 +291,139 @@ export function AddProviderForm({ onAdded }: { onAdded?: () => void }) {
           </Button>
         </div>
       )}
-      {error && current !== CUSTOM && <p className="text-sm text-destructive">{error}</p>}
+      {error && current !== CUSTOM && !current.startsWith('+') && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
     </form>
+  );
+}
+
+/**
+ * Signing in with the person's own plan. The server runs the sign-in; this shows what the person
+ * does in their browser: open a page and type a code (Copilot), or sign in on a page that comes
+ * back by itself on this computer, or whose final address is pasted here from elsewhere (ChatGPT).
+ */
+function PlanSignIn({ plan, onDone }: { plan: (typeof PLANS)[number]; onDone?: () => void }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const [session, setSession] = useState<ProviderSignIn | null>(null);
+  const [enterprise, setEnterprise] = useState('');
+  const [pasted, setPasted] = useState('');
+  const copilot = plan.provider === 'github-copilot';
+  const start = useMutation({
+    mutationFn: () => api.startSignIn(plan.provider, copilot ? enterprise.trim() : undefined),
+    onSuccess: setSession,
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const live = session && (session.status === 'starting' || session.status === 'waiting');
+  const { data: polled } = useQuery({
+    queryKey: ['sign-in', session?.id],
+    queryFn: () => api.signIn(session!.id),
+    enabled: !!live,
+    refetchInterval: 1500,
+  });
+  const now = polled && polled.id === session?.id ? polled : session;
+  useEffect(() => {
+    if (now?.status !== 'done') return;
+    toast.success(t('provider.signInDone', { provider: plan.name }));
+    void qc.invalidateQueries({ queryKey: ['providers'] });
+    onDone?.();
+  }, [now?.status, plan.name, qc, t, onDone]);
+  // Ends a sign-in left half-way when the form closes or another provider is picked.
+  useEffect(() => {
+    const id = session?.id;
+    return () => {
+      if (id) void api.cancelSignIn(id).catch(() => {});
+    };
+  }, [session?.id]);
+  const paste = useMutation({
+    mutationFn: () => api.pasteSignIn(now!.id, pasted.trim()),
+    onSuccess: (s) => {
+      setSession(s);
+      setPasted('');
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  if (!now || now.status === 'cancelled' || now.status === 'error' || now.status === 'done') {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          {t(copilot ? 'provider.copilotHint' : 'provider.chatgptHint')}
+        </p>
+        {copilot && (
+          <Input
+            value={enterprise}
+            onChange={(e) => setEnterprise(e.target.value)}
+            placeholder={t('provider.enterprise')}
+            aria-label={t('provider.enterprise')}
+            className="h-10 rounded-full px-4"
+          />
+        )}
+        {now?.status === 'error' && <p className="text-sm text-destructive">{now.error}</p>}
+        <Button className="h-10 rounded-full" onClick={() => start.mutate()} disabled={start.isPending}>
+          {start.isPending ? <Loader2 className="animate-spin" /> : <LogIn />}
+          {t('provider.signInWith', { provider: plan.name })}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 rounded-2xl border p-4">
+      {now.status === 'starting' && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+      {now.userCode && (
+        <div className="space-y-2">
+          <p className="text-sm">{t('provider.deviceCode')}</p>
+          <div className="flex items-center gap-2">
+            <code className="rounded-xl bg-secondary px-3 py-1.5 font-mono text-lg tracking-widest">
+              {now.userCode}
+            </code>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              aria-label={t('message.copy')}
+              onClick={() => void copyText(now.userCode!)}
+            >
+              <Copy />
+            </Button>
+          </div>
+        </div>
+      )}
+      {now.url && (
+        <Button asChild variant="outline" className="rounded-full">
+          <a href={now.url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink /> {t('provider.openSignIn')}
+          </a>
+        </Button>
+      )}
+      {now.needsPaste && (
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pasted.trim()) paste.mutate();
+          }}
+        >
+          <p className="text-xs text-muted-foreground">{t('provider.pasteHint')}</p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              placeholder={t('provider.pastePlaceholder')}
+              aria-label={t('provider.pastePlaceholder')}
+              className="h-10 min-w-56 flex-1 rounded-full px-4 font-mono"
+            />
+            <Button type="submit" className="h-10 rounded-full" disabled={!pasted.trim() || paste.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      )}
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" /> {t('provider.signInWaiting')}
+      </p>
+    </div>
   );
 }
 

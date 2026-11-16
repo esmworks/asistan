@@ -49,6 +49,7 @@ import type {
   ConnectionUpdate,
   UsageRange,
   UsageReport,
+  ProviderSignIn,
 } from '@yumakbot/shared';
 import { locale, t } from '@/i18n';
 
@@ -229,6 +230,15 @@ export function apiFor(origin: string) {
         },
       ),
     removeProviderKey: (id: string) => http.del<{ ok: true }>(`/api/providers/${encodeURIComponent(id)}/key`),
+    /** Starts signing in to a provider with the person's plan; follow it with `signIn`. */
+    startSignIn: (provider: string, enterprise?: string) =>
+      http.post<ProviderSignIn>(`/api/providers/${encodeURIComponent(provider)}/sign-in`, { enterprise }),
+    signIn: (id: string) => http.get<ProviderSignIn>(`/api/sign-ins/${id}`),
+    pasteSignIn: (id: string, input: string) =>
+      http.post<ProviderSignIn>(`/api/sign-ins/${id}/paste`, { input }),
+    cancelSignIn: (id: string) => http.del<{ ok: true }>(`/api/sign-ins/${id}`),
+    signOut: (provider: string) =>
+      http.del<{ ok: true }>(`/api/providers/${encodeURIComponent(provider)}/sign-in`),
     addEndpoint: (input: CustomEndpointCreate) => http.post<ProviderInfo>('/api/providers/custom', input),
     discoverEndpoints: () =>
       http.get<{ name: string; baseUrl: string; models: string[] }[]>('/api/providers/discover'),

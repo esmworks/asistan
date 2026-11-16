@@ -34,6 +34,7 @@ import {
   patchOf,
   PermissionRuleCreate,
   ProviderKeyInput,
+  ProviderSignInStart,
   quoteExcerpt,
   type ReplyQuote,
   RoutineCreate,
@@ -309,6 +310,25 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       z.object({ model: z.string().trim().min(1).max(200) }).parse(req.body).model,
     ),
   );
+  // Signing in with the person's own plan (ChatGPT, Copilot); the app follows the sign-in it starts.
+  app.post('/api/providers/:id/sign-in', async (req) =>
+    s.subscriptions.start(ProviderParams.parse(req.params).id, ProviderSignInStart.parse(req.body ?? {})),
+  );
+  app.get('/api/sign-ins/:id', async (req) => s.subscriptions.status(IdParams.parse(req.params).id));
+  app.post('/api/sign-ins/:id/paste', async (req) =>
+    s.subscriptions.paste(
+      IdParams.parse(req.params).id,
+      z.object({ input: z.string().min(1).max(4000) }).parse(req.body).input,
+    ),
+  );
+  app.delete('/api/sign-ins/:id', async (req) => {
+    s.subscriptions.cancel(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+  app.delete('/api/providers/:id/sign-in', async (req) => {
+    await s.subscriptions.signOut(ProviderParams.parse(req.params).id);
+    return { ok: true };
+  });
   app.delete('/api/providers/:id/key', async (req) => {
     await s.keys.remove(ProviderParams.parse(req.params).id);
     return { ok: true };

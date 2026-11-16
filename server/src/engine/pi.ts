@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Agent, type AgentMessage, type AgentTool, type StreamFn } from '@earendil-works/pi-agent-core';
-import type { AssistantMessage, Model } from '@earendil-works/pi-ai';
+import type { AssistantMessage, Model, ModelAuth } from '@earendil-works/pi-ai';
 import { completeSimple, getModel, streamSimple } from '@earendil-works/pi-ai/compat';
 import { clampThinkingLevel } from '@earendil-works/pi-ai/models';
 import type { Locale } from '@yumakbot/shared';
@@ -28,6 +28,11 @@ export interface PiEngineOptions {
   sessionsDir: string;
   /** Stored API key for a provider; never read from the environment. */
   apiKey(provider: string): Promise<string | null>;
+  /**
+   * What requests to a provider carry, when it is more than a key: a sign-in with the person's
+   * plan gives a token and, for Copilot, the address of that plan. Preferred over `apiKey`.
+   */
+  auth?(provider: string): Promise<ModelAuth | null>;
   /** Tests swap these for an offline provider. */
   resolveModel?: (provider: string, id: string) => Model<string> | undefined;
   /** A model on one of the person's own endpoints, which no built-in list holds. */
@@ -205,6 +210,32 @@ export class PiEngine implements Engine {
     await rename(tmp, file);
   }
 
+  /** The key for a provider's requests, and the model with the address and headers its sign-in gives. */
+  private async authorize(
+    provider: string,
+    model: Model<string>,
+  ): Promise<{ apiKey: string; model: Model<string> } | null> {
+    const auth: ModelAuth | null = this.opts.auth
+      ? await this.opts.auth(provider)
+      : await this.opts.apiKey(provider).then((k) => (k ? { apiKey: k } : null));
+    if (!auth?.apiKey) return null;
+    return {
+      apiKey: auth.apiKey,
+      model: {
+        ...model,
+        ...(auth.baseUrl && { baseUrl: auth.baseUrl }),
+        // A null header value means "leave it out".
+        ...(auth.headers && {
+          headers: Object.fromEntries(
+            Object.entries({ ...model.headers, ...auth.headers }).filter(
+              (e): e is [string, string] => typeof e[1] === 'string',
+            ),
+          ),
+        }),
+      },
+    };
+  }
+
   private async resolve(provider: string, id: string): Promise<Model<string> | undefined> {
     const resolveModel =
       this.opts.resolveModel ??
@@ -215,10 +246,11 @@ export class PiEngine implements Engine {
   async testModel(ref: string, locale: Locale): Promise<ModelTest> {
     const t = translator(locale);
     const target = splitModel(ref);
-    const model = target && (await this.resolve(target.provider, target.id));
-    if (!target || !model) return { ok: false, detail: t('engine.modelNotFound', { model: ref }) };
-    const apiKey = await this.opts.apiKey(target.provider);
-    if (!apiKey) return { ok: false, detail: t('engine.noApiKey', { provider: target.provider }) };
+    const found = target && (await this.resolve(target.provider, target.id));
+    if (!target || !found) return { ok: false, detail: t('engine.modelNotFound', { model: ref }) };
+    const authorized = await this.authorize(target.provider, found);
+    if (!authorized) return { ok: false, detail: t('engine.noApiKey', { provider: target.provider }) };
+    const { apiKey, model } = authorized;
     try {
       const reply = await (this.opts.complete ?? completeSimple)(
         model,
@@ -239,12 +271,13 @@ export class PiEngine implements Engine {
     const t = translator(req.locale);
     const target = splitModel(req.model);
     if (!target) return fail('engine', t('engine.modelFormat', { model: req.model }), '', req.sessionId);
-    const model = await this.resolve(target.provider, target.id);
-    if (!model) return fail('engine', t('engine.modelNotFound', { model: req.model }), '', req.sessionId);
-    const apiKey = await this.opts.apiKey(target.provider);
-    if (!apiKey) {
+    const found = await this.resolve(target.provider, target.id);
+    if (!found) return fail('engine', t('engine.modelNotFound', { model: req.model }), '', req.sessionId);
+    const authorized = await this.authorize(target.provider, found);
+    if (!authorized) {
       return fail('engine', t('engine.noApiKey', { provider: target.provider }), '', req.sessionId);
     }
+    const { apiKey, model } = authorized;
 
     const resumed = req.sessionId && SESSION_ID.test(req.sessionId) ? req.sessionId : null;
     const sessionId = resumed ?? randomUUID();

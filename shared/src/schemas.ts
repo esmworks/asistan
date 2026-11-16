@@ -521,8 +521,29 @@ export const ProviderInfo = z.object({
   hint: z.string().nullable(),
   /** Set for the person's own OpenAI-compatible endpoints. */
   custom: z.object({ name: z.string(), baseUrl: z.string() }).optional(),
+  /** Set for a provider that takes a sign-in with the person's own plan (ChatGPT, Copilot). */
+  signIn: z.object({ signedIn: z.boolean() }).optional(),
 });
 export type ProviderInfo = z.infer<typeof ProviderInfo>;
+
+/** Where signing in to a provider with a plan stands, as the app shows it while the person signs in. */
+export const ProviderSignIn = z.object({
+  id: z.string(),
+  provider: z.string(),
+  status: z.enum(['starting', 'waiting', 'done', 'error', 'cancelled']),
+  /** The page to sign in on, opened in the person's browser. */
+  url: z.string().nullable(),
+  /** A code the person types on `url` (a device-code sign-in). */
+  userCode: z.string().nullable(),
+  /** The browser could not hand the sign-in back by itself: the person pastes the address it ended on. */
+  needsPaste: z.boolean(),
+  error: z.string().nullable(),
+});
+export type ProviderSignIn = z.infer<typeof ProviderSignIn>;
+export const ProviderSignInStart = z.object({
+  /** A GitHub Enterprise domain for Copilot; empty for github.com. */
+  enterprise: z.string().trim().max(200).optional(),
+});
 export const ProviderKeyInput = z.object({ key: z.string().min(1).max(1000) });
 
 /** An OpenAI-compatible endpoint; its models are asked from it unless named here. */
