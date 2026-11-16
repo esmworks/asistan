@@ -3,6 +3,15 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Apps
+
+- The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes
+  the menu bar title from the app bundle, so the menu's own label did not reach it. The installer and update files
+  keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps
+  its folder name; renaming `YumakBot.app` to `Yumak Bot.app` in Applications fixes the name the Dock shows.
+
 ## 0.2.1 — 2026-11-16
 
 ### Apps

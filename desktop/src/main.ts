@@ -68,9 +68,10 @@ function heldByRunningApp(dir: string): boolean {
   }
 }
 
-// Own data folder, separate from any earlier installation. The internal name stays YumakBot:
-// what Electron keys to it, such as the keychain entry for the saved server key, would otherwise
-// be looked up under a new name. The About panel shows the product name people see.
+// Own data folder, separate from any earlier installation. The internal name stays YumakBot while
+// the app bundle is called Yumak Bot: what Electron keys to it, such as the keychain entry for the
+// saved server key, would otherwise be looked up under a new name. The About panel and the menu
+// items that name the app show the product name people see.
 app.setName('YumakBot');
 app.setAboutPanelOptions({ applicationName: 'Yumak Bot' });
 app.setPath(
@@ -520,9 +521,10 @@ function buildAppMenu() {
             enabled: !!origin,
           },
           { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
+          // Without a label these read "Hide YumakBot", from the internal name.
+          { role: 'hide', label: t('menu.hide') },
+          { role: 'hideOthers', label: t('menu.hideOthers') },
+          { role: 'unhide', label: t('menu.unhide') },
           { type: 'separator' },
           { role: 'quit', label: t('menu.quit') },
         ],

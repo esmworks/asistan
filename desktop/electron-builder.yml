@@ -1,6 +1,10 @@
 # Packaging settings. The server and app are built first (pnpm build at the root).
 appId: com.esmworks.yumakbot
-productName: YumakBot
+# The name people read: the app bundle, the menu bar title (macOS takes it from the bundle, not
+# from the menu), the Windows exe and shortcuts. Installer and update file names keep "YumakBot"
+# below: a space in a release asset's name does not survive the upload, and the update information
+# must name the file as it was uploaded.
+productName: Yumak Bot
 copyright: Copyright (C) 2026 esmworks (Erhan Erbaş)
 directories:
   output: out
@@ -32,6 +36,7 @@ mac:
     - dmg
     # The zip is what an installed app downloads to update itself; macOS cannot update from a dmg.
     - zip
+  artifactName: YumakBot-${version}-${arch}-mac.${ext}
   extendInfo:
     LSUIElement: false
   # Signed with the Developer ID in the keychain, or the one in CSC_LINK / CSC_KEY_PASSWORD on CI,
@@ -50,9 +55,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: ${productName}-${version}-Setup.${ext}
+  artifactName: YumakBot-${version}-Setup.${ext}
 dmg:
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: YumakBot-${version}-${arch}.${ext}
   # The stock background is 380 high with the icons at y 220, which leaves an empty band above
   # them. This one is shorter and puts the icons and the arrow in the middle of what Finder shows
   # (the window's height includes its title bar, so about 30 at the bottom of the image is hidden).
