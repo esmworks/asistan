@@ -1,5 +1,6 @@
 import type {
   ApnsSet,
+  RoutineGateMode,
   ApnsStatus,
   PushDeviceSet,
   SkillWarning,
@@ -142,6 +143,8 @@ export interface Settings {
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;
+  /** The routine pre-check; missing on older servers. */
+  routineGate?: RoutineGateMode;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }

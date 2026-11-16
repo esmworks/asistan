@@ -123,6 +123,15 @@ export const RoutineCreate = z.object({
 export type RoutineCreate = z.infer<typeof RoutineCreate>;
 export const RoutineUpdate = patchOf(RoutineCreate.omit({ botId: true }));
 
+/**
+ * The pre-check before a routine run that a watched page change or a webhook started: `off` runs
+ * every time, `shadow` asks a small model and only records what it said, `on` skips the runs it
+ * says have nothing new to work on.
+ */
+export const ROUTINE_GATE_MODES = ['off', 'shadow', 'on'] as const;
+export type RoutineGateMode = (typeof ROUTINE_GATE_MODES)[number];
+export const RoutineGateDecision = z.enum(['run', 'skip']);
+
 export const RoutineRunStatus = z.enum(['running', 'done', 'error', 'skipped', 'waiting']);
 export const RoutineRun = z.object({
   id: z.string(),
@@ -133,6 +142,11 @@ export const RoutineRun = z.object({
   threadId: z.string().nullable(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
+  /**
+   * What the small model said before the run, when the routine pre-check looked at it: `skip` means
+   * the run looked like it had nothing new to work on. Null when no pre-check ran.
+   */
+  gate: z.object({ decision: RoutineGateDecision, reason: z.string() }).nullable(),
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
 

@@ -16,7 +16,7 @@ import type { Ctx } from '../context';
 import type { T } from '../i18n';
 import { SILENT_REPLY } from '../engine/types';
 import { schema } from '../db';
-import type { TurnOutcome } from '../engine/types';
+import type { Engine, GateRequest, GateVerdict, TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
 import { cutAt, HttpError, isUniqueViolation, newId, notFound } from '../util';
 import { toRoutine, toRun } from './mappers';
@@ -26,6 +26,30 @@ import type { Services } from '.';
 /** The largest watched page read, and how much of its text goes to the bot. */
 const WATCH_MAX = 2 * 1024 * 1024;
 const WATCH_EXCERPT = 6000;
+/** How much of a watched page's text is kept to show the next change as what changed. */
+const WATCH_KEEP = 200_000;
+/** The most of each side of a page change the pre-check reads. */
+const DIFF_MAX = 3000;
+
+/**
+ * What changed between two readings of a page, as the sentences removed and added. A page's text
+ * is one long line, so it is compared sentence by sentence; null when nothing differs that way.
+ */
+export function pageDiff(before: string, after: string): string | null {
+  const parts = (text: string) =>
+    text
+      .split(/(?<=[.!?;:|•])\s+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+  const was = new Set(parts(before));
+  const now = new Set(parts(after));
+  const removed = [...was].filter((p) => !now.has(p));
+  const added = [...now].filter((p) => !was.has(p));
+  if (!removed.length && !added.length) return null;
+  const side = (label: string, list: string[]) =>
+    list.length ? `${label}:\n${cutAt(list.map((p) => `- ${p}`).join('\n'), DIFF_MAX)}` : `${label}: (none)`;
+  return `${side('Removed', removed)}\n\n${side('Added', added)}`;
+}
 
 /** A page's readable text: no scripts, styles or tags, spaces collapsed, so markup churn is not a change. */
 export function pageText(html: string): string {
@@ -53,15 +77,21 @@ export class RoutineService {
   private timer: NodeJS.Timeout | null = null;
   private ticking: Promise<void> | null = null;
   private stopped = false;
+  /** Runs whose pre-check is under way; their turn starts when it answers. */
+  private checking = new Set<Promise<void>>();
+  private stopChecks = new AbortController();
 
   constructor(
     private ctx: Ctx,
     private services: Services,
     private clock: () => Date = () => new Date(),
+    /** The engine whose small model does the pre-check. */
+    private checker?: () => Engine,
   ) {}
 
   start() {
     this.stopped = false;
+    if (this.stopChecks.signal.aborted) this.stopChecks = new AbortController();
     if (!this.ctx.config.routinesEnabled || this.timer) return;
     void this.runStartup();
     void this.tick();
@@ -75,6 +105,13 @@ export class RoutineService {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     await this.ticking;
+    this.stopChecks.abort();
+    await this.settled();
+  }
+
+  /** Waits for the pre-checks under way and the turns they start to be queued. */
+  async settled() {
+    while (this.checking.size) await Promise.all([...this.checking]);
   }
 
   /**
@@ -259,13 +296,16 @@ export class RoutineService {
           await this.record(toRoutine(r), occurrenceKey(r.nextRunAt!), 'skipped', t('routine.missedSkipped'));
         } else if (r.watchUrl) {
           // A watched page is read with no AI; the bot runs only when the page changed.
-          const changed = await this.pageChanged(r.id, r.watchUrl, r.watchHash);
+          const changed = await this.pageChanged(r.id, r.watchUrl, r.watchHash, r.watchText);
           const still = changed !== null ? await current(r) : null;
           if (changed !== null && still) {
             await this.fire(
               toRoutine(still),
               occurrenceKey(r.nextRunAt!),
-              t('routine.watchChanged', { url: r.watchUrl, text: changed }),
+              t('routine.watchChanged', { url: r.watchUrl, text: changed.excerpt }),
+              false,
+              // Without the earlier text the check reads the page as it is now.
+              { trigger: 'watch', input: changed.diff ?? changed.excerpt },
             );
           }
         } else {
@@ -289,11 +329,17 @@ export class RoutineService {
   }
 
   /**
-   * Reads a watched page and keeps its fingerprint. Returns the page's text when it changed since
-   * the last read, and null when it did not, could not be read, or is read for the first time
-   * (that read sets what later ones are compared with).
+   * Reads a watched page and keeps its fingerprint and text. Returns the page's text, and what
+   * changed when the earlier text was kept, when it changed since the last read; null when it did
+   * not, could not be read, or is read for the first time (that read sets what later ones are
+   * compared with).
    */
-  async pageChanged(routineId: string, url: string, before: string | null): Promise<string | null> {
+  async pageChanged(
+    routineId: string,
+    url: string,
+    before: string | null,
+    beforeText: string | null = null,
+  ): Promise<{ excerpt: string; diff: string | null } | null> {
     let text: string;
     try {
       text = pageText(await fetchPublicText(new URL(url), WATCH_MAX));
@@ -303,11 +349,16 @@ export class RoutineService {
     }
     const hash = createHash('sha256').update(text).digest('hex');
     if (hash === before) return null;
+    const kept = text.slice(0, WATCH_KEEP);
     await this.ctx.db
       .update(schema.routines)
-      .set({ watchHash: hash })
+      .set({ watchHash: hash, watchText: kept })
       .where(eq(schema.routines.id, routineId));
-    return before === null ? null : text.slice(0, WATCH_EXCERPT);
+    if (before === null) return null;
+    return {
+      excerpt: text.slice(0, WATCH_EXCERPT),
+      diff: beforeText === null ? null : pageDiff(beforeText, kept),
+    };
   }
 
   /** Gives the routine a new webhook secret (the old address stops working), or removes it. */
@@ -363,7 +414,14 @@ export class RoutineService {
       const t = await this.services.settings.translator();
       if (!(await this.endStaleWait(id, t, STALE_WAIT_MS, 'routine.staleWait'))) return 'busy';
     }
-    return this.fire(await this.get(id), occurrence ?? `manual:${this.clock().toISOString()}`, payload);
+    return this.fire(
+      await this.get(id),
+      occurrence ?? `manual:${this.clock().toISOString()}`,
+      payload,
+      false,
+      // A call that carries nothing is only a "run now", with nothing to judge.
+      payload?.trim() ? { trigger: 'webhook', input: payload } : undefined,
+    );
   }
 
   /**
@@ -460,11 +518,17 @@ export class RoutineService {
     return true;
   }
 
+  /**
+   * Records a run and starts the bot on it. With `check` (a watched page changed, a webhook carried
+   * something) and the pre-check on, a small model looks at the run first: the run is recorded at
+   * once and its turn starts when the check answers, so a webhook caller is not kept waiting.
+   */
   private async fire(
     routine: Routine,
     occurrence: string,
     payload?: string,
     retried = false,
+    check?: { trigger: GateRequest['trigger']; input: string },
   ): Promise<RoutineRun | null> {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
@@ -496,7 +560,7 @@ export class RoutineService {
       if (dup) return null;
       // An earlier run stuck on a question nobody answered gives way to this one, once.
       if (!retried && (await this.endStaleWait(routine.id, t, STALE_WAIT_MS, 'routine.staleWait')))
-        return this.fire(routine, occurrence, payload, true);
+        return this.fire(routine, occurrence, payload, true, check);
       // A delivery skipped here must still run when its sender sends it again.
       const skipped = occurrence.startsWith('hook:')
         ? `${occurrence}:busy:${newId().slice(0, 8)}`
@@ -507,8 +571,97 @@ export class RoutineService {
       .update(schema.routines)
       .set({ lastRunAt: this.clock() })
       .where(eq(schema.routines.id, routine.id));
+    const mode = check ? ((await this.services.settings.get('routineGate')) ?? 'off') : 'off';
+    const engine = mode !== 'off' ? this.checker?.() : undefined;
+    if (check && engine?.gate) {
+      const checked = this.checkThenStart(engine, mode === 'on', routine, run, check, () =>
+        this.begin(routine, bot.id, thread.id, run, payload, t),
+      ).catch((err) => console.error(`Pre-check of routine ${routine.id} failed`, err));
+      this.checking.add(checked);
+      void checked.finally(() => this.checking.delete(checked));
+      return toRun(run);
+    }
+    await this.begin(routine, bot.id, thread.id, run, payload, t);
+    return toRun(run);
+  }
+
+  /**
+   * Asks the small model whether the run has anything to work on and records its answer. When the
+   * check is on, the bot waits for it, and an answer of "nothing new" ends the run as skipped with
+   * the reason; a failed check lets the run go ahead. While it only watches, the bot starts at once
+   * and the answer is recorded beside the run.
+   */
+  private async checkThenStart(
+    engine: Engine,
+    enforce: boolean,
+    routine: Routine,
+    run: typeof schema.routineRuns.$inferSelect,
+    check: { trigger: GateRequest['trigger']; input: string },
+    start: () => Promise<void>,
+  ) {
+    if (!enforce) await start();
+    let verdict: GateVerdict | null = null;
+    try {
+      const report = await this.lastReport(routine.id, run.id);
+      verdict = await engine.gate!({
+        routine: { name: routine.name, prompt: routine.prompt },
+        trigger: check.trigger,
+        input: check.input,
+        lastReport: report?.text ?? null,
+        locale: await this.services.settings.locale(),
+        signal: this.stopChecks.signal,
+      });
+    } catch (err) {
+      if (!this.stopChecks.signal.aborted)
+        console.warn(`Pre-check of routine ${routine.id} failed, running it: ${(err as Error).message}`);
+    }
+    const said = verdict
+      ? { gateDecision: verdict.decision, gateReason: verdict.reason, gateCostUsd: verdict.costUsd }
+      : null;
+    if (!enforce) {
+      if (said)
+        await this.ctx.db.update(schema.routineRuns).set(said).where(eq(schema.routineRuns.id, run.id));
+      this.ctx.bus.refresh({ scope: 'routines' });
+      return;
+    }
+    // The server is stopping: the run stays active and ends as cut short when it starts again.
+    if (this.stopChecks.signal.aborted) return;
+    const skip = verdict?.decision === 'skip';
+    const t = await this.services.settings.translator();
+    // A run deleted with its routine meanwhile is not started.
+    const [still] = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({
+        status: 'running' as const,
+        ...said,
+        ...(skip
+          ? {
+              status: 'skipped' as const,
+              reason: verdict!.reason
+                ? t('routine.gateSkipped', { reason: verdict!.reason })
+                : t('routine.gateSkippedNoReason'),
+              finishedAt: this.clock(),
+            }
+          : {}),
+      })
+      .where(and(eq(schema.routineRuns.id, run.id), eq(schema.routineRuns.status, 'running')))
+      .returning({ id: schema.routineRuns.id });
+    if (!still) return;
+    if (skip) this.ctx.bus.refresh({ scope: 'routines' });
+    else await start();
+  }
+
+  /** Writes the run's instruction into its conversation and queues the bot's turn for it. */
+  private async begin(
+    routine: Routine,
+    botId: string,
+    threadId: string,
+    run: typeof schema.routineRuns.$inferSelect,
+    payload: string | undefined,
+    t: T,
+  ) {
     await this.services.threads.addMessage({
-      threadId: thread.id,
+      threadId,
       role: 'user',
       author: `routine:${routine.id}`,
       text: payload ? `${routine.prompt}\n\n${t('routine.payloadShown', { payload })}` : routine.prompt,
@@ -520,13 +673,12 @@ export class RoutineService {
       ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
       : base;
     await this.services.turns.enqueue({
-      threadId: thread.id,
-      botId: bot.id,
+      threadId,
+      botId,
       source: 'routine',
       prompt: payload ? `${prompt}\n\n${t('routine.payload', { payload })}` : prompt,
       routineRunId: run.id,
     });
-    return toRun(run);
   }
 
   /**

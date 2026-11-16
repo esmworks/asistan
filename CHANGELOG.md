@@ -5,6 +5,16 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Routines
+
+- A routine pre-check on the usage page: before a run that a watched page change or a webhook call started, the
+  cheapest Claude model says whether the run has anything new to work on (only page noise changed, an event the
+  routine does not care about, nothing beyond the last report). "Watch" only records what it said, beside the run and
+  as a total on the usage page with what those runs cost; "On" skips such runs with the reason before the bot starts.
+  When it is unsure or fails, the run goes ahead, and reminders always run. It is off by default.
+- A watched page keeps its last text, so the pre-check reads the sentences that were removed and added instead of the
+  whole page.
+
 ### Apps
 
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes

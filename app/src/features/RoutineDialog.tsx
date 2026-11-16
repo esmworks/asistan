@@ -544,6 +544,14 @@ function RecentRuns({
                   {dayLabel(r.startedAt)} · {t(`routine.run.${r.status}`)}
                 </span>
                 {r.reason && <span className="block truncate text-xs text-muted-foreground">{r.reason}</span>}
+                {/* While the pre-check only watches, the runs it would have skipped say so. */}
+                {r.gate?.decision === 'skip' && r.status !== 'skipped' && (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {r.gate.reason
+                      ? t('routine.gateWouldSkip', { reason: r.gate.reason })
+                      : t('routine.gateWouldSkipNoReason')}
+                  </span>
+                )}
               </span>
             </button>
           </li>
