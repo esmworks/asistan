@@ -602,6 +602,10 @@ const tr = {
   'browser.address': 'Adres: {url}',
   'browser.siteNotes': '{site} için daha önce aldığın notlar:',
   'browser.focused': 'Odak: {element}',
+  'browser.wallCheck':
+    'Bu site bir bot denetimi gösteriyor (CAPTCHA, "insan olduğunu doğrula" ya da kendiliğinden geçmeyen bir bekleme sayfası); sunucu bekleyip sayfayı bir kez yeniledi, geçmedi. Denetimi kendin geçmeye ya da atlatmaya asla çalışma. ask_user ile kullanıcıdan Bilgisayar panelinde "Kontrolü al" ile bu adımı yapmasını iste; bitince devam et.',
+  'browser.wallBlocked':
+    'Bu site tarayıcıyı geri çevirdi (erişim engellendi ya da çok fazla istek). Döngüde yeniden deneme ve engeli atlatmaya çalışma: başka bir kaynak kullan ya da kullanıcıya durumu söyle.',
   'browser.unchanged':
     'Sayfa başka bir adrese geçmedi. Son okumadaki ref’ler geçerli; değişikliği görmen gerekirse browser_snapshot ile oku.',
   'browser.title': 'Başlık: {title}',
@@ -1290,6 +1294,10 @@ const en: Catalog<ServerKey> = {
   'browser.address': 'Address: {url}',
   'browser.siteNotes': 'Your earlier notes on {site}:',
   'browser.focused': 'Focus: {element}',
+  'browser.wallCheck':
+    'This site shows a bot check (a CAPTCHA, a "verify you are human", or a waiting page that did not clear by itself); the server waited and reloaded the page once, and it did not pass. Never try to pass or get around the check yourself. Use ask_user to ask the user to do this step with "Take control" in the Computer panel, then continue.',
+  'browser.wallBlocked':
+    'This site turned the browser away (access denied, or too many requests). Do not retry in a loop or try to get around it: use another source, or tell the user.',
   'browser.unchanged':
     'The page did not move to another address. The refs of the last read still hold; read it with browser_snapshot if you need to see what changed.',
   'browser.title': 'Title: {title}',

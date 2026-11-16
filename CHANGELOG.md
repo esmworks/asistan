@@ -19,6 +19,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   nothing. Bots set it up when asked ("tell me when a new invoice email arrives"); the routine screen shows the check
   and removes it. Only a tool that reads, of an app open to the bot, can be a check.
 
+### Browser
+
+- A "Just a moment..." page that clears by itself no longer reaches the bot: opening a site waits for it, reloading
+  once, before the bot reads the page. When a site still shows a check a person has to answer, or turns the browser
+  away, the bot is told so plainly: hand the step to the person with Take control, or use another source. It is
+  never to get past a check itself.
+
 ### Apps
 
 - The desktop app itself is called "Yumak Bot": the macOS menu bar and Dock, the Windows exe and shortcuts. macOS takes
