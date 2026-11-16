@@ -58,6 +58,25 @@ describe('botun dosya göndermesi', () => {
     expect(t.engine.requests.at(-1)!.systemPrompt).toContain('send_file');
   });
 
+  it('başka bir botla konuşurken gönderdiği dosyayı kullanıcının sohbetine koyar ve bunu bota söyler', async () => {
+    const bot = await t.bot();
+    const peer = await t.bot({ name: 'Paşa' });
+    const botThread = await t.services.threads.peerThread(bot.id, peer.id);
+    const own = join(t.dataDir, 'workspaces', 'bots', bot.id, 'files', 'Teklifler');
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, 'teklif.pdf'), '%PDF');
+    const msgs = await sendFile(botThread.id, { paths: [join(own, 'teklif.pdf')], caption: 'Teklif' });
+    expect(fileMessages(msgs)).toHaveLength(0);
+    expect(msgs.at(-1)!.text).toContain('dosya kartı senin kullanıcıyla olan sohbetine kondu');
+
+    const person = await main(bot.id);
+    const [card] = fileMessages(await t.messages(person.id));
+    expect(card!.text).toBe('Teklif');
+    const [file] = card!.props.files as MessageFile[];
+    expect(file).toMatchObject({ name: 'teklif.pdf', path: `bots/${bot.id}/files/Teklifler/teklif.pdf` });
+    expect((await download(bot.id, file!.path)).body).toBe('%PDF');
+  });
+
   it('kalıcı klasördeki ve grup klasöründeki dosyaları da gönderir', async () => {
     const group = (await t.api<{ id: string }>('POST', '/api/groups', { name: 'Ekip' })).body;
     const bot = await t.bot({ groupId: group.id });

@@ -1,7 +1,7 @@
 import { constants, realpathSync, statSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { Bot, MessageFile } from '@yumakbot/shared';
+import type { Bot, MessageFile, Thread } from '@yumakbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
@@ -85,16 +85,26 @@ export async function shareableFile(
   return { name: basename(file), size, path: relative(workspaces, file) };
 }
 
+/**
+ * The conversation the person reads for a card the bot hands over. A conversation with another bot
+ * is between the two bots: the person does not follow it, so a file or page meant for them goes to
+ * the bot's own conversation with them.
+ */
+async function personThread(services: Services, bot: Bot, thread: Pick<Thread, 'id' | 'kind'>) {
+  if (thread.kind !== 'bot') return { id: thread.id, moved: false };
+  return { id: (await services.threads.main(bot.id)).id, moved: true };
+}
+
 /** `send_file`: hands a file from the bot's folders to the person, as a card in the conversation. */
 export function sendFileTool(opts: {
   def: Define;
   services: Services;
   dataDir: string;
   bot: Bot;
-  threadId: string;
+  thread: Pick<Thread, 'id' | 'kind'>;
   t: T;
 }): AppTool {
-  const { def, services, dataDir, bot, threadId, t } = opts;
+  const { def, services, dataDir, bot, thread, t } = opts;
   return def(
     'send_file',
     {
@@ -102,17 +112,24 @@ export function sendFileTool(opts: {
       caption: z.string().max(2000).optional(),
     },
     async ({ paths, caption }) => {
+      const to = await personThread(services, bot, thread);
       const files: MessageFile[] = [];
-      for (const p of paths) files.push(await shareableFile(dataDir, bot, threadId, p, t));
+      // Relative paths are read from this conversation's folder; a copy lands where the card goes.
+      for (const p of paths) {
+        const file = await shareableFile(dataDir, bot, to.id, botFile(dataDir, bot, thread.id, p, t).full, t);
+        files.push(file);
+      }
       await services.threads.addMessage({
-        threadId,
+        threadId: to.id,
         role: 'assistant',
         author: `bot:${bot.id}`,
         text: caption?.trim() ?? '',
         // No turn id: the streaming reply of the same turn stays on screen until it is saved.
         props: { files },
       });
-      return t('tool.fileSent', { names: files.map((f) => f.name).join(', ') });
+      const names = files.map((f) => f.name).join(', ');
+      // The bot must know where it went, or it tells the other bot the file is somewhere it is not.
+      return t(to.moved ? 'tool.fileSentMain' : 'tool.fileSent', { names });
     },
     'internal',
   );
@@ -148,10 +165,11 @@ export function showPageTool(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  threadId: string;
+  thread: Pick<Thread, 'id' | 'kind'>;
   t: T;
 }): AppTool {
-  const { def, services, dataDir, bot, threadId, t } = opts;
+  const { def, services, dataDir, bot, thread, t } = opts;
+  const threadId = thread.id;
   return def(
     'show_page',
     {
@@ -169,17 +187,19 @@ export function showPageTool(opts: {
         // Not a folder: a page file.
       }
       if (!/\.html?$/i.test(page)) return t('tool.pageNotHtml');
-      const file = await shareableFile(dataDir, bot, threadId, page, t);
+      const full = botFile(dataDir, bot, threadId, page, t).full;
+      const to = await personThread(services, bot, thread);
+      const file = await shareableFile(dataDir, bot, to.id, full, t);
       if (file.size > MAX_PAGE) return t('tool.pageTooLarge');
-      const { leftOut } = await bundlePage(botFile(dataDir, bot, threadId, page, t).full);
+      const { leftOut } = await bundlePage(full);
       await services.threads.addMessage({
-        threadId,
+        threadId: to.id,
         role: 'assistant',
         author: `bot:${bot.id}`,
         text: title?.trim() ?? '',
         props: { page: { path: file.path, name: file.name, ...(height && { height }) } },
       });
-      const shown = t('tool.pageShown', { name: file.name });
+      const shown = t(to.moved ? 'tool.pageShownMain' : 'tool.pageShown', { name: file.name });
       if (!leftOut.length) return shown;
       const names = leftOut.slice(0, 10).map((l) => `${l.name} (${t(`tool.pageLeftOut.${l.why}`)})`);
       return `${shown} ${t('tool.pageLeftOut', { files: names.join(', ') })}`;

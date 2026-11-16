@@ -845,8 +845,8 @@ export class ToolFactory {
       ),
     ];
     tools.push(
-      sendFileTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, threadId: thread.id, t }),
-      showPageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, threadId: thread.id, t }),
+      sendFileTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
+      showPageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
     );
     // Only a message the person sent gets an emoji back; a turn about their emoji, or another bot's
     // reply, does not. The tool is listed in every turn all the same: the tool list opens the cached

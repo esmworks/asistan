@@ -382,6 +382,7 @@ const tr = {
   'tool.pageLeftOut.size': 'çok büyük',
   'tool.pageLeftOut.outside': 'klasörün dışına çıkan bağlantı',
   'tool.pageShown': '{name} sohbette gösterildi.',
+  'tool.pageShownMain': '{name} kullanıcıyla olan sohbetinde gösterildi; bu botlar arası konuşmada görünmez.',
   'tool.send_file':
     'Klasörlerindeki dosyaları kullanıcıya gönder; sohbette indirilebilir kart olarak görünür (resimler resim olarak). paths: dosya yolları (göreli yollar çalışma klasörüne göre), caption: isteğe bağlı kısa açıklama.',
   'tool.browser_open':
@@ -616,6 +617,8 @@ const tr = {
   'tool.reacted': 'Mesaja {emoji} bırakıldı. Yazıyla yanıt gerekmiyorsa başka bir şey yazmadan bitir.',
   'tool.noUserMessage': 'Tepki bırakılacak kullanıcı mesajı yok.',
   'tool.fileSent': 'Kullanıcıya gönderildi: {names}. Sohbette dosya kartı olarak görünüyor.',
+  'tool.fileSentMain':
+    'Kullanıcıya gönderildi: {names}. Bu konuşma botlar arasında, kullanıcı burayı okumuyor; dosya kartı senin kullanıcıyla olan sohbetine kondu. Karşıdaki bot dosyayı görmez.',
   'tool.scopeUser': 'kullanıcı',
   'tool.scopeBot': 'bot',
   'tool.memorySaved': 'Kaydedildi ({id}).',
@@ -1057,6 +1060,8 @@ const en: Catalog<ServerKey> = {
   'tool.pageLeftOut.size': 'too large',
   'tool.pageLeftOut.outside': 'a link out of the folder',
   'tool.pageShown': '{name} is shown in the conversation.',
+  'tool.pageShownMain':
+    '{name} is shown in your conversation with the user, not in this conversation between bots.',
   'tool.send_file':
     'Send files from your folders to the user; they show in the conversation as download cards (images as pictures). paths: file paths (relative ones are from your working folder), caption: an optional short note.',
   'tool.browser_open':
@@ -1290,6 +1295,8 @@ const en: Catalog<ServerKey> = {
     'Left {emoji} on the message. If no written reply is needed, finish without writing anything else.',
   'tool.noUserMessage': 'There is no user message to react to.',
   'tool.fileSent': 'Sent to the user: {names}. It shows in the conversation as a file card.',
+  'tool.fileSentMain':
+    'Sent to the user: {names}. This conversation is between bots and the user does not read it, so the file card went to your own conversation with the user. The other bot does not see the file.',
   'tool.scopeUser': 'user',
   'tool.scopeBot': 'bot',
   'tool.memorySaved': 'Saved ({id}).',
