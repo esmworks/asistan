@@ -95,7 +95,7 @@ export class ComputerService {
         d.status = 'starting';
         this.emit(botId);
         try {
-          let s = await this.client.start(botId, await this.opts.prepare(botId));
+          let s = await this.start(botId, await this.opts.prepare(botId));
           // As long as the service itself gives a start, and a little more for its answer.
           const deadline = Date.now() + START_WAIT_MS;
           while (s.status === 'starting' && Date.now() < deadline) {
@@ -207,6 +207,32 @@ export class ComputerService {
   async shutdown() {
     if (this.sweep) clearInterval(this.sweep);
     this.sweep = null;
+  }
+
+  /**
+   * Asks the service for a desktop. When it is full, the least recently used desktop that no bot
+   * step, background command or person in control holds is put to sleep and the start is tried
+   * again: a desktop left idle would otherwise keep another bot off its computer until it sleeps.
+   * Unwatched desktops go before watched ones; a view left open does not keep a desktop for good.
+   */
+  private async start(botId: string, start: DesktopStart) {
+    for (;;) {
+      try {
+        return await this.client.start(botId, start);
+      } catch (err) {
+        if (!(err instanceof ComputerError) || err.code !== 'full') throw err;
+        const now = Date.now();
+        const spare = [...this.desks]
+          .filter(([id, d]) => id !== botId && d.status === 'running' && !d.busy && !d.user)
+          .filter(([, d]) => now >= (d.awakeUntil ?? 0))
+          .sort(
+            ([a, x], [b, y]) =>
+              Number(this.watchers.has(a)) - Number(this.watchers.has(b)) || x.lastUsed - y.lastUsed,
+          )[0];
+        if (!spare) throw err;
+        await this.stop(spare[0]);
+      }
+    }
   }
 
   private desk(botId: string): Desk {

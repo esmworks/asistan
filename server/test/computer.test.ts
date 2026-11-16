@@ -78,6 +78,8 @@ describe('ekran akışı süzgeci', () => {
 /** A stand-in for the computer service: records what the server asks of it. */
 class FakeComputer {
   failStart: string | null = null;
+  /** Desktops that may run at once, like the real service's limit. */
+  max = Infinity;
   server: Server;
   wss = new WebSocketServer({ noServer: true });
   url = '';
@@ -138,6 +140,8 @@ class FakeComputer {
       this.starts.push({ id, body: body as unknown as DesktopStart });
       // A start the sandbox refuses: the desktop stays off and says why.
       if (this.failStart) return send(200, { ...state(), lastError: this.failStart });
+      const running = [...this.status].filter(([other, s]) => other !== id && s === 'running').length;
+      if (running >= this.max) return send(409, { error: 'full', code: 'full' });
       this.status.set(id, 'running');
       return send(200, state());
     }
@@ -190,6 +194,7 @@ describe('botun bilgisayarı', () => {
     fake.calls = [];
     fake.received = [];
     fake.failStart = null;
+    fake.max = Infinity;
     t = await testServer({ computer: { url: fake.url, token: TOKEN }, computerIdleMs: 60_000 });
   });
   afterEach(() => t.dispose());
@@ -319,6 +324,29 @@ describe('botun bilgisayarı', () => {
     await t.send((await main(reader.id)).id, '[araç:computer_screenshot]');
     await t.services.turns.idle();
     expect(fake.starts.at(-1)!.body.folders.every((f) => !f.writable)).toBe(true);
+  });
+
+  it('yer kalmayınca en uzun süredir boşta duran masaüstünü uyutup yenisine yer açar', async () => {
+    fake.max = 2;
+    const computer = t.services.ctx.computer!;
+    const [a, b, c] = [(await t.bot()).id, (await t.bot()).id, (await t.bot()).id];
+    await computer.ensure(a);
+    await computer.ensure(b);
+    // a is in use and b is watched: b, though watched, is the one that makes room.
+    const release = computer.hold(a);
+    computer.watch(b, 'izleyen');
+    await computer.ensure(c);
+    expect(fake.status.get(a)).toBe('running');
+    expect(fake.status.get(b)).toBe('off');
+    expect(computer.state(b).status).toBe('off');
+    expect(fake.status.get(c)).toBe('running');
+
+    // Every desktop held (a bot step, a person in control): the start is refused as before.
+    computer.setControl(c, 'kişi', true);
+    await expect(computer.ensure(b)).rejects.toMatchObject({ code: 'full' });
+    expect(fake.status.get(a)).toBe('running');
+    expect(fake.status.get(c)).toBe('running');
+    release();
   });
 
   it('tarayıcı adımı sürerken masaüstü uyumaz; sunucu yeniden açılınca açık kalanları üstlenir', async () => {
