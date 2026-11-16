@@ -31,8 +31,11 @@ RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-yum
 
 # Desktop defaults (panel, wallpaper, default browser) and the browser launcher. Chromium's own
 # menu entry is hidden: a Chromium started without the DevTools pipe could not be driven by the bot.
+# The launcher's earlier name stays as a link: the panel copies its launchers into each bot's home on
+# first start, and homes created before the rename still call the old path.
 COPY --chown=root:root computer/rootfs/ /
-RUN sed -i '0,/^\[Desktop Entry\]/s//[Desktop Entry]\nNoDisplay=true/' /usr/share/applications/chromium.desktop \
+RUN ln -s yumakbot-browser /usr/local/bin/asistan-browser \
+ && sed -i '0,/^\[Desktop Entry\]/s//[Desktop Entry]\nNoDisplay=true/' /usr/share/applications/chromium.desktop \
  && update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/yumakbot-browser 200 \
  && update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/yumakbot-browser 200
 
