@@ -1,6 +1,6 @@
 import type { TodayReport } from '@yumakbot/shared';
 import { useQuery } from '@tanstack/react-query';
-import { CircleAlert, CircleCheck, Clock, Loader2 } from 'lucide-react';
+import { Brain, CircleAlert, CircleCheck, Clock, Loader2 } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useT } from '@/i18n';
@@ -62,7 +62,30 @@ export function TodayDialog() {
                 cost: f.usd(data.costUsd),
               })}
             </p>
-            <Section title={t('today.waiting')} empty={t('today.waitingNone')} items={waiting}>
+            <Section
+              title={t('today.waiting')}
+              empty={t('today.waitingNone')}
+              items={waiting}
+              extra={
+                // Notes no bot uses wait for the person to keep or delete them in the memory screen.
+                data.staleMemory ? (
+                  <Item
+                    onClick={() => {
+                      useUi.getState().openSettings('memory');
+                      setOpen(false);
+                    }}
+                  >
+                    <Brain className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {t('today.staleMemory', { count: data.staleMemory })}
+                    </span>
+                    <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      {t('today.staleMemoryReview')}
+                    </span>
+                  </Item>
+                ) : null
+              }
+            >
               {(s) => (
                 <Item key={s.botId} onClick={() => go(s.botId, s.waiting!.threadId)}>
                   {avatar(s.botId)}
@@ -117,18 +140,24 @@ function Section<T>({
   title,
   empty,
   items,
+  extra,
   children,
 }: {
   title: string;
   empty: string;
   items: T[];
+  /** A line after the items, not one of them. */
+  extra?: React.ReactNode;
   children: (item: T) => React.ReactNode;
 }) {
   return (
     <section>
       <h3 className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">{title}</h3>
-      {items.length ? (
-        <div className="divide-y rounded-2xl border bg-card/50">{items.map(children)}</div>
+      {items.length || extra ? (
+        <div className="divide-y rounded-2xl border bg-card/50">
+          {items.map(children)}
+          {extra}
+        </div>
       ) : (
         <p className="px-1 text-muted-foreground">{empty}</p>
       )}

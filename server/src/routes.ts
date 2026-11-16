@@ -390,7 +390,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
-  app.get('/api/today', async () => s.usage.today());
+  app.get('/api/today', async () => ({
+    ...(await s.usage.today()),
+    staleMemory: (await s.memory.stale()).length,
+  }));
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
   // turn's id to ask again later when the wait runs out).
@@ -957,6 +960,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.get('/api/memory-history', async () => s.memory.history());
+  // Notes no bot uses any more, offered to the user to keep or delete.
+  app.get('/api/memory-stale', async () => s.memory.stale());
+  // Deletes the ones of `ids` that are still unused; a note a bot used since the list was shown stays.
+  app.post('/api/memory-stale/delete', async (req) => {
+    const { ids } = z.object({ ids: z.array(z.string().min(1).max(64)).max(5000) }).parse(req.body);
+    const still = new Set((await s.memory.stale()).map((m) => m.id));
+    return s.memory.removeMany(
+      ids.filter((id) => still.has(id)),
+      'user',
+    );
+  });
 
   // Routines
   // Bots exported from another assistant app, sent as the file itself. `preview` saves nothing.

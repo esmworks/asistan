@@ -12,6 +12,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
   keep "YumakBot" in their names, and so do the data folder and the keychain entry. An app that updates itself keeps
   its folder name; renaming `YumakBot.app` to `Yumak Bot.app` in Applications fixes the name the Dock shows.
 
+### Memory
+
+- When memory outgrows the prompt, the notes a bot wrote, changed or looked up most recently go in, rather than the
+  newest ones. An old note a bot keeps finding by search stays in the prompt, and one nobody needed makes room. A
+  search with a query and a site the bot opens count as looking a note up; being in the prompt does not.
+- The memory screen lists the notes no bot uses: nobody changed them and no bot looked them up in 30 days, and no bot reads them on
+  every turn. They can be deleted one by one or all at once; a note a bot uses again before that stays. Today shows
+  how many there are and opens the memory screen from there.
+
 ## 0.2.1 — 2026-11-16
 
 ### Apps

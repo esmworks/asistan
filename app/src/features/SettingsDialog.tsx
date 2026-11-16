@@ -4,6 +4,7 @@ import {
   INTL_LOCALE,
   LOCALE_NAMES,
   LOCALES,
+  STALE_MEMORY_DAYS,
   type BotNoteGroup,
   type Locale,
   type Memory,
@@ -56,6 +57,7 @@ import {
   useGroups,
   useInfo,
   useMemory,
+  useStaleMemory,
   useRoutines,
   useRules,
   useSettings,
@@ -1075,6 +1077,7 @@ function Permissions() {
 
 function MemoryTab() {
   const t = useT();
+  const { dayLabel } = useFormat();
   const { data: memory = [] } = useMemory();
   const { data: bots = [] } = useBots();
   // Notes of an archived bot stay until deleted; its name tells them apart.
@@ -1116,8 +1119,16 @@ function MemoryTab() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const { data: stale = [] } = useStaleMemory();
+  const clearStale = useMutation({
+    mutationFn: () => api.removeStaleMemory(stale.map((m) => m.id)),
+    onSuccess: refresh,
+    onError: (e) => toast.error((e as Error).message),
+  });
   const user = memory.filter((m) => m.scope === 'user');
   const groups = botNoteGroups(memory, bots, archived);
+  const botName = (id: string | null) =>
+    [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
   // Each bot's notes stay folded until opened, so a long list reads as one line per bot.
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
@@ -1146,6 +1157,49 @@ function MemoryTab() {
           {t('common.add')}
         </Button>
       </form>
+      {stale.length > 0 && (
+        <Card title={t('memory.stale')}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <p className="min-w-40 flex-1 text-xs text-muted-foreground">
+              {t('memory.staleHint', { days: STALE_MEMORY_DAYS })}
+            </p>
+            {stale.length > 1 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-full"
+                disabled={clearStale.isPending}
+                onClick={() =>
+                  confirm(t('memory.staleDeleteAllConfirm', { count: stale.length })) && clearStale.mutate()
+                }
+              >
+                {t('memory.deleteAll')}
+              </Button>
+            )}
+          </div>
+          {stale.map((m) => (
+            <Row
+              key={m.id}
+              label={m.site ? `${m.site} · ${m.content}` : m.content}
+              hint={`${m.scope === 'user' ? t('memory.staleShared') : botName(m.botId)} · ${
+                m.lastUsedAt
+                  ? t('memory.lastUsed', { when: dayLabel(m.lastUsedAt) })
+                  : t('memory.neverUsed', { when: dayLabel(m.updatedAt) })
+              }`}
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-full"
+                onClick={() => forget.mutate(m)}
+                aria-label={t('common.delete')}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </Row>
+          ))}
+        </Card>
+      )}
       <Card title={t('memory.user')}>
         {user.length === 0 && (
           <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>

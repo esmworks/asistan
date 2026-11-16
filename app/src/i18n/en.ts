@@ -201,6 +201,11 @@ export const en: Catalog<MessageKey> = {
   'today.runs': 'Routines',
   'today.runsNone': 'No routine has run today.',
   'today.failed': { one: '{count} failed', other: '{count} failed' },
+  'today.staleMemory': {
+    one: '{count} memory note no bot uses',
+    other: '{count} memory notes no bot uses',
+  },
+  'today.staleMemoryReview': 'Review',
   'sidebarMenu.clearThreads': 'Delete other conversations…',
   'sidebarMenu.clearThreadsConfirm':
     'Delete every conversation of {name} but the main one, with their files? This cannot be undone.',
@@ -871,6 +876,13 @@ export const en: Catalog<MessageKey> = {
   'memory.noteCount': '{count} notes',
   'memory.deleteAll': 'Delete all',
   'memory.deleteAllConfirm': "Delete all {count} of {name}'s notes? This cannot be undone.",
+  'memory.stale': 'Notes no bot uses',
+  'memory.staleHint':
+    'Nobody has changed these and no bot has looked them up in {days} days, and no bot reads them on every turn. Delete the ones you no longer need; the rest stay, and bots can still find them by search.',
+  'memory.staleShared': 'About you',
+  'memory.lastUsed': 'last looked up {when}',
+  'memory.neverUsed': 'never looked up, last changed {when}',
+  'memory.staleDeleteAllConfirm': 'Delete all {count} notes no bot uses? This cannot be undone.',
 
   'routines.empty': "No routines. You can add one from a bot's right panel.",
   'routines.lastRun': 'last {when}',

@@ -403,10 +403,19 @@ export const Memory = z.object({
   /** Always `active`: every note is in use. Kept for phone builds made when notes could wait for approval. */
   status: z.literal('active'),
   source: z.string(),
+  /** When a bot last looked the note up (a search found it, or its site opened); null when never. */
+  lastUsedAt: z.string().nullable(),
+  /** How many times a bot looked the note up. */
+  useCount: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type Memory = z.infer<typeof Memory>;
+/**
+ * Days after which a note that no prompt carries, and that no bot changed or looked up, is offered
+ * to the user for deletion.
+ */
+export const STALE_MEMORY_DAYS = 30;
 export const MemoryCreate = z.object({
   scope: MemoryScope,
   botId: Id.nullable().default(null),
@@ -645,6 +654,8 @@ export const TodayReport = z.object({
       startedAt: z.string(),
     }),
   ),
+  /** Memory notes no bot uses any more, waiting for the user to keep or delete them. Missing from older servers. */
+  staleMemory: z.number().int().optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
 

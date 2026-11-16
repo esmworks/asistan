@@ -10,6 +10,8 @@ const note = (id: string, scope: 'bot' | 'user', botId: string | null): Memory =
   site: null,
   status: 'active',
   source: 'user',
+  lastUsedAt: null,
+  useCount: 0,
   createdAt: '2026-11-16T00:00:00.000Z',
   updatedAt: '2026-11-16T00:00:00.000Z',
 });

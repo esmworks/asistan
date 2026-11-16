@@ -36,6 +36,8 @@ export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: api.rules
 export const useVault = () => useQuery({ queryKey: ['vault'], queryFn: api.vault });
 export const useConnections = () => useQuery({ queryKey: ['connections'], queryFn: api.connections });
 export const useMemory = () => useQuery({ queryKey: ['memory'], queryFn: api.memory });
+// Under `memory`, so a change to any note brings the list up to date.
+export const useStaleMemory = () => useQuery({ queryKey: ['memory', 'stale'], queryFn: api.staleMemory });
 export const useRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api.routines });
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: api.skills });
 export const useUsage = (days: UsageRange, botId?: string) =>
