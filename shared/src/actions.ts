@@ -7,6 +7,13 @@ function scheduleText(raw: unknown, locale: Locale): string | null {
   return parsed.success ? describeSchedule(parsed.data, locale) : null;
 }
 
+/** The model a routine's runs are given on the card; an empty one goes back to the bot's own. */
+function modelText(raw: unknown, locale: Locale): string | null {
+  if (typeof raw !== 'string') return null;
+  const own = locale === 'tr' ? 'botun kendi modeli' : "the bot's own model";
+  return `model: ${raw.trim() || own}`;
+}
+
 /**
  * Plain-language wording for a tool a bot wants to use, for approval cards and the one-line
  * note left after the answer. No tool names or arguments: those stay behind the detail toggle.
@@ -309,12 +316,14 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
       return [str(input.description), str(input.body)].filter(Boolean).join('\n\n') || null;
     case 'routine_create': {
       const when = scheduleText(input.schedule, locale);
-      return [when, str(input.prompt)].filter(Boolean).join('\n') || null;
+      const model = str(input.model) && modelText(input.model, locale);
+      return [when, model, str(input.prompt)].filter(Boolean).join('\n') || null;
     }
     case 'routine_update': {
       const rename = str(input.name);
       const when = scheduleText(input.schedule, locale);
-      return [rename && `→ ${rename}`, when, str(input.prompt)].filter(Boolean).join('\n') || null;
+      const model = modelText(input.model, locale);
+      return [rename && `→ ${rename}`, when, model, str(input.prompt)].filter(Boolean).join('\n') || null;
     }
     default:
       return null;

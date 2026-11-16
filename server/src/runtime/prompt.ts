@@ -126,8 +126,9 @@ export function buildSystemPrompt(opts: {
       // The schedule, not the next run's time: that changes after every run and would change the
       // prompt, voiding the model's cache of the conversation; the time comes with each message.
       const next = r.nextRunAt ? '' : `, ${t('prompt.routineOff')}`;
+      const model = r.model ? `, ${t('prompt.routineModel', { model: listed(r.model, 80) })}` : '';
       const owner = r.botId === bot.id ? '' : `${names.get(r.botId)} · `;
-      lines.push(`- ${owner}${r.name}: ${when} (${r.timezone})${next}`);
+      lines.push(`- ${owner}${r.name}: ${when} (${r.timezone})${model}${next}`);
     }
   } else {
     lines.push(t('prompt.noRoutines'));

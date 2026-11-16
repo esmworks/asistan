@@ -1,6 +1,7 @@
 import {
   describeAction,
   type Approval,
+  type Bot,
   type BotSummary,
   type Memory,
   type Routine,
@@ -406,16 +407,16 @@ describe('rutinler', () => {
     await t.api('POST', `/api/routines/${r.id}/run`);
     await t.services.turns.idle();
     expect(await failed()).toBe('Gece raporu');
-    await t.api('PATCH', `/api/routines/${r.id}`, { prompt: 'tamam' });
     // The app opens the failed routine from the mark, and marks it among the bot's routines.
     const ids = async () =>
       (await t.api<BotSummary[]>('GET', '/api/summaries')).body.find((x) => x.botId === a.id)!.failedRoutines;
     expect(await ids()).toEqual([r.id]);
+    await t.api('PATCH', `/api/routines/${r.id}`, { prompt: 'tamam' });
     await runAgain(r.id);
     await t.services.turns.idle();
     expect(await failed()).toBeNull();
-    // The routine's answer is in its own conversation, which the chat has to lead to.
     expect(await ids()).toEqual([]);
+    // The routine's answer is in its own conversation, which the chat has to lead to.
     const summary = (await t.api<BotSummary[]>('GET', '/api/summaries')).body.find((x) => x.botId === a.id)!;
     const [run] = (await t.api<RoutineRun[]>('GET', `/api/routines/${r.id}/runs`)).body;
     expect(summary.repliedThreadId).toBe(run!.threadId);
@@ -800,15 +801,15 @@ describe('rutinler', () => {
     const a = await t.bot({ name: 'Ali', permissionMode: 'auto' });
     const thread = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;
     const make =
-      '[araç:routine_create {"name":"Sabah özeti","prompt":"Gündemi özetle","schedule":{"type":"weekdays","time":"08:30"}}]';
+      '[araç:routine_create {"name":"Sabah özeti","prompt":"Gündemi özetle","schedule":{"type":"weekdays","time":"08:30"},"model":"haiku"}]';
     await t.send(thread.id, make);
     await t.services.turns.idle();
     expect((await t.messages(thread.id)).at(-1)!.text).toContain(
       '"Sabah özeti" rutini kuruldu: Hafta içi 08:30',
     );
     const mine = (await t.api<Routine[]>('GET', '/api/routines')).body.filter((r) => r.botId === a.id);
-    expect(mine.map((r) => [r.name, r.schedule])).toEqual([
-      ['Sabah özeti', { type: 'weekdays', time: '08:30' }],
+    expect(mine.map((r) => [r.name, r.schedule, r.model])).toEqual([
+      ['Sabah özeti', { type: 'weekdays', time: '08:30' }, 'haiku'],
     ]);
     await t.send(thread.id, make);
     await t.services.turns.idle();
@@ -847,6 +848,24 @@ describe('rutinler', () => {
       enabled: true,
       schedule: { type: 'daily', time: '18:00' },
     });
+
+    // Only the routine's runs change model; the bot sees which one in its routine list.
+    await t.send(thread.id, '[araç:routine_update {"routine":"Akşam raporu","model":"haiku"}]');
+    await t.services.turns.idle();
+    expect((await all()).find((r) => r.id === mine.id)!.model).toBe('haiku');
+    expect((await t.api<Bot>('GET', `/api/bots/${a.id}`)).body.model).toBe('');
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain(
+      '- Akşam raporu: Her gün 18:00 (Europe/Istanbul), model: haiku',
+    );
+    expect(
+      describeAction('mcp__yumakbot__routine_update', { routine: 'Akşam raporu', model: '' }, { bot: 'Ali' })
+        .detail,
+    ).toBe('model: botun kendi modeli');
+    await t.send(thread.id, '[araç:routine_update {"routine":"Akşam raporu","model":""}]');
+    await t.services.turns.idle();
+    expect((await all()).find((r) => r.id === mine.id)!.model).toBe('');
 
     // Not a manager: Veli's routine is out of reach, by name or by naming Veli.
     await t.send(thread.id, '[araç:routine_delete {"routine":"Rapor","bot":"Veli"}]');

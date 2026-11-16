@@ -451,6 +451,8 @@ export class ToolFactory {
             .optional(),
           /** Also give it a secret address another service can call to start it. */
           webhook: z.boolean().default(false),
+          /** The model its runs use, on the bot's own engine; left out for the bot's own model. */
+          model: z.string().trim().max(200).optional(),
         },
         async (a) => {
           const own = await s.routines.list(bot.id);
@@ -471,7 +473,7 @@ export class ToolFactory {
             watchUrl: a.watch_url ?? null,
             webhookFilter: '',
             webhookPost: false,
-            model: '',
+            model: a.model ?? '',
           });
           const made = t('tool.routineCreated', {
             name: r.name,
@@ -507,6 +509,8 @@ export class ToolFactory {
               z.literal(''),
             ])
             .optional(),
+          /** An empty string goes back to the bot's own model. */
+          model: z.string().trim().max(200).optional(),
         },
         async (a) => {
           const found = await pickRoutine(a.routine, a.bot);
@@ -522,6 +526,7 @@ export class ToolFactory {
             ...(a.in_main !== undefined && { inMain: a.in_main }),
             ...(a.on_startup !== undefined && { onStartup: a.on_startup }),
             ...(a.watch_url !== undefined && { watchUrl: a.watch_url || null }),
+            ...(a.model !== undefined && { model: a.model }),
           };
           if (!Object.keys(patch).length) return t('tool.routineNoChange');
           const rename = patch.name?.toLowerCase();
