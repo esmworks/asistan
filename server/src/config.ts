@@ -19,6 +19,14 @@ export interface Config {
   allowedOrigins: string[];
   secureCookies: boolean;
   /**
+   * A secret the reverse proxy in front of the server sends in the X-Yumakbot-Proxy header
+   * (`YUMAKBOT_PROXY_SECRET`). Behind a proxy every request comes from the proxy's address, so the
+   * sign-in limit would count all people as one; a request carrying the secret is trusted to name the
+   * person's address in X-Forwarded-For. A secret rather than the proxy's address, because that
+   * address depends on how Docker wires the networks, and other containers can reach the server too.
+   */
+  proxySecret: string | null;
+  /**
    * The address other services reach this server at (`https://yumakbot.example.com`), for routine
    * webhooks and sign-in callbacks; null uses the address the page was opened at.
    */
@@ -145,6 +153,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     allowedHosts: list(env.YUMAKBOT_ALLOWED_HOSTS),
     allowedOrigins: list(env.YUMAKBOT_ALLOWED_ORIGINS),
     secureCookies: env.YUMAKBOT_SECURE_COOKIES === '1',
+    proxySecret: env.YUMAKBOT_PROXY_SECRET?.trim() || null,
     publicUrl: publicUrl(env.YUMAKBOT_PUBLIC_URL),
     maxConcurrentTurns: Number(env.YUMAKBOT_MAX_TURNS ?? 3),
     appDir,

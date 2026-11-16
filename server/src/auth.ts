@@ -39,6 +39,28 @@ function hostName(host: string): string {
   return host.split(':')[0] ?? host;
 }
 
+export const PROXY_HEADER = 'x-yumakbot-proxy';
+
+/**
+ * The address a request comes from, for the sign-in limit. Only a request from the reverse proxy,
+ * proven by its secret, may name another address: the last X-Forwarded-For entry, which the proxy
+ * itself wrote. Anyone else could write any address there and so dodge the limit.
+ */
+export function clientAddress(
+  headers: Record<string, string | string[] | undefined>,
+  socketAddress: string,
+  config: Pick<Config, 'proxySecret'>,
+): string {
+  const sent = headers[PROXY_HEADER];
+  if (!config.proxySecret || typeof sent !== 'string') return socketAddress;
+  const a = Buffer.from(sent);
+  const b = Buffer.from(config.proxySecret);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return socketAddress;
+  const forwarded = headers['x-forwarded-for'];
+  const last = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',').at(-1)?.trim();
+  return last || socketAddress;
+}
+
 export interface RequestMeta {
   host: string | undefined;
   origin: string | undefined;
