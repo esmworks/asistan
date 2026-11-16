@@ -1,5 +1,5 @@
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, posix, relative, sep } from 'node:path';
 
 /** Data a page fetches, carried with it under these types. */
 const DATA_TYPES: Record<string, string> = {
@@ -71,7 +71,7 @@ const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 /**
  * Makes a bot's page whole, so it runs in the sandboxed frame that loads nothing from this server:
- * its own scripts and styles inlined, small pictures as data URIs, and data files it fetches
+ * its own scripts and styles inlined, small pictures (in tags and in its styles) as data URIs, and data files it fetches
  * (.json, .geojson, .csv…) answered from inside the page.
  */
 export async function bundlePage(file: string): Promise<PageBundle> {
@@ -85,10 +85,11 @@ export async function bundlePage(file: string): Promise<PageBundle> {
       .split(sep)
       .join('/'),
   ]);
-  const local = (ref: string) => {
+  /** A file of the folder by a page's own reference, or one from a stylesheet in `from`. */
+  const local = (ref: string, from = '') => {
     if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(ref)) return null;
-    const key = ref.replace(/^\.\//, '').split(/[?#]/)[0]!;
-    return files.has(key) ? key : null;
+    const key = posix.normalize(posix.join(from, ref.split(/[?#]/)[0]!));
+    return !key.startsWith('..') && files.has(key) ? key : null;
   };
   const read = async (key: string, encoding: 'utf8' | 'base64') => {
     const text = await readFile(files.get(key)!, encoding);
@@ -100,15 +101,38 @@ export async function bundlePage(file: string): Promise<PageBundle> {
     used.add(key);
     return text;
   };
-  const replaceAsync = async (re: RegExp, fn: (m: RegExpMatchArray) => Promise<string | null>) => {
+  const replaceIn = async (text: string, re: RegExp, fn: (m: RegExpMatchArray) => Promise<string | null>) => {
     const parts: string[] = [];
     let last = 0;
-    for (const m of html.matchAll(re)) {
-      parts.push(html.slice(last, m.index), (await fn(m)) ?? m[0]);
+    for (const m of text.matchAll(re)) {
+      parts.push(text.slice(last, m.index), (await fn(m)) ?? m[0]);
       last = m.index! + m[0].length;
     }
-    html = parts.join('') + html.slice(last);
+    return parts.join('') + text.slice(last);
   };
+  const replaceAsync = async (re: RegExp, fn: (m: RegExpMatchArray) => Promise<string | null>) => {
+    html = await replaceIn(html, re, fn);
+  };
+  /** A picture of the folder as a data URI, read once however often the page uses it. */
+  const pictures = new Map<string, string | null>();
+  const picture = async (key: string | null) => {
+    const type = key ? IMAGE_TYPES[extname(key).toLowerCase()] : undefined;
+    if (!key || !type) return null;
+    if (!pictures.has(key)) {
+      const data = await read(key, 'base64');
+      pictures.set(key, data === null ? null : `data:${type};base64,${data}`);
+    }
+    return pictures.get(key)!;
+  };
+  /**
+   * Pictures a stylesheet uses (a background, a border image), carried as data URIs. Written
+   * without quotes, which base64 never needs, so they fit inside a style attribute too.
+   */
+  const cssPictures = (css: string, from = '') =>
+    replaceIn(css, /url\(\s*(["']?)([^"')]+)\1\s*\)/gi, async (m) => {
+      const uri = await picture(local(m[2]!.trim(), from));
+      return uri === null ? null : `url(${uri})`;
+    });
   await replaceAsync(/<script\b([^>]*)\bsrc=["']([^"']+)["']([^>]*)>\s*<\/script>/gi, async (m) => {
     const key = local(m[2]!);
     const code = key && /\.m?js$/i.test(key) ? await read(key, 'utf8') : null;
@@ -119,14 +143,21 @@ export async function bundlePage(file: string): Promise<PageBundle> {
   await replaceAsync(/<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi, async (m) => {
     const href = /\bhref=["']([^"']+)["']/i.exec(m[0])?.[1];
     const key = href ? local(href) : null;
-    const css = key && /\.css$/i.test(key) ? await read(key, 'utf8') : null;
-    return css === null ? null : `<style>${css.replace(/<\/style/gi, '<\\/style')}</style>`;
+    let css = key && /\.css$/i.test(key) ? await read(key, 'utf8') : null;
+    if (css === null) return null;
+    // Its pictures are where the stylesheet is, not where the page is.
+    css = await cssPictures(css, posix.dirname(key!));
+    return `<style>${css.replace(/<\/style/gi, '<\\/style')}</style>`;
+  });
+  await replaceAsync(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, async (m) => {
+    return `${m[1]}${await cssPictures(m[2]!)}${m[3]}`;
+  });
+  await replaceAsync(/\bstyle=(["'])([\s\S]*?)\1/gi, async (m) => {
+    return `style=${m[1]}${await cssPictures(m[2]!)}${m[1]}`;
   });
   await replaceAsync(/\b(src|href)=["']([^"']+)["']/gi, async (m) => {
-    const key = local(m[2]!);
-    const type = key ? IMAGE_TYPES[extname(key).toLowerCase()] : undefined;
-    const data = key && type ? await read(key, 'base64') : null;
-    return data === null ? null : `${m[1]}="data:${type};base64,${data}"`;
+    const uri = await picture(local(m[2]!));
+    return uri === null ? null : `${m[1]}="${uri}"`;
   });
   // The data it may fetch, answered from inside the page.
   const carried: Record<string, { type: string; text: string }> = {};

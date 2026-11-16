@@ -29,7 +29,7 @@ import type { T } from '../i18n';
 import { errorText, newId, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
-import { sendFileTool, showPageTool } from './files';
+import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
@@ -106,6 +106,7 @@ export type ToolName =
   | 'send_file'
   | 'show_page'
   | 'image_create'
+  | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
   | 'browser_click'
@@ -944,6 +945,22 @@ export class ToolFactory {
       sendFileTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
       showPageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
     );
+    // A page becomes a picture in a browser program on this server; without one there is none.
+    const executable = this.ctx.browser.executable;
+    if (executable) {
+      tools.push(
+        pageImageTool({
+          def,
+          services: s,
+          dataDir: this.ctx.config.dataDir,
+          bot,
+          thread,
+          browser: { executable, sandbox: this.ctx.config.browserSandbox },
+          signal,
+          t,
+        }),
+      );
+    }
     // Only a message the person sent gets an emoji back; a turn about their emoji, or another bot's
     // reply, does not. The tool is listed in every turn all the same: the tool list opens the cached
     // prompt, and one that changes between turns of a conversation would reprice all of it.

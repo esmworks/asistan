@@ -1,6 +1,6 @@
 import { constants, realpathSync, statSync } from 'node:fs';
-import { copyFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { copyFile, writeFile } from 'node:fs/promises';
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Bot, MessageFile, Thread } from '@yumakbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
@@ -9,6 +9,7 @@ import type { Services } from '../services';
 import { safeFileName } from '../uploads';
 import { workspacePaths } from '../workspace';
 import type { Define } from './index';
+import { MAX_RENDER_SIDE, renderPage } from '../browser/render';
 import { bundlePage } from './page-bundle';
 
 const real = (p: string) => {
@@ -168,6 +169,39 @@ function botFolder(
   return { full };
 }
 
+/**
+ * The page file a bot means: a folder stands for its index.html, with the scripts, styles,
+ * pictures and data beside it. Null when it is not an HTML page.
+ */
+function pageFile(
+  dataDir: string,
+  bot: Pick<Bot, 'id' | 'groupId' | 'projectDir'>,
+  threadId: string,
+  path: string,
+  t: T,
+): string | null {
+  let page = path;
+  try {
+    page = join(botFolder(dataDir, bot, threadId, path).full, 'index.html');
+  } catch {
+    // Not a folder: a page file.
+  }
+  return /\.html?$/i.test(page) ? botFile(dataDir, bot, threadId, page, t).full : null;
+}
+
+/** Writes a new file in `dir` under a free name (`afiş.png`, `afiş-2.png`…) and returns its path. */
+export async function writeNewFile(dir: string, base: string, ext: string, data: Buffer): Promise<string> {
+  for (let n = 1; ; n++) {
+    const path = join(dir, `${base}${n === 1 ? '' : `-${n}`}.${ext}`);
+    try {
+      await writeFile(path, data, { flag: 'wx', mode: 0o600 });
+      return path;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || n >= 1000) throw err;
+    }
+  }
+}
+
 /** The largest page a bot may show in the conversation. */
 const MAX_PAGE = 2 * 1024 * 1024;
 
@@ -195,16 +229,8 @@ export function showPageTool(opts: {
       height: z.number().int().min(200).max(1200).optional(),
     },
     async ({ path, title, height }) => {
-      // A folder shows its index.html, with the scripts, styles, pictures and data beside it.
-      let page = path;
-      try {
-        const { full } = botFolder(dataDir, bot, threadId, path);
-        page = join(full, 'index.html');
-      } catch {
-        // Not a folder: a page file.
-      }
-      if (!/\.html?$/i.test(page)) return t('tool.pageNotHtml');
-      const full = botFile(dataDir, bot, threadId, page, t).full;
+      const full = pageFile(dataDir, bot, threadId, path, t);
+      if (!full) return t('tool.pageNotHtml');
       const to = await personThread(services, bot, thread);
       const file = await shareableFile(dataDir, bot, to.id, full, t);
       if (file.size > MAX_PAGE) return t('tool.pageTooLarge');
@@ -220,6 +246,65 @@ export function showPageTool(opts: {
       if (!leftOut.length) return shown;
       const names = leftOut.slice(0, 10).map((l) => `${l.name} (${t(`tool.pageLeftOut.${l.why}`)})`);
       return `${shown} ${t('tool.pageLeftOut', { files: names.join(', ') })}`;
+    },
+    'internal',
+  );
+}
+
+/**
+ * `page_to_image`: turns a page the bot made into a PNG of the size it asks for (a banner, a
+ * poster, a social card) and hands it to the person as a card. Pages draw text and layout far
+ * better than picture models, and this costs nothing. The page runs as it would in the chat:
+ * its libraries and fonts from the usual CDNs, and nothing else.
+ */
+export function pageImageTool(opts: {
+  def: Define;
+  services: Services;
+  dataDir: string;
+  bot: Bot;
+  thread: Pick<Thread, 'id' | 'kind'>;
+  browser: { executable: string; sandbox: boolean };
+  signal: AbortSignal;
+  t: T;
+}): AppTool {
+  const { def, services, dataDir, bot, thread, signal, t } = opts;
+  const side = z.number().int().min(16).max(MAX_RENDER_SIDE);
+  return def(
+    'page_to_image',
+    {
+      path: z.string().max(2000),
+      width: side,
+      height: side.optional(),
+      scale: z.union([z.literal(1), z.literal(2)]).optional(),
+      caption: z.string().max(2000).optional(),
+    },
+    async ({ path, width, height, scale, caption }) => {
+      const full = pageFile(dataDir, bot, thread.id, path, t);
+      if (!full) return t('tool.pageNotHtml');
+      if (statSync(full).size > MAX_PAGE) return t('tool.pageTooLarge');
+      const { html, leftOut } = await bundlePage(full);
+      const png = await renderPage({
+        ...opts.browser,
+        html,
+        width,
+        height,
+        scale,
+        // A bot kept off the internet does not reach it through its page either.
+        libraries: bot.internet,
+        signal,
+      });
+      const named = basename(full, extname(full));
+      const base = named === 'index' ? basename(join(full, '..')) : named;
+      const dir = workspacePaths(dataDir, bot.id, thread.id, bot.groupId).threadDir;
+      const file = await writeNewFile(dir, safeFileName(base), 'png', png);
+      const { files, moved } = await postFiles({ services, dataDir, bot, thread, paths: [file], caption, t });
+      const sent = t(moved ? 'tool.pageImageSentMain' : 'tool.pageImageSent', {
+        name: files[0]!.name,
+        path: file,
+      });
+      if (!leftOut.length) return sent;
+      const names = leftOut.slice(0, 10).map((l) => `${l.name} (${t(`tool.pageLeftOut.${l.why}`)})`);
+      return `${sent} ${t('tool.pageLeftOut', { files: names.join(', ') })}`;
     },
     'internal',
   );

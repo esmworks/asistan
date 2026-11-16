@@ -1,5 +1,3 @@
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { Bot, Thread } from '@yumakbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
@@ -7,7 +5,7 @@ import type { T } from '../i18n';
 import type { Services } from '../services';
 import { ImageError } from '../services/images';
 import { workspacePaths } from '../workspace';
-import { postFiles } from './files';
+import { postFiles, writeNewFile } from './files';
 import type { Define } from './index';
 
 /** Pictures one turn may make: each one is paid for, and a looping bot must not run up a bill. */
@@ -55,17 +53,12 @@ export function imageTool(opts: {
         return t(`tool.imageFailed.${err.reason}`, { provider: err.provider, message: err.message });
       }
       const dir = workspacePaths(dataDir, bot.id, thread.id, bot.groupId).threadDir;
-      const base = `${t('tool.imageFileBase')}-${stamp(new Date())}`;
-      let path = '';
-      for (let n = 1; ; n++) {
-        path = join(dir, `${base}${n === 1 ? '' : `-${n}`}.${image.ext}`);
-        try {
-          await writeFile(path, image.data, { flag: 'wx', mode: 0o600 });
-          break;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || n >= 100) throw err;
-        }
-      }
+      const path = await writeNewFile(
+        dir,
+        `${t('tool.imageFileBase')}-${stamp(new Date())}`,
+        image.ext,
+        image.data,
+      );
       const { files, moved } = await postFiles({ services, dataDir, bot, thread, paths: [path], caption, t });
       return t(moved ? 'tool.imageCreatedMain' : 'tool.imageCreated', {
         name: files[0]!.name,
