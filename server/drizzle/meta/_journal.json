@@ -299,8 +299,15 @@
     {
       "idx": 42,
       "version": "7",
-      "when": 1794859632935,
-      "tag": "0042_memory_changes",
+      "when": 1794861118197,
+      "tag": "0042_routine_failure_seen",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794861438136,
+      "tag": "0043_memory_changes",
       "breakpoints": true
     }
   ]

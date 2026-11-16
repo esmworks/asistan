@@ -17,7 +17,15 @@ import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { useFormat } from '@/lib/format';
-import { useBots, useClaudeModels, useConnections, useInfo, useRoutines, useSettings } from '@/lib/queries';
+import {
+  useBots,
+  useClaudeModels,
+  useConnections,
+  useInfo,
+  useRoutines,
+  useSettings,
+  useSummaries,
+} from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -152,6 +160,14 @@ export function RoutineDialog({
   const { data: claudeModels = [] } = useClaudeModels(open && claude);
   const form = useForm<Form>({ resolver: zodResolver(Form), values: fromRoutine(routine) });
   const values = useWatch({ control: form.control }) as Form;
+  // Opening a routine whose latest run failed is seeing it: the bot's mark for it goes out until
+  // a run fails again.
+  const { data: summaries = [] } = useSummaries();
+  const routineId = routine?.id;
+  const failed = !!routineId && summaries.some((s) => s.failedRoutines?.includes(routineId));
+  useEffect(() => {
+    if (open && failed && routineId) void api.routineFailureSeen(routineId).catch(() => undefined);
+  }, [open, failed, routineId]);
   const save = useMutation({
     mutationFn: (f: Form) => {
       const body = {

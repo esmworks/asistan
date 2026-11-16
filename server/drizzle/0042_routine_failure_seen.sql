@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "failure_seen_at" timestamp with time zone;

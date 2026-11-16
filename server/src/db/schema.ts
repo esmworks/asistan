@@ -284,6 +284,11 @@ export const routines = pgTable('routines', {
   enabled: boolean('enabled').notNull().default(true),
   nextRunAt: ts('next_run_at'),
   lastRunAt: ts('last_run_at'),
+  /**
+   * When the person last opened the routine while its latest run had failed. A failure from before
+   * it no longer marks the bot: runs a check skips leave no new result to clear it with.
+   */
+  failureSeenAt: ts('failure_seen_at'),
   createdAt: created(),
   /** Secret of the routine's webhook address; null when it has none. */
   webhookToken: text('webhook_token'),

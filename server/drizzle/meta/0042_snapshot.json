@@ -1,5 +1,5 @@
 {
-  "id": "c0b22e94-9fe8-4712-9f26-73ec5ebb225f",
+  "id": "4696bd25-c227-45b8-a962-1ea09586bb79",
   "prevId": "ab164b94-d677-4051-b78d-db61cf1458ef",
   "version": "7",
   "dialect": "postgresql",
@@ -1355,148 +1355,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.memory_changes": {
-      "name": "memory_changes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "memory_id": {
-          "name": "memory_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "site": {
-          "name": "site",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "before": {
-          "name": "before",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "proposed_by": {
-          "name": "proposed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin": {
-          "name": "origin",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "memory_changes_created_idx": {
-          "name": "memory_changes_created_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_changes_memory_id_memories_id_fk": {
-          "name": "memory_changes_memory_id_memories_id_fk",
-          "tableFrom": "memory_changes",
-          "tableTo": "memories",
-          "columnsFrom": [
-            "memory_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_changes_bot_id_bots_id_fk": {
-          "name": "memory_changes_bot_id_bots_id_fk",
-          "tableFrom": "memory_changes",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_changes_proposed_by_bots_id_fk": {
-          "name": "memory_changes_proposed_by_bots_id_fk",
-          "tableFrom": "memory_changes",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "proposed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.messages": {
       "name": "messages",
       "schema": "",
@@ -2121,6 +1979,12 @@
         },
         "last_run_at": {
           "name": "last_run_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_seen_at": {
+          "name": "failure_seen_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
