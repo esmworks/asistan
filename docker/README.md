@@ -7,8 +7,37 @@ docker compose -f docker/compose.yml --env-file docker/.env up -d --build
 sudo ./docker/firewall.sh               # Linux ana makinede, compose'dan sonra
 ```
 
-Sunucu yalnızca ana makinenin `127.0.0.1:4319` adresinde dinler. Uzaktan erişim için önüne TLS veren bir ters
-vekil (Caddy, nginx) koyun, `YUMAKBOT_ALLOWED_HOSTS` değerine alan adını, `YUMAKBOT_SECURE_COOKIES=1` yazın.
+Sunucu yalnızca ana makinenin `127.0.0.1:4319` adresinde dinler. Uzaktan erişim için bkz. "Uzaktan erişim".
+
+## Uzaktan erişim
+
+Sunucuyu dışarıya açmanın üç yolu var; hiçbiri ana makinede bir port açmaz, ilk ikisi ters vekil de istemez.
+
+**Cloudflare Tunnel** (herkese açık bir alan adıyla, HTTPS Cloudflare'den):
+
+1. Cloudflare panelinde Zero Trust → Networks → Tunnels → Create a tunnel (Cloudflared) ile bir tünel açın ve
+   jetonunu `.env` dosyasında `CLOUDFLARE_TUNNEL_TOKEN` değerine yazın.
+2. Tünelin Public Hostname ayarına alan adınızı (ör. `bot.ornek.com`) ve servis olarak `http://yumakbot:4319`
+   yazın.
+3. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://bot.ornek.com` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
+4. `docker compose -f docker/compose.yml --env-file docker/.env --profile cloudflare up -d`
+
+**Tailscale** (yalnız tailnet'inizdeki cihazlardan, `https://yumakbot.<tailnet>.ts.net`):
+
+1. Tailscale yönetim panelinde bir auth key oluşturup `.env` dosyasında `TAILSCALE_AUTHKEY` değerine yazın;
+   tailnet'inizde HTTPS sertifikalarını açın (DNS → HTTPS Certificates).
+2. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://yumakbot.<tailnet>.ts.net` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
+3. `docker compose -f docker/compose.yml --env-file docker/.env --profile tailscale up -d`
+
+Tünel kapsayıcıları sunucuya yalnızca kendi iç ağlarından (`edge`) ulaşır; sunucuya oradan dışarıya yeni bir yol
+açılmaz.
+
+**Kendi ters vekiliniz** (Caddy, nginx): önüne TLS veren vekili koyun, `YUMAKBOT_ALLOWED_HOSTS` değerine alan adını,
+`YUMAKBOT_SECURE_COOKIES=1` yazın.
+
+Telefonu ya da başka bir bilgisayarı bağlamak için şifre yazmanız gerekmez: oturumu açık bir cihazda Ayarlar →
+Bağlantı → Başka bir cihaz bağla ile bir eşleştirme kodu alın, öbür cihazda sunucu adresini girip "Eşleştirme
+koduyla gir"i seçin. Kod bir kez ve beş dakika içinde çalışır; yanlış kodlar yanlış şifrelerle birlikte sayılır.
 
 ## Uygulamaya giriş
 

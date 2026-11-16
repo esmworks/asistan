@@ -22,6 +22,7 @@ export function Login() {
   const t = useT();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false });
   const [useKey, setUseKey] = useState(false);
+  const [useCode, setUseCode] = useState(false);
   const hasAccount = !!session?.account;
   return (
     <div className="flex h-full flex-col items-center justify-center p-6">
@@ -32,15 +33,18 @@ export function Login() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Yumak Bot</h1>
           <p className="text-sm text-muted-foreground">
-            {hasAccount && !useKey ? t('login.accountHint') : t('login.hint')}
+            {useCode ? t('login.codeHint') : hasAccount && !useKey ? t('login.accountHint') : t('login.hint')}
           </p>
         </div>
-        {hasAccount && !useKey ? <PasswordForm /> : <KeyForm />}
-        {hasAccount && (
+        {useCode ? <CodeForm /> : hasAccount && !useKey ? <PasswordForm /> : <KeyForm />}
+        {hasAccount && !useCode && (
           <Button variant="ghost" size="sm" className="w-full" onClick={() => setUseKey((v) => !v)}>
             {useKey ? t('login.usePassword') : t('login.useKey')}
           </Button>
         )}
+        <Button variant="ghost" size="sm" className="w-full" onClick={() => setUseCode((v) => !v)}>
+          {useCode ? t('login.back') : t('login.useCode')}
+        </Button>
       </div>
       <DesktopServerChoice />
       <LanguageSwitch />
@@ -103,6 +107,48 @@ function PasswordForm() {
     </form>
   );
 }
+
+/** A one-time code from a device already signed in (Settings → Connection). */
+function CodeForm() {
+  const t = useT();
+  const setAuthed = useUi((s) => s.setAuthed);
+  const Form = useMemo(() => z.object({ code: z.string().trim().min(1, t('login.enterCode')) }), [t]);
+  const form = useForm<z.infer<typeof Form>>({ resolver: zodResolver(Form), defaultValues: { code: '' } });
+  const submit = form.handleSubmit(async ({ code }) => {
+    try {
+      await api.pair(code);
+      setAuthed(true);
+    } catch (e) {
+      form.setError('code', { message: e instanceof ApiError ? e.message : t('login.unreachable') });
+    }
+  });
+  const error = form.formState.errors.code?.message;
+  return (
+    <form onSubmit={submit} className="space-y-6">
+      <div className="space-y-2">
+        <Input
+          {...form.register('code')}
+          autoFocus
+          autoComplete="one-time-code"
+          autoCapitalize="characters"
+          spellCheck={false}
+          placeholder={CODE_EXAMPLE}
+          aria-label={t('login.code')}
+          aria-invalid={!!error}
+          className="h-12 rounded-full px-5 text-center font-mono text-lg tracking-widest"
+        />
+        {error && <p className="px-4 text-sm text-destructive">{error}</p>}
+      </div>
+      <Button type="submit" className="h-12 w-full rounded-full" disabled={form.formState.isSubmitting}>
+        {form.formState.isSubmitting && <Loader2 className="animate-spin" />}
+        {t('login.submit')}
+      </Button>
+    </form>
+  );
+}
+
+/** The shape of a pairing code; an example, the same in every language. */
+const CODE_EXAMPLE = 'ABCD-2345';
 
 function KeyForm() {
   const t = useT();

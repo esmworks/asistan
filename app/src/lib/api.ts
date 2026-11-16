@@ -156,6 +156,10 @@ export interface Settings {
 export const api = {
   /** `account` is missing on servers older than username and password sign-in. */
   session: () => http.get<{ authenticated: boolean; account?: boolean }>('/api/session'),
+  /** Signs this browser in with a one-time pairing code from a signed-in device. */
+  pair: (code: string) => http.post<{ ok: true }>('/api/pair', { code }),
+  /** A one-time code that signs one more device in within five minutes. */
+  pairingCode: () => http.post<{ code: string; expiresAt: string; url: string | null }>('/api/pairing'),
   access: (key: string) => http.post<{ ok: true }>('/api/access', { key }),
   login: (username: string, password: string) =>
     http.post<{ ok: true }>('/api/login', { username, password }),

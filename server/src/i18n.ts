@@ -116,6 +116,8 @@ const tr = {
   'error.gatewayKeyOnly': 'Ağ geçidi adresi yalnızca API anahtarıyla birlikte kullanılabilir',
   'error.appUnavailable': 'Bu uygulama bağlantısı şu an kullanılamıyor ya da bu bota açık değil',
   'error.signInNoPaste': 'Bu oturum açma şu an yapıştırılan bir adres beklemiyor',
+  'error.pairingWrong':
+    'Eşleştirme kodu yanlış, kullanılmış ya da süresi dolmuş; bağlı bir cihazda yenisini alın',
   'error.backupPassword': 'Yedeğin şifresi en az 12 karakter olmalı',
   'error.backupWrongPassword': 'Şifre yanlış ya da dosya değiştirilmiş; hiçbir şey değişmedi',
   'error.backupDamaged': 'Bu bir Yumak Bot yedeği değil ya da dosya bozuk; hiçbir şey değişmedi',
@@ -828,6 +830,7 @@ const en: Catalog<ServerKey> = {
   'error.gatewayKeyOnly': 'A gateway address goes only with an API key',
   'error.appUnavailable': 'This app connection cannot be used now, or is not open to this bot',
   'error.signInNoPaste': 'This sign-in is not waiting for a pasted address now',
+  'error.pairingWrong': 'The pairing code is wrong, used or expired; get a new one on a signed-in device',
   'error.backupPassword': "The backup's password needs at least 12 characters",
   'error.backupWrongPassword': 'Wrong password, or the file was changed; nothing was changed',
   'error.backupDamaged': 'This is not a Yumak Bot backup, or the file is damaged; nothing was changed',

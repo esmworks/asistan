@@ -142,8 +142,12 @@ sudo ./docker/firewall.sh
 ```
 
 This starts PostgreSQL, the Yumak Bot server and the computer service with a read-only root file system, all
-capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`; for remote access, put a TLS
-reverse proxy (Caddy, nginx) in front of it, set `YUMAKBOT_ALLOWED_HOSTS` to your domain and `YUMAKBOT_SECURE_COOKIES=1`.
+capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`. To reach it from elsewhere
+without opening a port, add `--profile cloudflare` (a Cloudflare Tunnel, with `CLOUDFLARE_TUNNEL_TOKEN`) or
+`--profile tailscale` (your tailnet, with `TAILSCALE_AUTHKEY`) and set `YUMAKBOT_PUBLIC_URL` and
+`YUMAKBOT_SECURE_COOKIES=1`; or put a TLS reverse proxy (Caddy, nginx) in front of it and set `YUMAKBOT_ALLOWED_HOSTS`
+to your domain. To sign a phone or another computer in, get a one-time pairing code under Settings → Connection →
+Connect another device on a device already signed in.
 
 [docker/README.md](docker/README.md) covers the details (in Turkish): signing in to Claude, the browser and password
 vault, the Bash sandbox, AppArmor on Ubuntu 23.10+, and the bots' desktops. Back up `/data/vault.key` together with the

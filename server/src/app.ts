@@ -75,7 +75,14 @@ export interface YumakBotServer {
 /** How often, and how long after its last try, a failed app connection is tried again. */
 const CONNECTION_RETRY_MS = 5 * 60_000;
 
-const PUBLIC_API = new Set(['/api/health', '/api/access', '/api/login', '/api/session', OAUTH_CALLBACK_PATH]);
+const PUBLIC_API = new Set([
+  '/api/health',
+  '/api/access',
+  '/api/login',
+  '/api/pair',
+  '/api/session',
+  OAUTH_CALLBACK_PATH,
+]);
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });

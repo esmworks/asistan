@@ -5,6 +5,16 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Running it
+
+- Sign a phone or another computer in with a one-time pairing code from a device already signed in (Settings →
+  Connection → Connect another device), instead of the password or the access key. A code works once, within five
+  minutes; wrong codes are slowed like wrong passwords. The web, the phone and the desktop app's server window take
+  it.
+- Docker Compose profiles reach the server from elsewhere without opening a port: `--profile cloudflare` runs a
+  Cloudflare Tunnel, `--profile tailscale` serves it on your tailnet with HTTPS. The tunnel reaches the server over a
+  network of its own with no way out.
+
 ### Connections and models
 
 - Sign in with your ChatGPT plan instead of an OpenAI API key, through OpenAI's "Sign in with ChatGPT", which lets an

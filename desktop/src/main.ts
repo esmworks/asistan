@@ -394,6 +394,38 @@ function openConnectWindow() {
   void connectWin.loadFile(join(assets(), 'connect.html'), { query: { lang: locale() } });
 }
 
+/** A pairing code as people type it (`ABCD-2345`); access keys are much longer. */
+const isPairingCode = (v: string) => /^[A-Za-z0-9]{4}[\s-]?[A-Za-z0-9]{4}$/.test(v);
+
+/** Spends a pairing code at `url` and keeps the session it gives as the window's sign-in cookie. */
+async function pairWith(url: string, code: string) {
+  const res = await session.defaultSession.fetch(`${url}/api/pair`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code, token: true }),
+  });
+  const body = (await res.json().catch(() => null)) as {
+    token?: string;
+    cookie?: string;
+    maxAge?: number;
+    error?: string;
+  } | null;
+  if (!res.ok || !body?.token || !body.cookie) {
+    throw new Error(body?.error ?? t('connect.noResponse', { status: String(res.status) }));
+  }
+  const secure = url.startsWith('https:');
+  await session.defaultSession.cookies.set({
+    url,
+    name: body.cookie,
+    value: body.token,
+    httpOnly: true,
+    secure,
+    sameSite: 'strict',
+    path: '/',
+    expirationDate: Date.now() / 1000 + (body.maxAge ?? 90 * 24 * 3600),
+  });
+}
+
 function isAppOrigin(url: string) {
   try {
     return !!origin && new URL(url).origin === new URL(origin).origin;
@@ -435,7 +467,14 @@ function registerIpc() {
       const url = normalizeRemoteUrl(String(rawUrl));
       const res = await session.defaultSession.fetch(`${url}/api/health`);
       if (!res.ok) throw new Error(t('connect.noResponse', { status: String(res.status) }));
-      writeDesktopConfig(userData, { mode: 'remote', url, key: String(key).trim() }, safeStorage);
+      let saved = String(key).trim();
+      // A pairing code signs this app in once; the session it gives is kept with the window's
+      // cookies, and there is no key to keep.
+      if (isPairingCode(saved)) {
+        await pairWith(url, saved);
+        saved = '';
+      }
+      writeDesktopConfig(userData, { mode: 'remote', url, key: saved }, safeStorage);
       await switchTo(readDesktopConfig(userData, safeStorage));
       connectWin?.close();
       return { ok: true };

@@ -17,22 +17,28 @@ export default function Login() {
   const api = useApi();
   const session = useQuery({ queryKey: ['session', origin], queryFn: api.session });
   const [useKey, setUseKey] = useState(false);
+  const [useCode, setUseCode] = useState(false);
   const hasAccount = !!session.data?.account;
-  const password = hasAccount && !useKey;
+  const password = hasAccount && !useKey && !useCode;
 
   return (
     <FormScreen>
       <Mark />
       <Title>Yumak Bot</Title>
-      <Hint>{password ? t('login.accountHint') : t('login.hint')}</Hint>
-      {password ? <PasswordForm /> : <KeyForm />}
-      {hasAccount ? (
+      <Hint>{useCode ? t('login.codeHint') : password ? t('login.accountHint') : t('login.hint')}</Hint>
+      {useCode ? <CodeForm /> : password ? <PasswordForm /> : <KeyForm />}
+      {hasAccount && !useCode ? (
         <Button
           label={useKey ? t('login.usePassword') : t('login.useKey')}
           variant="ghost"
           onPress={() => setUseKey((v) => !v)}
         />
       ) : null}
+      <Button
+        label={useCode ? t('login.back') : t('login.useCode')}
+        variant="ghost"
+        onPress={() => setUseCode((v) => !v)}
+      />
       <View style={styles.server}>
         <Hint>{t('login.server', { host: origin ? hostOf(origin) : '' })}</Hint>
         <Button label={t('login.otherServer')} variant="ghost" onPress={() => router.push('/connect')} />
@@ -115,6 +121,51 @@ function PasswordForm() {
         onSubmitEditing={() => void submit()}
       />
       {error ? <ErrorText>{error.message}</ErrorText> : null}
+      <Button label={t('login.submit')} busy={busy} onPress={() => void submit()} />
+    </>
+  );
+}
+
+/** A one-time code from a device already signed in (Settings → Connection). */
+function CodeForm() {
+  const api = useApi();
+  const signedIn = useSignedIn();
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!code.trim()) return setError(t('login.enterCode'));
+    setError(null);
+    setBusy(true);
+    try {
+      await api.pair(code.trim());
+      await signedIn();
+    } catch (e) {
+      setError(failure(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Field
+        value={code}
+        onChangeText={(v) => {
+          setCode(v);
+          setError(null);
+        }}
+        placeholder={t('login.code')}
+        accessibilityLabel={t('login.code')}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        autoComplete="one-time-code"
+        textContentType="oneTimeCode"
+        returnKeyType="go"
+        autoFocus
+        invalid={!!error}
+        onSubmitEditing={() => void submit()}
+      />
+      {error ? <ErrorText>{error}</ErrorText> : null}
       <Button label={t('login.submit')} busy={busy} onPress={() => void submit()} />
     </>
   );

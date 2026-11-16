@@ -235,6 +235,32 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
 
+  // Pairing: a signed-in device makes a short code; another device signs in with it once.
+  app.post('/api/pairing', async () => ({
+    ...d.auth.createPairingCode(),
+    // Where the other device finds this server, when it is known to the server.
+    url: d.config.publicUrl ?? null,
+  }));
+  app.post('/api/pair', async (req, reply) => {
+    const { code, token: wantToken } = z
+      .object({ code: z.string().min(1).max(40), token: z.boolean().optional() })
+      .parse(req.body);
+    // Wrong codes count with wrong passwords: guessing either is slowed the same way.
+    if (d.auth.throttle.blocked(req.ip)) throw new HttpError(429, 'error.loginBlocked');
+    if (!d.auth.usePairingCode(code)) {
+      d.auth.throttle.failed(req.ip);
+      await new Promise((r) => setTimeout(r, 300));
+      throw new HttpError(401, 'error.pairingWrong');
+    }
+    d.auth.throttle.succeeded(req.ip);
+    const token = await d.auth.createSession(req.headers['user-agent']);
+    reply.setCookie(SESSION_COOKIE, token, sessionCookie);
+    // The desktop app pairs from its own process and puts the session in its window's cookies.
+    return wantToken
+      ? { ok: true, token, cookie: SESSION_COOKIE, maxAge: sessionCookie.maxAge }
+      : { ok: true };
+  });
+
   app.get('/api/account', async () => ({ username: await d.auth.account.username() }));
   app.put('/api/account', async (req) => {
     const { username, password, current } = AccountSet.parse(req.body);
