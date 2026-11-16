@@ -1,5 +1,5 @@
 import type { Memory, MemoryScope } from '@yumakbot/shared';
-import { and, asc, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
@@ -59,12 +59,13 @@ export class MemoryService {
     return { user: all.filter((m) => m.scope === 'user'), bot: all.filter((m) => m.scope === 'bot') };
   }
 
-  /** Notes the bot can see whose text holds `query`, or every one of them when there is no query. */
-  async search(botId: string, query?: string): Promise<Memory[]> {
-    const visible = or(
-      eq(schema.memories.scope, 'user'),
-      and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
-    );
+  /**
+   * Notes whose text holds `query`, or every one of them when there is no query: the own notes of
+   * the bots in `botIds` and, unless `shared` is false, the shared user memory.
+   */
+  async search(botIds: string[], query?: string, shared = true): Promise<Memory[]> {
+    const own = and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds));
+    const visible = shared ? or(eq(schema.memories.scope, 'user'), own) : own;
     // ı and İ read as i on both sides, as the message search does.
     const q = query && `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const rows = await this.ctx.db
@@ -80,9 +81,9 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** Whether a bot may change or delete the note: the shared ones and its own, not another bot's. */
-  canEdit(m: Memory, botId: string) {
-    return m.scope === 'user' || m.botId === botId;
+  /** Whether the note is the shared memory or the own note of one of `botIds`. */
+  canEdit(m: Memory, botIds: Iterable<string>) {
+    return m.scope === 'user' || (!!m.botId && new Set(botIds).has(m.botId));
   }
 
   async get(id: string): Promise<Memory> {

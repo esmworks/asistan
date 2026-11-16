@@ -142,6 +142,50 @@ describe('hafıza', () => {
     ]);
   });
 
+  it('yönetici bot yönetici olmayan botların notlarını görür, düzeltir, siler; başka yöneticininkine dokunamaz', async () => {
+    const m = await t.bot({ name: 'Müdür', isManager: true, permissionMode: 'auto' });
+    const other = await t.bot({ name: 'Başmüdür', isManager: true });
+    const ali = await t.bot({ name: 'Ali' });
+    const eski = await t.bot({ name: 'Eski' });
+    const post = async (body: object) => (await t.api<Memory>('POST', '/api/memory', body)).body;
+    const aliNote = await post({ scope: 'bot', botId: ali.id, content: 'Ali rapor cuma' });
+    const eskiNote = await post({ scope: 'bot', botId: eski.id, content: 'Eski not' });
+    const otherNote = await post({ scope: 'bot', botId: other.id, content: 'Başmüdürün notu' });
+    await t.api('POST', `/api/bots/${eski.id}/archive`);
+    const tm = await main(m.id);
+    const last = async () => (await t.messages(tm.id)).at(-1)!.text;
+
+    await t.send(tm.id, '[araç:memory_search {}]');
+    await t.services.turns.idle();
+    const listed = await last();
+    // Bots that are not managers, archived ones included, each note named by its bot.
+    expect(listed).toContain(`[${aliNote.id}] (Ali) Ali rapor cuma`);
+    expect(listed).toContain(eskiNote.id);
+    expect(listed).not.toContain(otherNote.id);
+
+    await t.send(tm.id, '[araç:memory_search {"bot":"ali"}]');
+    await t.services.turns.idle();
+    expect(await last()).toContain(aliNote.id);
+    expect(await last()).not.toContain(eskiNote.id);
+
+    await t.send(tm.id, `[araç:memory_update {"id":"${aliNote.id}","content":"Ali rapor perşembe"}]`);
+    await t.services.turns.idle();
+    await t.send(tm.id, `[araç:memory_forget {"id":"${eskiNote.id}"}]`);
+    await t.services.turns.idle();
+    expect(await last()).toContain('Eski bu bilgiyi artık hiçbir yerden göremez');
+    await t.send(tm.id, `[araç:memory_forget {"id":"${otherNote.id}"}]`);
+    await t.services.turns.idle();
+    expect(await last()).toContain('başka bir botun kendi notu');
+    const all = (await t.api<Memory[]>('GET', '/api/memory')).body;
+    expect(all.map((n) => n.content).sort()).toEqual(['Ali rapor perşembe', 'Başmüdürün notu']);
+
+    // A bot that is not a manager still sees only its own notes.
+    const ta = await main(ali.id);
+    await t.send(ta.id, '[araç:memory_search {"bot":"Başmüdür"}]');
+    await t.services.turns.idle();
+    expect((await t.messages(ta.id)).at(-1)!.text).toContain('başka bir botun kendi notu');
+  });
+
   it('bir botun kendi notlarının hepsi tek seferde silinir; ortak hafıza ve başka botlar kalır', async () => {
     const a = await t.bot({ name: 'Ali' });
     const b = await t.bot({ name: 'Ayşe' });
