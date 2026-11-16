@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, renameSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   app,
@@ -25,6 +26,7 @@ import {
   writeDesktopConfig,
   type DesktopConfig,
 } from './desktop-config';
+import { startEgress } from './egress';
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
 import { LINK_SCHEME, linkInArgs, parseLink, type AppLink } from './links';
@@ -106,6 +108,8 @@ let awake: number | null = null;
 let updates: Updates | null = null;
 /** A downloaded version waiting for a restart. */
 let updateReady: string | null = null;
+/** Ends this computer's offer to be the bots' way out to the web; set while connected to a remote server. */
+let stopEgress: (() => void) | null = null;
 
 const resources = () => (app.isPackaged ? process.resourcesPath : join(app.getAppPath(), '..'));
 const serverEntry = () => join(resources(), 'server', 'dist', 'index.mjs');
@@ -172,6 +176,18 @@ async function connect() {
     accessKey = config.key;
     setStatus('status.remote', { host: new URL(config.url).host });
     showWindow();
+    const remote = config;
+    stopEgress = startEgress({
+      url: remote.url,
+      // The access key, or the session a pairing code gave the window.
+      headers: async (): Promise<Record<string, string>> => {
+        if (remote.key) return { authorization: `Bearer ${remote.key}` };
+        const cookies = await session.defaultSession.cookies.get({ url: remote.url });
+        return cookies.length ? { cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') } : {};
+      },
+      device: hostname().replace(/\.local$/, ''),
+      log: (level, line) => log[level](line),
+    });
     return;
   }
   setStatus('status.serverStarting');
@@ -532,6 +548,8 @@ function registerIpc() {
 }
 
 async function switchTo(next: DesktopConfig) {
+  stopEgress?.();
+  stopEgress = null;
   if (awake !== null) powerSaveBlocker.stop(awake);
   awake = null;
   await server?.stop();

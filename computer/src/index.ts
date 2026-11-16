@@ -4,7 +4,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
-import { connect, type Socket } from 'node:net';
+import { connect, createServer as createNetServer, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,16 @@ import {
   DesktopJobQuery,
   DesktopJobStart,
 } from '@yumakbot/shared';
+import {
+  dialPublic,
+  EgressError,
+  EgressMux,
+  join as joinStreams,
+  socksAccept,
+  socksReply,
+  socksReplyFor,
+  SOCKS_REPLY,
+} from '@yumakbot/shared/egress';
 import { allocateDisplay, bearerToken, CdpDecoder, checkToken, encodeCdp } from './lib';
 import { bwrapArgs, checkSessionPath, collectBinds, type SandboxOptions } from './sandbox';
 
@@ -28,6 +38,8 @@ if (TOKEN.length < 32) {
   process.exit(1);
 }
 const PORT = Number(process.env.YUMAKBOT_COMPUTER_PORT ?? 4320);
+/** The desktops' browsers go through a proxy on this loopback port (they share its network). */
+const SOCKS_PORT = Number(process.env.YUMAKBOT_COMPUTER_SOCKS_PORT ?? 4321);
 const STATE = process.env.YUMAKBOT_COMPUTER_STATE ?? '/run/computer';
 const MAX_DESKTOPS = Number(process.env.YUMAKBOT_COMPUTER_MAX ?? 3);
 const WORKSPACES_ROOT = (process.env.YUMAKBOT_WORKSPACES_ROOT ?? '/data/workspaces').replace(/\/+$/, '');
@@ -169,6 +181,7 @@ async function startSession(id: string, start: DesktopStart): Promise<DesktopSta
       node: process.execPath,
       helperScript: HELPER_SCRIPT,
       sessionScript: SESSION_SCRIPT,
+      ...(socksReady && { proxy: `socks5://127.0.0.1:${SOCKS_PORT}` }),
     };
     collectBinds(opts.start); // throws early on nonsense input before spawning
     // The sandbox gets only what bwrapArgs sets: the controller's environment (and token) stays here.
@@ -454,11 +467,96 @@ function bridgeCdp(s: Session, ws: WebSocket): void {
   });
 }
 
+// ---- the way out through the person's computer ---------------------------------------------
+
+/**
+ * The server's connection for the desktops' browser traffic. While it says the person's computer
+ * is there, each new browser connection is sent to it; otherwise, or when it answers that the
+ * computer is gone, the connection is made from here as before.
+ */
+let egress: { ws: WebSocket; mux: EgressMux; route: boolean } | null = null;
+
+function bridgeEgress(ws: WebSocket): void {
+  egress?.ws.terminate();
+  const link = {
+    ws,
+    route: false,
+    mux: new EgressMux({
+      send: (f) => {
+        if (ws.readyState === ws.OPEN) ws.send(f, { binary: true });
+      },
+    }),
+  };
+  egress = link;
+  let alive = true;
+  ws.on('pong', () => (alive = true));
+  const ping = setInterval(() => {
+    if (!alive) return ws.terminate();
+    alive = false;
+    ws.ping();
+  }, 30_000);
+  ws.on('message', (data, isBinary) => {
+    if (isBinary) return link.mux.receive(Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer));
+    try {
+      link.route = (JSON.parse(data.toString('utf8')) as { route?: unknown }).route === true;
+    } catch {
+      /* not a state message */
+    }
+  });
+  const end = () => {
+    clearInterval(ping);
+    link.mux.close();
+    if (egress === link) egress = null;
+  };
+  ws.on('close', end);
+  ws.on('error', end);
+}
+
+/** From here: the controller's network reaches the internet only, not the server's private one. */
+const dialHere = (host: string, port: number) => dialPublic(host, port, { anyAddress: true });
+
+let socksReady = false;
+const socks = createNetServer({ allowHalfOpen: true }, (client) => {
+  client.on('error', () => {});
+  void (async () => {
+    let target: { host: string; port: number };
+    try {
+      target = await socksAccept(client);
+    } catch {
+      return;
+    }
+    let up: Duplex;
+    try {
+      const link = egress;
+      up =
+        link?.route === true
+          ? await link.mux.open(target.host, target.port).catch((err: unknown) => {
+              if (err instanceof EgressError && err.code === 'unavailable') {
+                return dialHere(target.host, target.port);
+              }
+              throw err;
+            })
+          : await dialHere(target.host, target.port);
+    } catch (err) {
+      return socksReply(client, socksReplyFor(err));
+    }
+    if (client.destroyed) return void up.destroy();
+    socksReply(client, SOCKS_REPLY.ok);
+    joinStreams(client, up);
+  })();
+});
+socks.on('error', (e) => log(`browser proxy: ${e.message}`));
+socks.listen(SOCKS_PORT, '127.0.0.1', () => {
+  socksReady = true;
+  log(`browser proxy on 127.0.0.1:${SOCKS_PORT}`);
+});
+
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (!checkToken(url.searchParams.get('token'), TOKEN)) {
     return rejectUpgrade(socket, 401, 'unauthorized', 'unauthorized');
   }
+  if (url.pathname === '/egress') return wss.handleUpgrade(req, socket, head, bridgeEgress);
   const m = /^\/desktops\/([^/]+)\/(vnc|cdp)$/.exec(url.pathname);
   const id = m && DesktopId.safeParse(m[1]);
   if (!m || !id || !id.success) return rejectUpgrade(socket, 404, 'badRequest', 'not found');
@@ -476,6 +574,7 @@ function shutdown(): void {
   log('shutting down');
   for (const s of sessions.values()) killSession(s);
   server.close();
+  socks.close();
   setTimeout(() => process.exit(0), 1500).unref();
 }
 process.on('SIGTERM', shutdown);

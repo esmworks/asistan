@@ -1014,6 +1014,7 @@ export class ToolFactory {
           askLogin,
           siteNotes: async (host) =>
             bot.memory ? (await s.memory.forSite(bot.id, host)).map((m) => m.content) : [],
+          exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
         }),
       );
     }

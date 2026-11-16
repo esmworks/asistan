@@ -132,6 +132,11 @@ export interface BrowserManagerOptions {
    * ordinary window for them to sign in by hand.
    */
   windows?: boolean;
+  /**
+   * A SOCKS5 proxy (`socks5://host:port`) every browser this manager starts goes through: the way
+   * out through the person's own computer when it is connected.
+   */
+  proxy?: string;
   /** Starts a program; tests pass a stand-in so no window opens. */
   spawn?: (command: string, args: string[]) => ChildProcess;
 }
@@ -560,6 +565,7 @@ export class BrowserManager {
         // Sites such as Google refuse to sign in a browser that says it is driven by a program: no
         // "controlled by automated software" mark, and navigator.webdriver stays false.
         ignoreDefaultArgs: ['--enable-automation'],
+        ...(this.opts.proxy && { proxy: { server: this.opts.proxy } }),
         args: [
           '--disable-dev-shm-usage',
           '--no-first-run',
@@ -567,6 +573,8 @@ export class BrowserManager {
           '--disable-blink-features=AutomationControlled',
           // A page the bot opens never plays sound on the computer the server runs on.
           '--mute-audio',
+          // WebRTC would otherwise send UDP around the proxy and show sites the server's address.
+          ...(this.opts.proxy ? ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] : []),
         ],
         timeout: 30_000,
       });

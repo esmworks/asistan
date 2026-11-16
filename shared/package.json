@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./i18n": "./src/i18n.ts"
+    "./i18n": "./src/i18n.ts",
+    "./egress": "./src/egress.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

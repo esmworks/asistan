@@ -514,6 +514,17 @@ export const ServerInfo = z.object({
   }),
   /** The address set for other services to reach the server at; null or missing when none is. */
   publicUrl: z.string().nullable().optional(),
+  /**
+   * Whether the bots' browsers can reach the web through the person's own computer, and whether
+   * one is connected for it. Missing when the server runs on that computer itself (or is older).
+   */
+  egress: z
+    .object({
+      enabled: z.boolean(),
+      connected: z.boolean(),
+      device: z.string().nullable(),
+    })
+    .optional(),
 });
 export type ServerInfo = z.infer<typeof ServerInfo>;
 

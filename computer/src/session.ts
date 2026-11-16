@@ -26,6 +26,14 @@ const chromiumArgs = [
   '--no-default-browser-check',
   '--disable-session-crashed-bubble',
   '--start-maximized',
+  // The controller's proxy: the way out through the person's own computer when it is connected.
+  // WebRTC would otherwise send UDP around it and show sites this machine's address.
+  ...(process.env.YUMAKBOT_PROXY
+    ? [
+        `--proxy-server=${process.env.YUMAKBOT_PROXY}`,
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+      ]
+    : []),
 ];
 
 function send(res: ServerResponse, status: number, body: unknown): void {

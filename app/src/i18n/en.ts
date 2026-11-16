@@ -894,6 +894,13 @@ export const en: Catalog<MessageKey> = {
   'browserInfo.okHint': 'Each bot uses this browser with its own profile: {path}',
   'browserInfo.missingHint':
     'No Chrome, Edge or Chromium was found on the server, so bots cannot work on websites. Install one or give its path with YUMAKBOT_BROWSER.',
+  'egress.label': "Bots' browsers go out through my computer",
+  'egress.hint':
+    "Sites see the connection of the computer whose Yumak Bot app is connected to this server, not the server's. While that computer is off, the browsers go out from the server. Browsers only: the bots' commands still go out from the server.",
+  'egress.connected': 'Going out through {device} now.',
+  'egress.connectedUnnamed': 'Going out through the connected computer now.',
+  'egress.waiting':
+    'No computer is connected, so it goes out from the server now. Keep the desktop app open and connected to this server.',
   'sandbox.label': 'Bash sandbox',
   'sandbox.okHint': "Claude bots' Bash commands run in a sandbox that can only see their own folders.",
   'sandbox.unavailableHint':

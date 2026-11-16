@@ -611,6 +611,10 @@ const tr = {
   'browser.dialogWillDismiss': 'Sayfanın bir sonraki sorusu iptal edilecek.',
   'browser.refusedHosts':
     'Sayfa bu bilgisayardaki ya da yerel ağdaki şu adreslere ulaşmak istedi, izin verilmedi: {hosts}.',
+  'browser.exitComputer':
+    'Tarayıcın artık internete kişinin kendi bilgisayarından çıkıyor; siteler onun bağlantısını görüyor.',
+  'browser.exitServer':
+    'Kişinin bilgisayarı bağlı değil, tarayıcın internete sunucudan çıkıyor. Bir sitede oturum düşerse ya da doğrulama istenirse kendin yeniden giriş deneme; kişiye söyle.',
   'browser.busy': 'Bot şu an tarayıcısını kullanıyor; işi bitince yeniden dene.',
   'browser.windowUnavailable':
     'Botun tarayıcısı ayrı pencere olarak yalnızca sunucu bu bilgisayarda çalışırken açılabilir.',
@@ -1385,6 +1389,10 @@ const en: Catalog<ServerKey> = {
   'browser.dialogWillDismiss': "The page's next question will be cancelled.",
   'browser.refusedHosts':
     'The page tried to reach these addresses on this computer or the local network, which was refused: {hosts}.',
+  'browser.exitComputer':
+    "Your browser now reaches the internet through the person's own computer; sites see their connection.",
+  'browser.exitServer':
+    "The person's computer is not connected, so your browser reaches the internet from the server. If a site signs you out or asks for a check, do not sign in again yourself; tell the person.",
   'browser.busy': 'The bot is using its browser right now; try again when it is done.',
   'browser.windowUnavailable':
     "The bot's browser opens as a window of its own only when the server runs on this computer.",
