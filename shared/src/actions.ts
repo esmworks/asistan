@@ -69,6 +69,7 @@ const USE: Verb = ['kullanmak', 'kullanabilir', 'kullanmayacak'];
 const UPLOAD: Verb = ['yüklemek', 'yükleyebilir', 'yüklemeyecek'];
 const TURN_OFF: Verb = ['kapatmak', 'kapatabilir', 'kapatmayacak'];
 const DELETE: Verb = ['silmek', 'silebilir', 'silmeyecek'];
+const CREATE: Verb = ['oluşturmak', 'oluşturabilir', 'oluşturmayacak'];
 
 /** One action in both languages, before the bot's name is put in. */
 interface Phrase {
@@ -170,6 +171,11 @@ function phraseFor(name: string, input: Record<string, unknown>): Phrase {
       return {
         tr: ['çalışan bir komutu', 'bu komutu', STOP],
         en: ['stop a running command', 'stop this command', 'stop running commands'],
+      };
+    case 'image_create':
+      return {
+        tr: ['bir resim', 'bu resmi', CREATE],
+        en: ['create a picture', 'create this picture', 'create pictures'],
       };
     case 'memory_write':
       return {
@@ -316,6 +322,8 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
       return str(input.description);
     case 'memory_write':
       return str(input.content);
+    case 'image_create':
+      return str(input.prompt);
     case 'bot_create':
       return str(input.description);
     case 'bot_send':

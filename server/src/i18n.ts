@@ -411,6 +411,19 @@ const tr = {
   'tool.pageLeftOut.outside': 'klasörün dışına çıkan bağlantı',
   'tool.pageShown': '{name} sohbette gösterildi.',
   'tool.pageShownMain': '{name} kullanıcıyla olan sohbetinde gösterildi; bu botlar arası konuşmada görünmez.',
+  'tool.image_create':
+    'Yazılı bir tariften resim oluştur (fotoğraf, çizim, logo, illüstrasyon) ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. prompt: resmin ayrıntılı tarifi (konu, üslup, renkler, kompozisyon; resimde yazı olacaksa tam metni tırnak içinde), shape: square, landscape ya da portrait, caption: isteğe bağlı kısa not. Her resim kullanıcının API hesabından ücretlendirilir: istenmeyen ya da gereksiz resim yapma. Grafik ve şema için bunun yerine HTML sayfası ya da Mermaid kullan.',
+  'tool.imageCreated':
+    'Resim oluşturuldu ({provider}) ve kullanıcıya gönderildi: {name}. Sohbette resim olarak görünüyor. Dosya: {path}',
+  'tool.imageCreatedMain':
+    'Resim oluşturuldu ({provider}): {name}. Bu konuşma botlar arasında; resim senin kullanıcıyla olan sohbetine kondu, karşıdaki bot görmez. Dosya: {path}',
+  'tool.imageNoKey':
+    'Resim oluşturmak için kayıtlı bir OpenAI ya da xAI API anahtarı yok. Kullanıcıya Ayarlar → Bağlantı bölümünden birini eklemesini söyle.',
+  'tool.imageFailed.failed': '{provider} resmi oluşturamadı: {message}',
+  'tool.imageFailed.notImage': '{provider} resim yerine başka bir şey döndürdü; resim oluşturulamadı.',
+  'tool.imageFailed.tooLarge': '{provider} çok büyük bir dosya döndürdü; kaydedilmedi.',
+  'tool.imageLimit': 'Bir turda en çok {max} resim oluşturulabilir; bu turda daha fazlası yapılmaz.',
+  'tool.imageFileBase': 'resim',
   'tool.send_file':
     'Klasörlerindeki dosyaları kullanıcıya gönder; sohbette indirilebilir kart olarak görünür (resimler resim olarak). paths: dosya yolları (göreli yollar çalışma klasörüne göre), caption: isteğe bağlı kısa açıklama.',
   'tool.browser_open':
@@ -1174,6 +1187,19 @@ const en: Catalog<ServerKey> = {
   'tool.pageShown': '{name} is shown in the conversation.',
   'tool.pageShownMain':
     '{name} is shown in your conversation with the user, not in this conversation between bots.',
+  'tool.image_create':
+    "Create a picture from a written description (a photo, drawing, logo, illustration) and send it to the user as a picture; do not call send_file as well. prompt: a detailed description (subject, style, colours, composition; any text in the picture in quotes, word for word), shape: square, landscape or portrait, caption: an optional short note. Each picture is charged to the user's API account: make none they did not ask for. For charts and diagrams use an HTML page or Mermaid instead.",
+  'tool.imageCreated':
+    'Picture created ({provider}) and sent to the user: {name}. It shows in the conversation as a picture. File: {path}',
+  'tool.imageCreatedMain':
+    'Picture created ({provider}): {name}. This conversation is between bots; the picture went to your conversation with the user, and the other bot does not see it. File: {path}',
+  'tool.imageNoKey':
+    'No OpenAI or xAI API key is saved for making pictures. Tell the user to add one under Settings → Connection.',
+  'tool.imageFailed.failed': '{provider} could not create the picture: {message}',
+  'tool.imageFailed.notImage': '{provider} returned something other than a picture; nothing was created.',
+  'tool.imageFailed.tooLarge': '{provider} returned a file too large to keep; it was not saved.',
+  'tool.imageLimit': 'At most {max} pictures can be created in one turn; no more in this one.',
+  'tool.imageFileBase': 'image',
   'tool.send_file':
     'Send files from your folders to the user; they show in the conversation as download cards (images as pictures). paths: file paths (relative ones are from your working folder), caption: an optional short note.',
   'tool.browser_open':

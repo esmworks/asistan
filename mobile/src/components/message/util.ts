@@ -63,6 +63,7 @@ export function toolLabel(tool: string, apps: ReadonlyMap<string, string>): stri
   if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'send_file'].includes(name))
     return t('activity.tool.write');
   if (name === 'WebFetch' || name === 'WebSearch') return t('activity.tool.web');
+  if (name === 'image_create') return t('activity.tool.image');
   if (name === 'Task' || name === 'Agent') return t('activity.tool.agent');
   if (name.startsWith('memory_')) return t('activity.tool.memory');
   return null;

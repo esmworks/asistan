@@ -467,6 +467,7 @@ export const tr = {
   'activity.thinking': 'Düşünüyor',
   'activity.tool.shell': 'Komut çalıştırıyor',
   'activity.tool.files': 'Dosyalara bakıyor',
+  'activity.tool.image': 'Resim oluşturuyor',
   'activity.tool.write': 'Dosya yazıyor',
   'activity.tool.web': "Web'de arıyor",
   'activity.tool.agent': 'Yardımcı bir ajan çalışıyor',

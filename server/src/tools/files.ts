@@ -95,6 +95,37 @@ async function personThread(services: Services, bot: Bot, thread: Pick<Thread, '
   return { id: (await services.threads.main(bot.id)).id, moved: true };
 }
 
+/**
+ * Puts files from the bot's folders on a card for the person, in the conversation they read.
+ * `moved` says the card went to the bot's own conversation with them instead of this one.
+ */
+export async function postFiles(opts: {
+  services: Services;
+  dataDir: string;
+  bot: Bot;
+  thread: Pick<Thread, 'id' | 'kind'>;
+  paths: string[];
+  caption?: string;
+  t: T;
+}): Promise<{ files: MessageFile[]; moved: boolean }> {
+  const { services, dataDir, bot, thread, t } = opts;
+  const to = await personThread(services, bot, thread);
+  const files: MessageFile[] = [];
+  // Relative paths are read from this conversation's folder; a copy lands where the card goes.
+  for (const p of opts.paths) {
+    files.push(await shareableFile(dataDir, bot, to.id, botFile(dataDir, bot, thread.id, p, t).full, t));
+  }
+  await services.threads.addMessage({
+    threadId: to.id,
+    role: 'assistant',
+    author: `bot:${bot.id}`,
+    text: opts.caption?.trim() ?? '',
+    // No turn id: the streaming reply of the same turn stays on screen until it is saved.
+    props: { files },
+  });
+  return { files, moved: to.moved };
+}
+
 /** `send_file`: hands a file from the bot's folders to the person, as a card in the conversation. */
 export function sendFileTool(opts: {
   def: Define;
@@ -112,24 +143,10 @@ export function sendFileTool(opts: {
       caption: z.string().max(2000).optional(),
     },
     async ({ paths, caption }) => {
-      const to = await personThread(services, bot, thread);
-      const files: MessageFile[] = [];
-      // Relative paths are read from this conversation's folder; a copy lands where the card goes.
-      for (const p of paths) {
-        const file = await shareableFile(dataDir, bot, to.id, botFile(dataDir, bot, thread.id, p, t).full, t);
-        files.push(file);
-      }
-      await services.threads.addMessage({
-        threadId: to.id,
-        role: 'assistant',
-        author: `bot:${bot.id}`,
-        text: caption?.trim() ?? '',
-        // No turn id: the streaming reply of the same turn stays on screen until it is saved.
-        props: { files },
-      });
+      const { files, moved } = await postFiles({ services, dataDir, bot, thread, paths, caption, t });
       const names = files.map((f) => f.name).join(', ');
       // The bot must know where it went, or it tells the other bot the file is somewhere it is not.
-      return t(to.moved ? 'tool.fileSentMain' : 'tool.fileSent', { names });
+      return t(moved ? 'tool.fileSentMain' : 'tool.fileSent', { names });
     },
     'internal',
   );

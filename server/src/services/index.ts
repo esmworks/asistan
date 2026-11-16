@@ -17,6 +17,7 @@ import { PushService } from './push';
 import { RoutineService } from './routines';
 import { SubscriptionService } from './subscriptions';
 import { ProviderKeyService } from './keys';
+import { ImageService } from './images';
 import { SkillService } from './skills';
 import { ReactionNotifier } from './reactions';
 import { RoomService } from './rooms';
@@ -39,6 +40,7 @@ export class Services {
   readonly settings: SettingsService;
   readonly botImport: BotImportService;
   readonly keys: ProviderKeyService;
+  readonly images: ImageService;
   readonly skills: SkillService;
   readonly jobs: JobService;
   readonly routines: RoutineService;
@@ -75,6 +77,7 @@ export class Services {
     this.botImport = new BotImportService(ctx, this.settings);
     this.subscriptions = new SubscriptionService(ctx, this.vault);
     this.keys = new ProviderKeyService(ctx, this.vault, fetch, this.subscriptions);
+    this.images = new ImageService(this.keys);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);
     this.routines = new RoutineService(ctx, this, clock, reviewer);

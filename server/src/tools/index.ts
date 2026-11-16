@@ -30,6 +30,7 @@ import { errorText, newId, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { sendFileTool, showPageTool } from './files';
+import { imageTool } from './images';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -104,6 +105,7 @@ export type ToolName =
   | 'react'
   | 'send_file'
   | 'show_page'
+  | 'image_create'
   | 'browser_open'
   | 'browser_snapshot'
   | 'browser_click'
@@ -958,6 +960,11 @@ export class ToolFactory {
         'internal',
       ),
     );
+    // The description goes to an outside service, so a bot with the internet off makes no pictures.
+    // Listed without a saved key too: the bot then tells the person which key to add.
+    if (bot.internet) {
+      tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
+    }
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
       const askLogin: AskLogin = async (site, host) => {
