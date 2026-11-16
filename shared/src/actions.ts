@@ -14,6 +14,16 @@ function modelText(raw: unknown, locale: Locale): string | null {
   return `model: ${raw.trim() || own}`;
 }
 
+/** A routine's check as the card shows it: the bot runs only when that tool's answer changes. */
+function checkText(raw: unknown, locale: Locale): string | null {
+  if (typeof raw !== 'string') return null;
+  const tool = raw.trim();
+  if (!tool) return locale === 'tr' ? 'denetim kaldırılır' : 'the check is removed';
+  return locale === 'tr'
+    ? `yalnız ${tool} yeni bir cevap verince`
+    : `only when ${tool} answers something new`;
+}
+
 /**
  * Plain-language wording for a tool a bot wants to use, for approval cards and the one-line
  * note left after the answer. No tool names or arguments: those stay behind the detail toggle.
@@ -317,13 +327,19 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
     case 'routine_create': {
       const when = scheduleText(input.schedule, locale);
       const model = str(input.model) && modelText(input.model, locale);
-      return [when, model, str(input.prompt)].filter(Boolean).join('\n') || null;
+      return (
+        [when, model, checkText(input.check_tool, locale), str(input.prompt)].filter(Boolean).join('\n') ||
+        null
+      );
     }
     case 'routine_update': {
       const rename = str(input.name);
       const when = scheduleText(input.schedule, locale);
       const model = modelText(input.model, locale);
-      return [rename && `→ ${rename}`, when, model, str(input.prompt)].filter(Boolean).join('\n') || null;
+      const check = checkText(input.check_tool, locale);
+      return (
+        [rename && `→ ${rename}`, when, model, check, str(input.prompt)].filter(Boolean).join('\n') || null
+      );
     }
     default:
       return null;

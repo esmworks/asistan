@@ -1,5 +1,9 @@
+import { desktop } from './desktop';
+
 /** The address that opens one conversation on this server: `…?thread=<id>`. */
 export function threadLink(threadId: string, at: Pick<Location, 'origin' | 'pathname'> = location): string {
+  // In the desktop app a page address would open in the browser; its own link opens the app.
+  if (desktop?.takeLink) return `yumakbot://thread/${encodeURIComponent(threadId)}`;
   return `${at.origin}${at.pathname}?thread=${encodeURIComponent(threadId)}`;
 }
 
@@ -28,6 +32,9 @@ export function sameServerThread(
   href: string,
   at: Pick<Location, 'origin' | 'pathname' | 'href'> = location,
 ): string | null {
+  // The desktop app's own link to a conversation, pasted into a chat.
+  const app = /^yumakbot:\/\/thread\/([\w-]{1,64})\/?$/.exec(href);
+  if (app) return app[1]!;
   try {
     const url = new URL(href, at.href);
     if (url.origin !== at.origin || url.pathname !== at.pathname) return null;

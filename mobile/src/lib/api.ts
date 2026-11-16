@@ -419,6 +419,8 @@ export function apiFor(origin: string) {
     previewBotImport: async (file: PickedFile) =>
       http.post<BotImportPlan>('/api/import/bots?preview=1', await blobOf(file)),
     steerMessage: (id: string) => http.post<Message>(`/api/messages/${id}/steer`),
+    /** Writes a sealed backup of everything on the server, ready for one download at `/api/backup/<id>`. */
+    createBackup: (password: string) => http.post<{ id: string; size: number }>('/api/backup', { password }),
     importBots: async (file: PickedFile) =>
       http.post<BotImportResult>('/api/import/bots', await blobOf(file)),
   };

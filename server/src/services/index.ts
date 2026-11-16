@@ -54,7 +54,10 @@ export class Services {
     readonly ctx: Ctx,
     engineFor: (bot: Bot) => Engine,
     clock?: () => Date,
-    /** Looks at permission requests of bots in the `review` mode, whatever engine they run on. */
+    /**
+     * Looks at permission requests of bots in the `review` mode, and at routine runs before they
+     * start, whatever engine the bot runs on.
+     */
     reviewer?: () => Engine,
   ) {
     this.bots = new BotService(ctx);
@@ -71,7 +74,7 @@ export class Services {
     this.keys = new ProviderKeyService(ctx, this.vault);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);
-    this.routines = new RoutineService(ctx, this, clock);
+    this.routines = new RoutineService(ctx, this, clock, reviewer);
     this.tools = new ToolFactory(ctx, this);
     this.turns = new TurnManager(ctx, this, engineFor, reviewer);
     this.turns.onFinished((t, o) => this.jobs.onTurnFinished(t, o));

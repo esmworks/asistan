@@ -293,6 +293,12 @@ export const routines = pgTable('routines', {
   watchUrl: text('watch_url'),
   /** The fingerprint of the watched page's text when it was last read. */
   watchHash: text('watch_hash'),
+  /** The watched page's text when it was last read, cut short, so a change can be shown as what changed. */
+  watchText: text('watch_text'),
+  /** A connected app's read-only tool called before each scheduled run (`RoutineCheck`); null for none. */
+  check: jsonb('check'),
+  /** The fingerprint of the check's answer when it was last called. */
+  checkHash: text('check_hash'),
   /** Conditions a webhook call's JSON body must meet to start the routine; empty for none. */
   webhookFilter: text('webhook_filter').notNull().default(''),
   /** A webhook call only posts what it carries, as the bot's message, without running the bot. */
@@ -315,6 +321,11 @@ export const routineRuns = pgTable(
     promptSnapshot: text('prompt_snapshot').notNull(),
     /** The bot itself said the run could not do its task. */
     failedByBot: boolean('failed_by_bot').notNull().default(false),
+    /** What the routine pre-check said before the run; null when none ran. */
+    gateDecision: text('gate_decision', { enum: ['run', 'skip'] }),
+    gateReason: text('gate_reason'),
+    /** What the pre-check cost, as the engine reported it. */
+    gateCostUsd: real('gate_cost_usd'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },

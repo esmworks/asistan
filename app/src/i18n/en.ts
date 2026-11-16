@@ -158,6 +158,27 @@ export const en: Catalog<MessageKey> = {
   'usage.noLimit': 'No monthly limit',
   'usage.limit': 'Limit ($)',
   'usage.downloadCsv': 'Download every turn as CSV',
+  'usage.gate': 'Routine pre-check',
+  'usage.gate.off': 'Every routine run goes to the bot',
+  'usage.gate.offHint': "Runs that a watched page or a webhook starts all go to the bot's own model.",
+  'usage.gate.shadow': 'Watching only',
+  'usage.gate.shadowHint':
+    'Before such a run, a small model says whether there is anything new to work on. Every run still goes ahead; what it said is listed here and beside the run.',
+  'usage.gate.on': 'Runs with nothing new are skipped',
+  'usage.gate.onHint':
+    'A small model looks first; a run it finds nothing new in is skipped with its reason. When it is unsure or fails, the run goes ahead. Reminders always run.',
+  'usage.gate.choice.off': 'Off',
+  'usage.gate.choice.shadow': 'Watch',
+  'usage.gate.choice.on': 'On',
+  'usage.gate.checks': {
+    one: '1 run checked; the check cost {cost}',
+    other: '{count} runs checked; the checks cost {cost}',
+  },
+  'usage.gate.skippable': {
+    one: '1 of them would have been skipped; that run cost {cost}',
+    other: '{count} of them would have been skipped; those runs cost {cost}',
+  },
+  'usage.gate.skipped': { one: '1 run skipped', other: '{count} runs skipped' },
   'archive.title': 'Archived bots',
   'archive.empty': 'No archived bots. A bot archived from the sidebar waits here.',
   'archive.since': 'Archived {when}',
@@ -605,6 +626,10 @@ export const en: Catalog<MessageKey> = {
   'routine.onStartupHint':
     'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
   'routine.watchUrl': 'Only when this page changes (optional)',
+  'routine.checkOn': 'Runs only when {app} · {tool} answers something new; checked without the AI.',
+  'routine.checkRemove': 'Remove check',
+  'routine.checkHint':
+    'To run only when something happens in an app (a new email, a new issue), ask the bot: it sets up a check that costs nothing while nothing changes.',
   'routine.watchUrlHint':
     'At each time the page is read without the AI; the bot runs only when its text changed, and gets the new text. Costs nothing while the page stays the same.',
   'routine.watchUrlInvalid': 'An address starting with https://',
@@ -627,6 +652,8 @@ export const en: Catalog<MessageKey> = {
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
   'routine.run.skipped': 'skipped',
+  'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
+  'routine.gateWouldSkipNoReason': 'The pre-check would have skipped it',
   'routine.runCommandHint': 'A script or another service can start this routine and hand it some text.',
   'routine.copyRunCommand': 'Copy run command',
   'routine.runCommandCopied': 'Copied. Set YUMAKBOT_ACCESS_KEY to the server’s access key before running it.',
@@ -881,7 +908,7 @@ export const en: Catalog<MessageKey> = {
   'groups.empty': 'No groups.',
   'groups.count': { one: '{count} bot', other: '{count} bots' },
 
-  'settings.tab.import': 'Import',
+  'settings.tab.import': 'Import and backup',
   'import.hint':
     'Bring your Grok Bot bots here with their instructions, routines, memories and groups. You see everything in the file before anything is saved.',
   'import.step1': '1. Export from Grok Bot',
@@ -905,6 +932,22 @@ export const en: Catalog<MessageKey> = {
   'import.skills': 'Skills',
   'import.skillExists': 'already here; linked as it is',
   'import.warn.skill': '{bot}: the "{skill}" skill was left out (its name or description is not valid)',
+  'backup.title': 'Full backup',
+  'backup.hint':
+    "One file with everything on this server: bots, conversations, memory, routines, skills, connections, the bots' files, and the saved logins and keys. It is sealed with the password you choose here; without it nobody can open the file, you included, so keep the password somewhere safe.",
+  'backup.password': 'Backup password',
+  'backup.passwordPlaceholder': 'Backup password (at least {count} characters)',
+  'backup.download': 'Download backup',
+  'backup.ready': 'Backup ready ({size}); the download has started.',
+  'backup.restoreTitle': 'Restore from a backup',
+  'backup.restoreHint':
+    'Replaces everything on this server with what the file holds. Nothing changes if the password is wrong or the file is damaged.',
+  'backup.pick': 'Choose file',
+  'backup.restore': 'Restore',
+  'backup.restoreConfirm':
+    'Everything on this server will be replaced with this backup: bots, conversations, memory and files. The server starts again afterwards. Continue?',
+  'backup.restored': 'Restored. The server is starting again; the page reloads in a moment.',
+  'backup.phoneRestore': 'To restore a backup, open Yumak Bot on a computer: Settings → Import and backup.',
   'export.title': 'Export bots',
   'export.hint':
     'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Yumak Bot imports it from this page. Conversations, permissions and folders stay out of the file.',

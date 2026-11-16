@@ -46,6 +46,8 @@ jobs:
             files: desktop/out/*.dmg desktop/out/*.zip desktop/out/*.blockmap desktop/out/latest-mac.yml
           - os: windows-latest
             files: desktop/out/*.exe desktop/out/*.blockmap desktop/out/latest.yml
+          - os: ubuntu-latest
+            files: desktop/out/*.AppImage desktop/out/*.deb desktop/out/latest-linux.yml
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:

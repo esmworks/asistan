@@ -1,5 +1,6 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
+import type { BackupService } from './services/backup';
 import { Readable } from 'node:stream';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
@@ -86,6 +87,7 @@ import { eq } from 'drizzle-orm';
 
 interface Deps {
   services: Services;
+  backup: BackupService;
   auth: Auth;
   config: Config;
   info(): ServerInfo;
@@ -890,6 +892,35 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const raw = await readJson(req.body, MAX_BOT_IMPORT_BYTES);
     return preview ? s.botImport.preview(raw) : s.botImport.commit(raw);
+  });
+
+  // A whole backup, sealed with a password: written on the server, then downloaded once.
+  app.post('/api/backup', async (req) => {
+    const { password } = z.object({ password: z.string().max(1000) }).parse(req.body);
+    return d.backup.create(password);
+  });
+  app.get('/api/backup/:id', async (req, reply) => {
+    const file = d.backup.path(IdParams.parse(req.params).id);
+    if (!file) throw new HttpError(404, 'error.notFound');
+    const day = new Date().toISOString().slice(0, 10);
+    reply.header('content-disposition', `attachment; filename="yumakbot-backup-${day}.ybk"`);
+    reply.header('content-length', statSync(file).size);
+    reply.type('application/octet-stream');
+    // One download: the file holds everything, so it does not wait on the server once fetched.
+    reply.raw.once('finish', () => void rm(file, { force: true }));
+    return reply.send(createReadStream(file));
+  });
+  // The password comes in a header, URI-encoded, since the body is the file itself.
+  app.post('/api/backup/restore', async (req) => {
+    if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
+    const raw = req.headers['x-backup-password'];
+    let password = '';
+    try {
+      password = decodeURIComponent(typeof raw === 'string' ? raw : '');
+    } catch {
+      throw new HttpError(400, 'error.backupWrongPassword');
+    }
+    return d.backup.restore(req.body, password);
   });
 
   app.get('/api/routines', async (req) => {
