@@ -590,6 +590,7 @@ export class TurnManager {
     const locale = await this.services.settings.locale();
     const t = translator(locale);
     const skills = await this.services.skills.forBot(bot.id);
+    const email = await this.services.email.addressOf(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
     // The person is in the room while its bots talk, as with their own messages.
@@ -616,6 +617,7 @@ export class TurnManager {
       routines: await this.services.routines.list(bot.isManager ? undefined : bot.id),
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
+      email,
     });
     // The bot's tool selection narrows what it is given; the rest never reaches the model.
     const pickTool = toolPicker(bot.toolSelection);
@@ -627,6 +629,7 @@ export class TurnManager {
         signal: controller.signal,
         t,
         skills,
+        email,
         // Claude keeps its plan with its own to-do tool; other engines get this one.
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
       }),

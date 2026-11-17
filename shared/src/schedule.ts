@@ -90,6 +90,10 @@ export const Routine = z.object({
   webhookPost: z.boolean(),
   /** The model its runs use, on the bot's own engine; empty for the bot's model. */
   model: z.string(),
+  /** Also runs when mail arrives at the bot's address. */
+  emailTrigger: z.boolean(),
+  /** Conditions a mail must meet to start it, one per line, on from, to, subject and text. */
+  emailFilter: z.string(),
   /**
    * The secret part of the address that starts the routine from another service (a webhook);
    * null when it has none.
@@ -135,6 +139,8 @@ export const RoutineCreate = z.object({
   webhookFilter: z.string().max(2000).default(''),
   webhookPost: z.boolean().default(false),
   model: z.string().trim().max(200).default(''),
+  emailTrigger: z.boolean().default(false),
+  emailFilter: z.string().max(2000).default(''),
 });
 export type RoutineCreate = z.infer<typeof RoutineCreate>;
 export const RoutineUpdate = patchOf(RoutineCreate.omit({ botId: true }));

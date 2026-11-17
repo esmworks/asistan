@@ -364,6 +364,26 @@ export const en: Catalog<MessageKey> = {
   'apiKeys.value': 'Key or token',
   'apiKeys.newValue': 'New key (leave empty to keep it)',
   'apiKeys.confirmDelete': 'Delete the API key “{name}”? Bots that use it will have to ask for it again.',
+  'email.title': 'Mail',
+  'email.hint':
+    'Give bots their own addresses, such as research@bots.example.com. Mail sent there waits in the bot’s inbox, where it reads sign-up codes and replies, and can start its routines. Mail never starts a bot by itself: anyone can write any sender on a mail.',
+  'email.domain': 'Domain',
+  'email.domainHint': 'A domain or subdomain that receives mail for every name on it and nothing else',
+  'email.domainPlaceholder': 'bots.example.com',
+  'email.relay': 'Mail relay',
+  'email.relayHint':
+    'This server runs no mail server. Set up a relay (Cloudflare Email Routing with a small worker, or your mail provider’s inbound webhook) to post each message, unchanged, to this address with the secret.',
+  'email.makeSecret': 'Make a secret',
+  'email.renew': 'New secret',
+  'email.renewConfirm': 'Make a new secret? The relay stops working until you give it the new one.',
+  'email.copied': 'Copied',
+  'email.noAddress': 'No address',
+  'email.namePlaceholder': 'name',
+  'email.name': 'Address for {bot}',
+  'email.claim': 'Give',
+  'email.release': 'Give up',
+  'email.releaseConfirm':
+    'Give up {address}? Mail to it will no longer reach the bot, and no other bot can take the name.',
   'preview.copyImage': 'Copy the picture',
   'preview.imageCopied': 'Picture copied',
   'find.open': 'Find in conversation',
@@ -707,10 +727,17 @@ export const en: Catalog<MessageKey> = {
   'routine.webhookPost': 'Only post what arrives',
   'routine.webhookPostHint':
     'A call’s text appears in the conversation as the bot’s message, without running the bot: for alerts and notices that need no AI.',
+  'routine.emailTrigger': 'Also when mail arrives',
+  'routine.emailTriggerHint':
+    'Runs each time mail comes to the bot’s address (set in Settings → Chat apps → Mail); the mail goes to the run as data.',
+  'routine.emailFilter': 'Which mail',
+  'routine.emailFilterPlaceholder': 'subject~=invoice\nfrom=bank@example.com',
+  'routine.emailFilterHint':
+    'One condition per line on from, to, subject or text: = equals, != does not equal, ~= contains. Empty: every mail.',
   'routine.webhookFilter': 'Only calls that match (optional)',
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
-    'One condition per line on the call’s JSON body: field=value, field!=value, or just field (present). Dots go into objects. Calls that do not match start nothing.',
+    'One condition per line on the call’s JSON body: field=value, field!=value, field~=text (contains), or just field (present). Dots go into objects. Calls that do not match start nothing.',
   'routine.webhookCopied': 'Webhook address copied',
   'routine.runs': 'Recent runs',
   'routine.run.running': 'running',
@@ -1447,7 +1474,7 @@ export const en: Catalog<MessageKey> = {
   'telegram.disconnectConfirm':
     'Disconnect Telegram? The token and the paired account are forgotten; the bot in Telegram stays as it is.',
   'settings.tab.channels': 'Chat apps',
-  'settings.keywords.channels': 'whatsapp, telegram, message, phone, qr',
+  'settings.keywords.channels': 'whatsapp, telegram, message, phone, qr, mail, email, inbox, address',
   'channels.telegram': 'Telegram',
   'channels.telegramHint':
     "Each bot connects with its own Telegram bot; you set that up in the bot's settings, under Telegram.",

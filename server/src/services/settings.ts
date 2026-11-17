@@ -74,6 +74,21 @@ export const Settings = z.object({
    * connected, so sites see that connection instead of the server's; otherwise from the server.
    */
   browserViaComputer: z.boolean().default(false),
+  /**
+   * The domain bots receive mail at (`bots.example.com`), when a relay hands its mail to this
+   * server; empty when mail is off.
+   */
+  emailDomain: z
+    .union([
+      z.literal(''),
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .max(200)
+        .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'validation.domain'),
+    ])
+    .default(''),
   /** Unset until someone picks one; the app then stores the language it opened in. */
   language: z.enum(LOCALES).optional(),
 });

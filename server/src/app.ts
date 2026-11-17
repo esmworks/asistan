@@ -37,7 +37,7 @@ import { FakeEngine } from './engine/fake';
 import { PiEngine } from './engine/pi';
 import type { AccountStatus, Engine, ModelTest } from './engine/types';
 import { registerMcpServer } from './mcp-server';
-import { registerRoutes, WEBHOOK_PATH } from './routes';
+import { EMAIL_INBOUND_PATH, registerRoutes, WEBHOOK_PATH } from './routes';
 import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
@@ -85,6 +85,8 @@ const PUBLIC_API = new Set([
   '/api/pair',
   '/api/session',
   OAUTH_CALLBACK_PATH,
+  // A mail relay signs in with the mail secret, checked by the route itself.
+  EMAIL_INBOUND_PATH,
 ]);
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {

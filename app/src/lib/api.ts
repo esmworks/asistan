@@ -59,6 +59,7 @@ import type {
   ApiCredential,
   ApiCredentialCreate,
   ApiCredentialUpdate,
+  EmailSettings,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -161,6 +162,8 @@ export interface Settings {
   routineGate?: RoutineGateMode;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
+  /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
+  emailDomain?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -409,6 +412,10 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  emailSettings: () => http.get<EmailSettings>('/api/email'),
+  renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
+  claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),
+  releaseEmail: (botId: string) => http.del<EmailSettings>(`/api/bots/${botId}/email`),
   apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),
   addApiKey: (input: ApiCredentialCreate) => http.post<ApiCredential>('/api/api-keys', input),
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>

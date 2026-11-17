@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { useBots } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Card } from './SettingsDialog';
+import { EmailCard } from './EmailCard';
 
 const ERRORS: Record<string, MessageKey> = {
   expired: 'whatsapp.error.expired',
@@ -27,6 +28,7 @@ export function ChannelsTab() {
       <Card title={t('channels.telegram')}>
         <p className="px-4 py-3 text-sm text-muted-foreground">{t('channels.telegramHint')}</p>
       </Card>
+      <EmailCard />
     </>
   );
 }

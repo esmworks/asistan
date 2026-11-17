@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { passesFilter } from './webhook-filter';
+import { parseFilter, passesFilter } from './webhook-filter';
 
 const body = JSON.stringify({
   action: 'opened',
@@ -25,5 +25,13 @@ describe('webhook süzgeci', () => {
 
   it('süzgeç varken JSON olmayan gövdeyi geçirmez', () => {
     expect(passesFilter('action=opened', 'düz metin')).toBe(false);
+  });
+
+  it('~= büyük küçük harfe bakmadan içerip içermediğine bakar', () => {
+    const mail = JSON.stringify({ from: 'fatura@ornek.com', subject: 'Kasım FATURANIZ hazır' });
+    expect(passesFilter('subject~=faturanız', mail)).toBe(true);
+    expect(passesFilter('subject~=İade', mail)).toBe(false);
+    expect(passesFilter('from~=@ornek.com\nsubject~=hazır', mail)).toBe(true);
+    expect(parseFilter('a~=b')).toEqual([{ path: ['a'], op: 'contains', value: 'b' }]);
   });
 });

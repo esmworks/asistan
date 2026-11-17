@@ -890,3 +890,29 @@ export const ApiCredentialUpdate = z.object({
   botIds: z.array(Id).max(500).nullable().optional(),
 });
 export type ApiCredentialUpdate = z.input<typeof ApiCredentialUpdate>;
+
+/** A mail that arrived at a bot's address. */
+export const BotEmail = z.object({
+  id: Id,
+  botId: Id,
+  to: z.string(),
+  from: z.string(),
+  fromName: z.string(),
+  subject: z.string(),
+  text: z.string(),
+  /** Saved in the bot's own folder; `path` is where the bot's tools find each one. */
+  attachments: z.array(z.object({ name: z.string(), size: z.number(), path: z.string() })),
+  receivedAt: z.string(),
+  readAt: z.string().nullable(),
+});
+export type BotEmail = z.infer<typeof BotEmail>;
+
+/** The bots' mail: the domain, the relay's secret, and which bot has which address. */
+export const EmailSettings = z.object({
+  domain: z.string(),
+  /** What the relay sends as its bearer token; null until one is made. */
+  secret: z.string().nullable(),
+  addresses: z.array(z.object({ botId: Id, name: z.string(), address: z.string().nullable() })),
+});
+export type EmailSettings = z.infer<typeof EmailSettings>;
+export const EmailClaim = z.object({ name: z.string().trim().min(1).max(64) });

@@ -1,20 +1,23 @@
 /**
  * Which webhook calls start a routine: one condition per line, all of which must hold for the
- * call's JSON body. `action=opened` (equal), `action!=closed` (not equal), `pull_request.draft`
- * (present and not false, null, 0 or empty). Dots go into objects, numbers into lists.
+ * call's JSON body. `action=opened` (equal), `action!=closed` (not equal), `subject~=invoice`
+ * (contains, ignoring case), `pull_request.draft` (present and not false, null, 0 or empty). Dots
+ * go into objects, numbers into lists.
  */
-export function parseFilter(text: string): { path: string[]; op: 'eq' | 'ne' | 'has'; value: string }[] {
+export function parseFilter(
+  text: string,
+): { path: string[]; op: 'eq' | 'ne' | 'has' | 'contains'; value: string }[] {
   return text
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#'))
     .map((l) => {
-      const m = /^([^=!]+?)\s*(!=|=)\s*(.*)$/.exec(l);
+      const m = /^([^=!~]+?)\s*(!=|~=|=)\s*(.*)$/.exec(l);
       const path = (m ? m[1]! : l).trim().split('.').filter(Boolean);
       if (!m) return { path, op: 'has' as const, value: '' };
       return {
         path,
-        op: m[2] === '=' ? ('eq' as const) : ('ne' as const),
+        op: m[2] === '=' ? ('eq' as const) : m[2] === '~=' ? ('contains' as const) : ('ne' as const),
         value: m[3]!.trim().replace(/^"(.*)"$/, '$1'),
       };
     });
@@ -45,6 +48,8 @@ export function passesFilter(filter: string, body: string): boolean {
   return rules.every((r) => {
     const v = at(json, r.path);
     if (r.op === 'has') return v !== undefined && v !== null && v !== false && v !== 0 && v !== '';
+    if (r.op === 'contains')
+      return asText(v).toLocaleLowerCase('tr').includes(r.value.toLocaleLowerCase('tr'));
     return r.op === 'eq' ? asText(v) === r.value : asText(v) !== r.value;
   });
 }

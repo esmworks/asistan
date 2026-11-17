@@ -13,6 +13,7 @@ export function outsideSource(tool: AppTool, apps: ReadonlyMap<string, string>, 
   if (tool.server) return apps.get(tool.server) ?? tool.server;
   if (tool.name.startsWith('browser_')) return t('outside.browser');
   if (tool.name === 'api_request') return t('outside.api');
+  if (tool.name === 'email_inbox' || tool.name === 'email_read') return t('outside.email');
   return null;
 }
 

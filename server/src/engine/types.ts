@@ -270,7 +270,7 @@ export interface ReviewVerdict {
  */
 export interface GateRequest {
   routine: { name: string; prompt: string };
-  trigger: 'watch' | 'webhook';
+  trigger: 'watch' | 'webhook' | 'email';
   /** What changed on the page or in the app's answer, or the webhook body. */
   input: string;
   /** What the routine's previous run reported, when it has one. */

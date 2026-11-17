@@ -13,6 +13,7 @@ import { WhatsAppChannel } from '../channels/whatsapp';
 import { Inbox } from './inbox';
 import { PageShareService } from './page-shares';
 import { ApiCredentialService } from './api-credentials';
+import { EmailService } from './email';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -55,6 +56,7 @@ export class Services {
   readonly inbox: Inbox;
   readonly pageShares: PageShareService;
   readonly apiCredentials: ApiCredentialService;
+  readonly email: EmailService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -96,6 +98,7 @@ export class Services {
     this.inbox = new Inbox(ctx, this);
     this.pageShares = new PageShareService(ctx);
     this.apiCredentials = new ApiCredentialService(ctx, this.vault);
+    this.email = new EmailService(ctx, this);
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }

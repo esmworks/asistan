@@ -318,6 +318,10 @@ export const routines = pgTable('routines', {
   webhookPost: boolean('webhook_post').notNull().default(false),
   /** The model its runs use, on the bot's own engine; empty for the bot's model. */
   model: text('model').notNull().default(''),
+  /** Also runs when mail arrives at the bot's address. */
+  emailTrigger: boolean('email_trigger').notNull().default(false),
+  /** Conditions a mail must meet to start it (as the webhook filter, on from, to, subject, text). */
+  emailFilter: text('email_filter').notNull().default(''),
 });
 
 export const routineRuns = pgTable(
@@ -675,4 +679,49 @@ export const apiCredentials = pgTable(
     lastUsedAt: ts('last_used_at'),
   },
   (t) => [uniqueIndex('api_credentials_name_uq').on(t.name)],
+);
+
+/**
+ * Addresses bots receive mail at, under the domain set in the settings. A name is never given to
+ * another bot, even once its bot is gone: mail meant for the old one must not reach a new one.
+ */
+export const emailAddresses = pgTable('email_addresses', {
+  /** The part before the @, lowercase. */
+  name: text('name').primaryKey(),
+  /** Null once its bot gave it up or was deleted; the name stays taken. */
+  botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+  createdAt: created(),
+});
+
+/** Mail that arrived at a bot's address: its inbox, which the bot reads when it needs to. */
+export const emails = pgTable(
+  'emails',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** The address it came to. */
+    to: text('to').notNull(),
+    from: text('from').notNull(),
+    fromName: text('from_name').notNull().default(''),
+    subject: text('subject').notNull().default(''),
+    /** The mail's text: its plain part, or its HTML part reduced to text. */
+    text: text('text').notNull().default(''),
+    /** The sender's Message-ID; the same mail delivered twice is kept once. */
+    messageId: text('message_id'),
+    /** Attached files, saved in the bot's own folder (`{ name, size, path }`). */
+    attachments: jsonb('attachments')
+      .$type<{ name: string; size: number; path: string }[]>()
+      .notNull()
+      .default([]),
+    receivedAt: created(),
+    readAt: ts('read_at'),
+  },
+  (t) => [
+    index('emails_bot_idx').on(t.botId, t.receivedAt),
+    uniqueIndex('emails_message_uq')
+      .on(t.botId, t.messageId)
+      .where(sql`${t.messageId} is not null`),
+  ],
 );

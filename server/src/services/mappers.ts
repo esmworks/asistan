@@ -142,6 +142,8 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   webhookFilter: r.webhookFilter,
   webhookPost: r.webhookPost,
   model: r.model,
+  emailTrigger: r.emailTrigger,
+  emailFilter: r.emailFilter,
 });
 
 export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({

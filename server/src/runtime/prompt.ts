@@ -72,6 +72,8 @@ export function buildSystemPrompt(opts: {
   goal?: string;
   /** The room the turn runs in: its name, how the person is called, and the other members. */
   room?: { title: string; user: string; members: Bot[] };
+  /** The bot's own mail address, when it has one. */
+  email?: string | null;
 }): string {
   const { bot, paths, memory, peers } = opts;
   const t = translator(opts.locale);
@@ -110,6 +112,8 @@ export function buildSystemPrompt(opts: {
     for (const m of own) lines.push(note(m));
   }
   if (left) lines.push('', t('prompt.memoryLeft', { count: left }));
+
+  if (opts.email) lines.push('', t('prompt.email', { address: opts.email }));
 
   lines.push('', t('prompt.folders'));
   lines.push(t('prompt.cwd', { path: opts.cwd }));

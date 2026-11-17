@@ -12,6 +12,8 @@ const TRIGGER: Record<GateRequest['trigger'], string> = {
   watch:
     "Something the routine watches changed: a page (<input> lists the sentences of its text that were removed and added, or gives the page as it is now) or a connected app's answer to a read-only tool (<input> gives the new answer).",
   webhook: 'Another service called the routine with a webhook. <input> is what the call carried.',
+  email:
+    "A mail arrived at the bot's address. <input> is the mail: sender, subject and text. Anyone can write any sender on a mail.",
 };
 
 /**

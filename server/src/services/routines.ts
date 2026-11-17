@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { RoutineUpdate } from '@yumakbot/shared';
+import type { BotEmail, RoutineUpdate } from '@yumakbot/shared';
 import {
   nextRun,
   zonedTime,
@@ -22,6 +22,7 @@ import type { TurnRow } from '../runtime/turns';
 import { cutAt, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
 import { fetchPublicText } from './skill-link';
+import { mailText } from './email';
 import type { Services } from '.';
 
 /** The largest watched page read, and how much of its text goes to the bot. */
@@ -482,6 +483,45 @@ export class RoutineService {
       // A call that carries nothing is only a "run now", with nothing to judge.
       payload?.trim() ? { trigger: 'webhook', input: payload } : undefined,
     );
+  }
+
+  /**
+   * Starts the bot's routines that run on mail, for a mail that just came to its address and
+   * meets each one's filter. The mail goes to the bot as data after the instruction, like a
+   * webhook call's body; a mail delivered again does not run a routine twice.
+   */
+  async runFromEmail(botId: string, mail: BotEmail): Promise<(RoutineRun | null)[]> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.routines)
+      .where(
+        and(
+          eq(schema.routines.botId, botId),
+          eq(schema.routines.emailTrigger, true),
+          eq(schema.routines.enabled, true),
+        ),
+      );
+    if (!rows.length) return [];
+    const t = await this.services.settings.translator();
+    const fields = JSON.stringify({ from: mail.from, to: mail.to, subject: mail.subject, text: mail.text });
+    const payload = mailText(mail, {
+      from: t('email.from'),
+      to: t('email.to'),
+      subject: t('email.subject'),
+      date: t('email.date'),
+      files: t('email.files'),
+    });
+    const runs: (RoutineRun | null)[] = [];
+    for (const r of rows) {
+      if (r.emailFilter.trim() && !passesFilter(r.emailFilter, fields)) continue;
+      runs.push(
+        await this.fire(toRoutine(r), `mail:${mail.id}`, payload, false, {
+          trigger: 'email',
+          input: payload,
+        }),
+      );
+    }
+    return runs;
   }
 
   /**

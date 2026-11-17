@@ -2,6 +2,7 @@ import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
+import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
@@ -61,6 +62,7 @@ import {
   PageShareCreate,
   ApiCredentialCreate,
   ApiCredentialUpdate,
+  EmailClaim,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -87,6 +89,8 @@ import { uniqueName, zip } from './zip';
 
 /** Where services start routines by their secret address; needs no access key. */
 export const WEBHOOK_PATH = '/api/hooks/routines';
+/** Where a mail relay hands over messages; it signs in with the mail secret, not the access key. */
+export const EMAIL_INBOUND_PATH = '/api/email/inbound';
 /** Where a shared page opens, outside /api so it needs no sign-in. */
 export const SHARE_PATH = '/p';
 /** Longest text a script may hand a routine run. */
@@ -1290,6 +1294,39 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       title: print ? basename(path) : undefined,
     });
   });
+
+  // Mail for the bots. A relay posts each message here with the secret; the person sets the domain
+  // in the settings and gives bots their addresses.
+  app.addContentTypeParser('message/rfc822', (_req, payload, done) => done(null, payload));
+  app.post(EMAIL_INBOUND_PATH, async (req, reply) => {
+    const { to } = z.object({ to: z.string().min(3).max(400) }).parse(req.query);
+    if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req.body) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_EMAIL_BYTES) {
+        throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_EMAIL_BYTES / 1024 / 1024) });
+      }
+      chunks.push(chunk as Buffer);
+    }
+    const auth = req.headers.authorization;
+    const token = typeof auth === 'string' ? /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() : undefined;
+    // Every message accepted gets 200, kept or not, so the relay neither retries nor bounces it.
+    const status = await s.email.receive(token, to, Buffer.concat(chunks));
+    return reply.code(200).send({ ok: true, status });
+  });
+  app.get('/api/email', () => s.email.settings());
+  app.post('/api/email/secret', () => s.email.renewSecret());
+  app.post('/api/bots/:id/email', async (req) => {
+    if (!(await s.email.domain())) throw new HttpError(409, 'error.emailNoDomain');
+    return s.email.claim(IdParams.parse(req.params).id, EmailClaim.parse(req.body).name);
+  });
+  app.delete('/api/bots/:id/email', async (req) => {
+    await s.email.release(IdParams.parse(req.params).id);
+    return s.email.settings();
+  });
+  app.get('/api/bots/:id/emails', async (req) => s.email.inbox(IdParams.parse(req.params).id, { limit: 50 }));
 
   // Links that open a page for anyone who has them.
   app.get('/api/page-shares', () => s.pageShares.list());

@@ -362,6 +362,27 @@ export const tr = {
   'apiKeys.newValue': 'Yeni anahtar (aynı kalsın diye boş bırak)',
   'apiKeys.confirmDelete':
     '“{name}” API anahtarı silinsin mi? Onu kullanan botlar yeniden istemek zorunda kalır.',
+  'email.title': 'E-posta',
+  'email.hint':
+    'Botlara kendi adreslerini ver, ör. arastirma@bots.ornek.com. Oraya gelen postalar botun gelen kutusunda bekler; bot kayıt kodlarını ve yanıtları oradan okur, postalar rutinlerini de başlatabilir. Bir posta botu kendiliğinden çalıştırmaz: postaya herkes istediği göndereni yazabilir.',
+  'email.domain': 'Alan adı',
+  'email.domainHint':
+    'Üzerindeki her ad için posta alan ve başka iş görmeyen bir alan adı ya da alt alan adı',
+  'email.domainPlaceholder': 'bots.ornek.com',
+  'email.relay': 'Posta aktarıcısı',
+  'email.relayHint':
+    'Bu sunucu posta sunucusu çalıştırmaz. Gelen her postayı değiştirmeden, anahtarla birlikte bu adrese gönderecek bir aktarıcı kur (küçük bir worker ile Cloudflare Email Routing ya da posta sağlayıcının gelen posta webhook’u).',
+  'email.makeSecret': 'Anahtar oluştur',
+  'email.renew': 'Yeni anahtar',
+  'email.renewConfirm': 'Yeni bir anahtar oluşturulsun mu? Aktarıcıya yenisini girene kadar posta gelmez.',
+  'email.copied': 'Kopyalandı',
+  'email.noAddress': 'Adresi yok',
+  'email.namePlaceholder': 'ad',
+  'email.name': '{bot} için adres',
+  'email.claim': 'Ver',
+  'email.release': 'Bırak',
+  'email.releaseConfirm':
+    '{address} bırakılsın mı? Oraya gelen posta artık bota ulaşmaz ve bu adı başka bir bot da alamaz.',
   'preview.copyImage': 'Resmi kopyala',
   'preview.imageCopied': 'Resim kopyalandı',
   'find.open': 'Sohbette bul',
@@ -699,10 +720,17 @@ export const tr = {
   'routine.webhookPost': 'Yalnızca geleni yaz',
   'routine.webhookPostHint':
     'Çağrının metni botu çalıştırmadan, botun mesajı olarak sohbete düşer: yapay zekâ gerektirmeyen uyarı ve bildirimler için.',
+  'routine.emailTrigger': 'Posta gelince de',
+  'routine.emailTriggerHint':
+    'Botun adresine her posta geldiğinde çalışır (Ayarlar → Sohbet uygulamaları → E-posta); posta çalışmaya veri olarak gelir.',
+  'routine.emailFilter': 'Hangi postalar',
+  'routine.emailFilterPlaceholder': 'subject~=fatura\nfrom=banka@ornek.com',
+  'routine.emailFilterHint':
+    'Her satıra bir koşul; from, to, subject ya da text üzerinde: = eşit, != eşit değil, ~= içerir. Boş: her posta.',
   'routine.webhookFilter': 'Yalnız uyan çağrılar (isteğe bağlı)',
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
-    'Çağrının JSON gövdesi için her satıra bir koşul: alan=değer, alan!=değer ya da yalnız alan (var olsun). Noktalar nesnelerin içine girer. Uymayan çağrı hiçbir şey başlatmaz.',
+    'Çağrının JSON gövdesi için her satıra bir koşul: alan=değer, alan!=değer, alan~=metin (içerir) ya da yalnız alan (var olsun). Noktalar nesnelerin içine girer. Uymayan çağrı hiçbir şey başlatmaz.',
   'routine.webhookCopied': 'Webhook adresi kopyalandı',
   'routine.runs': 'Son çalışmalar',
   'routine.run.running': 'çalışıyor',
@@ -1445,7 +1473,7 @@ export const tr = {
   'telegram.disconnectConfirm':
     "Telegram bağlantısı kesilsin mi? Anahtar ve eşleşen hesap unutulur; Telegram'daki bot olduğu gibi kalır.",
   'settings.tab.channels': 'Sohbet uygulamaları',
-  'settings.keywords.channels': 'whatsapp, telegram, mesaj, telefon, qr',
+  'settings.keywords.channels': 'whatsapp, telegram, mesaj, telefon, qr, e-posta, posta, gelen kutusu, adres',
   'channels.telegram': 'Telegram',
   'channels.telegramHint':
     'Her bot kendi Telegram botuyla bağlanır; bunu botun ayarlarında, Telegram bölümünde yaparsınız.',
