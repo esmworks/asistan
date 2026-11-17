@@ -1500,7 +1500,15 @@ export const tr = {
   'model.show': 'Göster',
   'model.hide': 'Gizle',
   'model.newBots': 'Yeni botlar',
-  'model.newBotsHint': 'Yeni oluşturulan botların başladığı yapay zekâ. Var olan botlar değişmez.',
+  'model.newBotsHint':
+    'Yeni oluşturulan botların başladığı yapay zekâ. Var olan botlar kendiliğinden değişmez.',
+  'model.moveExisting': '{count} var olan bot başka bir yapay zekâ kullanıyor.',
+  'model.moveButton': 'Onları da geçir',
+  'model.moveConfirm.pi': '{count} bot {model} modeline geçsin mi?',
+  'model.moveConfirm.claude': "{count} bot Claude'a geçsin mi?",
+  'model.moveKeeps':
+    'Konuşmaları silinmez; her bot bir sonraki mesajda son konuşmayı okuyarak devam eder. Claude ile başka bir sağlayıcı arasında geçen botun rutinlerine ayrı model seçilmişse o seçim kalkar; rutin botun modelini kullanır.',
+  'model.moved': '{count} bot geçirildi.',
   'model.backup': 'Yedek model',
   'model.backupHint':
     'Kullanım sınırı dolunca iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır.',
