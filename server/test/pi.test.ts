@@ -34,6 +34,7 @@ import {
   MAX_TOOLS,
   PiEngine,
   providerTrouble,
+  replyText,
   trimHistory,
 } from '../src/engine/pi';
 import { translator } from '../src/i18n';
@@ -256,6 +257,40 @@ describe('Pi motoru', () => {
     expect(announcesAction('Dosyayı okuyayım mı?')).toBe(false);
     expect(announcesAction('Bitti, rapor hazır.')).toBe(false);
     expect(announcesAction(`Let me explain: ${'x'.repeat(400)}`)).toBe(false);
+  });
+
+  it('hızlı cevaplarla birlikte yazılan yanıt, aramadan sonraki kısa satırla kaybolmaz', () => {
+    const said = (text: string, ...tools: string[]) =>
+      ({
+        role: 'assistant',
+        content: [
+          ...(text ? [{ type: 'text', text }] : []),
+          ...tools.map((name, i) => ({ type: 'toolCall', id: `${name}${i}`, name, arguments: {} })),
+        ],
+      }) as never;
+    const result = (name: string) =>
+      ({ role: 'toolResult', toolCallId: name, toolName: name, content: [] }) as never;
+    const asked = { role: 'user', content: 'Dükkanın gidişatı' } as never;
+
+    expect(
+      replyText([
+        asked,
+        said('Bakıyorum.', 'read_sheet'),
+        result('read_sheet'),
+        said('Uzun rapor.', 'quick_replies'),
+        result('quick_replies'),
+        said('Hangisini istersen başlatırım.'),
+      ]),
+    ).toBe('Uzun rapor.\n\nHangisini istersen başlatırım.');
+    // Nothing after the call: the answer still stands.
+    expect(replyText([asked, said('Uzun rapor.', 'quick_replies'), result('quick_replies'), said('')])).toBe(
+      'Uzun rapor.',
+    );
+    // Text before a working tool stays an interim step.
+    expect(replyText([asked, said('Bakıyorum.', 'read_sheet'), result('read_sheet'), said('Sonuç.')])).toBe(
+      'Sonuç.',
+    );
+    expect(replyText([asked, said('Sonuç.')])).toBe('Sonuç.');
   });
 
   it('yerleşik listede olmayan modeli kişinin kendi uç noktasından alır', async () => {

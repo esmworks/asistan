@@ -174,6 +174,31 @@ function textOf(m: AssistantMessage) {
   return m.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 }
 
+/** Tools that only add something under the reply; what is written with them is the reply. */
+const REPLY_TOOLS = new Set(['quick_replies']);
+
+/**
+ * The reply of a run: its last assistant message, and before it the ones that called only reply
+ * tools. A model often writes its answer together with quick_replies and closes with a short line
+ * after the call; that line alone would lose the answer. Text before any other tool stays an
+ * interim step.
+ */
+export function replyText(messages: AgentMessage[]): string {
+  const end = messages.findLastIndex((m) => m.role === 'assistant');
+  if (end < 0) return '';
+  const last = textOf(messages[end] as AssistantMessage);
+  const before: string[] = [];
+  for (let i = end - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === 'toolResult') continue;
+    if (m.role !== 'assistant') break;
+    const calls = m.content.flatMap((c) => (c.type === 'toolCall' ? [c.name] : []));
+    if (!calls.length || calls.some((name) => !REPLY_TOOLS.has(name))) break;
+    before.unshift(textOf(m).trim());
+  }
+  return before.some(Boolean) ? [...before, last.trim()].filter(Boolean).join('\n\n') : last;
+}
+
 const fail = (
   kind: 'interrupted' | 'engine',
   message: string,
@@ -445,7 +470,7 @@ export class PiEngine implements Engine {
 
     const messages = agent.state.messages;
     const last = [...messages].reverse().find((m): m is AssistantMessage => m.role === 'assistant');
-    const text = last ? textOf(last) : '';
+    const text = replyText(messages);
     if (capped) {
       return {
         ok: false,
