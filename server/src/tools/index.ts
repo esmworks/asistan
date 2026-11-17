@@ -31,6 +31,7 @@ import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
+import { apiTools } from './api';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -106,6 +107,9 @@ export type ToolName =
   | 'send_file'
   | 'show_page'
   | 'image_create'
+  | 'api_keys_list'
+  | 'credential_request'
+  | 'api_request'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -981,6 +985,7 @@ export class ToolFactory {
     // Listed without a saved key too: the bot then tells the person which key to add.
     if (bot.internet) {
       tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
+      tools.push(...apiTools({ def, services: s, bot, thread, turn, signal, unattended, t }));
     }
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {

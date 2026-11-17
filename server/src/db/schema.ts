@@ -651,3 +651,28 @@ export const pageShares = pgTable(
   },
   (t) => [uniqueIndex('page_shares_page_uq').on(t.botId, t.path)],
 );
+
+/**
+ * API keys the person saved for bots to call a service with. The value is sealed with the vault
+ * key; bots know a key only by its name, and the server adds it to requests for its origin alone.
+ */
+export const apiCredentials = pgTable(
+  'api_credentials',
+  {
+    id: text('id').primaryKey(),
+    /** The reference name bots use, e.g. `github` or `weather_api`. */
+    name: text('name').notNull(),
+    /** The only origin the key is sent to, e.g. `https://api.example.com`. */
+    origin: text('origin').notNull(),
+    /** How the key goes with a request (`ApiAuth`). */
+    auth: jsonb('auth').$type<Record<string, unknown>>().notNull(),
+    label: text('label').notNull().default(''),
+    secret: text('secret').notNull(),
+    /** The bots that may use it; null lets every bot. */
+    botIds: jsonb('bot_ids').$type<string[]>(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    lastUsedAt: ts('last_used_at'),
+  },
+  (t) => [uniqueIndex('api_credentials_name_uq').on(t.name)],
+);

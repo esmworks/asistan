@@ -56,6 +56,9 @@ import type {
   UsageReport,
   ProviderSignIn,
   PageShare,
+  ApiCredential,
+  ApiCredentialCreate,
+  ApiCredentialUpdate,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -406,6 +409,11 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),
+  addApiKey: (input: ApiCredentialCreate) => http.post<ApiCredential>('/api/api-keys', input),
+  updateApiKey: (id: string, input: ApiCredentialUpdate) =>
+    http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
+  removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
   /** The page opened on its own, with the print dialog, to save it as a PDF. */
   pagePrintUrl: (botId: string, path: string) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}&print=1`,

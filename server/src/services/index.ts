@@ -12,6 +12,7 @@ import { TelegramChannels } from '../channels/telegram';
 import { WhatsAppChannel } from '../channels/whatsapp';
 import { Inbox } from './inbox';
 import { PageShareService } from './page-shares';
+import { ApiCredentialService } from './api-credentials';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -53,6 +54,7 @@ export class Services {
   readonly botApi: BotApi;
   readonly inbox: Inbox;
   readonly pageShares: PageShareService;
+  readonly apiCredentials: ApiCredentialService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -93,6 +95,7 @@ export class Services {
     this.botApi = new BotApi(ctx, this);
     this.inbox = new Inbox(ctx, this);
     this.pageShares = new PageShareService(ctx);
+    this.apiCredentials = new ApiCredentialService(ctx, this.vault);
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }

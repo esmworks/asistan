@@ -18,6 +18,7 @@ export function toolLabel(tool: string, t: T, apps: ReadonlyMap<string, string>)
   if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'send_file'].includes(name))
     return t('activity.tool.write');
   if (name === 'WebFetch' || name === 'WebSearch') return t('activity.tool.web');
+  if (name === 'api_request') return t('activity.tool.api');
   if (name === 'image_create') return t('activity.tool.image');
   if (name === 'page_to_image') return t('activity.tool.pageImage');
   if (name === 'Task' || name === 'Agent') return t('activity.tool.agent');

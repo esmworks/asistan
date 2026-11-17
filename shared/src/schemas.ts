@@ -792,3 +792,101 @@ export const PageShareCreate = z.object({
   path: z.string().min(1).max(2000),
   name: z.string().trim().min(1).max(200),
 });
+
+/**
+ * How a saved API key goes with a request: as a bearer token, in a header of the service's own,
+ * as a query parameter, or as the password of basic authentication.
+ */
+export const ApiAuth = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('bearer') }),
+  z.object({
+    type: z.literal('header'),
+    header: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9-]{1,64}$/, 'validation.headerName'),
+  }),
+  z.object({
+    type: z.literal('query'),
+    param: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_.-]{1,64}$/, 'validation.queryParam'),
+  }),
+  z.object({ type: z.literal('basic'), username: z.string().max(200) }),
+]);
+export type ApiAuth = z.infer<typeof ApiAuth>;
+
+/** A reference name a bot uses for a saved API key: lowercase, digits, - and _. */
+export const ApiCredentialName = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'validation.credentialName');
+
+/**
+ * Where a key may go: an https origin, or plain http to a host on this computer or the private
+ * network (a service next to the server, such as `http://ollama:11434`). Anything after the host is
+ * dropped: the key is good for the whole origin.
+ */
+export const ApiOrigin = z
+  .string()
+  .trim()
+  .transform((v, ctx) => {
+    try {
+      const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`);
+      const host = url.hostname.replace(/^\[|\]$/g, '');
+      const internal =
+        !host.includes('.') ||
+        host === 'localhost' ||
+        host.endsWith('.local') ||
+        host.endsWith('.internal') ||
+        /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd])/i.test(host);
+      if (
+        !url.username &&
+        !url.password &&
+        (url.protocol === 'https:' || (url.protocol === 'http:' && internal))
+      )
+        return url.origin;
+    } catch {
+      // Falls through to the message below.
+    }
+    ctx.addIssue({ code: 'custom', message: 'validation.apiOrigin' });
+    return z.NEVER;
+  });
+
+/** A saved API key as the app and the bots see it: never its value. */
+export const ApiCredential = z.object({
+  id: Id,
+  name: z.string(),
+  origin: z.string(),
+  auth: ApiAuth,
+  /** What it is for, in the person's words or the bot's when it asked. */
+  label: z.string(),
+  /** The bots that may use it; null lets every bot. */
+  botIds: z.array(Id).nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type ApiCredential = z.infer<typeof ApiCredential>;
+
+export const ApiCredentialCreate = z.object({
+  name: ApiCredentialName,
+  origin: ApiOrigin,
+  auth: ApiAuth.default({ type: 'bearer' }),
+  label: z.string().trim().max(200).default(''),
+  value: z.string().min(1).max(8000),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type ApiCredentialCreate = z.input<typeof ApiCredentialCreate>;
+
+export const ApiCredentialUpdate = z.object({
+  origin: ApiOrigin.optional(),
+  auth: ApiAuth.optional(),
+  label: z.string().trim().max(200).optional(),
+  /** A new value; left out keeps the saved one. */
+  value: z.string().min(1).max(8000).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type ApiCredentialUpdate = z.input<typeof ApiCredentialUpdate>;

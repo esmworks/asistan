@@ -59,6 +59,8 @@ import {
   frameHeader,
   PAGE_LIBRARIES,
   PageShareCreate,
+  ApiCredentialCreate,
+  ApiCredentialUpdate,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -902,6 +904,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Password vault: sign-ins are listed without their passwords.
+  // API keys bots call services with; listed without their values.
+  app.get('/api/api-keys', async () => s.apiCredentials.list());
+  app.post('/api/api-keys', async (req) => s.apiCredentials.create(ApiCredentialCreate.parse(req.body)));
+  app.patch('/api/api-keys/:id', async (req) =>
+    s.apiCredentials.update(IdParams.parse(req.params).id, ApiCredentialUpdate.parse(req.body)),
+  );
+  app.delete('/api/api-keys/:id', async (req) => {
+    await s.apiCredentials.remove(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
   app.get('/api/vault', async () => s.vault.list());
   app.post('/api/vault', async (req) => s.vault.save(VaultLoginCreate.parse(req.body)));
   app.patch('/api/vault/:id', async (req) =>

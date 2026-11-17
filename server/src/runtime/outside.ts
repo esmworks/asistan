@@ -12,6 +12,7 @@ const TAG = 'outside-data';
 export function outsideSource(tool: AppTool, apps: ReadonlyMap<string, string>, t: T): string | null {
   if (tool.server) return apps.get(tool.server) ?? tool.server;
   if (tool.name.startsWith('browser_')) return t('outside.browser');
+  if (tool.name === 'api_request') return t('outside.api');
   return null;
 }
 

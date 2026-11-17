@@ -172,6 +172,15 @@ function phraseFor(name: string, input: Record<string, unknown>): Phrase {
         tr: ['çalışan bir komutu', 'bu komutu', STOP],
         en: ['stop a running command', 'stop this command', 'stop running commands'],
       };
+    case 'api_request': {
+      const key = str(input.key);
+      return {
+        tr: [key ? `"${key}" anahtarıyla bir API isteği` : 'bir API isteği', 'bu API isteğini', SEND],
+        en: key
+          ? [`send an API request with the "${key}" key`, 'send this API request', 'send API requests']
+          : ['send an API request', 'send this API request', 'send API requests'],
+      };
+    }
     case 'image_create':
       return {
         tr: ['bir resim', 'bu resmi', CREATE],
@@ -324,6 +333,16 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
       return str(input.content);
     case 'image_create':
       return str(input.prompt);
+    case 'api_request': {
+      const line = [str(input.method)?.toUpperCase() ?? 'GET', str(input.url)].filter(Boolean).join(' ');
+      const body =
+        typeof input.body === 'string'
+          ? input.body
+          : input.body != null
+            ? JSON.stringify(input.body, null, 2)
+            : '';
+      return [line, body].filter(Boolean).join('\n\n') || null;
+    }
     case 'bot_create':
       return str(input.description);
     case 'bot_send':
