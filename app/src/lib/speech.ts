@@ -4,13 +4,21 @@ import { INTL_LOCALE, type Locale } from '@yumakbot/shared';
 import { api } from './api';
 
 const RATE_KEY = 'yumakbot.speech.rate';
-/** Reading speeds offered; 1 is the voice's own. */
-export const SPEECH_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+/** The reading speeds the bar spans; 1 is the voice's own. */
+export const SPEECH_RATE_MIN = 0.5;
+export const SPEECH_RATE_MAX = 2;
+export const SPEECH_RATE_STEP = 0.01;
+
+/** A speed the voices can take: within the bar, to the hundredth. */
+export function clampRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 1;
+  return Math.round(Math.min(SPEECH_RATE_MAX, Math.max(SPEECH_RATE_MIN, rate)) * 100) / 100;
+}
 
 function readRate(): number {
   try {
-    const v = Number(localStorage.getItem(RATE_KEY));
-    return (SPEECH_RATES as readonly number[]).includes(v) ? v : 1;
+    const v = localStorage.getItem(RATE_KEY);
+    return v === null ? 1 : clampRate(Number(v));
   } catch {
     return 1;
   }
@@ -21,12 +29,16 @@ export const useSpeech = create<{ speaking: string | null; rate: number; setRate
   (set) => ({
     speaking: null,
     rate: readRate(),
-    setRate: (rate) => {
+    setRate: (value) => {
+      const rate = clampRate(value);
       try {
         localStorage.setItem(RATE_KEY, String(rate));
       } catch {
         // Kept for this page when storage is off.
       }
+      // A reply the server's voice is reading follows the bar as it moves, so the speed can be
+      // found by ear.
+      if (playing) playing.playbackRate = rate;
       set({ rate });
     },
   }),
@@ -34,19 +46,130 @@ export const useSpeech = create<{ speaking: string | null; rate: number; setRate
 
 export const speechSupported = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
-/** Markdown as it sounds: code blocks and marks dropped, links read by their text. */
+/** Emoji, with the joiners and variation marks that build them. */
+const EMOJI = /\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f|\u20e3/gu;
+/** Marks that are drawn, not said: arrows, bullets, check marks, box lines. */
+const SYMBOLS = /[\u2190-\u21ff\u2022\u2023\u2043\u25a0-\u25ff\u2700-\u27bf\u2500-\u257f*~^\\]/g;
+
+/**
+ * Markdown as it sounds. Code, math, links' addresses, emoji and drawn marks are dropped, and every
+ * heading, list item and table row ends in a full stop, so the voice pauses between them instead
+ * of running them into one breathless sentence.
+ */
 export function speakable(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, ' ')
+  const lines = markdown
+    .replace(/```[\s\S]*?```/g, '\n')
+    .replace(/\$\$[\s\S]*?\$\$/g, '\n')
+    .replace(/<[^>\n]+>/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/^[ \t]{0,3}(#{1,6}|>|[-*+]|\d+[.)])[ \t]+/gm, '')
-    .replace(/(\*\*|__|\*|_|~~)(.+?)\1/g, '$2')
-    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
-    .replace(/\|/g, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, ' ')
+    .replace(/(\*\*|__|\*|~~)(\S(?:.*?\S)?)\1/g, '$2')
+    .replace(/(^|\W)_(\S(?:.*?\S)?)_(?=\W|$)/g, '$1$2')
+    .split('\n')
+    .map((line) => {
+      // Table rules and horizontal rules are drawn, not said.
+      if (/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line)) return '';
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) return '';
+      const text = line
+        .replace(/^[ \t]*(#{1,6}|>+|[-*+]|\d+[.)])[ \t]+/, '')
+        .replace(/^\s*\||\|\s*$/g, '')
+        .replace(/\s*\|\s*/g, ', ')
+        .replace(EMOJI, ' ')
+        .replace(SYMBOLS, ' ')
+        .replace(/(^|\s)#+(?=\s|$)/g, ' ')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/^[\s,]+|[\s,]+$/g, '');
+      if (!/[\p{L}\p{N}]/u.test(text)) return '';
+      return /[.!?…:;]$/.test(text) ? text : `${text}.`;
+    })
+    .filter(Boolean);
+  return lines.join('\n');
+}
+
+const TURKISH_LETTERS = /[çğıöşüÇĞİÖŞÜ]/;
+const ENGLISH_WORDS = /\b(the|and|is|are|of|to|you|it|that|this|with|for|have|be|was|not)\b/gi;
+
+/**
+ * The language a reply is written in, as far as a voice needs to know: a Turkish voice reading
+ * English (or the other way round) sounds like nonsense. Falls back to the app's language.
+ */
+export function speechLanguage(text: string, fallback: Locale): Locale {
+  if (TURKISH_LETTERS.test(text)) return 'tr';
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const english = text.match(ENGLISH_WORDS)?.length ?? 0;
+  if (words >= 4 && english / words >= 0.12) return 'en';
+  return fallback;
+}
+
+/** Sound effects and joke voices macOS lists beside the real ones. */
+const NOVELTY = new Set([
+  'albert',
+  'bad news',
+  'bahh',
+  'bells',
+  'boing',
+  'bubbles',
+  'cellos',
+  'fred',
+  'good news',
+  'jester',
+  'junior',
+  'kathy',
+  'organ',
+  'ralph',
+  'superstar',
+  'trinoids',
+  'whisper',
+  'wobble',
+  'zarvox',
+]);
+/** Names systems give their better voices. */
+const NATURAL = /premium|enhanced|gelişmiş|yüksek kalite|neural|natural|online|siri|google/i;
+/** macOS's speech-synthesizer voices, built for screen readers rather than reading aloud. */
+const SYNTHETIC = /^(eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley)\b/i;
+
+/** The most natural-sounding voice the system has for a language, or none. */
+export function pickVoice(voices: readonly SpeechSynthesisVoice[], locale: Locale) {
+  const region = INTL_LOCALE[locale].toLowerCase();
+  let best: SpeechSynthesisVoice | undefined;
+  let bestScore = -Infinity;
+  for (const v of voices) {
+    const lang = v.lang.toLowerCase().replace('_', '-');
+    if (lang !== locale && !lang.startsWith(`${locale}-`)) continue;
+    const name = v.name.toLowerCase();
+    let score = 0;
+    if (NOVELTY.has(name.replace(/\s*\(.*$/, ''))) score -= 100;
+    if (NATURAL.test(v.name)) score += 10;
+    if (SYNTHETIC.test(v.name)) score -= 5;
+    // Network voices (Google's, Microsoft's online ones) are neural; local ones mostly are not.
+    if (!v.localService) score += 4;
+    if (lang === region) score += 2;
+    if (v.default) score += 1;
+    if (score > bestScore) {
+      best = v;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/** The system's voices; Chromium lists none until it has loaded them. */
+function systemVoices(): Promise<SpeechSynthesisVoice[]> {
+  const synth = window.speechSynthesis;
+  const now = synth.getVoices();
+  if (now.length) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const done = () => {
+      synth.removeEventListener('voiceschanged', done);
+      clearTimeout(timer);
+      resolve(synth.getVoices());
+    };
+    const timer = setTimeout(done, 1500);
+    synth.addEventListener('voiceschanged', done);
+  });
 }
 
 /** Whether the server reads replies aloud with a speech service of its own. */
@@ -104,17 +227,22 @@ export function toggleSpeech(id: string, markdown: string, locale: Locale, serve
     return;
   }
   if (!speechSupported()) return;
-  const synth = window.speechSynthesis;
-  const u = new SpeechSynthesisUtterance(speakable(markdown));
-  u.lang = INTL_LOCALE[locale];
-  u.rate = useSpeech.getState().rate;
-  const voice = synth.getVoices().find((v) => v.lang.toLowerCase().startsWith(locale));
-  if (voice) u.voice = voice;
-  const done = () => {
-    if (useSpeech.getState().speaking === id) useSpeech.setState({ speaking: null });
-  };
-  u.onend = done;
-  u.onerror = done;
+  const text = speakable(markdown);
   useSpeech.setState({ speaking: id });
-  synth.speak(u);
+  void systemVoices().then((voices) => {
+    // Stopped, or another reply started, while the voices were loading.
+    if (useSpeech.getState().speaking !== id) return;
+    const lang = speechLanguage(text, locale);
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = INTL_LOCALE[lang];
+    u.rate = useSpeech.getState().rate;
+    const voice = pickVoice(voices, lang);
+    if (voice) u.voice = voice;
+    const done = () => {
+      if (useSpeech.getState().speaking === id) useSpeech.setState({ speaking: null });
+    };
+    u.onend = done;
+    u.onerror = done;
+    window.speechSynthesis.speak(u);
+  });
 }
