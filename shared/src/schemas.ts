@@ -22,6 +22,12 @@ export type OutsideTrigger = (typeof OUTSIDE_TRIGGERS)[number];
 /** The outside trigger a card's `outside` prop names, if it names one. */
 export const outsideTrigger = (value: unknown): OutsideTrigger | undefined =>
   OUTSIDE_TRIGGERS.find((x) => x === value);
+/**
+ * The outside text a message carries into a conversation: one marked so (an outside run's
+ * instruction, a report written in one), or a webhook's post.
+ */
+export const outsideIn = (props: Record<string, unknown>): OutsideTrigger | undefined =>
+  outsideTrigger(props.outside) ?? (props.posted ? 'webhook' : undefined);
 /** From the strictest to the freest, as the app lists them. */
 export const PERMISSION_MODES = ['readonly', 'ask', 'review', 'auto'] as const;
 export type PermissionMode = z.infer<typeof PermissionMode>;
@@ -739,7 +745,7 @@ export const TodayReport = z.object({
       routineId: Id,
       name: z.string(),
       botId: Id,
-      status: z.enum(['running', 'done', 'error', 'skipped', 'waiting']),
+      status: z.enum(['running', 'done', 'error', 'skipped', 'waiting', 'queued']),
       threadId: Id.nullable(),
       startedAt: z.string(),
     }),

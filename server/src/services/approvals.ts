@@ -79,6 +79,7 @@ export function modeFor(mode: PermissionMode, outside: boolean): PermissionMode 
 }
 
 export function decide(opts: {
+  /** The level the step is decided at: in an `outside` run, as `modeFor` lowers it. */
   mode: PermissionMode;
   toolName: string;
   input: Record<string, unknown>;
@@ -87,8 +88,7 @@ export function decide(opts: {
   /** A run outside text started: "always allow" rules, given for the person's own work, do not count. */
   outside?: boolean;
 }): Verdict {
-  const { toolName, input, rules } = opts;
-  const mode = modeFor(opts.mode, !!opts.outside);
+  const { mode, toolName, input, rules } = opts;
   const isRead = READ_ONLY_TOOLS.has(toolName) || opts.readOnlyTools.has(toolName);
   if (blockRuleFor(rules, toolName, input)) return 'block';
   if (mode === 'readonly') return isRead ? 'allow' : 'deny';
@@ -208,13 +208,17 @@ export class ApprovalService {
   }
 
   async get(id: string): Promise<Approval> {
+    return toApproval(await this.row(id));
+  }
+
+  private async row(id: string) {
     const [row] = await this.ctx.db
       .select()
       .from(schema.approvals)
       .where(eq(schema.approvals.id, id))
       .limit(1);
     if (!row) throw notFound('approval');
-    return toApproval(row);
+    return row;
   }
 
   /**
@@ -281,7 +285,8 @@ export class ApprovalService {
   }
 
   async answer(id: string, d: ApprovalDecision): Promise<Approval> {
-    const current = await this.get(id);
+    const stored = await this.row(id);
+    const current = toApproval(stored);
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
     const status = d.decision === 'allow' ? 'allowed' : 'denied';
     // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
@@ -291,7 +296,7 @@ export class ApprovalService {
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
-      !(await this.askedOutside(id)) &&
+      !stored.outside &&
       !askRuleMatches(await this.rules(), current.toolName, current.input);
     let answer = d.answers ? JSON.stringify(d.answers) : (d.answer ?? null);
     /** What the waiting bot gets, when it differs from what the card keeps. */
@@ -372,15 +377,6 @@ export class ApprovalService {
       this.waiters.get(r.id)?.resolve({ status: 'allowed', answer: null });
       this.waiters.delete(r.id);
     }
-  }
-
-  private async askedOutside(id: string): Promise<boolean> {
-    const [row] = await this.ctx.db
-      .select({ outside: schema.approvals.outside })
-      .from(schema.approvals)
-      .where(eq(schema.approvals.id, id))
-      .limit(1);
-    return !!row?.outside;
   }
 
   async expire(id: string, timedOut = false) {
