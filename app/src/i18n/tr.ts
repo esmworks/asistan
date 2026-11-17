@@ -365,6 +365,20 @@ export const tr = {
   'apiKeys.newValue': 'Yeni anahtar (aynı kalsın diye boş bırak)',
   'apiKeys.confirmDelete':
     '“{name}” API anahtarı silinsin mi? Onu kullanan botlar yeniden istemek zorunda kalır.',
+  'teach.open': 'Göstererek öğret',
+  'teach.goalPlaceholder': 'İşin sonucu, ör. Bu haftanın raporunu indir',
+  'teach.start': 'Kaydı başlat',
+  'teach.hint':
+    'Tarayıcının kontrolü sana geçer. İşi bir kez yap; her tıklama, yazma ve sayfa geçişi kaydedilir. Şifre alanlarına yazdıkların asla kaydedilmez.',
+  'teach.recording': 'Kaydediliyor · {count} adım',
+  'teach.finish': 'Bitir',
+  'teach.reviewTitle': 'Gösterdiğini beceri olarak kaydet',
+  'teach.reviewHint':
+    'Adımlara göz at; yazdığın değerler o seferki örnekti. Kaydedince {bot} bir iş gerektirdiğinde bunu izler.',
+  'teach.skillName': 'Beceri adı',
+  'teach.skillWhen': 'Ne zaman kullanılır',
+  'teach.save': 'Beceriyi kaydet',
+  'teach.saved': 'Kaydedildi; beceri artık {bot} botunda',
   'board.title': 'Pano',
   'board.new': 'Yeni görev',
   'board.empty':

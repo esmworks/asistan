@@ -425,6 +425,15 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  teachStatus: (botId: string) => http.get<{ steps: number | null }>(`/api/bots/${botId}/teach`),
+  startTeaching: (botId: string) => http.post<{ steps: number }>(`/api/bots/${botId}/teach`),
+  stopTeaching: (botId: string, goal: string) =>
+    http.post<{ name: string; description: string; body: string; steps: number }>(
+      `/api/bots/${botId}/teach/stop`,
+      {
+        goal,
+      },
+    ),
   tickets: () => http.get<Ticket[]>('/api/tickets'),
   createTicket: (input: TicketCreate) => http.post<Ticket>('/api/tickets', input),
   updateTicket: (id: string, patch: TicketUpdate) => http.patch<Ticket>(`/api/tickets/${id}`, patch),

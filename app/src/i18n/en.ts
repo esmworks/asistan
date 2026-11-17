@@ -367,6 +367,20 @@ export const en: Catalog<MessageKey> = {
   'apiKeys.value': 'Key or token',
   'apiKeys.newValue': 'New key (leave empty to keep it)',
   'apiKeys.confirmDelete': 'Delete the API key “{name}”? Bots that use it will have to ask for it again.',
+  'teach.open': 'Teach a task',
+  'teach.goalPlaceholder': 'What the task achieves, e.g. Download this week’s report',
+  'teach.start': 'Start recording',
+  'teach.hint':
+    'You get control of the browser. Do the task once; every click, typing and page change is recorded. What you type into password fields is never recorded.',
+  'teach.recording': 'Recording · {count} steps',
+  'teach.finish': 'Finish',
+  'teach.reviewTitle': 'Save what you showed as a skill',
+  'teach.reviewHint':
+    'Look over the steps; values you typed were this time’s example. Saved, {bot} follows it when a task calls for it.',
+  'teach.skillName': 'Skill name',
+  'teach.skillWhen': 'When to use it',
+  'teach.save': 'Save the skill',
+  'teach.saved': 'Saved; {bot} has the skill now',
   'board.title': 'Board',
   'board.new': 'New ticket',
   'board.empty':

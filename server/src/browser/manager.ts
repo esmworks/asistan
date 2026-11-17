@@ -1,3 +1,4 @@
+import { addTyping, DESCRIBE, MAX_STEPS, type Target, type TeachStep } from './teach';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { lookup } from 'node:dns/promises';
 import { mkdirSync } from 'node:fs';
@@ -86,6 +87,8 @@ interface Live {
   nextAnswer: { accept: boolean; text?: string } | null;
   /** Hosts on this computer or a private network the page tried to reach, since the bot last heard. */
   refused: Set<string>;
+  /** What the person showed in teach mode, step by step; null when not teaching. */
+  lesson: TeachStep[] | null;
 }
 
 /** A question a page asked with alert, confirm or prompt, and how it was answered. */
@@ -368,6 +371,77 @@ export class BrowserManager {
     this.emitState(l);
   }
 
+  /**
+   * Starts teach mode: the person takes control, and what they do is written down as steps until
+   * they stop (see `teach.ts`).
+   */
+  async startTeaching(botId: string) {
+    const l = await this.get(botId);
+    l.userControl = true;
+    l.lesson = [];
+    const url = l.page.url();
+    if (/^https?:/.test(url)) l.lesson.push({ kind: 'open', url });
+    this.emitState(l);
+  }
+
+  /** Ends teach mode and hands back what was shown; null when the bot's browser was not teaching. */
+  stopTeaching(botId: string): TeachStep[] | null {
+    const l = this.live.get(botId);
+    if (!l?.lesson) return null;
+    const steps = l.lesson;
+    l.lesson = null;
+    return steps;
+  }
+
+  /** How many steps the lesson under way has; null when not teaching. */
+  teaching(botId: string): number | null {
+    return this.live.get(botId)?.lesson?.length ?? null;
+  }
+
+  /** Writes down one input of the person's in teach mode, before it is applied. */
+  private async record(l: Live, input: BrowserInput, x: number, y: number) {
+    const lesson = l.lesson;
+    if (!lesson || lesson.length >= MAX_STEPS) return;
+    const page = l.page;
+    const url = page.url();
+    const describe = (at: [number, number] | null) =>
+      page.evaluate(`(${DESCRIBE})(${JSON.stringify(at)})`).catch(() => null) as Promise<Target | null>;
+    switch (input.type) {
+      case 'mouse': {
+        if (input.action !== 'down' || (input.button ?? 'left') !== 'left') return;
+        const target = await describe([x, y]);
+        if (target) lesson.push({ kind: 'click', target, url });
+        return;
+      }
+      case 'key': {
+        if (input.action !== 'down') return;
+        if ([...input.key].length === 1 && !l.modifiers.size) {
+          const target = await describe(null);
+          if (target) addTyping(lesson, target, input.key, url);
+        } else if (input.key === 'Backspace') {
+          const last = lesson.at(-1);
+          if (last?.kind === 'type' && !last.secret) last.text = [...last.text].slice(0, -1).join('');
+        } else if (
+          ['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp'].includes(input.key)
+        ) {
+          lesson.push({ kind: 'key', key: input.key, url });
+        }
+        return;
+      }
+      case 'text': {
+        const target = await describe(null);
+        if (target) addTyping(lesson, target, input.text, url);
+        return;
+      }
+      case 'nav':
+        lesson.push({ kind: 'nav', action: input.action, url });
+        return;
+      case 'open':
+        lesson.push({ kind: 'open', url: webUrl(input.url).toString() });
+        return;
+    }
+  }
+
   /** A person's mouse, keyboard or address bar input; ignored unless they have control. */
   input(botId: string, input: BrowserInput): Promise<void> {
     const l = this.live.get(botId);
@@ -384,6 +458,10 @@ export class BrowserManager {
     const at = (x: number, y: number) =>
       [Math.round(x * VIEWPORT.width), Math.round(y * VIEWPORT.height)] as const;
     try {
+      if (l.lesson) {
+        const [x, y] = 'x' in input ? at(input.x, input.y) : [0, 0];
+        await this.record(l, input, x, y);
+      }
       switch (input.type) {
         case 'mouse': {
           const [x, y] = at(input.x, input.y);
@@ -621,6 +699,7 @@ export class BrowserManager {
       lastFrame: null,
       busy: 0,
       userControl: false,
+      lesson: null,
       modifiers: new Set(),
       inputs: Promise.resolve(),
       secrets: new Set(),

@@ -70,6 +70,7 @@ import {
   TicketCommentCreate,
   TicketCreate,
   TicketUpdate,
+  skillSlug,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -91,6 +92,7 @@ import { HttpError, truncate } from './util';
 import { findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
+import { stepsText } from './browser/teach';
 import { workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
 
@@ -528,6 +530,34 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { skills, servers };
   });
+  // Teaching a task by showing it in the bot's browser; the steps come back as a skill draft.
+  app.post('/api/bots/:id/teach', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    if (!d.services.ctx.browser.available) throw new HttpError(409, 'error.teachNoBrowser');
+    await d.services.ctx.browser.startTeaching(bot.id);
+    return { steps: 0 };
+  });
+  app.get('/api/bots/:id/teach', async (req) => ({
+    steps: d.services.ctx.browser.teaching(IdParams.parse(req.params).id),
+  }));
+  app.post('/api/bots/:id/teach/stop', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    const { goal } = z.object({ goal: z.string().trim().max(500).default('') }).parse(req.body ?? {});
+    const steps = d.services.ctx.browser.stopTeaching(bot.id);
+    if (!steps?.length) throw new HttpError(409, 'error.teachNothing');
+    const t = await s.settings.translator();
+    const tr = t as unknown as (key: string, params?: Record<string, string | number>) => string;
+    const description = goal || t('teach.defaultGoal');
+    return {
+      name: skillSlug(goal) || 'taught-task',
+      description,
+      body: [t('teach.intro', { goal: description }), '', stepsText(steps, tr), '', t('teach.outro')].join(
+        '\n',
+      ),
+      steps: steps.length,
+    };
+  });
+
   // The board: tickets the person and the bots work from.
   app.get('/api/tickets', async () => s.tickets.list());
   app.post('/api/tickets', async (req) => s.tickets.create(TicketCreate.parse(req.body)));
