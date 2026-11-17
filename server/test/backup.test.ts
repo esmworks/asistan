@@ -1,9 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Bot, Memory } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { hashPassword } from '../src/account';
 import { schema } from '../src/db';
-import { BACKUP_MAGIC, tablesInOrder } from '../src/services/backup';
+import { BACKUP_MAGIC, replaceRows, tablesInOrder } from '../src/services/backup';
+import { OWNER_ID } from '../src/users';
 import { newId } from '../src/util';
 import { AUTH, testServer, type TestServer } from './helpers';
 
@@ -92,6 +96,45 @@ describe('yedek', () => {
     restarted.mockRestore();
     // This sign-in still works: sign-ins to this server are not part of a backup.
     expect((await t.api('GET', '/api/bots')).status).toBe(200);
+  });
+
+  it('geri yükleme owner’ın oturumunu korur; yedekte olmayan kişinin oturumu kapanır', async () => {
+    await t.auth.users.setCredentials(OWNER_ID, 'erhan', 'owner-sifresi');
+    const ownerSession = await t.auth.createSession(OWNER_ID);
+    const { file } = await download(PASSWORD);
+    // Someone added after the backup, signed in on a device of their own.
+    await t.services.ctx.db.insert(schema.users).values({ id: 'ayse', usernameKey: 'ayse', role: 'member' });
+    await t.auth.createSession('ayse');
+
+    const restarted = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect((await restore(file!, PASSWORD)).statusCode).toBe(200);
+    await vi.waitFor(() => expect(restarted).toHaveBeenCalled());
+    restarted.mockRestore();
+
+    const sessions = await t.services.ctx.db.select().from(schema.sessions);
+    expect(sessions.map((s) => s.userId)).not.toContain('ayse');
+    const later = new Date(Date.now() + 2 * 60_000);
+    expect(await t.auth.validSession(ownerSession, later)).toMatchObject({ userId: OWNER_ID });
+    expect(await t.auth.users.check('erhan', 'owner-sifresi')).not.toBeNull();
+  });
+
+  it('kişilerden önceki bir yedeğin tek hesabı owner olur', async () => {
+    const ownerSession = await t.auth.createSession(OWNER_ID);
+    // What such a backup holds: no people, the single account in kv.
+    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-old-backup-'));
+    const kv = join(dir, 'kv.json');
+    writeFileSync(
+      kv,
+      JSON.stringify([
+        { key: 'account', value: { username: 'Erhan', ...(await hashPassword('eski-sifre')) } },
+      ]),
+    );
+    await replaceRows(t.services.ctx.db, new Map([['kv', kv]]));
+
+    expect(await t.auth.users.check('erhan', 'eski-sifre')).toMatchObject({ id: OWNER_ID, role: 'owner' });
+    expect(await t.services.ctx.db.select().from(schema.kv).where(eq(schema.kv.key, 'account'))).toEqual([]);
+    const later = new Date(Date.now() + 2 * 60_000);
+    expect(await t.auth.validSession(ownerSession, later)).toMatchObject({ userId: OWNER_ID });
   });
 
   it('bir bot çalışırken geri yüklemez', async () => {

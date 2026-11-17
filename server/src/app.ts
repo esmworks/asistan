@@ -16,6 +16,7 @@ import {
   type ServerInfo,
   type ServerToClientEvents,
 } from '@yumakbot/shared';
+import type { IncomingMessage } from 'node:http';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { Server as IOServer, type Namespace } from 'socket.io';
 import { ZodError } from 'zod';
@@ -28,6 +29,8 @@ import {
   parseCookie,
   routedPath,
   SESSION_COOKIE,
+  type Principal,
+  type SocketData,
 } from './auth';
 import { BrowserManager } from './browser/manager';
 import { browserErrorText } from './browser/text';
@@ -41,6 +44,7 @@ import type { Config } from './config';
 import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
+import { adoptLegacyAccount } from './users';
 import { setContentKey } from './db/sealed';
 import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
 import { FakeEngine } from './engine/fake';
@@ -72,7 +76,7 @@ export interface ServerOptions {
 
 export interface YumakBotServer {
   app: FastifyInstance;
-  io: IOServer<ClientToServerEvents, ServerToClientEvents>;
+  io: IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
   services: Services;
   auth: Auth;
   db: DbHandle;
@@ -102,6 +106,8 @@ const openRoute = (route: string) => PUBLIC_API.has(route) || route.startsWith(`
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
+  // The single account from before people came in becomes the owner's sign-in.
+  await adoptLegacyAccount(db.db);
   const bus = new Bus();
   // Each bot's desktop, when a computer service runs next to this server. Its folders are the
   // bot's workspace, which both containers see at the same path.
@@ -332,6 +338,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
 
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
   await app.register(fastifyCookie);
+  // Who a request comes from; set by the sign-in check below, null on the routes open to anyone.
+  app.decorateRequest('principal', null);
 
   /** Errors go out in the language the page asks in, else in the server's language. */
   const requestT = async (headers: { 'accept-language'?: string }): Promise<T> =>
@@ -350,10 +358,11 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     // `/%61pi/bots` runs the /api/bots handler while its URL does not start with /api/.
     if (!needsSignIn(req.routeOptions.url, req.url, openRoute)) return;
     const from = clientAddress(req.headers, req.ip, config);
-    const via = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE], from);
-    if (!via) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
+    const principal = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE], from);
+    if (!principal) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
+    req.principal = principal;
     // Cookie-authenticated writes must come from our own page.
-    if (via === 'cookie' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
+    if (principal.via === 'session' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
       return sendError(req, reply, new HttpError(403, 'error.originRequired'));
     }
   });
@@ -421,30 +430,39 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     });
   }
 
-  const io = new IOServer<ClientToServerEvents, ServerToClientEvents>(app.server, {
-    path: '/socket.io',
-    serveClient: false,
-    allowRequest: (req, cb) => {
-      const refuse = (err: HttpError) =>
-        void requestT(req.headers).then(
-          (t) => cb(err.localized(t), false),
-          () => cb(err.message, false),
+  /** Who each socket's handshake request signed in as, read when the socket connects. */
+  const socketPrincipals = new WeakMap<IncomingMessage, Principal>();
+  const io = new IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
+    app.server,
+    {
+      path: '/socket.io',
+      serveClient: false,
+      allowRequest: (req, cb) => {
+        const refuse = (err: HttpError) =>
+          void requestT(req.headers).then(
+            (t) => cb(err.localized(t), false),
+            () => cb(err.message, false),
+          );
+        const problem = checkHostOrigin(
+          { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
+          config,
         );
-      const problem = checkHostOrigin(
-        { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
-        config,
-      );
-      if (problem) return refuse(problem);
-      const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
-      const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
-      auth
-        .authenticate({ authorization: req.headers.authorization }, cookie, from)
-        .then((via) => (via ? cb(null, true) : refuse(new HttpError(401, 'error.accessKeyRequired'))))
-        .catch((err: unknown) =>
-          refuse(err instanceof HttpError ? err : new HttpError(500, 'error.authCheckFailed')),
-        );
+        if (problem) return refuse(problem);
+        const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
+        const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
+        auth
+          .authenticate({ authorization: req.headers.authorization }, cookie, from)
+          .then((principal) => {
+            if (!principal) return refuse(new HttpError(401, 'error.accessKeyRequired'));
+            socketPrincipals.set(req, principal);
+            cb(null, true);
+          })
+          .catch((err: unknown) =>
+            refuse(err instanceof HttpError ? err : new HttpError(500, 'error.authCheckFailed')),
+          );
+      },
     },
-  });
+  );
   // The desktop app offers its computer as the bots' way out to the web. Frames are binary
   // messages of the egress protocol; the sign-in is the same as for every socket.
   const egressSockets = io.of('/egress') as unknown as Namespace;
@@ -463,6 +481,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   });
 
   io.on('connection', (socket) => {
+    // Who signed this socket in; the handshake request is the one the sign-in check saw.
+    socket.data.principal = socketPrincipals.get(socket.request) ?? null;
     socket.emit('hello', { bootId, buildId });
 
     // Watching and driving a bot's browser. Only existing bots: the id names a profile folder.

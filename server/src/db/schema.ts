@@ -504,8 +504,49 @@ export const jobs = pgTable(
   ],
 );
 
+/** A password as stored: a scrypt hash with its salt and the cost it was made at. */
+export interface PasswordHash {
+  salt: string;
+  hash: string;
+  N: number;
+  r: number;
+  p: number;
+}
+
+/**
+ * The people who sign in to this server. There is always exactly one owner, with the fixed id
+ * `owner`: it stands for whoever installed the server, so a restore that brings back an older
+ * owner row still matches the sessions this server keeps across a restore.
+ */
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    /** As the person typed it; null for an owner who has only ever used the access key. */
+    username: text('username'),
+    /** The username folded the way sign-in compares it (trimmed, lower case), for lookup and uniqueness. */
+    usernameKey: text('username_key'),
+    displayName: text('display_name'),
+    role: text('role', { enum: ['owner', 'admin', 'member'] }).notNull(),
+    password: jsonb('password').$type<PasswordHash>(),
+    createdAt: created(),
+    /** Set when the person may no longer sign in; their sessions stop working. */
+    disabledAt: ts('disabled_at'),
+  },
+  (t) => [
+    uniqueIndex('users_username_key_uq').on(t.usernameKey),
+    uniqueIndex('users_one_owner_uq')
+      .on(t.role)
+      .where(sql`${t.role} = 'owner'`),
+  ],
+);
+
 export const sessions = pgTable('sessions', {
   id: text('id').primaryKey(),
+  /** Who signed in on this device. */
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id),
   createdAt: created(),
   lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
   /** The browser or app that signed in, so the person can tell their devices apart. */

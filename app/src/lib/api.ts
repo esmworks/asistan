@@ -78,6 +78,7 @@ import type {
   Ticket,
   TicketCreate,
   TicketUpdate,
+  SessionUser,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -189,7 +190,7 @@ export interface Settings {
 /** Typed endpoints. Paths mirror the server routes. */
 export const api = {
   /** `account` is missing on servers older than username and password sign-in. */
-  session: () => http.get<{ authenticated: boolean; account?: boolean }>('/api/session'),
+  session: () => http.get<{ authenticated: boolean; account?: boolean; user?: SessionUser }>('/api/session'),
   /** Signs this browser in with a one-time pairing code from a signed-in device. */
   pair: (code: string) => http.post<{ ok: true }>('/api/pair', { code }),
   /** A one-time code that signs one more device in within five minutes. */

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { checkHostOrigin, clientAddress, needsSignIn, routedPath, SESSION_IDLE_MS } from '../src/auth';
 import { loadConfig, publicUrl } from '../src/config';
+import { OWNER_ID } from '../src/users';
 import { KEY, testServer, type TestServer } from './helpers';
 
 describe('erişim', () => {
@@ -61,8 +62,8 @@ describe('erişim', () => {
     expect(given.cookie).toBe('yumakbot_session');
     expect((await req({ headers: { cookie: `yumakbot_session=${given.token}` } })).statusCode).toBe(200);
     // And not after five minutes.
-    const late = t.auth.createPairingCode(Date.now() - 6 * 60_000).code;
-    expect(t.auth.usePairingCode(late)).toBe(false);
+    const late = t.auth.createPairingCode(OWNER_ID, Date.now() - 6 * 60_000).code;
+    expect(t.auth.usePairingCode(late)).toBeNull();
   });
 
   it('anahtarı sorgu dizesinde kabul etmez', async () => {
@@ -133,14 +134,14 @@ describe('erişim', () => {
   });
 
   it('uzun süre kullanılmayan oturum kapanır, kullanılan oturum uzar', async () => {
-    const token = await t.auth.createSession('test');
+    const token = await t.auth.createSession(OWNER_ID, 'test');
     const later = new Date(Date.now() + SESSION_IDLE_MS - 60_000);
-    expect(await t.auth.validSession(token, later)).toBe(true);
+    expect(await t.auth.validSession(token, later)).not.toBeNull();
     const muchLater = new Date(later.getTime() + SESSION_IDLE_MS - 120_000);
-    expect(await t.auth.validSession(token, muchLater)).toBe(true);
+    expect(await t.auth.validSession(token, muchLater)).not.toBeNull();
     const tooLate = new Date(muchLater.getTime() + SESSION_IDLE_MS + 120_000);
-    expect(await t.auth.validSession(token, tooLate)).toBe(false);
-    expect(await t.auth.validSession(token, tooLate)).toBe(false);
+    expect(await t.auth.validSession(token, tooLate)).toBeNull();
+    expect(await t.auth.validSession(token, tooLate)).toBeNull();
   });
 
   it('yabancı Host, yabancı Origin ve Origin: null reddedilir', async () => {

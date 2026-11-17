@@ -80,7 +80,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
-import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
+import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth, type Principal } from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
@@ -93,6 +93,7 @@ import { fetchSkillFile } from './services/skill-link';
 import { serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
+import { OWNER_ID } from './users';
 import { HttpError, truncate } from './util';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
@@ -180,6 +181,12 @@ export function byteRange(header: string | undefined, size: number): { start: nu
 }
 
 /** A browser problem as an answer to the person who asked. */
+/** Who a signed-in request comes from; every route past the sign-in check has one. */
+function me(req: FastifyRequest): Principal {
+  if (!req.principal) throw new HttpError(401, 'error.accessKeyRequired');
+  return req.principal;
+}
+
 function browserHttpError(err: unknown): unknown {
   if (!(err instanceof BrowserError)) return err;
   switch (err.code) {
@@ -208,17 +215,23 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   };
   app.get('/api/session', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
-    const how = await d.auth.authenticate(req.headers, token, clientAddress(req.headers, req.ip, d.config));
+    const who = await d.auth.authenticate(req.headers, token, clientAddress(req.headers, req.ip, d.config));
     // Each visit moves the cookie's end along with the session's.
-    if (how === 'cookie' && token) reply.setCookie(SESSION_COOKIE, token, sessionCookie);
-    // Whether the sign-in page asks for a username and password or for the access key.
-    return { authenticated: !!how, account: (await d.auth.account.username()) !== null };
+    if (who?.via === 'session' && token) reply.setCookie(SESSION_COOKIE, token, sessionCookie);
+    const user = who ? await d.auth.users.get(who.userId) : null;
+    return {
+      authenticated: !!who,
+      // Whether the sign-in page asks for a username and password or for the access key.
+      account: await d.auth.users.anyPassword(),
+      ...(user && { user: { id: user.id, username: user.username, role: user.role } }),
+    };
   });
-  app.get('/api/sessions', async (req) => d.auth.listSessions(req.cookies[SESSION_COOKIE]));
+  app.get('/api/sessions', async (req) => d.auth.listSessions(req.cookies[SESSION_COOKIE], me(req).userId));
   app.delete('/api/sessions/:id', async (req) => {
     const id = z.object({ id: z.string().min(1).max(64) }).parse(req.params).id;
     const ended = await d.auth.revokeSessions(
       req.cookies[SESSION_COOKIE],
+      me(req).userId,
       id === 'others' ? 'others' : { id },
     );
     return { ended };
@@ -237,7 +250,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       throw new HttpError(401, 'error.accessKeyWrong');
     }
     attempt.succeeded();
-    const token = await d.auth.createSession(req.headers['user-agent']);
+    // The access key is the owner's.
+    const token = await d.auth.createSession(OWNER_ID, req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     return { ok: true };
   });
@@ -247,15 +261,20 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // The try is counted before the slow check, so many sent at once cannot all get past the limit.
     const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
     if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-    if (!(await d.auth.account.check(password, username))) throw new HttpError(401, 'error.loginWrong');
+    const user = await d.auth.users.check(username, password);
+    if (!user) throw new HttpError(401, 'error.loginWrong');
     attempt.succeeded();
-    reply.setCookie(SESSION_COOKIE, await d.auth.createSession(req.headers['user-agent']), sessionCookie);
+    reply.setCookie(
+      SESSION_COOKIE,
+      await d.auth.createSession(user.id, req.headers['user-agent']),
+      sessionCookie,
+    );
     return { ok: true };
   });
 
   // Pairing: a signed-in device makes a short code; another device signs in with it once.
-  app.post('/api/pairing', async () => ({
-    ...d.auth.createPairingCode(),
+  app.post('/api/pairing', async (req) => ({
+    ...d.auth.createPairingCode(me(req).userId),
     // Where the other device finds this server, when it is known to the server.
     url: d.config.publicUrl ?? null,
   }));
@@ -266,12 +285,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // Wrong codes count with wrong passwords: guessing either is slowed the same way.
     const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
     if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-    if (!d.auth.usePairingCode(code)) {
+    // The new device signs in as whoever made the code.
+    const userId = d.auth.usePairingCode(code);
+    if (!userId) {
       await new Promise((r) => setTimeout(r, 300));
       throw new HttpError(401, 'error.pairingWrong');
     }
     attempt.succeeded();
-    const token = await d.auth.createSession(req.headers['user-agent']);
+    const token = await d.auth.createSession(userId, req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     // The desktop app pairs from its own process and puts the session in its window's cookies.
     return wantToken
@@ -279,14 +300,20 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       : { ok: true };
   });
 
-  app.get('/api/account', async () => ({ username: await d.auth.account.username() }));
+  // The signed-in person's own username and password.
+  app.get('/api/account', async (req) => ({
+    username: (await d.auth.users.get(me(req).userId))?.username ?? null,
+  }));
   app.put('/api/account', async (req) => {
     const { username, password, current } = AccountSet.parse(req.body);
     if (password.length < MIN_PASSWORD) {
       throw new HttpError(400, 'error.passwordShort', { min: String(MIN_PASSWORD) });
     }
-    // Changing it takes the current password, or the access key when that is forgotten.
-    const changing = (await d.auth.account.username()) !== null;
+    const who = me(req);
+    const user = await d.auth.users.get(who.userId);
+    if (!user) throw new HttpError(401, 'error.accessKeyRequired');
+    // Changing it takes the current password, or, for the owner, the access key when that is forgotten.
+    const changing = user.username !== null;
     if (changing) {
       // Only a signed-in device gets here, so the count across all addresses is left alone: a
       // flood of guesses at the sign-in page must not stop the owner changing the password.
@@ -294,15 +321,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         shared: false,
       });
       if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-      const ok = !!current && (d.auth.checkKey(current) || (await d.auth.account.check(current)));
+      const ok =
+        !!current &&
+        ((user.role === 'owner' && d.auth.checkKey(current)) ||
+          (await d.auth.users.checkFor(user.id, current)));
       if (!ok) throw new HttpError(403, 'error.currentPasswordWrong');
       attempt.succeeded();
     }
-    await d.auth.account.set(username, password);
+    const saved = await d.auth.users.setCredentials(user.id, username, password);
     // A new password is often set because the old one got out: whoever signed in with it is
     // signed out, everywhere but on the device that made the change.
-    if (changing) await d.auth.revokeSessions(req.cookies[SESSION_COOKIE], 'others');
-    return { username: username.trim() };
+    if (changing) await d.auth.revokeSessions(req.cookies[SESSION_COOKIE], user.id, 'others');
+    return { username: saved.username };
   });
 
   app.post('/api/logout', async (req, reply) => {

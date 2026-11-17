@@ -579,6 +579,13 @@ export const MemoryUpdate = z.object({
   content: z.string().trim().min(1).max(2000),
 });
 
+/** What a person may do on this server: the owner installed it; admins manage it with them. */
+export const Role = z.enum(['owner', 'admin', 'member']);
+export type Role = z.infer<typeof Role>;
+/** Who a device is signed in as. */
+export const SessionUser = z.object({ id: z.string(), username: z.string().nullable(), role: Role });
+export type SessionUser = z.infer<typeof SessionUser>;
+
 export const AccessRequest = z.object({ key: z.string().min(1).max(500) });
 export const LoginRequest = z.object({
   username: z.string().trim().min(1).max(100),
