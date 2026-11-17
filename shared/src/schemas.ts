@@ -915,3 +915,44 @@ export const EmailSettings = z.object({
 });
 export type EmailSettings = z.infer<typeof EmailSettings>;
 export const EmailClaim = z.object({ name: z.string().trim().min(1).max(64) });
+
+/** What a plugin would add, read before anything is installed. */
+export const PluginPlan = z.object({
+  name: z.string(),
+  version: z.string(),
+  description: z.string(),
+  /** Remote MCP servers; each becomes a connection. */
+  servers: z.array(
+    z.object({
+      name: z.string(),
+      url: z.string(),
+      /** Its entry sends a token the person has to give (an Authorization header). */
+      needsToken: z.boolean(),
+      /** Already connected at this address: left as it is. */
+      exists: z.boolean(),
+    }),
+  ),
+  skills: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      /** A skill of this name is already saved: left as it is. */
+      exists: z.boolean(),
+      warnings: z.array(z.enum(['hidden', 'pipeShell', 'encoded'])),
+    }),
+  ),
+  /** Parts not installed, with why: code that would run here, or a kind not supported. */
+  leftOut: z.array(z.object({ part: z.string(), why: z.enum(['runsCode', 'local', 'unsupported']) })),
+});
+export type PluginPlan = z.infer<typeof PluginPlan>;
+
+export const PluginInstall = z.object({
+  url: z.string().trim().min(1).max(2000),
+  /** Tokens for servers that need one, by server name. */
+  tokens: z.record(z.string(), z.string().max(10_000)).default({}),
+  /** Skill names and server names to leave out. */
+  skip: z.array(z.string().max(200)).max(500).default([]),
+});
+export type PluginInstall = z.input<typeof PluginInstall>;
+export const PluginInstallResult = z.object({ servers: z.number(), skills: z.number() });
+export type PluginInstallResult = z.infer<typeof PluginInstallResult>;

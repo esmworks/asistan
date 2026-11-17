@@ -1,6 +1,6 @@
 import { parseSkillFile, skillWarnings, type Skill } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileUp, Import, Link2, Pencil, Plus, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
+import { FileUp, Import, Link2, Pencil, Plus, Puzzle, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BotAvatar } from '@/components/BotAvatar';
@@ -13,6 +13,7 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useBots, useSkills } from '@/lib/queries';
 import { Card } from './SettingsDialog';
+import { PluginDialog } from './PluginDialog';
 
 /** Largest SKILL.md read from disk; a skill is instructions, not a document store. */
 const MAX_FILE = 200_000;
@@ -26,6 +27,7 @@ export function SkillsTab() {
   const file = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [bringOpen, setBringOpen] = useState(false);
+  const [pluginOpen, setPluginOpen] = useState(false);
   // What the person's other AI tools on this computer have; only on their own computer.
   const { data: found } = useQuery({ queryKey: ['setup-import'], queryFn: api.setupImport });
   const offered = found?.available && (found.skills.length > 0 || found.servers.length > 0);
@@ -68,6 +70,9 @@ export function SkillsTab() {
         </Button>
         <Button variant="secondary" className="rounded-full" onClick={() => setLinkOpen((v) => !v)}>
           <Link2 /> {t('skills.importLink')}
+        </Button>
+        <Button variant="secondary" className="rounded-full" onClick={() => setPluginOpen(true)}>
+          <Puzzle /> {t('plugin.add')}
         </Button>
         {offered && (
           <Button variant="secondary" className="rounded-full" onClick={() => setBringOpen(true)}>
@@ -114,6 +119,7 @@ export function SkillsTab() {
         ))}
       </Card>
       {bringOpen && found && <BringInDialog found={found} onClose={() => setBringOpen(false)} />}
+      {pluginOpen && <PluginDialog onClose={() => setPluginOpen(false)} />}
       {editing && (
         <SkillDialog
           skill={editing === 'new' ? null : editing}

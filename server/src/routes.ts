@@ -65,6 +65,7 @@ import {
   EmailClaim,
   AI_KINDS,
   AiEndpointSet,
+  PluginInstall,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -523,6 +524,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { skills, servers };
   });
+  // Plugins: read first, so the person sees what each would add, then installed as connections
+  // and skills.
+  app.post('/api/plugins/preview', async (req) =>
+    s.plugins.preview(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
+  );
+  app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
   app.get('/api/skills', async () => s.skills.list());
   app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body)));
   // A skill file from a link (a GitHub page of a SKILL.md, or any https address); read here, so

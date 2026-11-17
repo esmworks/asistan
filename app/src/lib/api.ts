@@ -64,6 +64,9 @@ import type {
   AiEndpoints,
   AiEndpointSet,
   AiKind,
+  PluginInstall,
+  PluginInstallResult,
+  PluginPlan,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -384,7 +387,8 @@ export const api = {
   updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
   removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
   rules: () => http.get<PermissionRule[]>('/api/rules'),
-  addRule: (r: { list: 'ask' | 'allow' | 'block'; pattern: string }) => http.post<PermissionRule>('/api/rules', r),
+  addRule: (r: { list: 'ask' | 'allow' | 'block'; pattern: string }) =>
+    http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),
@@ -416,6 +420,8 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  previewPlugin: (url: string) => http.post<PluginPlan>('/api/plugins/preview', { url }),
+  installPlugin: (input: PluginInstall) => http.post<PluginInstallResult>('/api/plugins/install', input),
   aiEndpoints: () =>
     http.get<AiEndpoints & { memoryIndex: { indexed: number; total: number } }>('/api/ai-endpoints'),
   setAiEndpoint: (kind: AiKind, input: AiEndpointSet) =>

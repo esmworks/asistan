@@ -30,6 +30,9 @@ const tr = {
     'Bağlantı bu bilgisayardaki ya da yerel ağdaki bir adrese gidiyor; buna izin verilmez',
   'error.skillLinkStatus': 'Adres dosyayı vermedi (HTTP {status})',
   'error.skillLinkTooLarge': 'Dosya bir beceri için çok büyük',
+  'error.pluginNoManifest':
+    'Bu adreste bir eklenti bulunamadı: plugin.json ya da .claude-plugin/plugin.json yok ya da adı yok',
+  'error.pluginFormat': 'Eklentinin {file} dosyası okunamadı',
   'error.shareNotPage': 'Yalnızca bir HTML sayfası paylaşılabilir',
   'share.gone.title': 'Bu sayfa artık paylaşılmıyor',
   'share.gone.body':
@@ -898,6 +901,9 @@ const en: Catalog<ServerKey> = {
     'The link goes to an address on this computer or the local network, which is not allowed',
   'error.skillLinkStatus': 'The address did not give the file (HTTP {status})',
   'error.skillLinkTooLarge': 'The file is too large for a skill',
+  'error.pluginNoManifest':
+    'No plugin found at this address: plugin.json or .claude-plugin/plugin.json is missing or has no name',
+  'error.pluginFormat': 'The plugin’s {file} could not be read',
   'error.shareNotPage': 'Only an HTML page can be shared',
   'share.gone.title': 'This page is no longer shared',
   'share.gone.body':
