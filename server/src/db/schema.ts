@@ -13,6 +13,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
+/** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
+const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email', 'web', 'forward', 'stored'] as const;
+
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const created = () => ts('created_at').notNull().defaultNow();
 
@@ -83,7 +86,7 @@ export const threads = pgTable(
      * or a report written from one); null when it has read none. A turn nobody watches that goes
      * on in such a session changes nothing without a card. A new session starts it again.
      */
-    outsideSession: text('outside_session', { enum: ['watch', 'webhook', 'email'] }),
+    outsideSession: text('outside_session', { enum: OUTSIDE_TRIGGERS }),
     /** What the conversation is for, set by the person; every turn in it sees it. */
     goal: text('goal').notNull().default(''),
     /** One message the person pinned above the conversation; null for none. */
@@ -199,6 +202,17 @@ export const turns = pgTable(
     /** The engine and model the turn ran on, for the usage report; null until it starts. */
     engine: text('engine', { enum: ['claude', 'pi'] }),
     model: text('model'),
+    /**
+     * Outside text the turn read, or was handed by the turn that started it (another bot's request
+     * or answer, a room member naming it); null for none. Unattended, it changes nothing without
+     * a card from then on.
+     */
+    outside: text('outside', { enum: OUTSIDE_TRIGGERS }),
+    /**
+     * The freest level the turn may act at, when a stricter bot started it (a room member naming
+     * a bot allowed more than itself); null for the bot's own level.
+     */
+    modeCap: text('mode_cap', { enum: ['ask', 'review', 'auto', 'readonly'] }),
     createdAt: created(),
     startedAt: ts('started_at'),
     finishedAt: ts('finished_at'),
@@ -243,6 +257,11 @@ export const permissionRules = pgTable('permission_rules', {
   list: text('list', { enum: ['ask', 'allow', 'block'] }).notNull(),
   pattern: text('pattern').notNull(),
   note: text('note').notNull().default(''),
+  /**
+   * The one bot the rule is for; null for every bot. "Always allow" on a card keeps the step for
+   * the bot that asked, since another bot's work is another matter.
+   */
+  botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
   createdAt: created(),
 });
 
@@ -369,7 +388,7 @@ export const routineRuns = pgTable(
      * What outside text started the run (a mail, a webhook's body, a watched page or an app's new
      * answer); null for a scheduled or manual run. Such a run may change nothing without a card.
      */
-    trigger: text('trigger', { enum: ['watch', 'webhook', 'email'] }),
+    trigger: text('trigger', { enum: OUTSIDE_TRIGGERS }),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },
@@ -674,7 +693,7 @@ export const memoryChanges = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     /** Why nobody was watching: a routine's run or another bot's request, with its name. */
-    origin: jsonb('origin').$type<{ kind: 'routine' | 'bot'; name: string }>().notNull(),
+    origin: jsonb('origin').$type<{ kind: 'routine' | 'bot' | 'outside'; name: string }>().notNull(),
     threadId: text('thread_id'),
     /** The page the bot said the fact came from; kept on the note once accepted. */
     sourceUrl: sealedText('source_url'),

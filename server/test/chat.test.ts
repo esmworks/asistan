@@ -1,4 +1,11 @@
-import { questionItems, type Approval, type BotSummary, type Message, type Thread } from '@yumakbot/shared';
+import {
+  questionItems,
+  type Approval,
+  type BotSummary,
+  type Message,
+  type PermissionRule,
+  type Thread,
+} from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isSilentReply, maybeSilentReply, planItems } from '../src/engine/types';
 import { resetTime } from '../src/engine/claude';
@@ -251,28 +258,35 @@ describe('sohbet', () => {
     expect(rules.filter((r) => r.list === 'allow')).toHaveLength(0);
   });
 
-  it('"Hep izin ver" aynı araç için bekleyen diğer kartları da kapatır', async () => {
+  it('"Hep izin ver" yalnızca aynı botun, kuralın kapsadığı bekleyen kartlarını kapatır', async () => {
     const a = await t.bot({ name: 'Bir' });
     const b = await t.bot({ name: 'İki' });
-    const c = await t.bot({ name: 'Üç' });
-    await t.api('POST', '/api/rules', { list: 'ask', pattern: 'Write(gizli*)' });
-    await t.send((await main(a.id)).id, '[izin:Write {"file_path":"a"}]');
+    const own = await main(a.id);
+    const second = await t.services.threads.create(a.id, { title: 'İkinci iş' });
+    await t.send(own.id, '[izin:Write {"file_path":"a"}]');
+    await t.send(second.id, '[izin:Write {"file_path":"a2"}]');
     await t.send((await main(b.id)).id, '[izin:Write {"file_path":"b"}]');
-    await t.send((await main(c.id)).id, '[izin:Write {"file_path":"gizli c"}]');
     const pending = await waitFor(async () => {
       const r = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
       return r.length === 3 ? r : undefined;
     });
-    const first = pending.find((p) => p.botId === a.id)!;
-    await t.api('POST', `/api/approvals/${first.id}`, { decision: 'allow', remember: true });
-    // The other bot's card goes through; the one an "always ask" rule covers keeps waiting.
+    const first = pending.find((p) => p.input.file_path === 'a')!;
+    const answered = await t.api<Approval>('POST', `/api/approvals/${first.id}`, {
+      decision: 'allow',
+      remember: true,
+    });
+    expect(answered.body.remembered).toBe(true);
+    // The same bot's card goes through; another bot's keeps waiting: the rule is for the bot
+    // that asked.
     const left = await waitFor(async () => {
       const r = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
       return r.length === 1 ? r : undefined;
     });
-    expect(left[0]!.botId).toBe(c.id);
-    const other = pending.find((p) => p.botId === b.id)!;
-    expect((await t.api<Approval>('GET', `/api/approvals/${other.id}`)).body.status).toBe('allowed');
+    expect(left.map((x) => x.input.file_path)).toEqual(['b']);
+    const rules = (await t.api<PermissionRule[]>('GET', '/api/rules')).body.filter((r) => r.list === 'allow');
+    expect(rules).toMatchObject([{ pattern: 'Write', botId: a.id }]);
+    for (const c of left) await t.api('POST', `/api/approvals/${c.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
   });
 
   it('"Her zaman sor" kuralı izin listesinden önce gelir; okuma araçları sormaz', async () => {

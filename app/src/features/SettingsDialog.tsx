@@ -1107,7 +1107,9 @@ function Permissions() {
   const t = useT();
   const { data: rules = [] } = useRules();
   const { data: connections = [] } = useConnections();
+  const { data: bots = [] } = useBots();
   const apps = new Map(connections.map((c) => [c.slug, c.name]));
+  const botNames = new Map(bots.map((b) => [b.id, b.name]));
   const qc = useQueryClient();
   const [pattern, setPattern] = useState('');
   const [list, setList] = useState<'ask' | 'allow' | 'block'>('ask');
@@ -1129,10 +1131,12 @@ function Permissions() {
       {rules
         .filter((r) => r.list === l)
         .map((r) => {
-          // The readable name on top, the rule as it is matched under it.
+          // The readable name on top, the rule as it is matched under it, and the one bot it is for.
           const label = ruleLabel(r.pattern, t, apps);
+          const forBot = r.botId ? t('rules.forBot', { bot: botNames.get(r.botId) ?? r.botId }) : '';
+          const hint = [label ? r.pattern : '', forBot].filter(Boolean).join(' · ');
           return (
-            <Row key={r.id} label={label ?? r.pattern} hint={label ? r.pattern : undefined}>
+            <Row key={r.id} label={label ?? r.pattern} hint={hint || undefined}>
               <Button
                 variant="ghost"
                 size="icon"

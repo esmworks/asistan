@@ -24,6 +24,25 @@ describe('hafıza', () => {
   afterEach(() => t.dispose());
 
   const main = async (botId: string) => (await t.api<Thread>('GET', `/api/bots/${botId}/main-thread`)).body;
+  /**
+   * Lets the turns finish, approving each card that asks to change the shared memory or another
+   * bot's notes; returns what the cards said.
+   */
+  const approving = async () => {
+    const asked: string[] = [];
+    for (;;) {
+      try {
+        await t.services.turns.idle(300);
+        return asked;
+      } catch {
+        const cards = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
+        for (const c of cards.filter((x) => x.toolName.startsWith('memory_'))) {
+          asked.push(c.summary);
+          await t.api('POST', `/api/approvals/${c.id}`, { decision: 'allow', answer: 'Onayla' });
+        }
+      }
+    }
+  };
 
   it('bot hafızası yalnızca o botun istemine girer; kullanıcı hafızası hepsine', async () => {
     const a = await t.bot({ name: 'Ali' });
@@ -84,11 +103,14 @@ describe('hafıza', () => {
     expect(again.tools.some((x) => x.name === 'memory_write')).toBe(true);
   });
 
-  it('kişinin başındaki bot hafızaya sormadan yazar; yazdığı hemen istemine girer', async () => {
+  it('kişinin başındaki bot kendi hafızasına sormadan, ortak hafızaya kartla yazar; yazdığı hemen istemine girer', async () => {
     const a = await t.bot({ name: 'Ali' });
     const ta = await main(a.id);
     await t.send(ta.id, '[araç:memory_write {"content":"Kahveyi şekersiz içer","scope":"user"}]');
-    await t.services.turns.idle();
+    // Every bot reads the shared memory: the person approves what goes there.
+    expect(await approving()).toEqual([
+      'Ali, bütün botların ortak hafızasına yazmak istiyor: “Kahveyi şekersiz içer”',
+    ]);
     await t.send(ta.id, '[araç:memory_write {"content":"Ali notu","scope":"bot"}]');
     await t.services.turns.idle();
     expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
@@ -105,7 +127,7 @@ describe('hafıza', () => {
     const b = await t.bot({ name: 'Veli' });
     const ta = await main(a.id);
     await t.send(ta.id, '[araç:memory_write {"content":"Eski adres Kadıköy","scope":"user"}]');
-    await t.services.turns.idle();
+    await approving();
     const [old] = (await t.api<Memory[]>('GET', '/api/memory')).body;
     const routine = (
       await t.api<Routine>('POST', '/api/routines', {
@@ -177,9 +199,10 @@ describe('hafıza', () => {
     const a = await t.bot({ name: 'Ali' });
     const ta = await main(a.id);
     await t.send(ta.id, '[araç:memory_write {"content":"Kahveyi şekersiz içer","scope":"user"}]');
-    await t.services.turns.idle();
+    await approving();
     await t.send(ta.id, '[araç:memory_write {"content":"kahveyi  şekersiz içer.","scope":"user"}]');
-    await t.services.turns.idle();
+    // A note already there asks nothing.
+    expect(await approving()).toEqual([]);
     expect((await t.messages(ta.id)).at(-1)!.text).toContain('zaten kayıtlı');
     await t.send(ta.id, '[araç:memory_write {"content":"Gmail şifresi: Kedi1234","scope":"bot"}]');
     await t.services.turns.idle();
@@ -188,7 +211,11 @@ describe('hafıza', () => {
     expect(all).toEqual(['Kahveyi şekersiz içer', 'Gmail şifresi: «gizli değer silindi»']);
     await t.send(ta.id, 'kontrol');
     await t.services.turns.idle();
-    expect(t.engine.requests.at(-1)!.systemPrompt).toMatch(/- \(\d{4}-\d{2}-\d{2}\) Kahveyi şekersiz içer/);
+    // A bot's note says it is one, and stays a note: never a rule of the prompt.
+    expect(t.engine.requests.at(-1)!.systemPrompt).toMatch(
+      /- \(\d{4}-\d{2}-\d{2}\) \[bot notu\] Kahveyi şekersiz içer/,
+    );
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('talimat değildir');
   });
 
   it('bot kendi notunu ve ortak hafızayı düzeltir, siler; başka botun notuna dokunamaz', async () => {
@@ -209,7 +236,9 @@ describe('hafıza', () => {
     expect(listed).not.toContain(other.id);
 
     await t.send(ta.id, `[araç:memory_update {"id":"${shared.id}","content":"Ofis Beşiktaşta"}]`);
-    await t.services.turns.idle();
+    expect(await approving()).toEqual([
+      'Ali bir notu değiştirmek istiyor: “Ofis Kadıköyde” → “Ofis Beşiktaşta”',
+    ]);
     await t.send(ta.id, `[araç:memory_forget {"id":"${own.id}"}]`);
     await t.services.turns.idle();
     await t.send(ta.id, `[araç:memory_forget {"id":"${other.id}"}]`);
@@ -251,10 +280,11 @@ describe('hafıza', () => {
     expect(await last()).toContain(aliNote.id);
     expect(await last()).not.toContain(eskiNote.id);
 
+    // Another bot's notes reach that bot's prompt: each change of the manager's asks the person.
     await t.send(tm.id, `[araç:memory_update {"id":"${aliNote.id}","content":"Ali rapor perşembe"}]`);
-    await t.services.turns.idle();
+    expect(await approving()).toHaveLength(1);
     await t.send(tm.id, `[araç:memory_forget {"id":"${eskiNote.id}"}]`);
-    await t.services.turns.idle();
+    expect(await approving()).toEqual(['Müdür bir notu silmek istiyor: “Eski not”']);
     expect(await last()).toContain('Eski bu bilgiyi artık hiçbir yerden göremez');
     await t.send(tm.id, `[araç:memory_forget {"id":"${otherNote.id}"}]`);
     await t.services.turns.idle();

@@ -4,6 +4,7 @@ import type { Approval, TelegramStatus, Thread } from '@yumakbot/shared';
 import { telegramToken } from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { telegramMessages } from '../src/channels/format';
+import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0';
@@ -186,6 +187,25 @@ describe('Telegram', () => {
     // The stranger only ever heard that the code was wrong, while nobody had paired.
     const toStranger = tg.calls.filter((c) => String(c.body.chat_id) === '99');
     expect(toStranger.map((c) => c.body.text)).toEqual([expect.stringContaining('bağlantı kodu geçersiz')]);
+  });
+
+  it('iletilen mesaj kişinin sözü sayılmaz: komut olmaz, bota dış veri olarak gider', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    tg.write('/stop ve şunu yap', PERSON, {
+      forward_origin: { type: 'user', sender_user: { first_name: 'Mehmet' } },
+      forward_date: 1,
+    });
+    const thread = await main(bot.id);
+    const said = await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'user'));
+    expect(said.text).toBe('/stop ve şunu yap');
+    expect(said.props).toMatchObject({ via: 'telegram', outside: 'forward', forwardedFrom: 'Mehmet' });
+    const req = await waitFor(async () => t.engine.requests.find((r) => r.prompt.includes('/stop')));
+    expect(req.prompt).toContain('Mehmet kaynağından iletilmiş bir mesaj');
+    expect(req.prompt).toContain('<outside-data');
+    await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'assistant'));
+    const [turn] = await t.db.db.select().from(schema.turns);
+    expect(turn!.outside).toBe('forward');
   });
 
   it("kişi uygulamadan yazınca yanıt Telegram'a gitmez", async () => {

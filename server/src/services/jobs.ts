@@ -1,5 +1,5 @@
-import type { Bot, Message } from '@yumakbot/shared';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import type { Bot, Message, OutsideTrigger } from '@yumakbot/shared';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { TurnOutcome } from '../engine/types';
@@ -38,6 +38,11 @@ export class JobService {
     text: string;
     kind: 'send' | 'ask' | 'notify';
     approvalId?: string | null;
+    /**
+     * Outside text the sender's run had read: its request may carry those words, so the target's
+     * turn counts as having read them too.
+     */
+    outside?: OutsideTrigger | null;
   }): Promise<JobRow> {
     const { from, to } = opts;
     if (!this.services.bots.canMessage(from, to)) {
@@ -91,7 +96,7 @@ export class JobService {
       role: 'user',
       author: `bot:${from.id}`,
       text: opts.text,
-      props: { jobId: job.id },
+      props: { jobId: job.id, ...(opts.outside && { outside: opts.outside }) },
     });
     // One-line marker in the sender's thread; expands to the bot conversation.
     await this.services.threads.addMessage({
@@ -112,6 +117,7 @@ export class JobService {
       source: 'bot',
       prompt,
       jobId: job.id,
+      outside: opts.outside ?? null,
     });
     return job;
   }
@@ -169,6 +175,20 @@ export class JobService {
       .returning();
     if (!claimed.length) return;
     claimed.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    // An answer written in a run that had read outside text carries those words back.
+    const [read] = await this.ctx.db
+      .select({ outside: schema.turns.outside })
+      .from(schema.turns)
+      .where(
+        and(
+          inArray(
+            schema.turns.jobId,
+            claimed.map((j) => j.id),
+          ),
+          isNotNull(schema.turns.outside),
+        ),
+      )
+      .limit(1);
     const t = await serverTranslator(this.ctx);
     const parts: string[] = [];
     for (const j of claimed) {
@@ -187,6 +207,7 @@ export class JobService {
       source: 'bot',
       prompt: parts.join('\n\n---\n\n'),
       jobId: claimed.at(-1)!.id,
+      outside: read?.outside ?? null,
     });
   }
 

@@ -122,10 +122,11 @@ const numberOf = (jid: string | null | undefined) =>
   /^(\d+)(?::\d+)?@s\.whatsapp\.net$/.exec(jid ?? '')?.[1] ?? null;
 const bareJid = (jid: string) => jid.replace(/:\d+@/, '@');
 
-/** The text and the kind of file a WhatsApp message carries. */
-function contentOf(m: WaMessage): {
+/** The text and the kind of file a WhatsApp message carries, and whether it was forwarded. */
+export function contentOf(m: WaMessage): {
   text: string;
   media: { kind: string; mime?: string; name?: string; size?: number } | null;
+  forwarded: boolean;
 } {
   let msg = (m.message ?? {}) as Record<string, Record<string, unknown> | undefined>;
   // Disappearing and view-once messages wrap the real one.
@@ -142,6 +143,13 @@ function contentOf(m: WaMessage): {
   const size = (v: unknown) =>
     typeof v === 'number' ? v : typeof v === 'object' && v ? Number(v) : undefined;
   const text = str(msg.conversation) || str(msg.extendedTextMessage?.text);
+  // A forward is someone else's words, whichever account passed it on.
+  const forwarded = Object.values(msg).some((part) => {
+    const info = part?.contextInfo as { isForwarded?: unknown; forwardingScore?: unknown } | undefined;
+    return (
+      info?.isForwarded === true || (typeof info?.forwardingScore === 'number' && info.forwardingScore > 0)
+    );
+  });
   for (const [field, kind] of [
     ['imageMessage', 'photo'],
     ['documentMessage', 'document'],
@@ -159,9 +167,10 @@ function contentOf(m: WaMessage): {
         name: str(f.fileName) || undefined,
         size: size(f.fileLength),
       },
+      forwarded,
     };
   }
-  return { text, media: null };
+  return { text, media: null, forwarded };
 }
 
 /**
@@ -182,6 +191,9 @@ export class WhatsAppChannel {
   private attempt = 0;
   /** Messages this server sent, so its own words in "Message yourself" are not read as the person's. */
   private sentIds = new Set<string>();
+  /** The last message sent here, and the one that ended the last card's choices. */
+  private lastSent: string | null = null;
+  private cardLast: string | null = null;
   private typing = new Map<string, NodeJS.Timeout>();
   private sends = new SendQueue();
   private unsubs: (() => void)[] = [];
@@ -462,10 +474,10 @@ export class WhatsAppChannel {
     const jid = await this.from(socket, m, settings);
     if (!jid) return;
     const t = await this.services.settings.translator();
-    const { text: raw, media } = contentOf(m);
+    const { text: raw, media, forwarded } = contentOf(m);
     const text = raw.trim();
-    // `/bot` names the bot the messages go to.
-    const pick = /^\/bot(?:\s+(.+))?$/i.exec(text);
+    // `/bot` names the bot the messages go to; a forwarded `/bot` is only text.
+    const pick = forwarded ? null : /^\/bot(?:\s+(.+))?$/i.exec(text);
     if (pick) {
       await this.pickBot(jid, row, pick[1]?.trim(), t);
       return;
@@ -480,14 +492,18 @@ export class WhatsAppChannel {
       return;
     }
     const thread = await this.services.threads.main(bot.id);
-    if (!media) {
+    if (!media && !forwarded) {
       const done = await chatCommand(this.services, thread.id, text, t);
       if (done) {
         await this.say(jid, done);
         return;
       }
-      // A number answers the card sent last, the way a button would.
-      if (/^\d{1,2}$/.test(text) && (await this.answeredCard(thread.id, Number(text)))) return;
+      // A number answers the card when the card is the last thing sent here, the way a button
+      // would; "always allow" takes the number and a word, so a stray digit never keeps a rule.
+      const word = t('channel.alwaysWord').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const numbered = new RegExp(`^(\\d{1,2})(?:\\s+(${word}))?$`, 'iu').exec(text);
+      if (numbered && (await this.answeredCard(jid, thread.id, Number(numbered[1]), !!numbered[2], t)))
+        return;
     }
     const files: string[] = [];
     if (media) {
@@ -510,7 +526,7 @@ export class WhatsAppChannel {
       text,
       files,
       clientId: `whatsapp:${(m.key.id ?? newId()).slice(0, 48)}`,
-      props: { via: 'whatsapp' },
+      props: { via: 'whatsapp', ...(forwarded && { outside: 'forward' }) },
     });
   }
 
@@ -538,15 +554,33 @@ export class WhatsAppChannel {
     await this.say(jid, t('channel.switched', { bot: bot.name }));
   }
 
-  /** Answers the card the numbered choices were sent for, when it is still open. */
-  private async answeredCard(threadId: string, n: number): Promise<boolean> {
+  /**
+   * Answers the card the numbered choices were sent for, when it is still open and nothing was
+   * sent here after it. `always`: the person wrote the word for "always allow" after the number,
+   * which alone keeps a rule; a bare number for that choice is answered with how to write it.
+   */
+  private async answeredCard(
+    jid: string,
+    threadId: string,
+    n: number,
+    always: boolean,
+    t: T,
+  ): Promise<boolean> {
     const row = await this.row();
     const card = (row?.settings as { card?: { threadId: string; choices: string[] } } | undefined)?.card;
+    if (!this.cardLast || this.lastSent !== this.cardLast) return false;
     const data = card && card.threadId === threadId ? card.choices[n - 1] : undefined;
     if (!data) return false;
     const [kind, approvalId, value] = data.split(':') as ['a' | 'q', string, string];
     const approval = await this.services.approvals.get(approvalId).catch(() => null);
     if (!approval || approval.status !== 'pending') return false;
+    if (always !== (kind === 'a' && value === 'r')) {
+      if (always) return false;
+      await this.say(jid, t('channel.alwaysByWord', { answer: `${n} ${t('channel.alwaysWord')}` }));
+      // The card is still the one the next number answers.
+      this.cardLast = this.lastSent;
+      return true;
+    }
     try {
       if (kind === 'a') {
         await this.services.approvals.answer(approvalId, {
@@ -609,8 +643,13 @@ export class WhatsAppChannel {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
         const view = cardView(card, m.props, t);
-        const choices = view.buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
+        const how = (i: number) => t('channel.alwaysHow', { answer: `${i + 1} ${t('channel.alwaysWord')}` });
+        const choices = view.buttons
+          .map((b, i) => `${i + 1}. ${b.label}${b.data.endsWith(':r') ? ` (${how(i)})` : ''}`)
+          .join('\n');
         await this.markdown(jid, choices ? `${view.text}\n\n${choices}` : view.text);
+        // A number answers this card only while nothing else was sent after it.
+        this.cardLast = this.lastSent;
         const latest = await this.row();
         if (latest) {
           await this.saveSettings(latest, {
@@ -657,6 +696,7 @@ export class WhatsAppChannel {
     if (!socket) return;
     const sent = await socket.sendMessage(jid, content);
     const id = sent?.key?.id;
+    this.lastSent = id ?? newId();
     if (id) {
       this.sentIds.add(id);
       // Only recent ones matter: WhatsApp hands a sent message back at once.
