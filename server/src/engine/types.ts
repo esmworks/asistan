@@ -37,7 +37,8 @@ export interface AppTool {
   readOnly: boolean;
   /**
    * `readOnly` rests only on what a connected app says of its own tool, not on the person's
-   * choice. Such a tool is not taken at its word where outside text could be steering the bot.
+   * choice. Where outside text could be steering the bot, such a tool is not taken at its word
+   * when it takes an address (see `outsideFreeTools`).
    */
   readOnlyClaimed?: boolean;
   /** Only touches YumakBot's own data (memory, bot messages); never asks in `ask` mode. */

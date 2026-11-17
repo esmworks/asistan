@@ -25,13 +25,69 @@ export const OUTSIDE_FREE_TOOLS: ReadonlySet<string> = new Set(
  * What a run started by outside text uses without a card: reads that stay on this server or with
  * the person's connected apps, and the tools above. The app's own tools that change something,
  * and reaching the web, where a page address could carry what the bot read away, ask first. A
- * connected app's tool counts as a read only when the person marked it so: an app may call its
- * own fetch or search tool read-only, and the address it is given could carry the text away.
+ * connected app's tool the app itself calls read-only goes without a card too: a card for every
+ * sheet, order or row a bot looks up buries the cards that matter. Only one that takes an address
+ * waits for the person to mark it a read, since an app may call its own fetch tool read-only and
+ * the address it is given could carry the text away. What is accepted: an app's read-only search
+ * that sends its query to an outside service runs without a card, and the query could carry some
+ * of what the bot read; the person can mark such a tool "changes" to make it ask again.
  */
 export function outsideFreeTools(tools: readonly AppTool[]): Set<string> {
   const free = new Set(OUTSIDE_FREE_TOOLS);
-  for (const tool of tools) if (tool.readOnly && !tool.readOnlyClaimed) free.add(toolPermName(tool));
+  for (const tool of tools) {
+    if (tool.readOnly && !(tool.readOnlyClaimed && takesAddress(tool.jsonSchema)))
+      free.add(toolPermName(tool));
+  }
   return free;
+}
+
+/** Words in an input's name that make it a place to send to: a page, a host, a hook. */
+const ADDRESS_WORDS = new Set([
+  'url',
+  'urls',
+  'uri',
+  'uris',
+  'href',
+  'link',
+  'links',
+  'endpoint',
+  'webhook',
+  'callback',
+  'host',
+  'hostname',
+  'domain',
+]);
+
+/**
+ * Whether a tool's input names an address anywhere in it (`url`, `callbackUrl`, `target_host`, a
+ * string in `uri` format). A schema that cannot be walked counts as one, so the tool still asks.
+ */
+export function takesAddress(schema: Record<string, unknown> | undefined): boolean {
+  if (!schema) return false;
+  const seen = new Set<unknown>();
+  const visit = (node: unknown): boolean => {
+    if (!node || typeof node !== 'object' || seen.has(node)) return false;
+    seen.add(node);
+    if (Array.isArray(node)) return node.some(visit);
+    const obj = node as Record<string, unknown>;
+    if (obj.format === 'uri' || obj.format === 'url' || obj.format === 'uri-reference') return true;
+    const props = obj.properties;
+    if (props && typeof props === 'object') {
+      for (const key of Object.keys(props)) {
+        const words = key
+          .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+          .toLowerCase()
+          .split(/[^a-z0-9]+/);
+        if (words.some((w) => ADDRESS_WORDS.has(w))) return true;
+      }
+    }
+    return Object.values(obj).some(visit);
+  };
+  try {
+    return visit(schema);
+  } catch {
+    return true;
+  }
 }
 
 /** The app's own tools that show text kept here which may have come from outside before. */

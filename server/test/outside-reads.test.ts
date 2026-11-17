@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import type { AppTool } from '../src/engine/types';
 import { translator } from '../src/i18n';
-import { outsideFreeTools, outsideRead } from '../src/runtime/outside';
+import { outsideFreeTools, outsideRead, takesAddress } from '../src/runtime/outside';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 /** A page on the public internet, by address, so no name has to be looked up. */
@@ -171,16 +171,61 @@ describe('bağlı uygulamanın kendine "salt okunur" demesi', () => {
     ...o,
   });
 
-  it('dış metin okumuş çalıştırmada yalnızca kişinin okuma dediği araç kartsız', () => {
+  it('dış metin okumuş çalıştırmada uygulamanın okuma dediği araç kartsız, adres alan araç hariç', () => {
+    const schema = (properties: Record<string, unknown>) => ({ type: 'object', properties });
     const free = outsideFreeTools([
-      tool({ name: 'fetch', readOnlyClaimed: true }),
+      tool({ name: 'fetch', readOnlyClaimed: true, jsonSchema: schema({ url: { type: 'string' } }) }),
+      tool({ name: 'hook', readOnlyClaimed: true, jsonSchema: schema({ callbackUrl: { type: 'string' } }) }),
+      tool({
+        name: 'open',
+        readOnlyClaimed: true,
+        jsonSchema: schema({ target: { type: 'object', properties: { page_link: { type: 'string' } } } }),
+      }),
+      tool({
+        name: 'go',
+        readOnlyClaimed: true,
+        jsonSchema: schema({ to: { type: 'string', format: 'uri' } }),
+      }),
+      tool({
+        name: 'get_values',
+        readOnlyClaimed: true,
+        jsonSchema: schema({ spreadsheetId: { type: 'string' }, range: { type: 'string' } }),
+      }),
+      tool({
+        name: 'searchOrders',
+        readOnlyClaimed: true,
+        jsonSchema: schema({ query: { type: 'string' } }),
+      }),
+      tool({ name: 'pinned', readOnlyClaimed: true, jsonSchema: schema({ url: { type: 'string' } }) }),
       tool({ name: 'search' }),
+      tool({ name: 'update_values', readOnly: false, jsonSchema: schema({ range: { type: 'string' } }) }),
       tool({ name: 'notes', server: undefined, internal: true }),
     ]);
-    expect(free.has('mcp__web__fetch')).toBe(false);
-    expect(free.has('mcp__web__search')).toBe(true);
+    for (const name of ['fetch', 'hook', 'open', 'go', 'pinned'])
+      expect(free.has(`mcp__web__${name}`)).toBe(false);
+    for (const name of ['get_values', 'searchOrders', 'search'])
+      expect(free.has(`mcp__web__${name}`)).toBe(true);
+    expect(free.has('mcp__web__update_values')).toBe(false);
     expect(free.has('mcp__yumakbot__notes')).toBe(true);
     expect(t('outside.forward')).toBe('iletilmiş bir mesaj');
+  });
+
+  it('kişinin okuma dediği araç adres alsa da kartsız', () => {
+    const free = outsideFreeTools([
+      tool({ name: 'fetch', jsonSchema: { type: 'object', properties: { url: { type: 'string' } } } }),
+    ]);
+    expect(free.has('mcp__web__fetch')).toBe(true);
+  });
+
+  it('adres sayılmayan girdi adları', () => {
+    const props = (...keys: string[]) => ({
+      type: 'object',
+      properties: Object.fromEntries(keys.map((k) => [k, { type: 'string' }])),
+    });
+    expect(takesAddress(props('spreadsheetId', 'range', 'during', 'curlyBraces', 'orderNo'))).toBe(false);
+    expect(takesAddress(props('hostName'))).toBe(true);
+    expect(takesAddress(props('webhook_id'))).toBe(true);
+    expect(takesAddress(undefined)).toBe(false);
   });
 
   it('sonucu dışarıdan gelen araçları türüyle tanır', () => {

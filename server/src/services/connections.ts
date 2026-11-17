@@ -362,8 +362,9 @@ export class ConnectionService {
         ? {
             ...t,
             ...(patch.enabled !== undefined && { enabled: patch.enabled }),
-            // The person calling a tool a read is kept even when the app says the same: only
-            // their word makes it one where outside text could be steering the bot.
+            // The person calling a tool a read is kept even when the app says the same: for a
+            // tool that takes an address, only their word makes it one where outside text could
+            // be steering the bot.
             ...(patch.kind !== undefined && {
               kind: patch.kind === t.hinted && patch.kind !== 'read' ? null : patch.kind,
             }),
