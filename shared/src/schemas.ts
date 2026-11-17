@@ -318,7 +318,10 @@ export const ApprovalDecision = z.object({
   answer: z.string().max(10_000).optional(),
   /** For cards with several questions: one answer per question, in order. */
   answers: z.array(z.string().max(5_000)).max(6).optional(),
-  /** Add a "Sormadan izin ver" rule for this tool. */
+  /**
+   * With allow: an "always allow" rule for this tool. With deny: a block rule, so the tool is
+   * refused from now on without asking.
+   */
   remember: z.boolean().default(false),
   /** For sign-in cards: what the server types into the site; the bot never sees the password. */
   login: z
@@ -382,7 +385,8 @@ export const VaultLoginUpdate = z.object({
 });
 export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
 
-export const RuleList = z.enum(['ask', 'allow']);
+/** `block`: refused in every mode, without a card; it outranks every other rule. */
+export const RuleList = z.enum(['ask', 'allow', 'block']);
 export const PermissionRule = z.object({
   id: Id,
   list: RuleList,

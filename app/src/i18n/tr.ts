@@ -271,7 +271,7 @@ export const tr = {
     'tema, koyu, açık, dil, yakınlaştırma, bildirim, ses, gönderme tuşu, enter, saat dilimi, kenar çubuğu, sıkışık, sohbet genişliği, girişte aç, sesli okuma',
   'settings.keywords.connection':
     'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
-  'settings.keywords.permissions': 'onaylar, kurallar, izin, sor, her zaman',
+  'settings.keywords.permissions': 'onaylar, kurallar, izin, sor, her zaman, engelle, asla, yasakla',
   'settings.keywords.vault':
     'şifreler, girişler, iki adımlı kod, totp, gizli, paylaşılan sayfalar, bağlantılar',
   'settings.keywords.memory': 'notlar, hatırla, unut',
@@ -576,6 +576,8 @@ export const tr = {
   'approval.allowOnce': 'Bu seferlik izin ver',
   'approval.allowAlways': 'Hep izin ver',
   'approval.deny': 'İzin verme',
+  'approval.never': 'Hiç izin verme',
+  'approval.neverHint': 'Bu aracı bundan sonra engeller; Ayarlar → İzinler’den kaldırabilirsin',
   'approval.expired': 'İzin isteği yanıtsız kaldı',
   'approval.timedOut': 'İzin isteği zamanında yanıtlanmadı; işlem yapılmadı',
   'approval.show': 'Neyi?',
@@ -1026,6 +1028,9 @@ export const tr = {
   'rules.appTool': '{app}: “{tool}” aracı',
   'rules.appAllTools': '{app}: tüm araçlar',
   'rules.allowHint': '"Sorarak" kipindeki botlar bu araçları kart açmadan kullanır.',
+  'rules.block': 'Engelle',
+  'rules.blockHint':
+    'Hiçbir kipte ve kart açılmadan asla çalışmaz; engel diğer bütün kurallardan önce gelir. Bota engellendiği söylenir.',
 
   'memory.deleted': 'Hafıza kaydı silindi',
   'memory.undo': 'Geri al',

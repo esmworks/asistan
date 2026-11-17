@@ -275,7 +275,7 @@ export const en: Catalog<MessageKey> = {
     'theme, dark, light, language, zoom, notifications, sound, send key, enter, time zone, sidebar, compact, chat width, open at login, reading aloud, speech',
   'settings.keywords.connection':
     'claude, sign in, api key, provider, model, effort, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
-  'settings.keywords.permissions': 'approvals, rules, allow, ask, always',
+  'settings.keywords.permissions': 'approvals, rules, allow, ask, always, block, never, deny',
   'settings.keywords.vault':
     'passwords, logins, two-step codes, totp, secrets, api keys, tokens, shared pages, links',
   'settings.keywords.memory': 'notes, remember, forget',
@@ -586,6 +586,8 @@ export const en: Catalog<MessageKey> = {
   'approval.allowOnce': 'Allow this time',
   'approval.allowAlways': 'Always allow',
   'approval.deny': "Don't allow",
+  'approval.never': 'Never allow',
+  'approval.neverHint': 'Blocks this tool from now on; you can lift it in Settings → Permissions',
   'approval.expired': 'Permission request left unanswered',
   'approval.timedOut': 'Permission request timed out; the action was not taken',
   'approval.show': 'What exactly?',
@@ -1030,6 +1032,9 @@ export const en: Catalog<MessageKey> = {
   'rules.appTool': '{app}: the “{tool}” tool',
   'rules.appAllTools': '{app}: all tools',
   'rules.allowHint': 'Bots in "Ask first" mode use these tools without opening a card.',
+  'rules.block': 'Block',
+  'rules.blockHint':
+    'Never run, in any mode and without a card; a block outranks every other rule. The bot is told it was blocked.',
 
   'memory.deleted': 'Memory deleted',
   'memory.undo': 'Undo',

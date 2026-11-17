@@ -384,7 +384,7 @@ export const api = {
   updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
   removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
   rules: () => http.get<PermissionRule[]>('/api/rules'),
-  addRule: (r: { list: 'ask' | 'allow'; pattern: string }) => http.post<PermissionRule>('/api/rules', r),
+  addRule: (r: { list: 'ask' | 'allow' | 'block'; pattern: string }) => http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),

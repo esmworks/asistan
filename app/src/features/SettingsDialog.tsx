@@ -1082,7 +1082,7 @@ function Permissions() {
   const apps = new Map(connections.map((c) => [c.slug, c.name]));
   const qc = useQueryClient();
   const [pattern, setPattern] = useState('');
-  const [list, setList] = useState<'ask' | 'allow'>('ask');
+  const [list, setList] = useState<'ask' | 'allow' | 'block'>('ask');
   const add = useMutation({
     mutationFn: () => api.addRule({ list, pattern }),
     onSuccess: () => {
@@ -1095,7 +1095,7 @@ function Permissions() {
     mutationFn: api.removeRule,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rules'] }),
   });
-  const section = (l: 'ask' | 'allow', title: MessageKey, hint: MessageKey) => (
+  const section = (l: 'ask' | 'allow' | 'block', title: MessageKey, hint: MessageKey) => (
     <Card title={t(title)}>
       <div className="px-4 py-3 text-xs text-muted-foreground">{t(hint)}</div>
       {rules
@@ -1128,13 +1128,14 @@ function Permissions() {
           if (pattern.trim()) add.mutate();
         }}
       >
-        <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow')}>
+        <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow' | 'block')}>
           <SelectTrigger className="w-48 rounded-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ask">{t('rules.ask')}</SelectItem>
             <SelectItem value="allow">{t('rules.allow')}</SelectItem>
+            <SelectItem value="block">{t('rules.block')}</SelectItem>
           </SelectContent>
         </Select>
         <Input
@@ -1149,6 +1150,7 @@ function Permissions() {
       </form>
       {section('ask', 'rules.ask', 'rules.askHint')}
       {section('allow', 'rules.allow', 'rules.allowHint')}
+      {section('block', 'rules.block', 'rules.blockHint')}
     </>
   );
 }

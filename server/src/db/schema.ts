@@ -229,7 +229,7 @@ export const approvals = pgTable(
 
 export const permissionRules = pgTable('permission_rules', {
   id: text('id').primaryKey(),
-  list: text('list', { enum: ['ask', 'allow'] }).notNull(),
+  list: text('list', { enum: ['ask', 'allow', 'block'] }).notNull(),
   pattern: text('pattern').notNull(),
   note: text('note').notNull().default(''),
   createdAt: created(),

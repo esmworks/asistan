@@ -21,7 +21,14 @@ import {
   type TurnOutcome,
 } from '../engine/types';
 import { translator, type T } from '../i18n';
-import { askRuleFor, askRuleMatches, decide, READ_ONLY_TOOLS, summarize } from '../services/approvals';
+import {
+  askRuleFor,
+  askRuleMatches,
+  blockRuleFor,
+  decide,
+  READ_ONLY_TOOLS,
+  summarize,
+} from '../services/approvals';
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
@@ -723,6 +730,9 @@ export class TurnManager {
       if (raw.toolName !== SANDBOX_NETWORK && !pickTool(raw.toolName)) {
         return { behavior: 'deny', message: t('turn.toolOff') };
       }
+      // A block rule refuses the call in every mode, before any other rule or card.
+      const blocked = blockRuleFor(await approvals.rules(), ask.toolName, ask.input);
+      if (blocked) return { behavior: 'deny', message: t('turn.blocked', { rule: blocked.pattern }) };
       // ask_user handles its own card.
       if (ask.toolName === 'mcp__yumakbot__ask_user') return { behavior: 'allow' };
       // A sandboxed command reaching a host: the internet switch decides, never a card. This
@@ -789,6 +799,8 @@ export class TurnManager {
         readOnlyTools: free,
       });
       if (verdict === 'allow') return { behavior: 'allow' };
+      if (verdict === 'block')
+        return { behavior: 'deny', message: t('turn.blocked', { rule: ask.toolName }) };
       if (verdict === 'deny') {
         return { behavior: 'deny', message: t('turn.readOnly') };
       }

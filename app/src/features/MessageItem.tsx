@@ -16,6 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
+  Ban,
   Check,
   Circle,
   CircleCheck,
@@ -1231,6 +1232,16 @@ function ApprovalCard({
           onClick={() => decide.mutate({ decision: 'deny' })}
         >
           <X /> {t('approval.deny')}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-full text-muted-foreground"
+          disabled={decide.isPending}
+          title={t('approval.neverHint')}
+          onClick={() => decide.mutate({ decision: 'deny', remember: true })}
+        >
+          <Ban /> {t('approval.never')}
         </Button>
       </div>
     </div>

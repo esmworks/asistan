@@ -194,6 +194,8 @@ const tr = {
   'turn.interruptedByRestart': 'Sunucu yeniden başladığı için bu tur yarıda kaldı.',
   'turn.stoppedByUser': 'Kullanıcı durdurdu',
   'turn.readOnly': 'Bu bot salt okunur kipte; bu işlem yapılamaz.',
+  'turn.blocked':
+    'Kullanıcı bunu engelledi ({rule}); bu işlem hiçbir zaman yapılmaz. Başka bir yol dene ya da yapamadığını söyle.',
   'turn.internetOff': 'Bu botun internet erişimi kapalı; komutlar internete çıkamaz.',
   'turn.privateHost': '{host} bu bilgisayarda ya da yerel ağda; komutlar oraya bağlanamaz.',
   'turn.noClaudeLogin':
@@ -264,6 +266,7 @@ const tr = {
   'approval.typedInstead':
     'Kullanıcı bu adımı onaylamadı; kartı cevaplamak yerine sohbete şunu yazdı. Buna göre devam et:\n<<<\n{text}\n>>>',
   'approval.ruleNote': 'Karttan eklendi',
+  'approval.blockNote': 'Karttan engellendi',
 
   // Bot-to-bot jobs
   'job.marker': '{to} adlı bota mesaj gönderildi',
@@ -1057,6 +1060,8 @@ const en: Catalog<ServerKey> = {
   'turn.interruptedByRestart': 'This turn was cut short because the server restarted.',
   'turn.stoppedByUser': 'Stopped by the user',
   'turn.readOnly': 'This bot is in read-only mode; this action is not allowed.',
+  'turn.blocked':
+    'The user blocked this ({rule}); it is never allowed. Try another way, or say you cannot do it.',
   'turn.internetOff': "This bot's internet access is off; commands cannot reach the internet.",
   'turn.privateHost': '{host} is on this computer or the local network; commands cannot connect to it.',
   'turn.noClaudeLogin':
@@ -1126,6 +1131,7 @@ const en: Catalog<ServerKey> = {
   'approval.typedInstead':
     'The user did not approve this step; instead of answering the card they wrote this in the chat. Go on from it:\n<<<\n{text}\n>>>',
   'approval.ruleNote': 'Added from a card',
+  'approval.blockNote': 'Blocked from a card',
 
   'job.marker': 'Message sent to {to}',
   'job.approvalNote': '[Verified by the server: user approval {id} — "{summary}"{answer}]',
