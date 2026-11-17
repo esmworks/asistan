@@ -72,6 +72,11 @@ describe.skipIf(!BROWSER)('sayfayı resme çevirme (tarayıcıyla)', () => {
       hits.push(req.url ?? '');
       res.end('x');
     });
+    // A WebSocket arrives as an upgrade, not as a request.
+    site.on('upgrade', (req, sock: { destroy(): void }) => {
+      hits.push(`ws ${req.url ?? ''}`);
+      sock.destroy();
+    });
     await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
     base = `http://127.0.0.1:${(site.address() as AddressInfo).port}`;
   });
@@ -142,7 +147,8 @@ describe.skipIf(!BROWSER)('sayfayı resme çevirme (tarayıcıyla)', () => {
     writeFileSync(
       join(dir, 'sızıntı.html'),
       `<img src="${base}/resim.png"><script src="${base}/kod.js"></script>
-       <script>fetch('${base}/veri').catch(() => {}); location.href = '${base}/git';</script>`,
+       <script>fetch('${base}/veri').catch(() => {}); new WebSocket('${base.replace('http', 'ws')}/soket');
+       location.href = '${base}/git';</script>`,
     );
     const msgs = await render(thread.id, { path: 'sızıntı.html', width: 100, height: 100 });
     expect(fileCards(msgs)).toHaveLength(1);

@@ -19,7 +19,16 @@ import {
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { Server as IOServer, type Namespace } from 'socket.io';
 import { ZodError } from 'zod';
-import { Auth, checkHostOrigin, loadAccessKey, parseCookie, SESSION_COOKIE } from './auth';
+import {
+  Auth,
+  checkHostOrigin,
+  clientAddress,
+  loadAccessKey,
+  needsSignIn,
+  parseCookie,
+  routedPath,
+  SESSION_COOKIE,
+} from './auth';
 import { BrowserManager } from './browser/manager';
 import { browserErrorText } from './browser/text';
 import { Bus } from './bus';
@@ -29,7 +38,7 @@ import { computerErrorText } from './tools/computer';
 import { linkComputer } from './egress/computer-link';
 import { EgressHub, startLocalSocks } from './egress/hub';
 import type { Config } from './config';
-import { appPolicy } from './csp';
+import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
 import { setContentKey } from './db/sealed';
@@ -88,6 +97,8 @@ const PUBLIC_API = new Set([
   // A mail relay signs in with the mail secret, checked by the route itself.
   EMAIL_INBOUND_PATH,
 ]);
+/** Routes (as registered, not as a URL spells them) that need no access key or session. */
+const openRoute = (route: string) => PUBLIC_API.has(route) || route.startsWith(`${WEBHOOK_PATH}/`);
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
@@ -127,11 +138,11 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   // The person's own computer as the bots' way out to the web, when this server runs elsewhere.
   const egress = config.onUserComputer ? null : new EgressHub();
   // Without a computer service this server starts the browsers itself, behind a proxy of its own;
-  // with one, the desktops' browsers reach that way through the service.
+  // with one, the desktops' browsers reach that way through the service. On the person's own
+  // computer the proxy has no other way out, but it still checks each address it connects to: the
+  // browser would otherwise look a name up again after the server checked it.
   const localSocks =
-    egress && !computer && config.browserPath
-      ? await startLocalSocks(egress, config.browserLocalHosts)
-      : null;
+    !computer && config.browserPath ? await startLocalSocks(egress, config.browserLocalHosts) : null;
   const stopComputerLink = egress && config.computer ? linkComputer(egress, config.computer) : null;
   const browser = new BrowserManager({
     executable: config.browserPath,
@@ -322,14 +333,17 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     reply.code(err.status).send({ error: err.localized(await requestT(req.headers)) });
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (config.secureCookies) void reply.header('strict-transport-security', STRICT_TRANSPORT_SECURITY);
     const problem = checkHostOrigin(
       { host: req.headers.host, origin: req.headers.origin, method: req.method },
       config,
     );
     if (problem) return sendError(req, reply, problem);
-    const path = req.url.split('?')[0] ?? '';
-    if (!path.startsWith('/api/') || PUBLIC_API.has(path) || path.startsWith(`${WEBHOOK_PATH}/`)) return;
-    const via = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE]);
+    // Judged by the route matched, not the URL as written: the router undoes percent escapes, so
+    // `/%61pi/bots` runs the /api/bots handler while its URL does not start with /api/.
+    if (!needsSignIn(req.routeOptions.url, req.url, openRoute)) return;
+    const from = clientAddress(req.headers, req.ip, config);
+    const via = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE], from);
     if (!via) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
     // Cookie-authenticated writes must come from our own page.
     if (via === 'cookie' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
@@ -388,10 +402,12 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       },
     });
     app.setNotFoundHandler((req, reply) => {
-      const path = req.url.split('?')[0] ?? '';
-      // Client-side routes get the page; missing files (paths with an extension) stay 404.
+      const path = routedPath(req.url);
+      // Client-side routes get the page; missing files (paths with an extension) stay 404, and so
+      // does anything that reads as the API, however it is spelled.
       const isRoute = !/\.[a-z0-9]+$/i.test(path);
-      if (req.method === 'GET' && isRoute && !path.startsWith('/api/') && !path.startsWith('/socket.io')) {
+      const reserved = /^\/(?:api|socket\.io)(?:\/|$)/.test(path);
+      if (req.method === 'GET' && isRoute && !reserved) {
         return reply.sendFile('index.html');
       }
       return sendError(req, reply, new HttpError(404, 'error.notFound'));
@@ -413,10 +429,13 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       );
       if (problem) return refuse(problem);
       const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
+      const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
       auth
-        .authenticate({ authorization: req.headers.authorization }, cookie)
+        .authenticate({ authorization: req.headers.authorization }, cookie, from)
         .then((via) => (via ? cb(null, true) : refuse(new HttpError(401, 'error.accessKeyRequired'))))
-        .catch(() => refuse(new HttpError(500, 'error.authCheckFailed')));
+        .catch((err: unknown) =>
+          refuse(err instanceof HttpError ? err : new HttpError(500, 'error.authCheckFailed')),
+        );
     },
   });
   // The desktop app offers its computer as the bots' way out to the web. Frames are binary

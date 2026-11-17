@@ -1,3 +1,4 @@
+import type { OutsideTrigger } from '@yumakbot/shared';
 import { toolPermName, type AppTool, type ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 
@@ -23,12 +24,31 @@ export const OUTSIDE_FREE_TOOLS: ReadonlySet<string> = new Set(
 /**
  * What a run started by outside text uses without a card: reads that stay on this server or with
  * the person's connected apps, and the tools above. The app's own tools that change something,
- * and reaching the web, where a page address could carry what the bot read away, ask first.
+ * and reaching the web, where a page address could carry what the bot read away, ask first. A
+ * connected app's tool counts as a read only when the person marked it so: an app may call its
+ * own fetch or search tool read-only, and the address it is given could carry the text away.
  */
 export function outsideFreeTools(tools: readonly AppTool[]): Set<string> {
   const free = new Set(OUTSIDE_FREE_TOOLS);
-  for (const tool of tools) if (tool.readOnly) free.add(toolPermName(tool));
+  for (const tool of tools) if (tool.readOnly && !tool.readOnlyClaimed) free.add(toolPermName(tool));
   return free;
+}
+
+/** The app's own tools that show text kept here which may have come from outside before. */
+const STORED_READS: ReadonlySet<string> = new Set(['ticket_read', 'tickets_list', 'table_rows']);
+
+/**
+ * What outside text a tool's result brings into the run, if any: a mail, or a page, an API's or a
+ * connected app's answer (`fromOutside`, see `outsideSource`). Tickets and tables keep no record
+ * of who wrote each line, and a bot that read outside text may have written one: with nobody
+ * watching, reading them counts as reading stored outside text. Messages say where they came
+ * from, so the tools that read them report it themselves.
+ */
+export function outsideRead(tool: AppTool, fromOutside: boolean, present: boolean): OutsideTrigger | null {
+  if (tool.name === 'email_inbox' || tool.name === 'email_read') return 'email';
+  if (fromOutside) return 'web';
+  if (!tool.server && !present && STORED_READS.has(tool.name)) return 'stored';
+  return null;
 }
 
 /** The tag outside content is wrapped in; the model is told what it means in the system prompt. */

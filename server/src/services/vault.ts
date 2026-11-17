@@ -1,7 +1,7 @@
 import { getDomain } from 'tldts';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { openWith, sealWith } from '../crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { VaultLogin, VaultLoginCreate, VaultLoginUpdate } from '@yumakbot/shared';
 import { VaultLoginCreate as CreateSchema, VaultLoginUpdate as UpdateSchema } from '@yumakbot/shared';
@@ -12,6 +12,26 @@ import { totpSecret } from '../totp';
 import { HttpError, isUniqueViolation, newId, notFound } from '../util';
 
 type Row = typeof schema.vaultLogins.$inferSelect;
+
+/**
+ * What a sign-in's sealed values are bound to: the row and the site. A password moved to another
+ * row, or left in a row whose site was changed in the database, no longer opens, so it is never
+ * typed into a site it was not saved for.
+ */
+const passwordBinding = (id: string, site: string) => ['vault_logins.secret', id, site];
+const totpBinding = (id: string, site: string) => ['vault_logins.totp', id, site];
+
+/** The bytes a secret is bound to: unambiguous, whatever the parts hold. */
+const bindingData = (bind: readonly string[]) => Buffer.from(JSON.stringify(bind), 'utf8');
+
+/**
+ * Lists, in the data folder, the tables whose secrets were all sealed bound to their rows. Once a
+ * table is listed, an unbound (`v1:`) value found in it is not opened: it can only have been put
+ * there from elsewhere, as an unbound secret copied from another place. It lives beside the vault
+ * key, out of reach of whoever can only write to the database. A restore removes it, since the
+ * restored rows may be older than the binding.
+ */
+export const BOUND_FILE = 'vault.bound';
 
 /** A sign-in with its password, for the server to type into a site. Never handed to a bot. */
 export interface Credential {
@@ -66,6 +86,7 @@ const toLogin = (r: Row): VaultLogin => ({
  */
 export class VaultService {
   private key: Buffer | null = null;
+  private upgrades = new Map<string, Promise<void>>();
 
   constructor(private ctx: Ctx) {}
 
@@ -90,14 +111,98 @@ export class VaultService {
     return Buffer.from(hkdfSync('sha256', this.cipherKey(), Buffer.alloc(0), 'yumakbot content at rest', 32));
   }
 
-  /** Encrypts a secret with the vault key; also used for the Claude token and API key. */
-  seal(plain: string): string {
+  /**
+   * Encrypts a secret with the vault key; also used for the Claude token and API key. With `bind`,
+   * the secret is bound to it (`v2:`) and opens only with the same `bind`: a secret kept beside
+   * fields that say where it may go (a site, an address) is bound to them and to its row.
+   */
+  seal(plain: string, bind?: readonly string[]): string {
+    if (bind) return `v2:${sealWith(this.cipherKey(), plain, bindingData(bind))}`;
     return `v1:${sealWith(this.cipherKey(), plain)}`;
   }
 
-  open(sealed: string): string {
+  /** A sealed secret's text; a bound one needs the `bind` it was sealed with, an unbound one none. */
+  open(sealed: string, bind?: readonly string[]): string {
+    if (bind) {
+      if (!sealed.startsWith('v2:')) throw new Error('Unknown vault format');
+      return openWith(this.cipherKey(), sealed.slice(3), bindingData(bind));
+    }
     if (!sealed.startsWith('v1:')) throw new Error('Unknown vault format');
     return openWith(this.cipherKey(), sealed.slice(3));
+  }
+
+  /**
+   * Runs `upgrade` once for `table`: the step that binds the secrets saved before they were bound.
+   * It runs before the table's secrets are first used in this process, and never again once the
+   * data folder lists the table as done (see BOUND_FILE). A failed run is tried again next time.
+   */
+  bindOnce(table: string, upgrade: () => Promise<void>): Promise<void> {
+    let run = this.upgrades.get(table);
+    if (!run) {
+      run = (async () => {
+        if (this.boundTables().includes(table)) return;
+        await upgrade();
+        this.markBound(table);
+      })();
+      this.upgrades.set(table, run);
+      run.catch(() => this.upgrades.delete(table));
+    }
+    return run;
+  }
+
+  private boundTables(): string[] {
+    try {
+      const list = JSON.parse(readFileSync(join(this.ctx.config.dataDir, BOUND_FILE), 'utf8')) as unknown;
+      return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private markBound(table: string) {
+    const file = join(this.ctx.config.dataDir, BOUND_FILE);
+    const list = [...new Set([...this.boundTables(), table])];
+    mkdirSync(this.ctx.config.dataDir, { recursive: true, mode: 0o700 });
+    writeFileSync(`${file}.tmp`, JSON.stringify(list), { mode: 0o600 });
+    renameSync(`${file}.tmp`, file);
+  }
+
+  /**
+   * An unbound secret saved before secrets were bound, sealed again bound to `bind`; null when it
+   * is not one or cannot be opened (sealed with a vault key that is gone), so it is left as it is.
+   */
+  rebind(sealed: string, bind: readonly string[]): string | null {
+    if (!sealed.startsWith('v1:')) return null;
+    try {
+      return this.seal(this.open(sealed), bind);
+    } catch {
+      return null;
+    }
+  }
+
+  /** A bound secret sealed again for a new binding; left as it is when it does not open. */
+  reseal(sealed: string, from: readonly string[], to: readonly string[]): string {
+    try {
+      return this.seal(this.open(sealed, from), to);
+    } catch {
+      return sealed;
+    }
+  }
+
+  /** Sign-ins saved before their secrets were bound to row and site, bound now. */
+  private ready(): Promise<void> {
+    return this.bindOnce('vault_logins', async () => {
+      const rows = await this.ctx.db.select().from(schema.vaultLogins);
+      for (const r of rows) {
+        const secret = this.rebind(r.secret, passwordBinding(r.id, r.site));
+        const totp = r.totp ? this.rebind(r.totp, totpBinding(r.id, r.site)) : null;
+        if (!secret && !totp) continue;
+        await this.ctx.db
+          .update(schema.vaultLogins)
+          .set({ ...(secret && { secret }), ...(totp && { totp }) })
+          .where(eq(schema.vaultLogins.id, r.id));
+      }
+    });
   }
 
   async list(): Promise<VaultLogin[]> {
@@ -118,26 +223,28 @@ export class VaultService {
     return row;
   }
 
-  /** Saves a sign-in; the same site and username replaces the old password. */
   /** A typed authenticator setup, sealed; empty clears it; a 400 when it is not one. */
-  private sealTotp(raw: string | undefined): string | null | undefined {
+  private sealTotp(raw: string | undefined, id: string, site: string): string | null | undefined {
     if (raw === undefined) return undefined;
     if (!raw) return null;
     const secret = totpSecret(raw);
     if (!secret) throw new HttpError(400, 'error.totpInvalid');
-    return this.seal(secret);
+    return this.seal(secret, totpBinding(id, site));
   }
 
+  /** Saves a sign-in; the same site and username replaces the old password. */
   async save(input: VaultLoginCreate): Promise<VaultLogin> {
     const v = CreateSchema.parse(input);
-    const secret = this.seal(v.password);
-    const totp = this.sealTotp(v.totp);
-    const access = v.botIds === undefined ? {} : { botIds: v.botIds };
+    await this.ready();
     const [existing] = await this.ctx.db
       .select()
       .from(schema.vaultLogins)
       .where(and(eq(schema.vaultLogins.site, v.site), eq(schema.vaultLogins.username, v.username)))
       .limit(1);
+    const id = existing?.id ?? newId();
+    const secret = this.seal(v.password, passwordBinding(id, v.site));
+    const totp = this.sealTotp(v.totp, id, v.site);
+    const access = v.botIds === undefined ? {} : { botIds: v.botIds };
     const [row] = existing
       ? await this.ctx.db
           .update(schema.vaultLogins)
@@ -146,7 +253,7 @@ export class VaultService {
           .returning()
       : await this.ctx.db
           .insert(schema.vaultLogins)
-          .values({ id: newId(), site: v.site, username: v.username, secret, totp: totp ?? null, ...access })
+          .values({ id, site: v.site, username: v.username, secret, totp: totp ?? null, ...access })
           .returning();
     this.ctx.bus.refresh({ scope: 'vault' });
     return toLogin(row!);
@@ -154,15 +261,31 @@ export class VaultService {
 
   async update(id: string, input: VaultLoginUpdate): Promise<VaultLogin> {
     const v = UpdateSchema.parse(input);
-    await this.row(id);
+    await this.ready();
+    const old = await this.row(id);
+    const site = v.site ?? old.site;
+    // A new site needs the secrets bound to it: the ones not typed anew are sealed again for it.
+    const moved = site !== old.site;
+    const secret =
+      v.password !== undefined
+        ? this.seal(v.password, passwordBinding(id, site))
+        : moved
+          ? this.reseal(old.secret, passwordBinding(id, old.site), passwordBinding(id, site))
+          : undefined;
+    const totp =
+      v.totp !== undefined
+        ? this.sealTotp(v.totp, id, site)
+        : moved && old.totp
+          ? this.reseal(old.totp, totpBinding(id, old.site), totpBinding(id, site))
+          : undefined;
     try {
       const [row] = await this.ctx.db
         .update(schema.vaultLogins)
         .set({
           ...(v.site !== undefined && { site: v.site }),
           ...(v.username !== undefined && { username: v.username }),
-          ...(v.password !== undefined && { secret: this.seal(v.password) }),
-          ...(v.totp !== undefined && { totp: this.sealTotp(v.totp) }),
+          ...(secret !== undefined && { secret }),
+          ...(totp !== undefined && { totp }),
           ...(v.botIds !== undefined && { botIds: v.botIds }),
           updatedAt: new Date(),
         })
@@ -186,18 +309,29 @@ export class VaultService {
    * sign-in kept for some bots stays out of reach of the others.
    */
   async forHost(host: string, botId?: string): Promise<Credential[]> {
+    await this.ready();
     const rows = await this.ctx.db.select().from(schema.vaultLogins);
     return rows
       .filter((r) => siteMatches(host, r.site))
       .filter((r) => !r.botIds || (botId !== undefined && r.botIds.includes(botId)))
       .sort((a, b) => b.site.length - a.site.length || a.username.localeCompare(b.username))
-      .map((r) => ({
-        id: r.id,
-        site: r.site,
-        username: r.username,
-        password: this.open(r.secret),
-        totp: r.totp ? this.open(r.totp) : null,
-      }));
+      .flatMap((r): Credential[] => {
+        // A secret that does not open for its row and site was moved there, or its site was
+        // changed: it is left out, never typed in.
+        try {
+          return [
+            {
+              id: r.id,
+              site: r.site,
+              username: r.username,
+              password: this.open(r.secret, passwordBinding(r.id, r.site)),
+              totp: r.totp ? this.open(r.totp, totpBinding(r.id, r.site)) : null,
+            },
+          ];
+        } catch {
+          return [];
+        }
+      });
   }
 
   async used(id: string) {

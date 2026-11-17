@@ -97,7 +97,13 @@ Sunucuyu dışarıya açmanın üç yolu var; hiçbiri ana makinede bir port aç
 2. Tünelin Public Hostname ayarına alan adınızı (ör. `bot.ornek.com`) ve servis olarak `http://yumakbot:4319`
    yazın.
 3. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://bot.ornek.com` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
-4. `docker compose -f docker/compose.yml --env-file docker/.env --profile cloudflare up -d`
+4. Vekili tanıtın (bkz. "Ters vekil ve giriş sınırı"): `.env` dosyasında `YUMAKBOT_PROXY_SECRET` boşsa
+   `openssl rand -hex 32` ile doldurun. Cloudflare panelinde alan adınızın Rules → Transform Rules → Modify
+   Request Header bölümünde bir kural açın: koşul `Hostname equals bot.ornek.com`, işlem "Set static",
+   başlık `X-Yumakbot-Proxy`, değer `YUMAKBOT_PROXY_SECRET` değeri. Cloudflare kişinin adresini
+   `X-Forwarded-For` başlığının sonuna kendisi yazar. Kural yoksa bütün girişler tünel kapsayıcısının
+   adresinden sayılır ve bir kişinin yanlış şifreleri herkesi bekletir.
+5. `docker compose -f docker/compose.yml --env-file docker/.env --profile cloudflare up -d`
 
 **Tailscale** (yalnız tailnet'inizdeki cihazlardan, `https://yumakbot.<tailnet>.ts.net`):
 
@@ -105,6 +111,12 @@ Sunucuyu dışarıya açmanın üç yolu var; hiçbiri ana makinede bir port aç
    tailnet'inizde HTTPS sertifikalarını açın (DNS → HTTPS Certificates).
 2. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://yumakbot.<tailnet>.ts.net` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
 3. `docker compose -f docker/compose.yml --env-file docker/.env --profile tailscale up -d`
+
+Tailscale'in `serve` özelliği isteğe kendi başlığını ekleyemez, bu yüzden `X-Yumakbot-Proxy` gönderilmez ve
+girişler tünel kapsayıcısının adresinden sayılır: tailnet'teki bir cihazdan 15 dakikada 10 yanlış şifre bütün
+cihazları bekletir. Sunucuya yalnızca tailnet'inizdeki cihazlar ulaştığı için tek kişilik bir tailnet'te bu
+sorun değildir. Tailnet'i başkalarıyla paylaşıyorsanız Tailscale ile sunucunun arasına başlığı ekleyen bir
+ters vekil (Caddy, nginx) koyun ya da Cloudflare Tunnel kullanın.
 
 Tünel kapsayıcıları sunucuya yalnızca kendi iç ağlarından (`edge`) ulaşır; sunucuya oradan dışarıya yeni bir yol
 açılmaz.
@@ -154,6 +166,11 @@ docker compose -f docker/compose.yml --env-file docker/.env exec -it yumakbot sh
 - Bütün yetkiler kapalı (`cap_drop: ALL`), `no-new-privileges`, bellek, işlemci ve süreç sınırı.
 - Veritabanı yalnızca iç ağda; internete çıkamaz ve ana makineye açılmaz.
 - `firewall.sh`: kapsayıcıdan ev/ofis ağına, bulut gizli adreslerine ve IPv6 yerel adreslere çıkış kapalı.
+  Ana makinenin kendisine de (köprünün ağ geçidi, ana makinenin yerel ya da genel adresi) yalnızca ana
+  makinenin açtığı bağlantıların yanıtları gelir: ana makinede `0.0.0.0` üzerinde dinleyen bir servis
+  (Ollama, veritabanı, yönetim paneli) botlara kapalıdır. Kapsayıcılar adları Docker'ın kendi çözücüsüyle
+  (`127.0.0.11`) çözer, bunun için ana makinede açık bir port gerekmez. Bir botun ana makinedeki bir
+  servise gerçekten ulaşması gerekiyorsa o servisi bir Docker ağına koyun; kuralı gevşetmeyin.
 
 ## Kişi başında değilken
 
@@ -215,7 +232,31 @@ bubblewrap'in kapsayıcıda çalışması için `compose.yml` iki ayar verir:
   yine yazamaz ve onları okuyamaz.
 
 Bedeli: kapsayıcının içindeki süreçler kullanıcı ad alanı açabilir; bu, çekirdeğin daha geniş bir yüzeyini
-kullanıma açar. Ana makinenin çekirdeğini güncel tutun.
+kullanıma açar. Kapsayıcının kendi sınırları (root olmayan kullanıcı, bütün yetkiler kapalı,
+`no-new-privileges`, salt okunur kök) yerinde kalır; gevşeyen yalnızca şunlardır:
+
+| Ayar                                      | Neden gerekli                                                                                                                                                                                                    |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seccomp.json`: `clone`, `unshare`        | Yalıtımın kendi kullanıcı, süreç ve bağlama ad alanları                                                                                                                                                          |
+| `mount`, `umount2`, `pivot_root`          | Yalıtımın dosya sistemini (yalnızca botun klasörleri) kurmak                                                                                                                                                     |
+| `chroot`                                  | Chromium'un kendi yalıtımı                                                                                                                                                                                       |
+| `systempaths=unconfined`                  | Yalıtım kendi süreç ad alanına yeni bir `/proc` bağlar; çekirdek bunu, kapsayıcının `/proc`'unun bir kısmı Docker'ın maskeleriyle örtülüyken reddeder. Eski `/proc`'u kullanmak sunucunun süreçlerini gösterirdi |
+| AppArmor `unconfined` / `yumakbot-userns` | `docker-default` bağlamaları reddeder; aşağıya bakın                                                                                                                                                             |
+
+Bağlamaları tek tek sayan daraltılmış bir AppArmor profili verilmedi: bubblewrap'in yaptığı bağlamalar
+sürümden sürüme değişir ve profil denenmeden gönderilirse yalıtım, dolayısıyla Claude botlarının Bash'i,
+sessizce çalışmaz olur. Yalıtım yine de bu katmanlardan bağımsız olarak botu kendi klasörlerine sınırlar.
+
+Ana makine için öneriler:
+
+- Çekirdeği güncel tutun (Ubuntu ve Debian'da `unattended-upgrades`) ve güncellemeden sonra yeniden başlatın;
+  kullanıcı ad alanları üzerinden gelen açıkların çoğu çekirdek güncellemesiyle kapanır.
+- Yumak Bot'u, güvenmediğiniz ya da çok önemli başka işlerle aynı sunucuda değil, kendi sanal sunucusunda
+  çalıştırın.
+- Ubuntu 23.10 ve sonrasında `kernel.apparmor_restrict_unprivileged_userns=1` ayarını açık bırakın:
+  `yumakbot-userns` profili yalnızca bu iki kapsayıcıya izin verir, ana makinedeki öteki programlar kısıtlı
+  kalır. Kullanıcı ad alanlarını çekirdekte tümden kapatmak (`user.max_user_namespaces=0`) bu kapsayıcılardaki
+  yalıtımı da durdurur.
 
 Durumu Ayarlar → Bağlantı → "Bash yalıtımı" satırında görürsünüz; sunucu açılışta yalıtımı dener ve
 çalışmazsa nedenini yazar.

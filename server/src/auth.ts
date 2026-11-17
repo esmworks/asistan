@@ -61,6 +61,51 @@ export function clientAddress(
   return last || socketAddress;
 }
 
+/**
+ * A request's path as the router reads it, to decide what needs a sign-in (never to serve
+ * anything): percent escapes undone, since the router decodes them before matching and so
+ * `/%61pi/bots` reaches `/api/bots`; backslashes, repeated slashes and dot segments folded; lower
+ * case.
+ */
+export function routedPath(url: string): string {
+  let path = url.split('?')[0] ?? '';
+  // Undone until it stops changing (a few rounds at most), so a doubly escaped path is caught too.
+  for (let i = 0; i < 4; i++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(path);
+    } catch {
+      next = path.replace(/%([0-9a-f]{2})/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
+    }
+    if (next === path) break;
+    path = next;
+  }
+  const parts: string[] = [];
+  for (const seg of path.replace(/\\/g, '/').split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return `/${parts.join('/')}`.toLowerCase();
+}
+
+const isApiPath = (p: string) => p === '/api' || p.startsWith('/api/');
+
+/**
+ * Whether a request needs the access key or a session. The route it matched decides, as that is
+ * the handler that runs: an /api route does unless `open` names it. A request that matched no
+ * route, or only a catch-all, is judged by its path as the router reads it: anything that looks
+ * like the API does, so no spelling of a path slips past.
+ */
+export function needsSignIn(
+  route: string | undefined,
+  url: string,
+  open: (route: string) => boolean,
+): boolean {
+  if (route !== undefined && !route.includes('*')) return isApiPath(route) && !open(route);
+  return isApiPath(routedPath(url));
+}
+
 export interface RequestMeta {
   host: string | undefined;
   origin: string | undefined;
@@ -112,7 +157,10 @@ export class Auth {
   /** Pairing codes waiting to be used, by hash, with when each stops working. */
   private pairing = new Map<string, number>();
   readonly account: Account;
+  /** Wrong passwords and pairing codes. */
   readonly throttle = new LoginThrottle();
+  /** Wrong access keys, at sign-in and as a Bearer key. */
+  readonly keyThrottle = new LoginThrottle();
   constructor(
     private db: Db,
     private key: string,
@@ -212,10 +260,23 @@ export class Auth {
     await this.db.delete(schema.sessions).where(eq(schema.sessions.id, id));
   }
 
-  /** Bearer key or session cookie. */
-  async authenticate(headers: { authorization?: string | undefined }, cookie: string | undefined) {
+  /**
+   * Bearer key or session cookie. With the address the request comes from, wrong Bearer keys
+   * count against it like wrong passwords, and an address with too many is refused (429).
+   */
+  async authenticate(
+    headers: { authorization?: string | undefined },
+    cookie: string | undefined,
+    from?: string,
+  ): Promise<'bearer' | 'cookie' | null> {
     const auth = headers.authorization;
-    if (auth?.startsWith('Bearer ')) return this.checkKey(auth.slice(7).trim()) ? 'bearer' : null;
+    if (auth?.startsWith('Bearer ')) {
+      const attempt = from === undefined ? null : this.keyThrottle.attempt(from, { shared: false });
+      if (from !== undefined && !attempt) throw new HttpError(429, 'error.loginBlocked');
+      if (!this.checkKey(auth.slice(7).trim())) return null;
+      attempt?.succeeded();
+      return 'bearer';
+    }
     return (await this.validSession(cookie)) ? 'cookie' : null;
   }
 }

@@ -73,7 +73,7 @@ import {
   TicketUpdate,
   skillSlug,
 } from '@yumakbot/shared';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
 import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
@@ -204,7 +204,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   };
   app.get('/api/session', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
-    const how = await d.auth.authenticate(req.headers, token);
+    const how = await d.auth.authenticate(req.headers, token, clientAddress(req.headers, req.ip, d.config));
     // Each visit moves the cookie's end along with the session's.
     if (how === 'cookie' && token) reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     // Whether the sign-in page asks for a username and password or for the access key.
@@ -222,10 +222,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.post('/api/access', async (req, reply) => {
     const { key } = AccessRequest.parse(req.body);
+    // The key cannot be guessed, but an address that keeps trying is still turned away. Only per
+    // address: a flood of wrong keys from elsewhere must not shut the owner out of this way in.
+    const attempt = d.auth.keyThrottle.attempt(clientAddress(req.headers, req.ip, d.config), {
+      shared: false,
+    });
+    if (!attempt) throw new HttpError(429, 'error.loginBlocked');
     if (!d.auth.checkKey(key)) {
       await new Promise((r) => setTimeout(r, 300));
       throw new HttpError(401, 'error.accessKeyWrong');
     }
+    attempt.succeeded();
     const token = await d.auth.createSession(req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     return { ok: true };
@@ -233,13 +240,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.post('/api/login', async (req, reply) => {
     const { username, password } = LoginRequest.parse(req.body);
-    const from = clientAddress(req.headers, req.ip, d.config);
-    if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
-    if (!(await d.auth.account.check(password, username))) {
-      d.auth.throttle.failed(from);
-      throw new HttpError(401, 'error.loginWrong');
-    }
-    d.auth.throttle.succeeded(from);
+    // The try is counted before the slow check, so many sent at once cannot all get past the limit.
+    const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
+    if (!attempt) throw new HttpError(429, 'error.loginBlocked');
+    if (!(await d.auth.account.check(password, username))) throw new HttpError(401, 'error.loginWrong');
+    attempt.succeeded();
     reply.setCookie(SESSION_COOKIE, await d.auth.createSession(req.headers['user-agent']), sessionCookie);
     return { ok: true };
   });
@@ -255,14 +260,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .object({ code: z.string().min(1).max(40), token: z.boolean().optional() })
       .parse(req.body);
     // Wrong codes count with wrong passwords: guessing either is slowed the same way.
-    const from = clientAddress(req.headers, req.ip, d.config);
-    if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
+    const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
+    if (!attempt) throw new HttpError(429, 'error.loginBlocked');
     if (!d.auth.usePairingCode(code)) {
-      d.auth.throttle.failed(from);
       await new Promise((r) => setTimeout(r, 300));
       throw new HttpError(401, 'error.pairingWrong');
     }
-    d.auth.throttle.succeeded(from);
+    attempt.succeeded();
     const token = await d.auth.createSession(req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     // The desktop app pairs from its own process and puts the session in its window's cookies.
@@ -278,16 +282,22 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       throw new HttpError(400, 'error.passwordShort', { min: String(MIN_PASSWORD) });
     }
     // Changing it takes the current password, or the access key when that is forgotten.
-    if ((await d.auth.account.username()) !== null) {
-      const from = clientAddress(req.headers, req.ip, d.config);
-      if (d.auth.throttle.blocked(from)) throw new HttpError(429, 'error.loginBlocked');
+    const changing = (await d.auth.account.username()) !== null;
+    if (changing) {
+      // Only a signed-in device gets here, so the count across all addresses is left alone: a
+      // flood of guesses at the sign-in page must not stop the owner changing the password.
+      const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config), {
+        shared: false,
+      });
+      if (!attempt) throw new HttpError(429, 'error.loginBlocked');
       const ok = !!current && (d.auth.checkKey(current) || (await d.auth.account.check(current)));
-      if (!ok) {
-        d.auth.throttle.failed(from);
-        throw new HttpError(403, 'error.currentPasswordWrong');
-      }
+      if (!ok) throw new HttpError(403, 'error.currentPasswordWrong');
+      attempt.succeeded();
     }
     await d.auth.account.set(username, password);
+    // A new password is often set because the old one got out: whoever signed in with it is
+    // signed out, everywhere but on the device that made the change.
+    if (changing) await d.auth.revokeSessions(req.cookies[SESSION_COOKIE], 'others');
     return { username: username.trim() };
   });
 
@@ -1229,27 +1239,34 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.delete('/api/routines/:id/webhook', async (req) =>
     s.routines.setWebhook(IdParams.parse(req.params).id, false),
   );
-  // A signed call is checked against the body exactly as it was sent, before it is parsed.
-  app.addHook('preParsing', async (req, _reply, payload) => {
-    if (req.method !== 'POST' || !req.url.startsWith(`${WEBHOOK_PATH}/`)) return payload;
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of payload) {
-      size += (chunk as Buffer).length;
-      if (size > WEBHOOK_BODY_MAX)
-        throw new HttpError(413, 'error.payloadTooLarge', { max: WEBHOOK_BODY_MAX });
-      chunks.push(chunk as Buffer);
-    }
-    const raw = Buffer.concat(chunks);
-    (req as { rawBody?: Buffer }).rawBody = raw;
-    return Readable.from([raw]);
-  });
+  const WebhookParams = z.object({ id: z.string().min(1).max(64), token: z.string().min(1).max(100) });
+  const webhookHooks: RouteShorthandOptions = {
+    // The secret is in the address, so it is checked before a byte of the body is read: a caller
+    // without it cannot make the server hold megabytes for nothing.
+    async onRequest(req) {
+      const p = WebhookParams.safeParse(req.params);
+      if (!p.success || !(await s.routines.webhookOpen(p.data.id, p.data.token)))
+        throw new HttpError(404, 'error.notFound');
+    },
+    // A signed call is checked against the body exactly as it was sent, before it is parsed.
+    async preParsing(req, _reply, payload) {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of payload) {
+        size += (chunk as Buffer).length;
+        if (size > WEBHOOK_BODY_MAX)
+          throw new HttpError(413, 'error.payloadTooLarge', { max: WEBHOOK_BODY_MAX });
+        chunks.push(chunk as Buffer);
+      }
+      const raw = Buffer.concat(chunks);
+      (req as { rawBody?: Buffer }).rawBody = raw;
+      return Readable.from([raw]);
+    },
+  };
   // A service without the access key starts a routine through its secret address. The request's
   // body, whatever it is, goes to the bot as data.
-  app.post(`${WEBHOOK_PATH}/:id/:token`, async (req, reply) => {
-    const p = z
-      .object({ id: z.string().min(1).max(64), token: z.string().min(1).max(100) })
-      .parse(req.params);
+  app.post(`${WEBHOOK_PATH}/:id/:token`, webhookHooks, async (req, reply) => {
+    const p = WebhookParams.parse(req.params);
     const body = req.body;
     const raw =
       body === undefined || body === null
@@ -1430,13 +1447,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     reply: FastifyReply,
     botId: string,
     path: string,
-    o: { framed?: boolean; height?: number; print?: boolean; title?: string },
+    o: { framed?: boolean; height?: number; print?: boolean; title?: string; shared?: boolean },
   ) => {
     const { full, st } = await libraryFile(botId, path);
     if (!/\.html?$/i.test(full) || st.size > 2 * 1024 * 1024) throw new HttpError(404, 'error.notFound');
     const csp = frameCsp({ resources: PAGE_LIBRARIES, images: ['https:'] });
     // Its own scripts, styles, pictures and data go inside it: the frame loads nothing from here.
-    const page = await bundlePage(full);
+    // A page opened by its share link carries only the data files it names: anyone with the link
+    // gets the page, not every file that happens to sit in its folder.
+    const page = await bundlePage(full, { data: o.shared ? 'named' : 'all' });
     return reply
       .header('content-security-policy', frameHeader(csp, { print: o.print }))
       .header('x-content-type-options', 'nosniff')
@@ -1472,7 +1491,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   // Mail for the bots. A relay posts each message here with the secret; the person sets the domain
   // in the settings and gives bots their addresses.
   app.addContentTypeParser('message/rfc822', (_req, payload, done) => done(null, payload));
-  app.post(EMAIL_INBOUND_PATH, async (req, reply) => {
+  const relayToken = (req: FastifyRequest) => {
+    const auth = req.headers.authorization;
+    return typeof auth === 'string' ? /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() : undefined;
+  };
+  const relayHooks: RouteShorthandOptions = {
+    // The secret comes in a header, so it is checked before the message (up to 25 MB) is read: a
+    // caller without it cannot make the server hold the message for nothing.
+    async onRequest(req) {
+      if (!(await s.email.accepts(relayToken(req)))) throw new HttpError(401, 'error.emailSecret');
+    },
+  };
+  app.post(EMAIL_INBOUND_PATH, relayHooks, async (req, reply) => {
     const { to } = z.object({ to: z.string().min(3).max(400) }).parse(req.query);
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const chunks: Buffer[] = [];
@@ -1484,10 +1514,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       }
       chunks.push(chunk as Buffer);
     }
-    const auth = req.headers.authorization;
-    const token = typeof auth === 'string' ? /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() : undefined;
     // Every message accepted gets 200, kept or not, so the relay neither retries nor bounces it.
-    const status = await s.email.receive(token, to, Buffer.concat(chunks));
+    const status = await s.email.receive(relayToken(req), to, Buffer.concat(chunks));
     return reply.code(200).send({ ok: true, status });
   });
   app.get('/api/email', () => s.email.settings());
@@ -1529,7 +1557,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     reply.header('x-robots-tag', 'noindex, nofollow');
     const share = await s.pageShares.resolve(token);
     try {
-      if (share) return await sendPage(reply, share.botId, share.path, { print: !!print, title: share.name });
+      if (share)
+        return await sendPage(reply, share.botId, share.path, {
+          print: !!print,
+          title: share.name,
+          shared: true,
+        });
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       // The page was moved or deleted since it was shared: the link says it is gone, like an old link.

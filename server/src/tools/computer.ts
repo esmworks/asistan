@@ -36,6 +36,25 @@ export function computerErrorText(err: unknown, t: T): string {
   return t('computer.failed', { message: (err as Error).message });
 }
 
+/** Keys that submit what was typed: in a terminal, they run it. */
+const SUBMIT = /^(?:return|enter|kp_enter|iso_enter|linefeed|3270_enter)$/i;
+
+/**
+ * Whether pressing `keys` (xdotool names: `Return`, `ctrl+s`, `alt+Tab Return`) could submit,
+ * run or send something: Enter in any form, or a combination with a modifier (a shortcut can
+ * run, paste into a terminal, send or delete). Plain typing keys, arrows and Tab cannot.
+ */
+export function submits(keys: string): boolean {
+  return keys
+    .trim()
+    .split(/\s+/)
+    .some((combo) => {
+      const parts = combo.split('+').filter(Boolean);
+      if (parts.length > 1) return true;
+      return SUBMIT.test(parts[0] ?? '');
+    });
+}
+
 /**
  * The bot's own desktop: look at the screen, use the mouse and keyboard, and run commands in its
  * terminal. Looking and moving around run without a card; a step marked as sending something, and
@@ -77,6 +96,11 @@ export function computerTools(opts: {
 
   // Read-only bots may look but not touch: these then go through the normal permission check.
   const touch = async (a: object) => readOnly || ('sends' in a && a.sends === true);
+  // Typing a line break, or a key that submits or runs a shortcut, can run a command in the
+  // desktop's terminal or send a form, whatever the bot says of it: it follows the bot's level,
+  // as run_command does.
+  const types = async (a: { text: string; sends?: boolean }) => (await touch(a)) || /[\r\n]/.test(a.text);
+  const presses = async (a: { keys: string; sends?: boolean }) => (await touch(a)) || submits(a.keys);
 
   return [
     def('computer_screenshot', {}, async () => guard(look), 'internal'),
@@ -98,7 +122,7 @@ export function computerTools(opts: {
       { text: z.string().min(1).max(5000), sends },
       async (a) => act({ type: 'type', text: a.text }),
       'internal',
-      touch,
+      types,
     ),
     def(
       'computer_key',
@@ -113,7 +137,7 @@ export function computerTools(opts: {
       },
       async (a) => act({ type: 'key', keys: a.keys }),
       'internal',
-      touch,
+      presses,
     ),
     def(
       'computer_scroll',

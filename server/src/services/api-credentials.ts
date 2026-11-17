@@ -14,6 +14,13 @@ import type { VaultService } from './vault';
 
 type Row = typeof schema.apiCredentials.$inferSelect;
 
+/**
+ * What a key is bound to when sealed: its row and the origin it is sent to. A key moved to another
+ * row, or left in a row whose origin was changed in the database, no longer opens, so it is never
+ * sent anywhere but where it was saved for.
+ */
+const keyBinding = (id: string, origin: string) => ['api_credentials.secret', id, origin];
+
 const toCredential = (r: Row): ApiCredential => ({
   id: r.id,
   name: r.name,
@@ -114,18 +121,34 @@ export class ApiCredentialService {
     return row ?? null;
   }
 
+  /** Keys saved before they were bound to row and origin, bound now. */
+  private ready(): Promise<void> {
+    return this.vault.bindOnce('api_credentials', async () => {
+      const rows = await this.ctx.db.select().from(schema.apiCredentials);
+      for (const r of rows) {
+        const secret = this.vault.rebind(r.secret, keyBinding(r.id, r.origin));
+        if (!secret) continue;
+        await this.ctx.db
+          .update(schema.apiCredentials)
+          .set({ secret })
+          .where(eq(schema.apiCredentials.id, r.id));
+      }
+    });
+  }
+
   async create(raw: CreateInput): Promise<ApiCredential> {
     const input = ApiCredentialCreate.parse(raw);
     if (await this.byName(input.name)) throw new HttpError(409, 'error.apiKeyNameTaken');
+    const id = newId();
     const [row] = await this.ctx.db
       .insert(schema.apiCredentials)
       .values({
-        id: newId(),
+        id,
         name: input.name,
         origin: input.origin,
         auth: input.auth,
         label: input.label,
-        secret: this.vault.seal(input.value),
+        secret: this.vault.seal(input.value, keyBinding(id, input.origin)),
         botIds: input.botIds ?? null,
       })
       .returning();
@@ -151,14 +174,23 @@ export class ApiCredentialService {
 
   async update(id: string, raw: UpdateInput): Promise<ApiCredential> {
     const input = ApiCredentialUpdate.parse(raw);
-    await this.row(id);
+    await this.ready();
+    const old = await this.row(id);
+    const origin = input.origin ?? old.origin;
+    // A new origin needs the key bound to it: a key not typed anew is sealed again for it.
+    const secret =
+      input.value !== undefined
+        ? this.vault.seal(input.value, keyBinding(id, origin))
+        : origin !== old.origin
+          ? this.vault.reseal(old.secret, keyBinding(id, old.origin), keyBinding(id, origin))
+          : undefined;
     const [row] = await this.ctx.db
       .update(schema.apiCredentials)
       .set({
         ...(input.origin !== undefined && { origin: input.origin }),
         ...(input.auth !== undefined && { auth: input.auth }),
         ...(input.label !== undefined && { label: input.label }),
-        ...(input.value !== undefined && { secret: this.vault.seal(input.value) }),
+        ...(secret !== undefined && { secret }),
         ...(input.botIds !== undefined && { botIds: input.botIds }),
         updatedAt: new Date(),
       })
@@ -180,11 +212,13 @@ export class ApiCredentialService {
    * Authorization) would be carried to wherever the redirect points.
    */
   async call(botId: string, name: string, req: ApiCall, signal?: AbortSignal): Promise<ApiResult> {
+    await this.ready();
     const row = await this.byName(name);
     if (!row) throw new ApiCallError('noKey', name);
     if (row.botIds && !row.botIds.includes(botId)) throw new ApiCallError('notAllowed', name);
     const auth = ApiAuth.parse(row.auth);
-    const result = await this.send(row.origin, { auth, value: this.vault.open(row.secret) }, req, signal);
+    const value = this.vault.open(row.secret, keyBinding(row.id, row.origin));
+    const result = await this.send(row.origin, { auth, value }, req, signal);
     await this.ctx.db
       .update(schema.apiCredentials)
       .set({ lastUsedAt: new Date() })

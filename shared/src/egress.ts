@@ -477,6 +477,11 @@ function ipv4Blocked(ip: string): boolean {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0 && c === 0) ||
+    // Documentation ranges and the old 6to4 relay: nothing a page has reason to reach.
+    (a === 192 && b === 0 && c === 2) ||
+    (a === 192 && b === 88 && c === 99) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
     (a === 192 && b === 168) ||
     (a === 198 && (b === 18 || b === 19)) ||
     a >= 224
@@ -527,8 +532,17 @@ export function blockedAddress(ip: string): boolean {
   if (w.slice(0, 5).every((x) => x === 0) && (w[5] === 0xffff || w[5] === 0)) {
     return ipv4Blocked(v4From(w[6]!, w[7]!));
   }
+  // ::ffff:0:a.b.c.d, the translated form some stacks still accept
+  if (w.slice(0, 4).every((x) => x === 0) && w[4] === 0xffff && w[5] === 0) {
+    return ipv4Blocked(v4From(w[6]!, w[7]!));
+  }
+  // NAT64 for the operator's own network (64:ff9b:1::/48) leads wherever it was set up to.
+  if (w[0] === 0x64 && w[1] === 0xff9b && w[2] === 1) return true;
   if (w[0] === 0x64 && w[1] === 0xff9b) return ipv4Blocked(v4From(w[6]!, w[7]!)); // NAT64
   if (w[0] === 0x2002) return ipv4Blocked(v4From(w[1]!, w[2]!)); // 6to4
+  // Teredo hides the IPv4 address it reaches; documentation and discard ranges reach nothing.
+  if (w[0] === 0x2001 && (w[1] === 0 || w[1] === 0xdb8)) return true;
+  if (w[0] === 0x100 && w[1] === 0 && w[2] === 0 && w[3] === 0) return true;
   const first = w[0]!;
   return (
     (first & 0xfe00) === 0xfc00 || // unique local

@@ -1235,6 +1235,7 @@ function ApprovalCard({
             variant="secondary"
             className="rounded-full"
             disabled={decide.isPending}
+            title={t('approval.allowAlwaysHint')}
             onClick={() => decide.mutate({ decision: 'allow', remember: true })}
           >
             {t('approval.allowAlways')}

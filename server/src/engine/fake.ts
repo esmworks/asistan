@@ -47,8 +47,8 @@ export class FakeEngine implements Engine {
   public gates: GateRequest[] = [];
 
   /**
-   * The `review` mode, by words in the action: "güvenli" lets it run, quoting the start of the
-   * person's latest words; "uydurma-alıntı" lets it run with a quote nobody wrote;
+   * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of
+   * the person's latest message; "uydurma-alıntı" lets it run with a quote nobody wrote;
    * "inceleme-hatası" fails the review; anything else goes to the person.
    */
   async review(req: ReviewRequest): Promise<ReviewVerdict> {
@@ -65,7 +65,7 @@ export class FakeEngine implements Engine {
       return {
         decision: 'allow',
         reason: 'Sahte inceleme: güvenli görünüyor.',
-        quote: (req.words.at(-1) ?? '').slice(0, 12),
+        quote: (req.words.at(-1) ?? '').split(/\s+/).slice(0, 3).join(' '),
       };
     return { decision: 'ask', reason: 'Sahte inceleme: emin değil.', quote: '' };
   }

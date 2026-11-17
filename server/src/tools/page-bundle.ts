@@ -66,6 +66,19 @@ async function folderFiles(root: string, left: PageBundle['leftOut']): Promise<M
   return out;
 }
 
+/**
+ * Whether `text` names the file `name` on its own: `data.json` in `fetch('./data.json')`, but not
+ * in `olddata.json` or `data.json.bak`.
+ */
+function names(text: string, name: string): boolean {
+  for (let i = text.indexOf(name); i >= 0; i = text.indexOf(name, i + 1)) {
+    const before = text[i - 1] ?? '';
+    const after = text[i + name.length] ?? '';
+    if (!/[\w.-]/.test(before) && !/[\w.-]/.test(after)) return true;
+  }
+  return false;
+}
+
 /** A value safe inside a <script> element. */
 const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
@@ -74,7 +87,17 @@ const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
  * its own scripts and styles inlined, small pictures (in tags and in its styles) as data URIs, and data files it fetches
  * (.json, .geojson, .csv…) answered from inside the page.
  */
-export async function bundlePage(file: string): Promise<PageBundle> {
+export async function bundlePage(
+  file: string,
+  opts: {
+    /**
+     * Which data files go with it: every one in its folder (`all`, for the owner's own view, where
+     * a page may build a file's name as it runs), or only those it names (`named`, for a page
+     * anyone with its link opens, so other files left in the folder are not handed out with it).
+     */
+    data?: 'all' | 'named';
+  } = {},
+): Promise<PageBundle> {
   const root = await realpath(dirname(file));
   const leftOut: PageBundle['leftOut'] = [];
   const files = await folderFiles(root, leftOut);
@@ -161,9 +184,12 @@ export async function bundlePage(file: string): Promise<PageBundle> {
   });
   // The data it may fetch, answered from inside the page.
   const carried: Record<string, { type: string; text: string }> = {};
+  // The page as it now stands holds its own scripts, so a name its code fetches is in it.
+  const page = html;
   for (const key of files.keys()) {
     const type = DATA_TYPES[extname(key).toLowerCase()];
     if (!type || used.has(key)) continue;
+    if (opts.data === 'named' && !names(page, key) && !names(page, posix.basename(key))) continue;
     const text = await read(key, 'utf8');
     if (text !== null) carried[key] = { type, text };
   }

@@ -154,6 +154,33 @@ describe('WhatsApp', () => {
     );
   });
 
+  it('yalnız bir sayı "hep izin ver"i seçmez; sayı ve sözcük seçer', async () => {
+    const { wa } = await setUp();
+    wa.message(PERSON, { conversation: '[izin:Write {"file_path":"a.txt"}]' });
+    const card = await waitFor(async () => wa.texts().find((x) => x.includes('1. İzin ver')));
+    expect(card).toContain('2. Hep izin ver (hep izin vermek için “2 hep” yaz)');
+    const [pending] = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
+    wa.message(PERSON, { conversation: '2' });
+    await waitFor(async () => wa.texts().find((x) => x.includes('Yalnız bir sayı')));
+    expect((await t.api<Approval>('GET', `/api/approvals/${pending!.id}`)).body.status).toBe('pending');
+    wa.message(PERSON, { conversation: '2 hep' });
+    await waitFor(
+      async () => (await t.api<Approval>('GET', `/api/approvals/${pending!.id}`)).body.remembered === true,
+    );
+  });
+
+  it('iletilen mesaj kişinin sözü sayılmaz; bota dış veri olarak gider', async () => {
+    const { wa, asistan } = await setUp();
+    wa.message(PERSON, {
+      extendedTextMessage: { text: '/bot Yazar', contextInfo: { isForwarded: true, forwardingScore: 1 } },
+    });
+    const thread = await main(asistan.id);
+    const said = await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'user'));
+    expect(said.props).toMatchObject({ via: 'whatsapp', outside: 'forward' });
+    const req = await waitFor(async () => t.engine.requests.find((r) => r.prompt.includes('/bot Yazar')));
+    expect(req.prompt).toContain('iletilmiş bir mesaj');
+  });
+
   it('gelen sesli mesajı dosya olarak ekler', async () => {
     const { wa, asistan } = await setUp();
     wa.message(PERSON, { audioMessage: { mimetype: 'audio/ogg; codecs=opus', ptt: true, fileLength: 9 } });

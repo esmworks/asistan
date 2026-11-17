@@ -1,3 +1,4 @@
+import { outsideIn } from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -62,11 +63,12 @@ export async function ownerWords(ctx: Ctx, turn: TurnRow, hops = 0): Promise<str
 
 /**
  * The person's latest messages in the turn's conversation, oldest first; messages written while
- * the turn runs are handed to it too, so they count.
+ * the turn runs are handed to it too, so they count. A message they forwarded from someone else
+ * is that one's words, and does not.
  */
 async function personWords(ctx: Ctx, turn: TurnRow): Promise<string[]> {
   const rows = await ctx.db
-    .select({ text: schema.messages.text })
+    .select({ text: schema.messages.text, props: schema.messages.props })
     .from(schema.messages)
     .where(
       and(
@@ -78,27 +80,38 @@ async function personWords(ctx: Ctx, turn: TurnRow): Promise<string[]> {
     .orderBy(desc(schema.messages.createdAt))
     .limit(RECENT);
   return rows
+    .filter((r) => !outsideIn(r.props as Record<string, unknown>))
     .map((r) => r.text.trim())
     .filter(Boolean)
     .reverse()
     .map((text) => truncate(text, EACH));
 }
 
-/** Text compared loosely: case, spacing and quote marks do not matter. */
+/** Text compared loosely: case, spacing, quote marks and punctuation do not matter. */
 const loose = (s: string) =>
   s
     .toLocaleLowerCase('tr')
-    .replace(/[“”«»"'‘’`]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
+
+/** The shortest quote that is not a whole message of the person's: a few words, not a syllable. */
+const MIN_QUOTE_CHARS = 12;
+const MIN_QUOTE_WORDS = 2;
 
 /**
  * Whether the reviewer's quote is really in the person's words. A reviewer that lets an action run
  * must point at what was said; a quote that is not there, or too short to mean anything, does not
- * count, whatever the reviewer was persuaded of.
+ * count, whatever the reviewer was persuaded of. The quote is matched as whole words, and is
+ * either one of the person's messages as a whole or a stretch of a few words of one: a bit such
+ * as "ok" or "the" is found in almost anything.
  */
 export function quoteFound(quote: string, words: readonly string[]): boolean {
   const q = loose(quote);
-  if (q.length < 3) return false;
-  return words.some((w) => loose(w).includes(q));
+  if (q.length < 2) return false;
+  return words.some((w) => {
+    const said = loose(w);
+    if (said === q) return true;
+    if (q.length < MIN_QUOTE_CHARS || q.split(' ').length < MIN_QUOTE_WORDS) return false;
+    return ` ${said} `.includes(` ${q} `);
+  });
 }

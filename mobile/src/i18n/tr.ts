@@ -26,6 +26,12 @@ export const tr = {
   'connect.submit': 'Bağlan',
   'connect.invalid': 'Bu bir adres değil',
   'connect.notYumakBot': 'Bu adreste bir Yumak Bot sunucusu yanıt vermedi',
+  'connect.httpsOnly':
+    'Bu adreste HTTPS ile yanıt veren bir Yumak Bot sunucusu yok. İnternetteki bir sunucu HTTPS ister; yine de düz http kullanmak için başına http:// yaz.',
+  'connect.insecureTitle': 'Şifrelemeden bağlanılsın mı?',
+  'connect.insecureText':
+    '{host} internette ama düz http ile yanıt veriyor. Aradaki herkes erişim anahtarını, şifreni ve konuşmalarını okuyabilir. Neden gerektiğini bilmiyorsan https ile başlayan bir adres kullan.',
+  'connect.insecureConfirm': 'Yine de bağlan',
 
   'offline.title': 'Sunucuya ulaşılamadı',
   'offline.text':

@@ -3,7 +3,7 @@ import type { Message } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { shareFile } from '@/components/panel/files';
 import { locale, t } from '@/i18n';
@@ -15,6 +15,38 @@ export interface FrameMessage {
   id?: string | number;
   method?: string;
   params?: Record<string, unknown>;
+}
+
+/** Whether the question about opening a link is on screen; a page asking again meanwhile is ignored. */
+let asking = false;
+
+/**
+ * Opens an http(s) address a page in the conversation (a bot's page, a connected app) asked for,
+ * once the person has seen it and agreed. The phone cannot tell a tap on a link from the page's own
+ * script navigating, so without asking a page could open sites by itself; one question at a time, so
+ * it cannot stack them either.
+ */
+function openAfterAsking(url: string) {
+  if (asking || !/^https?:\/\//i.test(url)) return;
+  asking = true;
+  const done = () => {
+    asking = false;
+  };
+  Alert.alert(
+    t('message.openLinkTitle'),
+    url,
+    [
+      { text: t('common.cancel'), style: 'cancel', onPress: done },
+      {
+        text: t('message.openLink'),
+        onPress: () => {
+          done();
+          void WebBrowser.openBrowserAsync(url);
+        },
+      },
+    ],
+    { cancelable: true, onDismiss: done },
+  );
 }
 
 /**
@@ -108,10 +140,11 @@ export function LiveFrame({
         onMessage={onMessage}
         scrollEnabled={false}
         nestedScrollEnabled
-        // Links the page offers open in the browser, so the conversation never navigates away.
+        // Links the page offers open in the browser, after asking, so the conversation never
+        // navigates away.
         onShouldStartLoadWithRequest={(req) => {
           if (req.url === src || req.url.startsWith('about:') || req.isTopFrame === false) return true;
-          if (/^https?:\/\//i.test(req.url)) void WebBrowser.openBrowserAsync(req.url);
+          openAfterAsking(req.url);
           return false;
         }}
         style={styles.web}
@@ -209,8 +242,7 @@ export function McpAppView({ m }: { m: Message }) {
           (params.arguments ?? {}) as Record<string, unknown>,
         );
       case 'ui/open-link': {
-        const url = String(params.url ?? '');
-        if (/^https?:\/\//i.test(url)) void WebBrowser.openBrowserAsync(url);
+        openAfterAsking(String(params.url ?? ''));
         return {};
       }
       case 'ping':

@@ -379,6 +379,13 @@
       "when": 1794912032126,
       "tag": "0053_outside_sessions_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794935405962,
+      "tag": "0054_rule_bots_turn_outside",
+      "breakpoints": true
     }
   ]
 }

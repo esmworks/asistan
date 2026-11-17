@@ -21,6 +21,8 @@ const MAX_ATTACHMENTS = 20;
 /** What a routine run is handed of a mail's text. */
 const PAYLOAD_TEXT = 20_000;
 const SECRET_KEY = 'email.inboundSecret';
+/** The relay's secret opens only as this key's value, not when moved under another. */
+const SECRET_BINDING = ['kv', SECRET_KEY];
 /** The part before the @: lowercase letters, digits and . _ -, not at either end. */
 const NAME = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 
@@ -76,18 +78,45 @@ export class EmailService {
     return resolve(this.ctx.config.dataDir, 'workspaces');
   }
 
+  /**
+   * The relay's secret, kept sealed with the vault key so a copy of the database does not let
+   * anyone post mail to the bots; null when there is none or it cannot be opened.
+   */
   private async secret(): Promise<string | null> {
     const [row] = await this.ctx.db.select().from(schema.kv).where(eq(schema.kv.key, SECRET_KEY)).limit(1);
-    return typeof row?.value === 'string' ? row.value : null;
+    const stored = typeof row?.value === 'string' ? row.value : null;
+    if (!stored) return null;
+    if (stored.startsWith('v2:')) {
+      try {
+        return this.services.vault.open(stored, SECRET_BINDING);
+      } catch {
+        // Sealed with a vault key that is gone: the person makes a new one.
+        return null;
+      }
+    }
+    // Kept in the clear before secrets were sealed: sealed now, with the same value, so the relay
+    // goes on working.
+    await this.store(stored);
+    return stored;
   }
 
-  /** A new secret for the relay; the old one stops working at once. */
-  async renewSecret(): Promise<EmailSettings> {
-    const value = randomBytes(32).toString('base64url');
+  /** Whether `token` is the relay's secret; checked before a message's body is read, too. */
+  async accepts(token: string | undefined): Promise<boolean> {
+    const secret = await this.secret();
+    return !!secret && !!token && sameSecret(secret, token);
+  }
+
+  private async store(secret: string) {
+    const value = this.services.vault.seal(secret, SECRET_BINDING);
     await this.ctx.db
       .insert(schema.kv)
       .values({ key: SECRET_KEY, value })
       .onConflictDoUpdate({ target: schema.kv.key, set: { value } });
+  }
+
+  /** A new secret for the relay; the old one stops working at once. */
+  async renewSecret(): Promise<EmailSettings> {
+    await this.store(randomBytes(32).toString('base64url'));
     return this.settings();
   }
 
@@ -158,8 +187,7 @@ export class EmailService {
     to: string,
     raw: Buffer,
   ): Promise<'saved' | 'dropped' | 'duplicate'> {
-    const secret = await this.secret();
-    if (!secret || !token || !sameSecret(secret, token)) throw new HttpError(401, 'error.emailSecret');
+    if (!(await this.accepts(token))) throw new HttpError(401, 'error.emailSecret');
     const domain = await this.domain();
     const [local = '', host = ''] = to.trim().toLowerCase().split('@');
     // `name+anything@` reaches `name@`, as most mail services do.

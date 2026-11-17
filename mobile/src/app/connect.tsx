@@ -1,11 +1,30 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
+import { Alert } from 'react-native';
 import { Button, ErrorText, Field, FormScreen, Hint, Mark, Title } from '@/components/ui';
 import { t } from '@/i18n';
-import { candidates } from '@/lib/address';
+import { candidates, hostOf, insecure } from '@/lib/address';
 import { answers } from '@/lib/api';
 import { useServer } from '@/lib/server';
+
+/**
+ * Asks the person whether to talk to a server on the internet over plain http, where anyone on the
+ * way reads the access key, the password and the conversations.
+ */
+function acceptInsecure(origin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      t('connect.insecureTitle'),
+      t('connect.insecureText', { host: hostOf(origin) }),
+      [
+        { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+        { text: t('connect.insecureConfirm'), style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
 
 /** Asks for the server's address and keeps the first form of it that an YumakBot server answers at. */
 export default function Connect() {
@@ -25,6 +44,10 @@ export default function Connect() {
     setBusy(true);
     for (const next of list) {
       if (await answers(next)) {
+        if (insecure(next) && !(await acceptInsecure(next))) {
+          setBusy(false);
+          return;
+        }
         await setOrigin(next);
         await queryClient.resetQueries();
         setBusy(false);
@@ -35,7 +58,9 @@ export default function Connect() {
       }
     }
     setBusy(false);
-    setError(t('connect.notYumakBot'));
+    // Typed without a scheme, a server on the internet is only tried over https (see candidates).
+    const typedScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
+    setError(t(!typedScheme && list.length === 1 ? 'connect.httpsOnly' : 'connect.notYumakBot'));
   };
 
   return (

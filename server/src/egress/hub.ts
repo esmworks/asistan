@@ -123,12 +123,15 @@ export class EgressHub {
 
 /**
  * A SOCKS5 proxy on this server's loopback for its own bot browsers (when there is no computer
- * service). Each connection goes through the person's computer when it can, otherwise straight
- * from here, where private addresses are refused: this server sits on the network of its
- * database. `allowHosts` are the private hosts the operator lets the browsers reach.
+ * service). Each connection goes through the person's computer when it can (`hub`), otherwise
+ * straight from here, where private addresses are refused: this server sits on the network of its
+ * database, and on the person's own computer next to everything else they run. The address is
+ * checked as it is connected to, so a name that answers with a public address for a check and a
+ * private one a moment later still reaches nothing private. `allowHosts` are the private hosts the
+ * operator lets the browsers reach.
  */
 export async function startLocalSocks(
-  hub: EgressHub,
+  hub: EgressHub | null,
   allowHosts: readonly string[],
 ): Promise<{ port: number; close(): void }> {
   const server: Server = createServer({ allowHalfOpen: true }, (client) => {
@@ -142,12 +145,13 @@ export async function startLocalSocks(
       }
       let up: Duplex;
       try {
-        up = await hub.dial(target.host, target.port).catch((err: unknown) => {
-          if (err instanceof EgressError && err.code === 'unavailable') {
-            return dialPublic(target.host, target.port, { allowHosts });
-          }
-          throw err;
-        });
+        const direct = () => dialPublic(target.host, target.port, { allowHosts });
+        up = hub
+          ? await hub.dial(target.host, target.port).catch((err: unknown) => {
+              if (err instanceof EgressError && err.code === 'unavailable') return direct();
+              throw err;
+            })
+          : await direct();
       } catch (err) {
         return socksReply(client, socksReplyFor(err));
       }

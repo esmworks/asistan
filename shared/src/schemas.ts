@@ -14,10 +14,13 @@ export type EngineKind = z.infer<typeof EngineKind>;
  */
 export const PermissionMode = z.enum(['ask', 'review', 'auto', 'readonly']);
 /**
- * Outside text that can start a routine run: a mail, a webhook's body, a watched page or an app's
- * new answer. Such a run changes nothing without a card; a card from one says which started it.
+ * Outside text a run reads: what started a routine run (a mail, a webhook's body, a watched page
+ * or an app's new answer), or what the run read on its way: a page, an API's or a connected app's
+ * answer (`web`), a message the person forwarded from someone else (`forward`), or text kept here
+ * that came from outside before (`stored`). Unattended, such a run changes nothing without a
+ * card; a card from one says what it read.
  */
-export const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email'] as const;
+export const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email', 'web', 'forward', 'stored'] as const;
 export type OutsideTrigger = (typeof OUTSIDE_TRIGGERS)[number];
 /** The outside trigger a card's `outside` prop names, if it names one. */
 export const outsideTrigger = (value: unknown): OutsideTrigger | undefined =>
@@ -407,6 +410,8 @@ export const PermissionRule = z.object({
   list: RuleList,
   pattern: z.string(),
   note: z.string(),
+  /** The one bot the rule is for; null (or missing, from older servers) for every bot. */
+  botId: Id.nullable().optional(),
   createdAt: z.string(),
 });
 export type PermissionRule = z.infer<typeof PermissionRule>;
@@ -414,6 +419,7 @@ export const PermissionRuleCreate = z.object({
   list: RuleList,
   pattern: z.string().trim().min(1).max(200),
   note: z.string().max(200).default(''),
+  botId: Id.nullable().optional(),
 });
 
 export const MemoryScope = z.enum(['bot', 'user']);
@@ -456,7 +462,8 @@ export interface MemoryChange {
   content: string;
   before: string | null;
   proposedBy: string;
-  origin: { kind: 'routine' | 'bot'; name: string };
+  /** `outside`: a run of the bot `name` that had read outside text, though the person was there. */
+  origin: { kind: 'routine' | 'bot' | 'outside'; name: string };
   threadId: string | null;
   /** The page the bot said the fact came from. */
   sourceUrl: string | null;

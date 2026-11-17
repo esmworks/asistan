@@ -6,6 +6,14 @@ name: Release
 # Installed apps update themselves from the latest published release, through the latest*.yml
 # files and the zip (macOS) or installer (Windows) they name, so those are attached too; a draft
 # reaches no one until it is published.
+#
+# The token that may write to the repository only ever reaches the two steps that create the release
+# and attach the files, in jobs that run no code from the repository or its dependencies. The build
+# installs and runs thousands of packages; with a read-only token and no stored credentials, none of
+# them can replace a release asset, and so the update files installed apps trust.
+#
+# Third-party actions are pinned to a commit, with the release it is in next to it, so a moved tag
+# cannot change what runs here.
 on:
   push:
     tags: ['v*']
@@ -15,51 +23,67 @@ on:
         description: Existing version tag to build, e.g. v0.1.0
         required: true
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
-  GH_TOKEN: ${{ github.token }}
-  GH_REPO: ${{ github.repository }}
 
 jobs:
   release:
     name: Prepare the release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Create a draft release unless one exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "Yumak Bot ${TAG#v}" --generate-notes
 
   installer:
     name: Installer (${{ matrix.os }})
     needs: release
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
           # Xcode 26 compiles the Icon Composer icon; this image has it as the default.
           - os: macos-26
-            files: desktop/out/*.dmg desktop/out/*.zip desktop/out/*.blockmap desktop/out/latest-mac.yml
+            files: |
+              desktop/out/*.dmg
+              desktop/out/*.zip
+              desktop/out/*.blockmap
+              desktop/out/latest-mac.yml
           - os: windows-latest
-            files: desktop/out/*.exe desktop/out/*.blockmap desktop/out/latest.yml
+            files: |
+              desktop/out/*.exe
+              desktop/out/*.blockmap
+              desktop/out/latest.yml
           - os: ubuntu-latest
-            files: desktop/out/*.AppImage desktop/out/*.deb desktop/out/latest-linux.yml
+            files: |
+              desktop/out/*.AppImage
+              desktop/out/*.deb
+              desktop/out/latest-linux.yml
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.TAG }}
+          # Otherwise the token stays in .git/config, readable by every install and build script.
+          persist-credentials: false
       # The pnpm version is read from the packageManager field in package.json.
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -91,5 +115,35 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' }}
+          # Windows only: a code signing certificate (a base64 .p12) once the project has one. A
+          # signed installer records the certificate's publisher in the app, and the app then installs
+          # only updates signed by the same publisher. Missing secrets give an unsigned installer.
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CERTIFICATE || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CERTIFICATE_PASSWORD || '' }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 1
+
+  attach:
+    name: Attach to the release
+    needs: [release, installer]
+    # Like the build's fail-fast: false, the installers that were built are attached even when
+    # another platform's build failed.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: installer-*
+          path: installers
+          merge-multiple: true
       - name: Attach to the release
-        run: gh release upload "$TAG" ${{ matrix.files }} --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" installers/* --clobber

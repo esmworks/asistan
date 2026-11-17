@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import type { Bot } from '@yumakbot/shared';
 import { BrowserError } from '../browser/manager';
-import type { Page } from 'playwright-core';
+import type { ElementHandle, Frame, Page, Route } from 'playwright-core';
 import { z } from 'zod';
 import { VIEWPORT, webUrl, type BrowserManager } from '../browser/manager';
 import { browserErrorText } from '../browser/text';
@@ -54,6 +54,261 @@ const UPLOAD_TYPES: Record<string, string> = {
 const MASK = '••••••';
 /** Shorter values are not masked in free text: they would hide ordinary letters and words. */
 const MIN_MASKED = 4;
+
+/** Every form a secret takes in what a page shows: as typed, in an address, in a form's body. */
+function secretForms(secret: string): string[] {
+  const forms = new Set([
+    secret,
+    encodeURIComponent(secret),
+    new URLSearchParams([['', secret]]).toString().slice(1),
+    JSON.stringify(secret).slice(1, -1),
+  ]);
+  return [...forms];
+}
+
+/**
+ * `text` with every secret taken out, also where an address or a title carries it encoded.
+ * Longer ones go first, so one secret inside another is not left half shown.
+ */
+export function maskSecrets(text: string, secrets: readonly string[]): string {
+  const forms = [...new Set(secrets.filter((v) => v.length >= MIN_MASKED).flatMap(secretForms))].sort(
+    (a, b) => b.length - a.length,
+  );
+  return forms.reduce((out, f) => out.replaceAll(f, MASK), text);
+}
+
+/**
+ * Runs in each frame: what the page shows as text, its address and title, and the values of its
+ * fields that are not password fields (a "show password" switch turns one into plain text).
+ */
+const SHOWN_TEXT = `(() => {
+  const fields = [...document.querySelectorAll('input, textarea')]
+    .filter((e) => (e.type || '').toLowerCase() !== 'password')
+    .map((e) => e.value || '');
+  return [location.href, document.title, document.body ? document.body.innerText : '', ...fields].join('\\n');
+})()`;
+
+/** Whether a vault secret is in plain sight on the page, where a picture of it would show it. */
+async function secretShown(page: Page, secrets: readonly string[]): Promise<boolean> {
+  const list = secrets.filter((v) => v.length >= MIN_MASKED);
+  if (!list.length) return false;
+  const shown = await Promise.all(
+    page.frames().map((f) =>
+      f
+        .evaluate(SHOWN_TEXT)
+        .then((v) => `${f.url()}\n${typeof v === 'string' ? v : ''}`)
+        .catch(() => f.url()),
+    ),
+  );
+  const text = [page.url(), ...shown].join('\n');
+  return list.some((secret) => secretForms(secret).some((f) => text.includes(f)));
+}
+
+/**
+ * Words on a control that sends, posts, buys, books, deletes or shares something, matched on what
+ * the page itself shows rather than on what the bot says the control is.
+ */
+const SEND_WORDS = {
+  en: /\b(send|submit|post|publish|tweet|reply|comment|share|buy|purchase|order|checkout|check out|pay|book|reserve|confirm|delete|remove|transfer|donate|subscribe|unsubscribe|apply|invite|follow|like)\b/i,
+  tr: /(?<!\p{L})(gönder|paylaş|yayınla|yayımla|sil|kaldır|satın al|öde|sipariş|onayla|rezervasyon|rezerve|yanıtla|cevapla|yorum yap|aktar|bağış|abone|başvur|davet|takip et|beğen)/iu,
+};
+
+/** Whether a control's words say it sends something. */
+export function sendWords(label: string): boolean {
+  return Object.values(SEND_WORDS).some((re) => re.test(label));
+}
+
+/** What a click on an element would set off, as far as the page shows it. */
+export interface ControlInfo {
+  /** The element is, or sits in, a button, link, field or other control. */
+  control: boolean;
+  /** It submits a form. */
+  submits: boolean;
+  /** How the form it submits, or the field is part of, is sent: get, post or dialog; '' for none. */
+  method: string;
+  /** Its words: label, text or value. */
+  label: string;
+  /** A field where Enter may send what was written: a text area or an editable area. */
+  writes: boolean;
+  /** A one-line field and whether it searches. */
+  field: boolean;
+  search: boolean;
+}
+
+/** Runs in the page, on the element itself; written as a function the page receives as text. */
+const controlInfo = (node: unknown): ControlInfo => {
+  type El = {
+    tagName: string;
+    type?: string;
+    value?: unknown;
+    innerText?: string;
+    isContentEditable?: boolean;
+    form?: { method: string } | null;
+    getAttribute(name: string): string | null;
+    closest(selector: string): El | null;
+  };
+  const el = node as El;
+  const found = el.closest(
+    'button,input,select,textarea,a[href],summary,[contenteditable=""],[contenteditable="true"],[role=button],[role=link],[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox],[role=tab],[role=option],[role=switch],[role=checkbox],[role=textbox],[role=searchbox],[role=combobox]',
+  );
+  const c = found ?? el;
+  const tag = c.tagName.toLowerCase();
+  const attr = (n: string) => (c.getAttribute(n) || '').toLowerCase();
+  const type = (typeof c.type === 'string' ? c.type : attr('type')).toLowerCase();
+  const submitter =
+    (tag === 'button' && type === 'submit') || (tag === 'input' && (type === 'submit' || type === 'image'));
+  const field =
+    tag === 'input' &&
+    !submitter &&
+    !['checkbox', 'radio', 'button', 'reset', 'file', 'hidden', 'range', 'color'].includes(type);
+  const form = submitter || field ? (c.form ?? null) : null;
+  const words = (
+    c.getAttribute('aria-label') ||
+    (tag === 'input' ? '' : c.innerText) ||
+    (typeof c.value === 'string' ? c.value : '') ||
+    c.getAttribute('title') ||
+    ''
+  )
+    .trim()
+    .replace(/\s+/g, ' ');
+  const name = `${attr('name')} ${attr('id')} ${attr('placeholder')} ${attr('aria-label')}`;
+  return {
+    control: !!found,
+    submits: submitter && !!form,
+    method: form ? ((submitter && attr('formmethod')) || form.method || 'get').toLowerCase() : '',
+    label: words.length > 80 ? '' : words,
+    writes: tag === 'textarea' || !!c.isContentEditable,
+    field,
+    search:
+      type === 'search' ||
+      ['searchbox', 'combobox'].includes(attr('role')) ||
+      !!c.closest('[role=search]') ||
+      /search|query|\bara\b|^q\b|^s\b/.test(name),
+  };
+};
+
+/** Whether a click on this control sends something: a form posted, or words that say so. */
+export function clickSends(c: ControlInfo): boolean {
+  if (!c.control) return false;
+  if (c.submits && c.method === 'post') return true;
+  return sendWords(c.label);
+}
+
+/**
+ * Whether pressing Enter where this control has the focus sends something. A one-line field sends
+ * its form; one that searches only reads. A text area or an editable area is where chats and mail
+ * send on Enter. Null means nothing has the focus.
+ */
+export function enterSends(c: ControlInfo | null): boolean {
+  if (!c) return false;
+  if (c.writes) return true;
+  // A form sent with get reads (a search, a filter); a field with no form is read by the page's
+  // own script, which sends on Enter unless the field is plainly a search.
+  if (c.field) return c.method ? c.method === 'post' : !c.search;
+  return clickSends(c);
+}
+
+/** Keys that paste: what is pasted may have been copied from another site's page. */
+const PASTE = /^(control|meta|controlormeta)\+v$|^shift\+insert$/i;
+
+/** Whether a key press sends something by the key alone, whatever has the focus. */
+export function keySends(key: string): boolean | null {
+  const keys = key.replace(/\s+/g, '');
+  if (PASTE.test(keys)) return true;
+  const parts = keys.toLowerCase().split('+');
+  const main = parts.at(-1) ?? '';
+  // Control+Enter and Command+Enter send a message or a mail in most sites that have them.
+  if (main.endsWith('enter') && parts.slice(0, -1).some((m) => /^(control|meta|controlormeta)$/.test(m)))
+    return true;
+  // Enter and Space act on what has the focus: the page decides.
+  if (main.endsWith('enter') || main === 'space' || key === ' ') return null;
+  return false;
+}
+
+/** The kinds of field a vault secret may go into. */
+type FieldKind = 'username' | 'password' | 'code';
+/** Input types each kind of field may have; a password goes into a password field only. */
+const FIELD_TYPES: Record<FieldKind, readonly string[]> = {
+  username: ['text', 'email', 'tel'],
+  password: ['password'],
+  code: ['text', 'tel', 'number', 'password'],
+};
+
+/** Runs in the page, on a field: its kind, and every address its form may send it to. */
+const fieldInfo = (node: unknown) => {
+  type El = {
+    tagName: string;
+    type?: unknown;
+    formAction?: unknown;
+    form?: { action: string; elements: ArrayLike<El> } | null;
+    getAttribute(name: string): string | null;
+    hasAttribute(name: string): boolean;
+    closest(selector: string): El | null;
+  };
+  const el = node as El;
+  const attr = (n: string) => (el.getAttribute(n) || '').toLowerCase();
+  const actions: string[] = [];
+  if (el.form) {
+    actions.push(el.form.action);
+    // A button may send the form somewhere else than the form says.
+    for (const c of Array.from(el.form.elements)) {
+      if (c.hasAttribute('formaction') && typeof c.formAction === 'string') actions.push(c.formAction);
+    }
+  }
+  const name = `${attr('name')} ${attr('id')} ${attr('placeholder')} ${attr('aria-label')}`;
+  return {
+    tag: el.tagName.toLowerCase(),
+    type: typeof el.type === 'string' ? el.type.toLowerCase() : attr('type') || 'text',
+    actions,
+    search:
+      attr('type') === 'search' ||
+      attr('role') === 'searchbox' ||
+      !!el.closest('[role=search]') ||
+      /search|query|\bara\b|^q\b|^s\b/.test(name),
+  };
+};
+
+/**
+ * Runs in each frame: whether something in it has the focus. `frame` means the focus is in a
+ * frame inside it.
+ */
+const FOCUS_STATE = `(() => {
+  const a = document.activeElement;
+  if (!document.hasFocus() || !a || a === document.body || a === document.documentElement) return 'none';
+  return /^i?frame$/i.test(a.tagName) ? 'frame' : 'element';
+})()`;
+
+/**
+ * What has the focus in the page, looked for in every frame. `unknown` when the focus is in a frame
+ * that cannot be read: a key pressed there is taken as one that may send.
+ */
+async function focusInfo(page: Page): Promise<ControlInfo | null | 'unknown'> {
+  let inFrame = false;
+  for (const frame of page.frames()) {
+    const state = await frame.evaluate(FOCUS_STATE).catch(() => 'none');
+    if (state === 'frame') inFrame = true;
+    if (state !== 'element') continue;
+    const handle = await frame.evaluateHandle('document.activeElement').catch(() => null);
+    const el = handle?.asElement() ?? null;
+    if (!el) {
+      await handle?.dispose().catch(() => {});
+      continue;
+    }
+    try {
+      return await el.evaluate(controlInfo);
+    } catch {
+      return 'unknown';
+    } finally {
+      await el.dispose().catch(() => {});
+    }
+  }
+  return inFrame ? 'unknown' : null;
+}
+
+/** How long a step the server took as sending may send once it runs: the card may wait a while. */
+const ALLOW_MS = 60 * 60_000;
+/** A two-step code is good for a minute or two; it stays hidden from what the bot reads this long. */
+const CODE_HIDDEN_MS = 10 * 60_000;
 
 /** Values of password fields on the page, in every frame. */
 async function passwordValues(page: Page): Promise<string[]> {
@@ -115,27 +370,32 @@ export function browserTools(opts: {
       page.ariaSnapshot({ mode: 'ai', timeout: 10_000 }).catch(() => ''),
       passwordValues(page),
     ]);
-    // The outline shows what is typed in fields, password fields too: hide every password.
-    const hidden = [...new Set([...typed, ...browser.secrets(bot.id)])]
-      .filter((v) => v.length >= MIN_MASKED)
-      .sort((a, b) => b.length - a.length);
-    const snapshot = hidden.reduce((text, secret) => text.replaceAll(secret, MASK), raw);
     const tabs = browser.pages(bot.id)?.pages.length ?? 1;
-    const body =
-      snapshot.length > MAX_SNAPSHOT ? `${snapshot.slice(0, MAX_SNAPSHOT)}\n${t('browser.cut')}` : snapshot;
-    return [
-      t('browser.address', { url: page.url() }),
-      t('browser.title', { title: title || '-' }),
-      ...(tabs > 1 ? [t('browser.tabCount', { count: tabs })] : []),
-      '',
-      body || t('browser.emptyPage'),
-    ].join('\n');
+    const body = raw.length > MAX_SNAPSHOT ? `${raw.slice(0, MAX_SNAPSHOT)}\n${t('browser.cut')}` : raw;
+    // The outline shows what is typed in fields, password fields too, and a form sent with get
+    // carries them in the address and the title: hide every password, wherever it shows.
+    return maskSecrets(
+      [
+        t('browser.address', { url: page.url() }),
+        t('browser.title', { title: title || '-' }),
+        ...(tabs > 1 ? [t('browser.tabCount', { count: tabs })] : []),
+        '',
+        body || t('browser.emptyPage'),
+      ].join('\n'),
+      [...typed, ...browser.secrets(bot.id)],
+    );
+  };
+  /** A step's result with every vault secret taken out, whatever part of the page carried it. */
+  const hide = (r: ToolResult): ToolResult => {
+    const secrets = browser.secrets(bot.id);
+    if (!secrets.length) return r;
+    return typeof r === 'string' ? maskSecrets(r, secrets) : { ...r, text: maskSecrets(r.text, secrets) };
   };
 
   /** Runs one step in the bot's browser; browser problems come back as text the bot can act on. */
   const step = async (fn: (page: Page) => Promise<ToolResult>): Promise<ToolResult> => {
     try {
-      const r = await browser.use(bot.id, fn);
+      const r = hide(await browser.use(bot.id, fn));
       // What the page asked meanwhile (a confirm before deleting, an alert), and how it was answered.
       const asked = browser.takeDialogs(bot.id);
       // Addresses on this computer or a private network the page tried to reach, which were refused.
@@ -153,10 +413,11 @@ export function browserTools(opts: {
         ),
         ...(refused.length ? [t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })] : []),
       ].join('\n');
-      return typeof r === 'string' ? `${note}\n\n${r}` : { ...r, text: `${note}\n\n${r.text}` };
+      // The page's own questions may quote what was typed into it.
+      return hide(typeof r === 'string' ? `${note}\n\n${r}` : { ...r, text: `${note}\n\n${r.text}` });
     } catch (err) {
       const refused = browser.takeRefused(bot.id);
-      const text = browserErrorText(err, t);
+      const text = maskSecrets(browserErrorText(err, t), browser.secrets(bot.id));
       return refused.length
         ? `${t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })}\n${text}`
         : text;
@@ -167,28 +428,165 @@ export function browserTools(opts: {
    * short status instead of the whole page again: the refs of the last read stay valid, and the bot
    * reads the page when it needs to. A step that moved to another address or tab reads it at once.
    */
-  const act = (fn: (page: Page) => Promise<void>, brief = false) =>
+  const act = (fn: (page: Page) => Promise<void>, brief = false, hold = false) =>
     step(async (page) => {
       const before = { url: page.url(), title: await page.title().catch(() => '') };
-      await fn(page);
-      await settle(page);
-      // A link may have opened a new tab, which is now the active one.
-      const now = browser.pages(bot.id)?.active ?? page;
-      if (!brief || now !== page || now.url() !== before.url) return outline(now);
-      const title = await now.title().catch(() => '');
-      if (title !== before.title) return outline(now);
-      const focused = await now
-        .evaluate(FOCUSED)
-        .then((v) => (typeof v === 'string' ? v : ''))
-        .catch(() => '');
-      return [
-        t('browser.address', { url: now.url() }),
-        t('browser.title', { title: title || '-' }),
-        ...(focused ? [t('browser.focused', { element: focused })] : []),
-        t('browser.unchanged'),
-      ].join('\n');
+      const held = await holding(page, hold, async () => {
+        await fn(page);
+        await settle(page);
+      });
+      const out = await (async () => {
+        // A link may have opened a new tab, which is now the active one.
+        const now = browser.pages(bot.id)?.active ?? page;
+        if (!brief || now !== page || now.url() !== before.url) return outline(now);
+        const title = await now.title().catch(() => '');
+        if (title !== before.title) return outline(now);
+        const focused = await now
+          .evaluate(FOCUSED)
+          .then((v) => (typeof v === 'string' ? v : ''))
+          .catch(() => '');
+        return [
+          t('browser.address', { url: now.url() }),
+          t('browser.title', { title: title || '-' }),
+          ...(focused ? [t('browser.focused', { element: focused })] : []),
+          t('browser.unchanged'),
+        ].join('\n');
+      })();
+      return held ? `${t('browser.sendHeld')}\n\n${out}` : out;
     });
+  /**
+   * Runs a step that was not approved as one that sends. A form the page sends meanwhile (the step
+   * pressed its button, or the page's script sent it on a change) is cancelled before it reaches
+   * the site. A cancelled page load shows no error page, so the page stays as it was, with what was
+   * typed in it. Says whether one was.
+   */
+  const holding = async (page: Page, hold: boolean, run: () => Promise<void>): Promise<boolean> => {
+    if (!hold) {
+      await run();
+      return false;
+    }
+    let held = false;
+    const context = page.context();
+    const stop = (route: Route) => {
+      const r = route.request();
+      if (r.isNavigationRequest() && r.method() !== 'GET') {
+        held = true;
+        return route.abort('aborted');
+      }
+      return route.fallback();
+    };
+    await context.route('**/*', stop);
+    try {
+      await run();
+    } finally {
+      await context.unroute('**/*', stop).catch(() => {});
+    }
+    return held;
+  };
+  /** Steps the server took as sending, by their input, with when; their run may send. */
+  const allowed = new Map<string, number>();
+  const callKey = (name: string, a: unknown) => `${name} ${JSON.stringify(a)}`;
+  /** Whether this run of a step was let through as one that sends; each approval is used once. */
+  const maySend = (name: string, a: { sends?: boolean }) => {
+    const key = callKey(name, a);
+    const when = allowed.get(key);
+    allowed.delete(key);
+    return a.sends === true || (when !== undefined && Date.now() - when < ALLOW_MS);
+  };
+  /**
+   * Looks at the page before a step. With no browser open there is nothing to send; a page that
+   * cannot be read is taken as one that may send.
+   */
+  const looks = async (fn: (page: Page) => Promise<boolean>): Promise<boolean> => {
+    if (!browser.pages(bot.id)) return false;
+    try {
+      return await browser.use(bot.id, fn);
+    } catch (err) {
+      return !(err instanceof BrowserError);
+    }
+  };
+  /**
+   * Whether a step needs the person's approval: the bot says it sends, or the page shows it does,
+   * whatever the bot said (a form posted, a "Send" button, Enter in a message box). What the bot
+   * read may steer it, so its own word cannot be the only gate.
+   */
+  const gate =
+    <A extends { sends?: boolean }>(name: string, seen: (page: Page, a: A) => Promise<boolean>) =>
+    async (a: A): Promise<boolean> => {
+      const sends = a.sends === true || (await looks((page) => seen(page, a)));
+      if (sends) {
+        const now = Date.now();
+        for (const [k, when] of allowed) if (now - when >= ALLOW_MS) allowed.delete(k);
+        allowed.set(callKey(name, a), now);
+      }
+      return sends;
+    };
   const at = (page: Page, r: string) => page.locator(`aria-ref=${r}`);
+  const control = (page: Page, r: string) => at(page, r).evaluate(controlInfo, undefined, { timeout: 2_000 });
+  /** Whether Enter pressed in this field, or where the focus is, sends something. */
+  const enterSendsAt = async (page: Page, r?: string) => {
+    if (r) return enterSends(await control(page, r));
+    const focus = await focusInfo(page);
+    return focus === 'unknown' || enterSends(focus);
+  };
+  /** Whether an address may carry sign-in details: https, or plain http on this computer. */
+  const secure = (u: URL) =>
+    u.protocol === 'https:' || (u.protocol === 'http:' && browser.localHost(u.hostname));
+  const parsed = (raw: string): URL | null => {
+    try {
+      return new URL(raw);
+    } catch {
+      return null;
+    }
+  };
+  /**
+   * The field a vault secret goes into: the kind of field asked for, in a frame of the saved site
+   * itself over https (not another site's frame inside its page), and in a form that sends to that
+   * site. Otherwise the reason it is not, for the bot.
+   */
+  const secretField = async (
+    page: Page,
+    r: string,
+    kind: FieldKind,
+    site: string,
+  ): Promise<{ field: ElementHandle } | { refused: string }> => {
+    const field = await at(page, r).elementHandle({ timeout: 5_000 });
+    const refuse = async (refused: string) => {
+      await field.dispose().catch(() => {});
+      return { refused };
+    };
+    const info = await field.evaluate(fieldInfo);
+    if (
+      info.tag !== 'input' ||
+      (kind !== 'password' && info.search) ||
+      !FIELD_TYPES[kind].includes(info.type)
+    ) {
+      return refuse(
+        t(
+          kind === 'password'
+            ? 'browser.loginNotPassword'
+            : kind === 'username'
+              ? 'browser.loginNotUsername'
+              : 'browser.codeNotField',
+        ),
+      );
+    }
+    // The frame's address, from the browser itself: a page cannot make its frame look like another.
+    const frame: Frame | null = await field.ownerFrame();
+    const where = parsed(frame?.url() ?? '');
+    if (!where || !secure(where) || !siteMatches(where.hostname, site)) {
+      return refuse(t('browser.loginFrame', { origin: where?.origin ?? '-', site }));
+    }
+    for (const action of info.actions) {
+      const to = parsed(action);
+      // A form a script sends never goes to its action.
+      if (to?.protocol === 'javascript:') continue;
+      if (!to || !secure(to) || !siteMatches(to.hostname, site)) {
+        return refuse(t('browser.loginAction', { target: to?.origin ?? action.slice(0, 100), site }));
+      }
+    }
+    return { field };
+  };
   /** What the bot is told when the page is still a bot check or a refusal after the wait. */
   const wallNote = (out: ToolResult, wall: WallState): ToolResult => {
     if (wall === 'clear') return out;
@@ -230,28 +628,35 @@ export function browserTools(opts: {
     def(
       'browser_click',
       { ref, element, sends, double: z.boolean().default(false) },
-      async ({ ref: r, double }) =>
-        act(async (page) => {
-          const target = at(page, r);
-          try {
-            // A dry run first: a decorative layer over the element (a banner's shadow, an empty
-            // overlay) makes a real click wait out its whole timeout and fail.
-            await target.click({ trial: true, timeout: 3_000 });
-          } catch (err) {
-            if (/intercepts pointer events/i.test((err as Error).message)) {
-              await target.evaluate(
-                (el, n) => {
-                  for (let i = 0; i < n; i++) (el as { click(): void }).click();
-                },
-                double ? 2 : 1,
-              );
-              return;
+      async (a) => {
+        const { ref: r, double } = a;
+        const hold = !maySend('browser_click', a);
+        return act(
+          async (page) => {
+            const target = at(page, r);
+            try {
+              // A dry run first: a decorative layer over the element (a banner's shadow, an empty
+              // overlay) makes a real click wait out its whole timeout and fail.
+              await target.click({ trial: true, timeout: 3_000 });
+            } catch (err) {
+              if (/intercepts pointer events/i.test((err as Error).message)) {
+                await target.evaluate(
+                  (el, n) => {
+                    for (let i = 0; i < n; i++) (el as { click(): void }).click();
+                  },
+                  double ? 2 : 1,
+                );
+                return;
+              }
             }
-          }
-          await target.click({ clickCount: double ? 2 : 1 });
-        }),
+            await target.click({ clickCount: double ? 2 : 1 });
+          },
+          false,
+          hold,
+        );
+      },
       'internal',
-      async (a) => a.sends,
+      gate('browser_click', async (page, a) => clickSends(await control(page, a.ref))),
     ),
     // Saying yes to a page's confirm (delete, submit, leave) goes ahead like a click that sends, so
     // the person approves it.
@@ -273,7 +678,7 @@ export function browserTools(opts: {
     def(
       'browser_hover',
       { ref, element },
-      async ({ ref: r }) => act((page) => at(page, r).hover({ timeout: 5_000 })),
+      async ({ ref: r }) => act((page) => at(page, r).hover({ timeout: 5_000 }), false, true),
       'internal',
     ),
     def(
@@ -285,23 +690,33 @@ export function browserTools(opts: {
         submit: z.boolean().default(false),
         sends,
       },
-      async ({ ref: r, text, submit }) =>
-        act(async (page) => {
-          if (r) {
-            try {
-              await at(page, r).fill(text, { timeout: 5_000 });
-            } catch {
-              // Not a plain field (a canvas or script-drawn editor): click into it and type.
-              await at(page, r).click({ timeout: 5_000 });
+      async (a) => {
+        const { ref: r, text, submit } = a;
+        const hold = !maySend('browser_type', a);
+        return act(
+          async (page) => {
+            if (r) {
+              try {
+                await at(page, r).fill(text, { timeout: 5_000 });
+              } catch {
+                // Not a plain field (a canvas or script-drawn editor): click into it and type.
+                await at(page, r).click({ timeout: 5_000 });
+                await page.keyboard.type(text);
+              }
+            } else {
               await page.keyboard.type(text);
             }
-          } else {
-            await page.keyboard.type(text);
-          }
-          if (submit) await page.keyboard.press('Enter');
-        }, !submit),
+            if (submit) await page.keyboard.press('Enter');
+          },
+          !submit,
+          hold,
+        );
+      },
       'internal',
-      async (a) => a.sends,
+      // Typing alone sends nothing; Enter (asked for, or a line break typed as keys) may.
+      gate('browser_type', async (page, a) =>
+        a.submit || /[\r\n]/.test(a.text) ? enterSendsAt(page, a.ref) : false,
+      ),
     ),
     def(
       'browser_fill',
@@ -313,26 +728,31 @@ export function browserTools(opts: {
       },
       async ({ fields }) => {
         const skipped: string[] = [];
-        const out = await act(async (page) => {
-          for (const f of fields) {
-            const field = at(page, f.ref);
-            // Secrets are typed by the server from the vault, or by the person; never filled here.
-            const secret = await field
-              .evaluate((el) => {
-                const input = el as { type?: string; autocomplete?: string };
-                return (
-                  input.type === 'password' ||
-                  /one-time-code|cc-(number|csc|exp)/.test(input.autocomplete ?? '')
-                );
-              })
-              .catch(() => false);
-            if (secret) {
-              skipped.push(f.element ?? f.ref);
-              continue;
+        const out = await act(
+          async (page) => {
+            for (const f of fields) {
+              const field = at(page, f.ref);
+              // Secrets are typed by the server from the vault, or by the person; never filled here.
+              const secret = await field
+                .evaluate((el) => {
+                  const input = el as { type?: string; autocomplete?: string };
+                  return (
+                    input.type === 'password' ||
+                    /one-time-code|cc-(number|csc|exp)/.test(input.autocomplete ?? '')
+                  );
+                })
+                .catch(() => false);
+              if (secret) {
+                skipped.push(f.element ?? f.ref);
+                continue;
+              }
+              await field.fill(f.text, { timeout: 5_000 });
             }
-            await field.fill(f.text, { timeout: 5_000 });
-          }
-        }, true);
+            // Filling sends nothing; a page that sends its form on a change waits for a step that does.
+          },
+          true,
+          true,
+        );
         if (!skipped.length) return out;
         const note = t('browser.fillSkipped', { fields: skipped.join(', ') });
         return typeof out === 'string' ? `${note}\n\n${out}` : { ...out, text: `${note}\n\n${out.text}` };
@@ -402,12 +822,15 @@ export function browserTools(opts: {
         if (!username_ref && !password_ref) return t('browser.loginNoField');
         let host: string;
         try {
-          host = await browser.use(bot.id, async (page) => {
+          const url = await browser.use(bot.id, async (page) => {
             const url = new URL(page.url());
             if (url.protocol !== 'https:' && url.protocol !== 'http:')
               throw new BrowserError('badUrl', page.url());
-            return url.hostname;
+            return url;
           });
+          // Over plain http anyone on the way reads the password: it is not typed, nor asked for.
+          if (!secure(url)) return t('browser.loginInsecure');
+          host = url.hostname;
         } catch (err) {
           return browserErrorText(err, t);
         }
@@ -430,12 +853,35 @@ export function browserTools(opts: {
         const c = cred;
         return step(async (page) => {
           // The page may have moved while the user filled in the card: only type on the right site.
-          const now = new URL(page.url()).hostname;
-          if (!siteMatches(now, c.site)) return t('browser.loginMoved', { host: now, site: c.site });
-          browser.rememberSecret(bot.id, c.password);
-          if (username_ref && c.username) await at(page, username_ref).fill(c.username);
-          if (password_ref) await at(page, password_ref).fill(c.password);
-          if (submit) await at(page, (password_ref ?? username_ref)!).press('Enter');
+          const now = new URL(page.url());
+          if (!siteMatches(now.hostname, c.site)) {
+            return t('browser.loginMoved', { host: now.hostname, site: c.site });
+          }
+          if (!secure(now)) return t('browser.loginInsecure');
+          // Each value goes only into a field of its own kind, on the saved site itself: a ref may
+          // name a search box, a comment field, or a frame of another site inside the page.
+          const fields: ElementHandle[] = [];
+          try {
+            let user: ElementHandle | null = null;
+            let pass: ElementHandle | null = null;
+            if (username_ref && c.username) {
+              const f = await secretField(page, username_ref, 'username', c.site);
+              if ('refused' in f) return f.refused;
+              fields.push((user = f.field));
+            }
+            if (password_ref) {
+              const f = await secretField(page, password_ref, 'password', c.site);
+              if ('refused' in f) return f.refused;
+              fields.push((pass = f.field));
+            }
+            browser.rememberSecret(bot.id, c.password);
+            if (user) await user.fill(c.username);
+            if (pass) await pass.fill(c.password);
+            const last = pass ?? user;
+            if (submit) await (last ? last.press('Enter') : at(page, username_ref!).press('Enter'));
+          } finally {
+            for (const f of fields) await f.dispose().catch(() => {});
+          }
           if (c.id) void vault.used(c.id).catch(() => {});
           await settle(page);
           const out = await outline(browser.pages(bot.id)?.active ?? page);
@@ -454,7 +900,9 @@ export function browserTools(opts: {
       async ({ ref: r, account, submit }) => {
         let host: string;
         try {
-          host = await browser.use(bot.id, async (page) => new URL(page.url()).hostname);
+          const url = await browser.use(bot.id, async (page) => new URL(page.url()));
+          if (!secure(url)) return t('browser.loginInsecure');
+          host = url.hostname;
         } catch (err) {
           return browserErrorText(err, t);
         }
@@ -469,12 +917,20 @@ export function browserTools(opts: {
         // Made on the server and typed into the page; the bot never sees it.
         const code = totp(c.totp!);
         return step(async (page) => {
-          if (!siteMatches(new URL(page.url()).hostname, c.site)) {
-            return t('browser.loginMoved', { host: new URL(page.url()).hostname, site: c.site });
+          const now = new URL(page.url());
+          if (!siteMatches(now.hostname, c.site)) {
+            return t('browser.loginMoved', { host: now.hostname, site: c.site });
           }
-          browser.rememberSecret(bot.id, code);
-          await at(page, r).fill(code);
-          if (submit) await at(page, r).press('Enter');
+          if (!secure(now)) return t('browser.loginInsecure');
+          const f = await secretField(page, r, 'code', c.site);
+          if ('refused' in f) return f.refused;
+          try {
+            browser.rememberSecret(bot.id, code, CODE_HIDDEN_MS);
+            await f.field.fill(code);
+            if (submit) await f.field.press('Enter');
+          } finally {
+            await f.field.dispose().catch(() => {});
+          }
           void vault.used(c.id).catch(() => {});
           await settle(page);
           const out = await outline(browser.pages(bot.id)?.active ?? page);
@@ -487,17 +943,32 @@ export function browserTools(opts: {
       'browser_select',
       { ref, element, values: z.array(z.string().max(500)).min(1).max(20) },
       async ({ ref: r, values }) =>
-        act(async (page) => {
-          await at(page, r).selectOption(values);
-        }, true),
+        act(
+          async (page) => {
+            await at(page, r).selectOption(values);
+          },
+          true,
+          // Choosing sends nothing; a page that sends its form on a change waits for a step that does.
+          true,
+        ),
       'internal',
     ),
     def(
       'browser_press',
       { key: z.string().min(1).max(40).describe('e.g. Enter, Escape, Tab, ArrowDown, Control+a'), sends },
-      async ({ key }) => act((page) => page.keyboard.press(key), true),
+      async (a) => {
+        const hold = !maySend('browser_press', a);
+        return act((page) => page.keyboard.press(a.key), true, hold);
+      },
       'internal',
-      async (a) => a.sends,
+      gate('browser_press', async (page, a) => {
+        const byKey = keySends(a.key);
+        if (byKey !== null) return byKey;
+        const focus = await focusInfo(page);
+        if (focus === 'unknown') return true;
+        // Enter sends what a field holds; Space presses the button that has the focus.
+        return /enter$/i.test(a.key) ? enterSends(focus) : !!focus && clickSends(focus);
+      }),
     ),
     def(
       'browser_scroll',
@@ -574,6 +1045,9 @@ export function browserTools(opts: {
       },
       async ({ ref: r, save_as }) =>
         step(async (page) => {
+          // Text can be masked, a picture cannot: none is taken while a vault secret shows in plain
+          // text (a "show password" switch, a field it was typed into, the address).
+          if (await secretShown(page, browser.secrets(bot.id))) return t('browser.screenshotSecret');
           // In page points: a sharper screen would only make the picture larger, not clearer to the bot.
           const options = { type: 'jpeg', quality: 70, timeout: 15_000, scale: 'css' } as const;
           const shot = r ? await at(page, r).screenshot(options) : await page.screenshot(options);
