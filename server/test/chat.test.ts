@@ -1073,6 +1073,49 @@ describe('sohbet', () => {
     expect(CONTEXT_FULL.test('400 {"error":{"code":"context_length_exceeded"}}')).toBe(true);
   });
 
+  it('yarıda kesilen yanıt aynı modelle bir kez daha denenir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[kesik] dükkan nasıl');
+    await t.services.turns.idle();
+    const [first, second] = t.engine.requests.slice(-2);
+    expect(second!.turnId).toBe(first!.turnId);
+    expect(second!.model).toBe(first!.model);
+    expect(second!.prompt).toBe(first!.prompt);
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.kind === 'retryCut')!.text).toContain('bir kez daha');
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
+    expect(msgs.at(-1)!.role).toBe('assistant');
+  });
+
+  it('ikinci deneme de kesilirse iş yedek modele geçer', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.api('PATCH', '/api/settings', { backupModel: 'openrouter/yedek' });
+    await t.send(thread.id, '[kesik-hep] bak');
+    await t.services.turns.idle();
+    const turnId = t.engine.requests.at(-1)!.turnId;
+    const models = t.engine.requests.filter((r) => r.turnId === turnId).map((r) => r.model);
+    expect(models).toHaveLength(3);
+    expect(models[0]).toBe(models[1]);
+    expect(models[2]).toBe('openrouter/yedek');
+    const kinds = (await t.messages(thread.id)).map((m) => m.props.kind);
+    expect(kinds).toContain('retryCut');
+    expect(kinds).toContain('backupModel');
+  });
+
+  it('bir şey değiştirmiş tur kesilince yeniden denenmez', async () => {
+    const bot = await t.bot({ permissionMode: 'auto' });
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[izin:Write {"file_path":"a"}] [kesik]');
+    await t.services.turns.idle();
+    const turnId = t.engine.requests.at(-1)!.turnId;
+    expect(t.engine.requests.filter((r) => r.turnId === turnId)).toHaveLength(1);
+    const msgs = await t.messages(thread.id);
+    expect(msgs.some((m) => m.props.kind === 'retryCut')).toBe(false);
+    expect(msgs.at(-1)!.role).toBe('error');
+  });
+
   it('sınıra takılan mesaj sınır kalkınca bir kez kendiliğinden yeniden gönderilir', async () => {
     const bot = await t.bot();
     const thread = await main(bot.id);

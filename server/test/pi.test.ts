@@ -1066,6 +1066,14 @@ describe('sağlayıcı hataları', () => {
     expect(providerTrouble('429 Too Many Requests', 'groq', t)).toMatchObject({ kind: 'limit' });
     expect(providerTrouble('503 Service Unavailable', 'groq', t)).toMatchObject({ transient: true });
     expect(providerTrouble('fetch failed: ECONNREFUSED', 'custom-ev', t).message).toContain('ulaşılamadı');
+    expect(providerTrouble('Stream ended without finish_reason', 'opencode-go', t)).toMatchObject({
+      kind: 'engine',
+      transient: true,
+      cut: true,
+      message: expect.stringContaining('yanıtı bitirmeden kesti'),
+    });
+    expect(providerTrouble('TypeError: terminated', 'openai', t)).toMatchObject({ cut: true });
+    expect(providerTrouble('process terminated by signal', 'openai', t).cut).toBeUndefined();
     expect(providerTrouble('strange', 'x', t)).toEqual({ kind: 'engine', message: 'strange' });
   });
 });

@@ -195,6 +195,11 @@ export type TurnOutcome = (
       provider?: string;
       /** The model is busy or down for now; another model may do the work. */
       transient?: boolean;
+      /**
+       * The reply broke off midway: the provider closed the stream before saying it was done. The
+       * same request may well go through on a second try.
+       */
+      cut?: boolean;
       /** What the turn spent before it failed, when the engine knows: it counts toward the limit. */
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */
@@ -208,6 +213,9 @@ export const withContext = (req: Pick<TurnRequest, 'prompt' | 'context'>) =>
   req.context ? `${req.context}\n\n${req.prompt}` : req.prompt;
 
 export const OVERLOADED = /overloaded|\b(503|529)\b|service unavailable|temporarily unavailable/i;
+/** A reply the provider closed before its end, as the client libraries word it. */
+const CUT =
+  /stream ended without finish_reason|premature close|other side closed|\bECONNRESET\b|^(TypeError:\s*)?terminated$/i;
 
 /**
  * A provider's error in words the person can act on: a refused key, an empty balance, a rate
@@ -217,7 +225,7 @@ export function providerTrouble(
   raw: string,
   provider: string,
   t: T,
-): { kind: 'limit' | 'engine'; message: string; transient?: boolean } {
+): { kind: 'limit' | 'engine'; message: string; transient?: boolean; cut?: boolean } {
   const detail = readableError(raw.trim(), 300);
   const said = (key: Parameters<T>[0]) => `${t(key, { provider })} (${detail})`;
   if (/\b401\b|unauthori[sz]ed|invalid.{0,20}(api[ _-]?)?key|incorrect api key|authentication/i.test(raw)) {
@@ -235,6 +243,9 @@ export function providerTrouble(
     return { kind: 'limit', message: said('engine.providerLimit') };
   }
   if (OVERLOADED.test(raw)) return { kind: 'engine', message: said('engine.providerBusy'), transient: true };
+  if (CUT.test(raw.trim())) {
+    return { kind: 'engine', message: said('engine.providerCut'), transient: true, cut: true };
+  }
   if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|fetch failed|network|socket hang up/i.test(raw)) {
     return { kind: 'engine', message: said('engine.providerUnreachable'), transient: true };
   }
