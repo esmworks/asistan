@@ -680,6 +680,9 @@ export const en: Catalog<MessageKey> = {
   'message.delete': 'Delete',
   'message.confirmDelete':
     'Delete this message from the conversation? What the bot already read of it stays with the bot.',
+  'message.openLinkTitle': 'Open this link?',
+  'message.openLinkConfirm': 'The page in this conversation wants to open a link:\n\n{url}\n\nOpen it?',
+  'message.openLink': 'Open',
   'message.showAll': 'Show the whole message ({count} characters)',
   'message.copyDetails': 'Copy details',
   'message.copyCode': 'Copy code',
