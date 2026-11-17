@@ -336,9 +336,13 @@ ensure_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     step "Docker kuruluyor" "Installing Docker"
     # Docker's own installer: adds Docker's apt repository and installs Engine and the compose plugin.
-    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-    sh /tmp/get-docker.sh >/dev/null
-    rm -f /tmp/get-docker.sh
+    # A fresh private file, not a fixed name in /tmp, where another user could have put a file or a
+    # link of their own that root would then run or write through.
+    local installer
+    installer=$(mktemp)
+    curl -fsSL https://get.docker.com -o "$installer"
+    sh "$installer" >/dev/null
+    rm -f "$installer"
   fi
   systemctl enable --now docker >/dev/null 2>&1 || true
   local version
