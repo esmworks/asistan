@@ -127,11 +127,11 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   // The person's own computer as the bots' way out to the web, when this server runs elsewhere.
   const egress = config.onUserComputer ? null : new EgressHub();
   // Without a computer service this server starts the browsers itself, behind a proxy of its own;
-  // with one, the desktops' browsers reach that way through the service.
+  // with one, the desktops' browsers reach that way through the service. On the person's own
+  // computer the proxy has no other way out, but it still checks each address it connects to: the
+  // browser would otherwise look a name up again after the server checked it.
   const localSocks =
-    egress && !computer && config.browserPath
-      ? await startLocalSocks(egress, config.browserLocalHosts)
-      : null;
+    !computer && config.browserPath ? await startLocalSocks(egress, config.browserLocalHosts) : null;
   const stopComputerLink = egress && config.computer ? linkComputer(egress, config.computer) : null;
   const browser = new BrowserManager({
     executable: config.browserPath,
