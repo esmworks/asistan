@@ -169,8 +169,9 @@ function SidebarPanel({
           <RoomRail />
         </div>
         {/* The line marks where the list scrolls under, so a half-hidden icon reads as more list.
-            The same buttons as the wide sidebar's footer, so folding it hides nothing. */}
-        <div className="flex flex-col items-center gap-1 border-t py-3">
+            The same buttons as the wide sidebar's footer, so folding it hides nothing; two to a row,
+            so they take half the height a single column would and leave the bots most of it. */}
+        <div className="grid grid-cols-2 place-items-center gap-1 border-t px-1.5 py-2.5">
           <RoundButton
             label={t('sidebar.newBot')}
             onClick={() => openBotDialog({ mode: 'create' })}
@@ -217,7 +218,7 @@ function SidebarPanel({
                 type="button"
                 onClick={() => openSettings('profile')}
                 aria-label={t('profile.open')}
-                className="relative mt-1 flex size-9 items-center justify-center rounded-full bg-secondary text-sm font-semibold transition-colors hover:bg-accent"
+                className="relative flex size-9 items-center justify-center rounded-full bg-secondary text-sm font-semibold transition-colors hover:bg-accent"
               >
                 {initials(userName, intl)}
                 <span
