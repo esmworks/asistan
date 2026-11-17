@@ -41,6 +41,24 @@ export function outsideFreeTools(tools: readonly AppTool[]): Set<string> {
   return free;
 }
 
+/** Programs that talk to another host, or an address written into a command. */
+const NETWORK_COMMAND =
+  /(?:^|[^\w-])(?:curl|wget|nc|ncat|netcat|socat|ssh|scp|sftp|rsync|ftp|telnet|http|https|xh)(?=$|[^\w-])|\b[a-z][\w+.-]*:\/\//i;
+
+/**
+ * Whether a step can reach another host: a web search or page, the browser, an API call, an app
+ * tool that takes an address, or a command naming a network program or an address. In a run that
+ * read outside text, such a step is the way out for what the text asks (sending the person's data
+ * to the writer's host), so it is never the reviewer's to pass; the person decides.
+ */
+export function reachesOut(toolName: string, input: Record<string, unknown>, tool?: AppTool): boolean {
+  if (toolName === 'WebSearch' || toolName === 'WebFetch') return true;
+  if (toolName === 'Bash') return typeof input.command !== 'string' || NETWORK_COMMAND.test(input.command);
+  if (!tool) return false;
+  if (!tool.server && (tool.name.startsWith('browser_') || tool.name.startsWith('api_'))) return true;
+  return takesAddress(tool.jsonSchema);
+}
+
 /** Words in an input's name that make it a place to send to: a page, a host, a hook. */
 const ADDRESS_WORDS = new Set([
   'url',

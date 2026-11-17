@@ -38,8 +38,8 @@ import {
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { markedOutside, outsideFreeTools, outsideRead, outsideSource } from './outside';
-import { ownerWords, quoteFound } from './owner-words';
+import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
+import { ownerWords, personAsked, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -641,8 +641,9 @@ export class TurnManager {
       : [];
     // Outside text the turn reads (a mail, a webhook's body or post, a watched page, an app's new
     // answer, a report written from one): its run's, what the prompt hands over below, and what
-    // the session it goes on in has read. The session keeps the mark, and with nobody watching the
-    // bot changes nothing and reaches no web page without a card, whatever its level.
+    // the session it goes on in has read. The session keeps the mark. With nobody watching, the bot
+    // reaches no web page without a card, and changes nothing without one either, unless the work
+    // goes back to the person's own message and its level lets the review pass it on those words.
     // A turn another bot's run handed over (a request, an answer, a room member naming it) comes
     // with what that run had read; so does a person's message carrying someone else's words.
     let reads: OutsideTrigger | null = routineRun?.trigger ?? turn.outside ?? null;
@@ -811,6 +812,10 @@ export class TurnManager {
         })
       : '';
 
+    // Whether the work goes back to the person's own message; read once, when it first matters.
+    let personRooted: Promise<boolean> | null = null;
+    const rootedInPerson = () => (personRooted ??= personAsked(this.ctx, turn));
+
     let streamed = '';
     let shown = 0;
     // With a desktop, commands run there (run_command) instead of in this server's sandbox; a bot
@@ -857,7 +862,8 @@ export class TurnManager {
       ) {
         return { behavior: 'deny', message: t('turn.safetyFloor') };
       }
-      // Outside text started the run: only reads and talking to the person go without a card.
+      // Outside text is in the run: only reads and talking to the person are free; the rest goes by
+      // the level `modeFor` gives it.
       let free = outside() ? outsideFreeTools(tools) : readOnlyTools;
       const appTool = tools.find((t) => toolPermName(t) === ask.toolName);
       const gated = !!appTool?.gated && (await appTool.gated(ask.input));
@@ -887,6 +893,7 @@ export class TurnManager {
           turn.modeCap,
         ),
         !!outside(),
+        !!outside() && (await rootedInPerson()),
       );
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
@@ -933,9 +940,19 @@ export class TurnManager {
         mode === 'review' &&
         !gated &&
         ask.input.sends !== true &&
-        !askRuleMatches(rules, ask.toolName, ask.input)
+        !askRuleMatches(rules, ask.toolName, ask.input) &&
+        // After outside text, a step that can reach another host is the person's to allow.
+        !(outside() && reachesOut(ask.toolName, ask.input, appTool))
       ) {
-        const review = await this.reviewed({ bot, thread, turn, ask, locale, signal: controller.signal });
+        const review = await this.reviewed({
+          bot,
+          thread,
+          turn,
+          ask,
+          locale,
+          outside: !!outside(),
+          signal: controller.signal,
+        });
         if (review.allowed) return { behavior: 'allow', let: { how: 'review' } };
         reviewReason = review.reason;
       }
@@ -1310,6 +1327,8 @@ export class TurnManager {
     turn: TurnRow;
     ask: { toolName: string; input: Record<string, unknown> };
     locale: Locale;
+    /** The run has read outside text: the reviewer is told, and holds to a stricter line. */
+    outside: boolean;
     signal: AbortSignal;
   }): Promise<{ allowed: boolean; reason: string }> {
     const no = { allowed: false, reason: '' };
@@ -1326,6 +1345,7 @@ export class TurnManager {
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
         words,
+        outside: o.outside,
         locale: o.locale,
         signal: o.signal,
       });

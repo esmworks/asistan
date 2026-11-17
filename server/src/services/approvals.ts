@@ -210,11 +210,15 @@ export function cappedMode(mode: PermissionMode, cap: PermissionMode | null | un
 }
 
 /**
- * The level a step is decided at. Text someone else wrote started an `outside` run, so it is
- * never freer than asking: what the text says cannot make the bot change anything by itself.
+ * The level a step is decided at. An `outside` run has read text someone else wrote, so it is
+ * never freer than the review: what the text says cannot make the bot change anything by itself.
+ * When the work goes back to the person's own message (`personAsked`), a bot that may act without
+ * a card is reviewed against those words, which nothing the run read can add to; otherwise (a
+ * mail, a webhook, a watched page started it) every change asks.
  */
-export function modeFor(mode: PermissionMode, outside: boolean): PermissionMode {
-  return outside && mode !== 'readonly' ? 'ask' : mode;
+export function modeFor(mode: PermissionMode, outside: boolean, personAsked = false): PermissionMode {
+  if (!outside || mode === 'readonly') return mode;
+  return personAsked && (mode === 'review' || mode === 'auto') ? 'review' : 'ask';
 }
 
 export function decide(opts: {
