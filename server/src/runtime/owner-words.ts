@@ -1,5 +1,5 @@
-import { outsideIn } from '@yumakbot/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { outsideIn, parseAnswers, questionItems } from '@yumakbot/shared';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { truncate } from '../util';
@@ -103,6 +103,91 @@ async function personWords(ctx: Ctx, turn: TurnRow): Promise<string[]> {
     .filter(Boolean)
     .reverse()
     .map((text) => truncate(text, EACH));
+}
+
+/** A question a bot asked the person on a card, and what the person chose or wrote on it. */
+export interface CardAnswer {
+  /** Written by the bot: it says what the answer agrees to, but is not the person's words. */
+  question: string;
+  /** The person's own: the option they picked or the text they typed on the card. */
+  answer: string;
+}
+
+/** How many of the person's latest card answers count. */
+const RECENT_ANSWERS = 5;
+
+/**
+ * The person's answers on a bot's question cards, behind the same work as `ownerWords`: a choice
+ * such as "Write them all" is the go-ahead for what the question asked. Only cards a bot asked
+ * with its question tool, answered by the person, since the oldest of the messages `ownerWords`
+ * reads; a secret answer never. The question is the bot's text, so the reviewer may quote only
+ * the answer.
+ */
+export async function ownerAnswers(ctx: Ctx, turn: TurnRow, hops = 0): Promise<CardAnswer[]> {
+  if (turn.source === 'user' || turn.source === 'reaction') return personAnswers(ctx, turn.threadId);
+  if (turn.source === 'routine') return [];
+  if (turn.jobId && hops < MAX_HOPS) {
+    const [job] = await ctx.db
+      .select({ fromTurnId: schema.jobs.fromTurnId })
+      .from(schema.jobs)
+      .where(eq(schema.jobs.id, turn.jobId))
+      .limit(1);
+    if (!job?.fromTurnId) return [];
+    const [from] = await ctx.db
+      .select()
+      .from(schema.turns)
+      .where(eq(schema.turns.id, job.fromTurnId))
+      .limit(1);
+    return from ? ownerAnswers(ctx, from, hops + 1) : [];
+  }
+  const [thread] = await ctx.db
+    .select({ kind: schema.threads.kind })
+    .from(schema.threads)
+    .where(eq(schema.threads.id, turn.threadId))
+    .limit(1);
+  return thread?.kind === 'room' ? personAnswers(ctx, turn.threadId) : [];
+}
+
+async function personAnswers(ctx: Ctx, threadId: string): Promise<CardAnswer[]> {
+  const said = await ctx.db
+    .select({ at: schema.messages.createdAt })
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.threadId, threadId),
+        eq(schema.messages.role, 'user'),
+        eq(schema.messages.author, 'user'),
+      ),
+    )
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(RECENT);
+  const since = said.at(-1)?.at;
+  const rows = await ctx.db
+    .select()
+    .from(schema.approvals)
+    .where(
+      and(
+        eq(schema.approvals.threadId, threadId),
+        eq(schema.approvals.kind, 'question'),
+        eq(schema.approvals.toolName, 'ask_user'),
+        eq(schema.approvals.status, 'allowed'),
+        eq(schema.approvals.decidedBy, 'person'),
+        ...(since ? [gte(schema.approvals.decidedAt, since)] : []),
+      ),
+    )
+    .orderBy(desc(schema.approvals.decidedAt))
+    .limit(RECENT_ANSWERS);
+  const answers: CardAnswer[] = [];
+  for (const r of rows.reverse()) {
+    const { items } = questionItems({ input: r.input, summary: r.summary, options: r.options });
+    const given = parseAnswers(r.answer, items.length);
+    items.forEach((q, i) => {
+      const answer = given[i]?.trim();
+      if (!q.secret && answer)
+        answers.push({ question: truncate(q.question, EACH), answer: truncate(answer, EACH) });
+    });
+  }
+  return answers;
 }
 
 /** Text compared loosely: case, spacing, quote marks and punctuation do not matter. */

@@ -1337,7 +1337,9 @@ export class ToolFactory {
             groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
             color: a.color ?? '#4f6bed',
             avatar: 'shape:blob',
-            permissionMode: 'ask',
+            // The level a bot the person creates starts at: the review asks only for what their
+            // words do not cover. Loosening it further still takes the person's card.
+            permissionMode: 'review',
             internet: false,
             projectDir: null,
             memory: true,
@@ -1348,7 +1350,7 @@ export class ToolFactory {
           await audit('create', created.id, null, created);
           return t('tool.created', { name: created.name, id: created.id });
         },
-        // A new bot always starts with the strictest settings: it asks before acting, no internet.
+        // A new bot starts on the review and off the internet; loosening either takes a card.
         'internal',
       ),
       def(

@@ -39,7 +39,7 @@ import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerWords, personAsked, quoteFound } from './owner-words';
+import { ownerAnswers, ownerWords, personAsked, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -895,6 +895,9 @@ export class TurnManager {
         !!outside(),
         !!outside() && (await rootedInPerson()),
       );
+      // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
+      // the card says what started the run. In the person's own request they count as always.
+      const locked = !!outside() && !(await rootedInPerson());
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -916,7 +919,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: !!outside(),
+        outside: locked,
       });
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
@@ -980,7 +983,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: !!outside(),
+        outside: locked,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -991,7 +994,7 @@ export class TurnManager {
               approvalId: a.id,
               ...held,
               // The card says what started the run, and offers no "always allow".
-              ...(outside() ? { outside: outside() } : {}),
+              ...(locked && outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
@@ -1342,7 +1345,9 @@ export class TurnManager {
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
     const words = await ownerWords(this.ctx, o.turn);
-    if (!words.length) return { allowed: false, reason: t('review.noWords') };
+    // What they chose on the bot's question cards is theirs too; the question is the bot's.
+    const answers = await ownerAnswers(this.ctx, o.turn);
+    if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
     let verdict;
     try {
       verdict = await engine.review({
@@ -1350,6 +1355,7 @@ export class TurnManager {
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
         words,
+        answers,
         outside: o.outside,
         locale: o.locale,
         signal: o.signal,
@@ -1361,7 +1367,9 @@ export class TurnManager {
     if (o.signal.aborted) return no;
     if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
     // The reviewer must point at what the person said; a quote that is not there does not count.
-    if (!quoteFound(verdict.quote, words)) return { allowed: false, reason: t('review.noQuote') };
+    // Only the person's own text can be quoted: their messages and answers, never a card's question.
+    const own = [...words, ...answers.map((a) => a.answer)];
+    if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
     const action = summarize(o.ask.toolName, o.ask.input);
     await this.services.threads.addMessage({
       threadId: o.thread.id,

@@ -270,6 +270,11 @@ export interface ReviewRequest {
    * saved instructions (see `ownerWords`). Never a payload, a page or another bot's message.
    */
   words: string[];
+  /**
+   * The person's answers on the bot's question cards behind the same work (see `ownerAnswers`):
+   * the question is the bot's text, the answer the person's own.
+   */
+  answers?: { question: string; answer: string }[];
   /** The run has read text someone else wrote (a page, an API's answer, a mail). */
   outside?: boolean;
   /** Language of the reason the person reads. */
