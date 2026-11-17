@@ -17,8 +17,11 @@ export type SettingsTab =
   | 'usage'
   | 'about';
 
-/** Sidebar widths in px. Below the snap point the sidebar folds into an avatar-only rail. */
-export const SIDEBAR = { rail: 80, min: 240, max: 480, default: 340 } as const;
+/**
+ * Sidebar widths in px. Below the snap point the sidebar folds into an avatar-only rail, wide
+ * enough that the window buttons at its top left keep as much room on their right as on their left.
+ */
+export const SIDEBAR = { rail: 96, min: 240, max: 480, default: 340 } as const;
 const SIDEBAR_SNAP = (SIDEBAR.rail + SIDEBAR.min) / 2;
 
 /** Width of the bot panel beside the chat. */

@@ -144,7 +144,8 @@ function SidebarPanel({
         <div className="window-drag h-12 shrink-0" />
         <div
           ref={scroller}
-          className="scroll-thin scroll-fade-end flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto pb-4"
+          // No scrollbar in a column this narrow; the faded edge tells that the list goes on.
+          className="scroll-fade-end flex [scrollbar-width:none] flex-1 flex-col items-center overflow-x-hidden overflow-y-auto pb-4"
         >
           {(pinned.length > 0 || dragging) && (
             <SectionBox section={PINNED} className="flex flex-col items-center gap-1 p-0.5">
