@@ -131,6 +131,8 @@ export const messages = pgTable(
       .references(() => threads.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['user', 'assistant', 'system', 'marker', 'approval', 'error'] }).notNull(),
     author: text('author').notNull(),
+    /** The person who wrote a `user` message; null for bots, outside text and older rows. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     text: sealedText('text').notNull().default(''),
     props: sealedProps('props').notNull().default({}),
     clientId: text('client_id'),
@@ -203,6 +205,8 @@ export const turns = pgTable(
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
     // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
     source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
+    /** The person the turn works for: who wrote, or whose request a bot passed on; null when nobody asked. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status', {
       enum: ['queued', 'running', 'done', 'error', 'interrupted'],
     }).notNull(),
@@ -248,6 +252,8 @@ export const approvals = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     turnId: text('turn_id'),
+    /** The person who answered the card, when a person did. */
+    decidedByUserId: text('decided_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     kind: text('kind', { enum: ['tool', 'question', 'login'] }).notNull(),
     toolName: text('tool_name').notNull(),
     summary: sealedText('summary').notNull().default(''),
@@ -675,6 +681,8 @@ export const skills = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     body: text('body').notNull().default(''),
+    /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -917,6 +925,8 @@ export const tickets = pgTable(
     id: text('id').primaryKey(),
     /** Shown as #12; grows by one with each ticket. */
     number: integer('number').notNull(),
+    /** The person who opened it; null when a bot did. */
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     title: sealedText('title').notNull(),
     description: sealedText('description').notNull().default(''),
     status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })

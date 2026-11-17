@@ -27,6 +27,8 @@ export interface NewMessage {
   props?: Record<string, unknown>;
   clientId?: string | null;
   turnId?: string | null;
+  /** The person who wrote it, for a person's own message. */
+  userId?: string | null;
 }
 
 /** How many messages a conversation opens with, and how many each "load older" adds. */
@@ -541,6 +543,7 @@ export class ThreadService {
           props: m.props ?? {},
           clientId: m.clientId ?? null,
           turnId: m.turnId ?? null,
+          userId: m.userId ?? null,
           // Distinct, ordered timestamps even within one millisecond.
           createdAt: sql`clock_timestamp()`,
         })

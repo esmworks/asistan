@@ -187,6 +187,9 @@ function me(req: FastifyRequest): Principal {
   return req.principal;
 }
 
+/** How the audit log names the person a request comes from. */
+const actorOf = (req: FastifyRequest) => `user:${me(req).userId}`;
+
 function browserHttpError(err: unknown): unknown {
   if (!(err instanceof BrowserError)) return err;
   switch (err.code) {
@@ -462,7 +465,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   );
   app.post('/api/bots/:id/instructions/accept', async (req) => {
     const { expected } = z.object({ expected: z.string().max(100_000).optional() }).parse(req.body ?? {});
-    return s.instructionDocs.accept(IdParams.parse(req.params).id, expected);
+    return s.instructionDocs.accept(IdParams.parse(req.params).id, expected, actorOf(req));
   });
   app.post('/api/bots/:id/instructions/decline', async (req) =>
     s.instructionDocs.decline(IdParams.parse(req.params).id),
@@ -539,7 +542,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         wait: z.number().int().min(0).max(600).default(300),
       })
       .parse(req.body);
-    const result = await s.botApi.ask(id, body.text, { threadId: body.threadId, waitMs: body.wait * 1000 });
+    const result = await s.botApi.ask(id, body.text, {
+      threadId: body.threadId,
+      waitMs: body.wait * 1000,
+      userId: me(req).userId,
+    });
     return reply.code(result.status === 'running' ? 202 : 200).send(result);
   });
   app.get('/api/turns/:id/result', async (req, reply) => {
@@ -684,7 +691,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // The board: tickets the person and the bots work from.
   app.get('/api/tickets', async () => s.tickets.list());
-  app.post('/api/tickets', async (req) => s.tickets.create(TicketCreate.parse(req.body)));
+  app.post('/api/tickets', async (req) =>
+    s.tickets.create(TicketCreate.parse(req.body), 'user', true, me(req).userId),
+  );
   app.patch('/api/tickets/:id', async (req) =>
     s.tickets.update(IdParams.parse(req.params).id, TicketUpdate.parse(req.body)),
   );
@@ -703,7 +712,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   );
   app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
   app.get('/api/skills', async () => s.skills.list());
-  app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body)));
+  app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body), me(req).userId));
   // A skill file from a link (a GitHub page of a SKILL.md, or any https address); read here, so
   // the page is not stopped by the other site's rules on who may read it.
   app.post('/api/skills/fetch', async (req) =>
@@ -819,7 +828,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       return reply.code(created ? 201 : 200).send(message);
     }
     const body = SendMessage.parse(req.body);
-    const { message, created } = await s.inbox.send(id, body);
+    const { message, created } = await s.inbox.send(id, { ...body, userId: me(req).userId });
     return reply.code(created ? 201 : 200).send(message);
   });
 
@@ -984,7 +993,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.post('/api/rooms/:id/messages', async (req, reply) => {
-    const { message, created } = await s.rooms.post(IdParams.parse(req.params).id, RoomSend.parse(req.body));
+    const { message, created } = await s.rooms.post(
+      IdParams.parse(req.params).id,
+      RoomSend.parse(req.body),
+      me(req).userId,
+    );
     return reply.code(created ? 201 : 200).send(message);
   });
   app.post('/api/rooms/:id/stop', async (req) => ({
@@ -1011,7 +1024,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.get('/api/approvals/:id', async (req) => s.approvals.get(IdParams.parse(req.params).id));
   app.post('/api/approvals/:id', async (req) =>
-    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body)),
+    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId),
   );
   // What a bot changed, and what let each step through.
   app.get('/api/bots/:id/actions', async (req) => {
@@ -1224,14 +1237,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.memory.create({ ...b, source: 'user' });
   });
   app.patch('/api/memory/:id', async (req) =>
-    s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), 'user'),
+    s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), actorOf(req)),
   );
   // Every note one bot keeps for itself.
   app.delete('/api/bots/:id/memory', async (req) =>
-    s.memory.removeForBot(IdParams.parse(req.params).id, 'user'),
+    s.memory.removeForBot(IdParams.parse(req.params).id, actorOf(req)),
   );
   app.delete('/api/memory/:id', async (req) => {
-    await s.memory.remove(IdParams.parse(req.params).id, 'user');
+    await s.memory.remove(IdParams.parse(req.params).id, actorOf(req));
     return { ok: true };
   });
   app.get('/api/memory-history', async () => s.memory.history());
@@ -1254,7 +1267,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const still = new Set((await s.memory.stale()).map((m) => m.id));
     return s.memory.removeMany(
       ids.filter((id) => still.has(id)),
-      'user',
+      actorOf(req),
     );
   });
 

@@ -177,7 +177,7 @@ export class InstructionDocService {
   }
 
   /** The person takes the document's text as the bot's instructions; the change is kept on record. */
-  async accept(botId: string, expected?: string): Promise<Bot> {
+  async accept(botId: string, expected?: string, actor = 'user'): Promise<Bot> {
     const bot = await this.row(botId);
     const text = bot.instructionsPending;
     // The text on the person's screen is the text they accept: a newer one waits for its own look.
@@ -197,7 +197,7 @@ export class InstructionDocService {
       if (!saved) throw new HttpError(409, 'error.instructionsChanged');
       await tx.insert(schema.auditLog).values({
         id: newId(),
-        actor: 'user',
+        actor,
         action: 'instructions.document',
         targetType: 'bot',
         targetId: botId,

@@ -432,7 +432,7 @@ describe('hafızanın kullanımı', () => {
       await t.api<{ action: string; actor: string; targetId: string }[]>('GET', '/api/memory-history')
     ).body;
     expect(history.filter((h) => h.action === 'delete')).toMatchObject([
-      { actor: 'user', targetId: dropped.id },
+      { actor: 'user:owner', targetId: dropped.id },
     ]);
   });
 

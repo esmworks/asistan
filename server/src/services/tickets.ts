@@ -128,7 +128,7 @@ export class TicketService {
    * Adds a ticket. `by` is `user` or `bot:<id>`; `start` false keeps an assigned ticket waiting
    * for the person instead of starting its bot.
    */
-  async create(raw: CreateInput, by = 'user', start = true): Promise<Ticket> {
+  async create(raw: CreateInput, by = 'user', start = true, userId: string | null = null): Promise<Ticket> {
     const input = TicketCreate.parse(raw);
     if (input.assigneeBotId) await this.services.bots.get(input.assigneeBotId);
     const [row] = await this.ctx.db
@@ -141,6 +141,7 @@ export class TicketService {
         priority: input.priority,
         assigneeBotId: input.assigneeBotId,
         createdBy: by,
+        createdByUserId: userId,
         position: TOP,
       })
       .returning();

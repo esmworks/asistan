@@ -83,6 +83,8 @@ export class Inbox {
       replyTo?: string;
       /** Kept on the message, e.g. which chat app it came from. */
       props?: Record<string, unknown>;
+      /** The person writing. */
+      userId?: string | null;
     },
   ): Promise<{ message: Message; created: boolean }> {
     const s = this.services;
@@ -117,6 +119,7 @@ export class Inbox {
       author: 'user',
       text,
       clientId: input.clientId,
+      userId: input.userId ?? null,
     };
     // Sent while the bot is busy: it waits its turn, and until then the person may change it.
     const queued = (await s.threads.state(threadId)) !== 'idle';
@@ -135,7 +138,11 @@ export class Inbox {
     const card = bare ? await s.approvals.typedAnswerable(threadId) : null;
     if (card) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
-      await s.approvals.answer(card.id, { decision: 'allow', answer: input.text, remember: false });
+      await s.approvals.answer(
+        card.id,
+        { decision: 'allow', answer: input.text, remember: false },
+        input.userId ?? null,
+      );
       return { message, created: true };
     }
     // Typed while the bot waits on a step or sign-in card: the person chose to say something else
@@ -143,7 +150,7 @@ export class Inbox {
     const waiting = bare ? await s.approvals.redirectable(threadId) : [];
     if (waiting.length) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
-      for (const c of waiting) await s.approvals.redirect(c.id, input.text);
+      for (const c of waiting) await s.approvals.redirect(c.id, input.text, input.userId ?? null);
       return { message, created: true };
     }
     const { message, created } = await s.threads.addMessage({
@@ -170,6 +177,7 @@ export class Inbox {
       source: 'user',
       prompt,
       outside: forwarded ? 'forward' : null,
+      userId: input.userId ?? null,
     });
     await s.threads.updateMessage(message.id, { turnId: turn.id });
     return { message: { ...message, turnId: turn.id }, created };

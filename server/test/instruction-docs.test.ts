@@ -62,7 +62,7 @@ describe('instructions kept in a document', () => {
     expect(accepted).toMatchObject({ instructions: 'Answer billing questions.', instructionsPending: null });
     const audit = await t.services.ctx.db.select().from(schema.auditLog);
     expect(audit).toEqual([
-      expect.objectContaining({ action: 'instructions.document', targetId: bot.id, actor: 'user' }),
+      expect.objectContaining({ action: 'instructions.document', targetId: bot.id, actor: 'user:owner' }),
     ]);
     // Read again unchanged: nothing waits.
     expect((await post(bot.id, 'check')).body.instructionsPending).toBeNull();

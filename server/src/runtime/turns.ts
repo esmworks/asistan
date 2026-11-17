@@ -228,6 +228,7 @@ export class TurnManager {
       botId: turn.botId,
       source: 'user',
       prompt: turn.prompt,
+      userId: turn.userId,
     });
     this.retried.add(again.id);
   }
@@ -265,7 +266,13 @@ export class TurnManager {
     this.retries.delete(note.id);
     const { retryAt: _, ...props } = note.props;
     await this.services.threads.updateMessage(note.id, { props: { ...props, retried: true } });
-    return this.enqueue({ threadId: turn.threadId, botId: turn.botId, source: 'user', prompt: turn.prompt });
+    return this.enqueue({
+      threadId: turn.threadId,
+      botId: turn.botId,
+      source: 'user',
+      prompt: turn.prompt,
+      userId: turn.userId,
+    });
   }
 
   /** After a restart: the retries still waiting are set again. */
@@ -297,7 +304,10 @@ export class TurnManager {
     outside?: OutsideTrigger | null;
     /** The freest level the turn may act at, when a stricter bot starts it. */
     modeCap?: Bot['permissionMode'] | null;
+    /** The person the turn works for; left out, it is worked out from what started it. */
+    userId?: string | null;
   }): Promise<TurnRow> {
+    const userId = t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null);
     const [row] = await this.ctx.db
       .insert(schema.turns)
       .values({
@@ -311,11 +321,27 @@ export class TurnManager {
         routineRunId: t.routineRunId ?? null,
         outside: t.outside ?? null,
         modeCap: t.modeCap ?? null,
+        userId,
       })
       .returning();
     this.emitState(t.threadId, t.botId);
     this.schedule();
     return row!;
+  }
+
+  /**
+   * Whom a turn nobody named works for: a bot asked by another bot works for whoever the asking
+   * turn worked for, so a request passes on along a chain of bots.
+   */
+  private async actingPerson(jobId: string | null): Promise<string | null> {
+    if (!jobId) return null;
+    const [row] = await this.ctx.db
+      .select({ userId: schema.turns.userId })
+      .from(schema.jobs)
+      .innerJoin(schema.turns, eq(schema.turns.id, schema.jobs.fromTurnId))
+      .where(eq(schema.jobs.id, jobId))
+      .limit(1);
+    return row?.userId ?? null;
   }
 
   /** Stops the work a bot-to-bot request started: its running turn, and its turns not yet started. */

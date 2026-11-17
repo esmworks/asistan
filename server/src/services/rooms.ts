@@ -245,7 +245,11 @@ export class RoomService {
   }
 
   /** The person writes in the room; the members it names (or as the room is set) answer in turn. */
-  async post(roomId: string, body: RoomSend): Promise<{ message: Message; created: boolean }> {
+  async post(
+    roomId: string,
+    body: RoomSend,
+    userId: string | null = null,
+  ): Promise<{ message: Message; created: boolean }> {
     const room = await this.roomRow(roomId);
     if (!room) throw notFound('room');
     const { threads, turns } = this.services;
@@ -255,6 +259,7 @@ export class RoomService {
       threadId: roomId,
       role: 'user',
       author: 'user',
+      userId,
       text: body.text,
       clientId: body.clientId,
       props: answered ? { replyTo: { id: answered.id, text: truncate(answered.text, 300) } } : {},
@@ -284,7 +289,7 @@ export class RoomService {
       })
       .where(eq(schema.rooms.id, roomId));
     for (const botId of answering) {
-      await turns.enqueue({ threadId: roomId, botId, source: 'user', prompt: body.text });
+      await turns.enqueue({ threadId: roomId, botId, source: 'user', prompt: body.text, userId });
     }
     this.ctx.bus.refresh({ scope: 'rooms' });
     return result;

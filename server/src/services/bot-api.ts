@@ -42,7 +42,11 @@ export class BotApi {
     return created.id;
   }
 
-  async ask(botId: string, text: string, opts: { threadId?: string; waitMs: number }): Promise<AskResult> {
+  async ask(
+    botId: string,
+    text: string,
+    opts: { threadId?: string; waitMs: number; userId?: string | null },
+  ): Promise<AskResult> {
     const bot = await this.services.bots.get(botId);
     if (bot.archivedAt) throw new HttpError(409, 'error.botArchived');
     let threadId = opts.threadId;
@@ -56,10 +60,17 @@ export class BotApi {
       threadId,
       role: 'user',
       author: 'user',
+      userId: opts.userId ?? null,
       text,
       props: { viaApi: true },
     });
-    const turn = await this.services.turns.enqueue({ threadId, botId, source: 'user', prompt: text });
+    const turn = await this.services.turns.enqueue({
+      threadId,
+      botId,
+      source: 'user',
+      prompt: text,
+      userId: opts.userId ?? null,
+    });
     await this.services.threads.updateMessage(message.id, { turnId: turn.id });
     return this.result(turn.id, opts.waitMs);
   }

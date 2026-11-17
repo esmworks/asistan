@@ -425,10 +425,10 @@ export class ApprovalService {
   }
 
   /** Closes a card with the words the person wrote in the chat instead; the bot goes on with them. */
-  async redirect(id: string, text: string) {
+  async redirect(id: string, text: string, by: string | null = null) {
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status: 'denied', answer: text, decidedBy: 'typed', decidedAt: new Date() })
+      .set({ status: 'denied', answer: text, decidedBy: 'typed', decidedByUserId: by, decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) return;
@@ -520,7 +520,7 @@ export class ApprovalService {
     }
   }
 
-  async answer(id: string, d: ApprovalDecision): Promise<Approval> {
+  async answer(id: string, d: ApprovalDecision, by: string | null = null): Promise<Approval> {
     const stored = await this.row(id);
     const current = toApproval(stored);
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
@@ -568,7 +568,7 @@ export class ApprovalService {
     }
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status, answer, remembered, decidedBy: 'person', decidedAt: new Date() })
+      .set({ status, answer, remembered, decidedBy: 'person', decidedByUserId: by, decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
