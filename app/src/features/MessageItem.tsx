@@ -3,6 +3,7 @@ import {
   catalogEntry,
   connectionToolParts,
   describeAction,
+  outsideTrigger,
   parseAnswers,
   questionItems,
   type Approval,
@@ -10,6 +11,7 @@ import {
   type Locale,
   type Message,
   type MessageFile,
+  type OutsideTrigger,
   type ReplyQuote,
   quoteExcerpt,
 } from '@yumakbot/shared';
@@ -186,6 +188,7 @@ export function MessageItem({
           heldBy={typeof m.props.heldBy === 'string' ? m.props.heldBy : undefined}
           reviewReason={typeof m.props.reviewReason === 'string' ? m.props.reviewReason : undefined}
           askRule={typeof m.props.askRule === 'string' ? m.props.askRule : undefined}
+          outside={outsideTrigger(m.props.outside)}
           onAnswerLate={onReply ? () => onReply(m) : undefined}
         />
       );
@@ -1099,6 +1102,7 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
                         bots={bots}
                         heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
                         askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
+                        outside={outsideTrigger(x.props.outside)}
                       />
                     );
                   }
@@ -1129,6 +1133,7 @@ function ApprovalCard({
   bots,
   heldBy,
   askRule,
+  outside,
   onAnswerLate,
   reviewReason,
 }: {
@@ -1139,6 +1144,8 @@ function ApprovalCard({
   heldBy?: string;
   /** The "always ask" rule that covers this request, for a bot that asks anyway. */
   askRule?: string;
+  /** What outside text started the run: every change asks, and "always allow" is not offered. */
+  outside?: OutsideTrigger;
   /** Answers a question that went unanswered, as a reply quoting it. */
   onAnswerLate?(): void;
   /** Why the automatic review left this step to the person. */
@@ -1207,6 +1214,7 @@ function ApprovalCard({
           {askRule && (
             <div className="text-xs text-muted-foreground">{t('approval.askRule', { rule: askRule })}</div>
           )}
+          {outside && <div className="text-xs text-muted-foreground">{t(`approval.outside.${outside}`)}</div>}
           {action.detail && <Detail text={action.detail} />}
         </div>
       </div>
@@ -1219,8 +1227,9 @@ function ApprovalCard({
         >
           <Check /> {t('approval.allowOnce')}
         </Button>
-        {/* An "always ask" rule outranks "always allow": offering it would change nothing. */}
-        {!heldBy && !askRule && (
+        {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
+            taken from a run outside text started. */}
+        {!heldBy && !askRule && !outside && (
           <Button
             size="sm"
             variant="secondary"

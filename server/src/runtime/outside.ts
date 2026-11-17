@@ -1,5 +1,35 @@
-import type { AppTool, ToolResult } from '../engine/types';
+import { toolPermName, type AppTool, type ToolResult } from '../engine/types';
 import type { T } from '../i18n';
+
+/**
+ * The app's own tools a run started by outside text may use without a card, besides reads: they
+ * talk to the person, show the turn's progress or end the routine's run, and leave nothing behind
+ * that the text could have chosen. Every other tool, including one added later, asks first.
+ */
+export const OUTSIDE_FREE_TOOLS: ReadonlySet<string> = new Set(
+  [
+    'ask_user',
+    'react',
+    'quick_replies',
+    'plan_update',
+    'send_file',
+    'show_page',
+    'routine_failed',
+    'routine_stop',
+    'command_status',
+  ].map((name) => toolPermName({ name })),
+);
+
+/**
+ * What a run started by outside text uses without a card: reads that stay on this server or with
+ * the person's connected apps, and the tools above. The app's own tools that change something,
+ * and reaching the web, where a page address could carry what the bot read away, ask first.
+ */
+export function outsideFreeTools(tools: readonly AppTool[]): Set<string> {
+  const free = new Set(OUTSIDE_FREE_TOOLS);
+  for (const tool of tools) if (tool.readOnly) free.add(toolPermName(tool));
+  return free;
+}
 
 /** The tag outside content is wrapped in; the model is told what it means in the system prompt. */
 const TAG = 'outside-data';

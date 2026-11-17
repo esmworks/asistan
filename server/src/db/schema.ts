@@ -224,6 +224,8 @@ export const approvals = pgTable(
     status: text('status', { enum: ['pending', 'allowed', 'denied', 'expired'] }).notNull(),
     answer: text('answer'),
     remembered: boolean('remembered').notNull().default(false),
+    /** Asked in a run outside text started: "always allow" is not taken from it. */
+    outside: boolean('outside').notNull().default(false),
     createdAt: created(),
     decidedAt: ts('decided_at'),
   },
@@ -354,6 +356,11 @@ export const routineRuns = pgTable(
     gateReason: text('gate_reason'),
     /** What the pre-check cost, as the engine reported it. */
     gateCostUsd: real('gate_cost_usd'),
+    /**
+     * What outside text started the run (a mail, a webhook's body, a watched page or an app's new
+     * answer); null for a scheduled or manual run. Such a run may change nothing without a card.
+     */
+    trigger: text('trigger', { enum: ['watch', 'webhook', 'email'] }),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },

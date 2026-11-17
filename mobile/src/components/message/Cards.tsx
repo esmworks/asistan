@@ -6,6 +6,7 @@ import {
   questionItems,
   type Approval,
   type Bot,
+  type OutsideTrigger,
 } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { isRefusal } from '@yumakbot/app/src/lib/refusal';
@@ -76,6 +77,7 @@ export function ApprovalCard({
   bots,
   heldBy,
   askRule,
+  outside,
   reviewReason,
   onAnswerLate,
 }: {
@@ -86,6 +88,8 @@ export function ApprovalCard({
   heldBy?: string;
   /** The "always ask" rule that covers this request, for a bot that asks anyway. */
   askRule?: string;
+  /** What outside text started the run: every change asks, and "always allow" is not offered. */
+  outside?: OutsideTrigger;
   /** Why the automatic review left this step to the person. */
   reviewReason?: string;
   /** Answers a question that went unanswered, as a reply quoting it. */
@@ -151,6 +155,11 @@ export function ApprovalCard({
               {t('approval.askRule', { rule: askRule })}
             </Text>
           ) : null}
+          {outside ? (
+            <Text style={[styles.small, { color: c.mutedForeground }]}>
+              {t(`approval.outside.${outside}`)}
+            </Text>
+          ) : null}
           {action.detail ? <Detail text={action.detail} /> : null}
         </View>
       </View>
@@ -162,8 +171,9 @@ export function ApprovalCard({
           disabled={decide.isPending}
           onPress={() => decide.mutate({ decision: 'allow' })}
         />
-        {/* An "always ask" rule outranks "always allow": offering it would change nothing. */}
-        {!heldBy && !askRule ? (
+        {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
+            taken from a run outside text started. */}
+        {!heldBy && !askRule && !outside ? (
           <PillButton
             label={t('approval.allowAlways')}
             disabled={decide.isPending}

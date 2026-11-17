@@ -13,6 +13,15 @@ export type EngineKind = z.infer<typeof EngineKind>;
  * lets the clearly safe ones run; the rest still come to the person as cards.
  */
 export const PermissionMode = z.enum(['ask', 'review', 'auto', 'readonly']);
+/**
+ * Outside text that can start a routine run: a mail, a webhook's body, a watched page or an app's
+ * new answer. Such a run changes nothing without a card; a card from one says which started it.
+ */
+export const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email'] as const;
+export type OutsideTrigger = (typeof OUTSIDE_TRIGGERS)[number];
+/** The outside trigger a card's `outside` prop names, if it names one. */
+export const outsideTrigger = (value: unknown): OutsideTrigger | undefined =>
+  OUTSIDE_TRIGGERS.find((x) => x === value);
 /** From the strictest to the freest, as the app lists them. */
 export const PERMISSION_MODES = ['readonly', 'ask', 'review', 'auto'] as const;
 export type PermissionMode = z.infer<typeof PermissionMode>;
