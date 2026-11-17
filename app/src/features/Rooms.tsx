@@ -87,6 +87,59 @@ function RoomFace({ members, size = 22 }: { members: Bot[]; size?: number }) {
   );
 }
 
+/**
+ * Where up to three member avatars sit in a square, as fractions of its side, and how large
+ * each is. In a row of overlapping faces three would be wider than a bot's avatar; stacked
+ * corner to corner they fill the same square, so a room's row lines up with the bots' rows.
+ */
+const CLUSTER: Record<number, { size: number; at: [number, number][] }> = {
+  1: { size: 0.8, at: [[0.1, 0.1]] },
+  2: {
+    size: 0.68,
+    at: [
+      [0, 0],
+      [0.32, 0.32],
+    ],
+  },
+  3: {
+    size: 0.58,
+    at: [
+      [0, 0],
+      [0.42, 0],
+      [0.21, 0.42],
+    ],
+  },
+};
+
+/** The room's picture fitted to a `box` px square, the size of a bot's avatar in the same list. */
+function RoomCluster({ members, box }: { members: Bot[]; box: number }) {
+  const shown = members.slice(0, 3);
+  const layout = CLUSTER[shown.length];
+  if (!layout)
+    return (
+      <span className="flex items-center justify-center" style={{ width: box, height: box }}>
+        <RoomFace members={[]} size={Math.round(box * 0.7)} />
+      </span>
+    );
+  const size = Math.round(box * layout.size);
+  return (
+    <span className="relative block" style={{ width: box, height: box }}>
+      {shown.map((b, i) => {
+        const [x, y] = layout.at[i] ?? [0, 0];
+        return (
+          <span
+            key={b.id}
+            className="absolute flex"
+            style={{ left: box * x, top: box * y, zIndex: shown.length - i }}
+          >
+            <BotAvatar avatar={b.avatar} color={b.color} seed={b.id} size={size} />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /** The rooms in the sidebar, under the bots. */
 export function RoomsSection({ query }: { query: string }) {
   const t = useT();
@@ -151,10 +204,10 @@ function RoomRow({ room }: { room: Room }) {
         selected && 'bg-accent',
       )}
     >
-      <span className="relative flex w-[38px] shrink-0 justify-center">
-        <RoomFace members={members} size={24} />
+      <span className="relative shrink-0">
+        <RoomCluster members={members} box={38} />
         {busy && (
-          <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-emerald-500 ring-2 ring-sidebar" />
+          <span className="absolute -right-0.5 -bottom-0.5 z-10 size-2.5 animate-pulse rounded-full bg-emerald-500 ring-2 ring-sidebar" />
         )}
       </span>
       <div className="min-w-0 flex-1">
