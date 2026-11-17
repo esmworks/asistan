@@ -39,7 +39,7 @@ import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerWords, personAsked, quoteFound } from './owner-words';
+import { ownerAnswers, ownerWords, personAsked, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -1342,7 +1342,9 @@ export class TurnManager {
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
     const words = await ownerWords(this.ctx, o.turn);
-    if (!words.length) return { allowed: false, reason: t('review.noWords') };
+    // What they chose on the bot's question cards is theirs too; the question is the bot's.
+    const answers = await ownerAnswers(this.ctx, o.turn);
+    if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
     let verdict;
     try {
       verdict = await engine.review({
@@ -1350,6 +1352,7 @@ export class TurnManager {
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
         words,
+        answers,
         outside: o.outside,
         locale: o.locale,
         signal: o.signal,
@@ -1361,7 +1364,9 @@ export class TurnManager {
     if (o.signal.aborted) return no;
     if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
     // The reviewer must point at what the person said; a quote that is not there does not count.
-    if (!quoteFound(verdict.quote, words)) return { allowed: false, reason: t('review.noQuote') };
+    // Only the person's own text can be quoted: their messages and answers, never a card's question.
+    const own = [...words, ...answers.map((a) => a.answer)];
+    if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
     const action = summarize(o.ask.toolName, o.ask.input);
     await this.services.threads.addMessage({
       threadId: o.thread.id,
