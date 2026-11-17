@@ -275,6 +275,8 @@ export const tr = {
   'settings.keywords.vault':
     'şifreler, girişler, iki adımlı kod, totp, gizli, paylaşılan sayfalar, bağlantılar',
   'settings.keywords.memory': 'notlar, hatırla, unut',
+  'settings.keywords.services':
+    'embedding, anlamsal arama, anlam, whisper, yazıya çevirme, ses, seslendirme, sesli okuma, tts, stt, ollama, kokoro',
   'settings.keywords.routines': 'zamanlama, cron, webhook, hatırlatma, çalışmalar',
   'settings.keywords.skills': 'beceri, içe aktar, bağlantı, github',
   'settings.keywords.groups': 'klasör, arşiv, arşivlenen botlar, geri getir, sil',
@@ -362,6 +364,36 @@ export const tr = {
   'apiKeys.newValue': 'Yeni anahtar (aynı kalsın diye boş bırak)',
   'apiKeys.confirmDelete':
     '“{name}” API anahtarı silinsin mi? Onu kullanan botlar yeniden istemek zorunda kalır.',
+  'ai.intro':
+    'Sunucunun botların kendi modelleri dışında çağırdığı servisler. Her biri OpenAI uyumlu bir adres alır: kendi sunucun (Ollama, Whisper ya da Kokoro sunucusu) ya da bir sağlayıcının API’si. Boş bırakılırsa sunucunun ortam değişkenleri geçerlidir (AI_EMBEDDINGS_*, STT_*, TTS_*).',
+  'ai.embeddings': 'Anlama göre hafıza araması',
+  'ai.embeddingsHint':
+    'Botlar notları yalnızca kelimelerine göre değil anlamlarına göre de bulur: “eşim” araması “Ayşe karım” notunu bulur. Notlar arka planda dizinlenir.',
+  'ai.embeddingsModel': 'Model (ör. bge-m3)',
+  'ai.embeddingsUrl': 'Adres (ör. http://ollama:11434/v1)',
+  'ai.stt': 'Konuşmayı yazıya çevirme',
+  'ai.sttHint':
+    'Mikrofona söylediklerini ve Telegram ile WhatsApp’tan gelen sesli mesajları yazıya çevirir, bot onları okur. Ayarlanmazsa kayıtlı bir OpenAI ya da Groq anahtarı kullanılır.',
+  'ai.sttModel': 'Model (ör. whisper-1)',
+  'ai.sttUrl': 'Adres (ör. http://whisper:8000/v1)',
+  'ai.tts': 'Seslendirme',
+  'ai.ttsHint': 'Yanıtları cihazın kendi sesi yerine bu servisle sesli okur.',
+  'ai.ttsModel': 'Model (ör. tts-1 ya da kokoro)',
+  'ai.ttsUrl': 'Adres (ör. http://kokoro:8880/v1)',
+  'ai.voice': 'Ses',
+  'ai.baseUrl': 'Adres',
+  'ai.model': 'Model',
+  'ai.key': 'API anahtarı (isteğe bağlı)',
+  'ai.keyKept': 'Anahtar kayıtlı; değiştirmek için yenisini yaz',
+  'ai.fromEnv': 'Sunucunun ortam değişkenlerinden geliyor; burada kaydedersen onun yerine geçer.',
+  'ai.saved': 'Kaydedildi',
+  'ai.clear': 'Temizle',
+  'ai.test': 'Dene',
+  'ai.testOk.embeddings': 'Çalışıyor: {detail} sayılık vektörler',
+  'ai.testOk.stt': 'Çalışıyor',
+  'ai.testOk.tts': 'Çalışıyor: {detail} baytlık ses',
+  'ai.testFailed': 'Çalışmadı: {detail}',
+  'ai.indexed': '{total} nottan {indexed} tanesi dizinlendi',
   'email.title': 'E-posta',
   'email.hint':
     'Botlara kendi adreslerini ver, ör. arastirma@bots.ornek.com. Oraya gelen postalar botun gelen kutusunda bekler; bot kayıt kodlarını ve yanıtları oradan okur, postalar rutinlerini de başlatabilir. Bir posta botu kendiliğinden çalıştırmaz: postaya herkes istediği göndereni yazabilir.',
@@ -830,6 +862,7 @@ export const tr = {
   'settings.tab.permissions': 'İzinler',
   'settings.tab.vault': 'Kasa',
   'settings.tab.memory': 'Hafıza',
+  'settings.tab.services': 'Yapay zekâ servisleri',
   'settings.tab.routines': 'Rutinler',
   'general.zoom': 'Arayüz boyutu',
   'general.zoomHint': 'Bu cihazda tüm uygulamayı büyütür ya da küçültür.',

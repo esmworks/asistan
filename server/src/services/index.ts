@@ -14,6 +14,10 @@ import { Inbox } from './inbox';
 import { PageShareService } from './page-shares';
 import { ApiCredentialService } from './api-credentials';
 import { EmailService } from './email';
+import { AiEndpointService } from './ai-endpoints';
+import { EmbeddingService } from './embeddings';
+import { TranscribeService } from './transcribe';
+import { SpeechService } from './speech';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -57,6 +61,10 @@ export class Services {
   readonly pageShares: PageShareService;
   readonly apiCredentials: ApiCredentialService;
   readonly email: EmailService;
+  readonly ai: AiEndpointService;
+  readonly embeddings: EmbeddingService;
+  readonly transcribe: TranscribeService;
+  readonly speech: SpeechService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -99,6 +107,11 @@ export class Services {
     this.pageShares = new PageShareService(ctx);
     this.apiCredentials = new ApiCredentialService(ctx, this.vault);
     this.email = new EmailService(ctx, this);
+    this.ai = new AiEndpointService(ctx, this.vault);
+    this.embeddings = new EmbeddingService(ctx, this.ai);
+    this.memory.useEmbeddings(this.embeddings);
+    this.transcribe = new TranscribeService(this.keys, this.ai);
+    this.speech = new SpeechService(this.ai);
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }

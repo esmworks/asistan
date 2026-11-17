@@ -13,9 +13,24 @@ import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
 import { noteKey } from './secrets';
 import { siteMatches } from './vault';
+import { MIN_SCORE, type EmbeddingService } from './embeddings';
+
+/** A note whose words hold the query ranks this much above one only near it in meaning. */
+const WORD_MATCH_BONUS = 0.25;
+/** Notes a search by meaning returns at most. */
+const MEANING_HITS = 20;
+
+const fold = (v: string) => v.replace(/[ıİ]/g, 'i').toLowerCase();
 
 export class MemoryService {
+  private embeddings: EmbeddingService | null = null;
+
   constructor(private ctx: Ctx) {}
+
+  /** Search by meaning, once the embedding service exists; until it is set up, search goes by words. */
+  useEmbeddings(e: EmbeddingService) {
+    this.embeddings = e;
+  }
 
   async list(opts: { scope?: MemoryScope; botId?: string | null } = {}) {
     const conds = [];
@@ -103,6 +118,28 @@ export class MemoryService {
   async search(botIds: string[], query?: string, shared = true): Promise<Memory[]> {
     const own = and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds));
     const visible = shared ? or(eq(schema.memories.scope, 'user'), own) : own;
+    if (query?.trim() && this.embeddings && (await this.embeddings.available())) {
+      const rows = await this.ctx.db
+        .select()
+        .from(schema.memories)
+        .where(visible)
+        .orderBy(asc(schema.memories.createdAt))
+        .limit(5000);
+      const scores = await this.embeddings.scores(query, rows);
+      if (scores) {
+        const needle = fold(query.trim());
+        const hits = rows
+          .map((r) => ({ r, words: fold(r.content).includes(needle), score: scores.get(r.id) ?? 0 }))
+          .filter((h) => h.words || h.score >= MIN_SCORE)
+          .sort(
+            (a, b) =>
+              b.score + (b.words ? WORD_MATCH_BONUS : 0) - (a.score + (a.words ? WORD_MATCH_BONUS : 0)),
+          )
+          .slice(0, MEANING_HITS);
+        await this.markUsed(hits.map((h) => h.r.id));
+        return hits.map((h) => toMemory(h.r));
+      }
+    }
     // ı and İ read as i on both sides, as the message search does.
     const q = query && `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const rows = await this.ctx.db
@@ -239,6 +276,7 @@ export class MemoryService {
       .returning();
     await this.log(row!.id, 'create', null, row!.content, input.source);
     this.ctx.bus.refresh({ scope: 'memory' });
+    this.embeddings?.soon();
     return toMemory(row!);
   }
 
@@ -251,6 +289,7 @@ export class MemoryService {
       .returning();
     await this.log(id, 'update', before.content, row!.content, actor);
     this.ctx.bus.refresh({ scope: 'memory' });
+    this.embeddings?.soon();
     return toMemory(row!);
   }
 

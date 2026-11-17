@@ -251,6 +251,10 @@ export const memories = pgTable(
      */
     lastUsedAt: ts('last_used_at'),
     useCount: integer('use_count').notNull().default(0),
+    /** The note's meaning as numbers, for search by meaning; null until it is indexed. */
+    embedding: real('embedding').array(),
+    /** Which model and words the embedding is of; a new model or a changed note indexes it again. */
+    embeddingKey: text('embedding_key'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

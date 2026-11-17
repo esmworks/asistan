@@ -60,6 +60,10 @@ import type {
   ApiCredentialCreate,
   ApiCredentialUpdate,
   EmailSettings,
+  AiEndpoint,
+  AiEndpoints,
+  AiEndpointSet,
+  AiKind,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -412,6 +416,29 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  aiEndpoints: () =>
+    http.get<AiEndpoints & { memoryIndex: { indexed: number; total: number } }>('/api/ai-endpoints'),
+  setAiEndpoint: (kind: AiKind, input: AiEndpointSet) =>
+    http.put<AiEndpoint>(`/api/ai-endpoints/${kind}`, input),
+  clearAiEndpoint: (kind: AiKind) => http.del<AiEndpoint>(`/api/ai-endpoints/${kind}`),
+  testAiEndpoint: (kind: AiKind) =>
+    http.post<{ ok: boolean; detail: string }>(`/api/ai-endpoints/${kind}/test`),
+  /** Whether replies can be read aloud by the server's speech service. */
+  speechStatus: () => http.get<{ available: boolean }>('/api/speech'),
+  /** A reply read aloud, as audio; null when the server could not. */
+  speech: async (text: string): Promise<Blob> => {
+    const res = await fetch('/api/speech', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'accept-language': useLocale.getState().locale },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(data?.error ?? String(res.status));
+    }
+    return res.blob();
+  },
   emailSettings: () => http.get<EmailSettings>('/api/email'),
   renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
   claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),

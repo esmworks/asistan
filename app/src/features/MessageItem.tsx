@@ -61,7 +61,7 @@ import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
 import { BotPage } from './BotPage';
 import { McpAppView } from './McpAppView';
-import { speechSupported, toggleSpeech, useSpeech } from '@/lib/speech';
+import { speechSupported, toggleSpeech, useServerVoice, useSpeech } from '@/lib/speech';
 import { useUi } from '@/lib/store';
 import { AppLogo } from './Connections';
 import { useTypewriter } from '@/lib/typewriter';
@@ -450,6 +450,7 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
   const reaction = typeof m.props.userReaction === 'string' ? m.props.userReaction : null;
   const locale = useLocale((s) => s.locale);
   const speaking = useSpeech((s) => s.speaking === m.id);
+  const serverVoice = useServerVoice();
   const remove = useDeleteMessage(m);
   const raw = useRawView((s) => s.ids.has(m.id));
   const toggleRaw = useRawView((s) => s.toggle);
@@ -546,10 +547,10 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
             <FileCode />
           </ActionButton>
         )}
-        {m.text && speechSupported() && (
+        {m.text && (serverVoice || speechSupported()) && (
           <ActionButton
             label={speaking ? t('message.stopReading') : t('message.readAloud')}
-            onClick={() => toggleSpeech(m.id, m.text, locale)}
+            onClick={() => toggleSpeech(m.id, m.text, locale, serverVoice)}
           >
             {speaking ? <Square /> : <Volume2 />}
           </ActionButton>

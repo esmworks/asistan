@@ -35,7 +35,7 @@ describe('sesle yazdırma', () => {
       });
       return new Response(JSON.stringify({ text: ' Merhaba dünya ' }), { status: 200 });
     }) as typeof fetch;
-    const service = new TranscribeService(t.services.keys, fake);
+    const service = new TranscribeService(t.services.keys, undefined, fake);
     expect(await service.available()).toBe(true);
     expect(await service.transcribe(Buffer.from('ses'), 'audio/webm;codecs=opus', 'tr')).toBe(
       'Merhaba dünya',

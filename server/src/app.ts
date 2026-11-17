@@ -42,7 +42,6 @@ import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
 import { BackupService } from './services/backup';
-import { TranscribeService } from './services/transcribe';
 import { probeShellSandbox } from './shell-sandbox';
 import { isServerKey, translator, type T } from './i18n';
 import { serverLocale } from './services/settings';
@@ -288,6 +287,12 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   );
   retryApps.unref();
 
+  // Notes are indexed for search by meaning a little after start, and now and then after that,
+  // so notes written while the embedding service was down catch up.
+  if (!opts.engine && !fake) services.embeddings.soon(15_000);
+  const indexMemory = setInterval(() => services.embeddings.soon(0), 10 * 60_000);
+  indexMemory.unref();
+
   const info = (): ServerInfo => ({
     name: 'yumakbot',
     version: '0.3.0',
@@ -347,7 +352,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   registerMcpServer(app, services);
   registerRoutes(app, {
     services,
-    transcribe: new TranscribeService(services.keys),
+    transcribe: services.transcribe,
     backup: new BackupService(
       ctx,
       opts.restart ?? (() => console.warn('backup restored; start the server again')),
@@ -624,6 +629,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       if (computerCheck) clearInterval(computerCheck);
       clearInterval(sweepTimer);
       clearInterval(retryApps);
+      clearInterval(indexMemory);
+      services.embeddings.stop();
       await computer?.shutdown();
       stopComputerLink?.();
       localSocks?.close();

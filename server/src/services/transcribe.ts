@@ -1,11 +1,13 @@
 import type { Locale } from '@yumakbot/shared';
 import { HttpError } from '../util';
+import { authHeaders, type AiEndpointService } from './ai-endpoints';
 import type { ProviderKeyService } from './keys';
 
 /**
- * Speech to text for the message box, through a provider whose key the person already saved:
- * OpenAI first, then Groq. The recording goes from the server to that provider and nowhere else;
- * nothing is kept.
+ * Speech to text for the message box and for voice notes from chat apps: through the service set in
+ * the settings or the server's environment (a Whisper server of the person's own), else through a
+ * provider whose key the person already saved: OpenAI first, then Groq. The recording goes from the
+ * server to that service and nowhere else; nothing is kept.
  */
 const SERVICES = [
   {
@@ -21,7 +23,7 @@ const SERVICES = [
 ] as const;
 /** The providers take at most 25 MB; a minute of speech is well under 1 MB. */
 export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 120_000;
 
 /** A file name the provider reads the format from. */
 function fileName(type: string): string {
@@ -31,21 +33,45 @@ function fileName(type: string): string {
   return `speech.${ext || 'webm'}`;
 }
 
+/** Half a second of silence as a WAV file, to try a service with. */
+function silence(): Buffer {
+  const rate = 16_000;
+  const samples = rate / 2;
+  const b = Buffer.alloc(44 + samples * 2);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + samples * 2, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(samples * 2, 40);
+  return b;
+}
+
 export class TranscribeService {
   constructor(
     private keys: ProviderKeyService,
+    private ai?: AiEndpointService,
     private fetcher: typeof fetch = fetch,
   ) {}
 
-  private async service() {
+  private async service(): Promise<{ url: string; model: string; headers: Record<string, string> } | null> {
+    const own = await this.ai?.get('stt');
+    if (own)
+      return { url: `${own.baseUrl}/audio/transcriptions`, model: own.model, headers: authHeaders(own) };
     for (const s of SERVICES) {
       const key = await this.keys.get(s.provider);
-      if (key) return { ...s, key };
+      if (key) return { url: s.url, model: s.model, headers: { authorization: `Bearer ${key}` } };
     }
     return null;
   }
 
-  /** Whether the server can turn speech into text: some provider for it has a key. */
+  /** Whether the server can turn speech into text: a service is set, or some provider has a key. */
   async available(): Promise<boolean> {
     return !!(await this.service());
   }
@@ -60,19 +86,27 @@ export class TranscribeService {
     if (locale) form.append('language', locale);
     const res = await this.fetcher(s.url, {
       method: 'POST',
-      headers: { authorization: `Bearer ${s.key}` },
+      headers: s.headers,
       body: form,
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const body = (await res.json().catch(() => null)) as {
       text?: unknown;
-      error?: { message?: string };
+      error?: { message?: string } | string;
+      detail?: unknown;
     } | null;
     if (!res.ok || typeof body?.text !== 'string') {
-      throw new HttpError(502, 'error.transcribeFailed', {
-        message: body?.error?.message ?? String(res.status),
-      });
+      const message =
+        typeof body?.error === 'string'
+          ? body.error
+          : (body?.error?.message ?? (typeof body?.detail === 'string' ? body.detail : String(res.status)));
+      throw new HttpError(502, 'error.transcribeFailed', { message });
     }
     return body.text.trim();
+  }
+
+  /** Tries the service with half a second of silence; what it heard, usually nothing. */
+  async test(): Promise<string> {
+    return this.transcribe(silence(), 'audio/wav');
   }
 }

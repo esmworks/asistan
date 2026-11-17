@@ -63,6 +63,8 @@ import {
   ApiCredentialCreate,
   ApiCredentialUpdate,
   EmailClaim,
+  AI_KINDS,
+  AiEndpointSet,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -727,6 +729,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   // A recording from the message box's microphone button, as the browser made it.
   app.addContentTypeParser(/^audio\//, (_req, payload, done) => done(null, payload));
   app.get('/api/transcribe', async () => ({ available: await d.transcribe.available() }));
+  // A reply read aloud by the speech service the settings name; the app plays it.
+  app.get('/api/speech', async () => ({ available: await s.speech.available() }));
+  app.post('/api/speech', async (req, reply) => {
+    const { text } = z.object({ text: z.string().min(1).max(100_000) }).parse(req.body);
+    const { audio, type } = await s.speech.speak(text);
+    return reply.header('cache-control', 'no-store').type(type).send(audio);
+  });
   app.post('/api/transcribe', async (req) => {
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const chunks: Buffer[] = [];
@@ -908,6 +917,27 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Password vault: sign-ins are listed without their passwords.
+  // Model services besides the bots' own: embeddings for memory search, speech in and out.
+  const AiKindParams = z.object({ kind: z.enum(AI_KINDS) });
+  app.get('/api/ai-endpoints', async () => ({
+    ...(await s.ai.all()),
+    memoryIndex: await s.embeddings.status(),
+  }));
+  app.put('/api/ai-endpoints/:kind', async (req) =>
+    s.ai.set(AiKindParams.parse(req.params).kind, AiEndpointSet.parse(req.body)),
+  );
+  app.delete('/api/ai-endpoints/:kind', async (req) => s.ai.clear(AiKindParams.parse(req.params).kind));
+  app.post('/api/ai-endpoints/:kind/test', async (req) => {
+    const { kind } = AiKindParams.parse(req.params);
+    try {
+      if (kind === 'embeddings') return { ok: true, detail: String((await s.embeddings.test()).dimensions) };
+      if (kind === 'stt') return { ok: true, detail: await d.transcribe.test() };
+      return { ok: true, detail: String((await s.speech.test()).bytes) };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // API keys bots call services with; listed without their values.
   app.get('/api/api-keys', async () => s.apiCredentials.list());
   app.post('/api/api-keys', async (req) => s.apiCredentials.create(ApiCredentialCreate.parse(req.body)));

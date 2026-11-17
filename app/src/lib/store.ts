@@ -9,6 +9,7 @@ export type SettingsTab =
   | 'permissions'
   | 'vault'
   | 'memory'
+  | 'services'
   | 'routines'
   | 'skills'
   | 'groups'

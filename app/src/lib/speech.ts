@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { INTL_LOCALE, type Locale } from '@yumakbot/shared';
+import { api } from './api';
 
 const RATE_KEY = 'yumakbot.speech.rate';
 /** Reading speeds offered; 1 is the voice's own. */
@@ -47,13 +49,62 @@ export function speakable(markdown: string): string {
     .trim();
 }
 
-/** Reads a message aloud with the system's voice for the language; again on the same one stops. */
-export function toggleSpeech(id: string, markdown: string, locale: Locale) {
+/** Whether the server reads replies aloud with a speech service of its own. */
+export function useServerVoice(): boolean {
+  const { data } = useQuery({ queryKey: ['speech'], queryFn: api.speechStatus, staleTime: 60_000 });
+  return !!data?.available;
+}
+
+/** The reply the server is reading aloud, so another one, or the same again, stops it. */
+let playing: HTMLAudioElement | null = null;
+
+function stopAll() {
+  if (speechSupported()) window.speechSynthesis.cancel();
+  if (playing) {
+    playing.pause();
+    URL.revokeObjectURL(playing.src);
+    playing = null;
+  }
+}
+
+/**
+ * Reads a message aloud; again on the same one stops. `server`: with the server's speech service,
+ * whose voices read Turkish far better than most systems'; else, or when it fails, with the
+ * system's voice for the language.
+ */
+export function toggleSpeech(id: string, markdown: string, locale: Locale, server = false) {
+  const was = useSpeech.getState().speaking;
+  stopAll();
+  if (was === id) return useSpeech.setState({ speaking: null });
+  if (server) {
+    useSpeech.setState({ speaking: id });
+    void api.speech(speakable(markdown)).then(
+      (blob) => {
+        // Stopped, or another reply started, while the audio was on its way.
+        if (useSpeech.getState().speaking !== id) return;
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.playbackRate = useSpeech.getState().rate;
+        const done = () => {
+          if (playing === audio) stopAll();
+          if (useSpeech.getState().speaking === id) useSpeech.setState({ speaking: null });
+        };
+        audio.onended = done;
+        audio.onerror = done;
+        playing = audio;
+        void audio.play().catch(done);
+      },
+      (err) => {
+        console.warn('Server speech failed; reading with the system voice', err);
+        if (useSpeech.getState().speaking === id) {
+          useSpeech.setState({ speaking: null });
+          toggleSpeech(id, markdown, locale, false);
+        }
+      },
+    );
+    return;
+  }
   if (!speechSupported()) return;
   const synth = window.speechSynthesis;
-  const was = useSpeech.getState().speaking;
-  synth.cancel();
-  if (was === id) return useSpeech.setState({ speaking: null });
   const u = new SpeechSynthesisUtterance(speakable(markdown));
   u.lang = INTL_LOCALE[locale];
   u.rate = useSpeech.getState().rate;

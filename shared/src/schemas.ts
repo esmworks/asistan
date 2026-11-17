@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
+import { internalHost } from './ai-endpoints';
 
 export const Id = z.string().min(1).max(64);
 
@@ -835,13 +836,7 @@ export const ApiOrigin = z
   .transform((v, ctx) => {
     try {
       const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`);
-      const host = url.hostname.replace(/^\[|\]$/g, '');
-      const internal =
-        !host.includes('.') ||
-        host === 'localhost' ||
-        host.endsWith('.local') ||
-        host.endsWith('.internal') ||
-        /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd])/i.test(host);
+      const internal = internalHost(url.hostname);
       if (
         !url.username &&
         !url.password &&

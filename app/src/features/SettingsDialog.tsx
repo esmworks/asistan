@@ -12,6 +12,7 @@ import {
 } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AudioLines,
   Brain,
   ChartColumn,
   Check,
@@ -75,7 +76,7 @@ import {
   useNotify,
   type NotifyLevel,
 } from '@/lib/notify';
-import { SPEECH_RATES, speechSupported, useSpeech } from '@/lib/speech';
+import { SPEECH_RATES, speechSupported, useServerVoice, useSpeech } from '@/lib/speech';
 import { useSendKey, type SendKey } from '@/lib/sendKey';
 import { useTheme, type ThemeChoice } from '@/lib/theme';
 import {
@@ -91,6 +92,7 @@ import { settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
 import { ChannelsTab } from './ChannelsTab';
+import { AiServicesTab } from './AiServicesTab';
 import { PendingMemory } from './PendingMemory';
 import { ImportTab } from './ImportTab';
 import { ProfileTab } from './ProfileTab';
@@ -119,6 +121,7 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'permissions', icon: <Shield /> },
   { id: 'vault', icon: <KeyRound /> },
   { id: 'memory', icon: <Brain /> },
+  { id: 'services', icon: <AudioLines /> },
   { id: 'routines', icon: <Clock /> },
   { id: 'skills', icon: <Sparkles /> },
   { id: 'groups', icon: <Folder /> },
@@ -276,6 +279,7 @@ export function SettingsDialog() {
               {current.id === 'permissions' && <Permissions />}
               {current.id === 'vault' && <VaultTab />}
               {current.id === 'memory' && <MemoryTab />}
+              {current.id === 'services' && <AiServicesTab />}
               {current.id === 'routines' && <RoutinesTab />}
               {current.id === 'skills' && <SkillsTab />}
               {current.id === 'groups' && <GroupsTab />}
@@ -434,6 +438,7 @@ function General() {
   const setSendKey = useSendKey((s) => s.set);
   const speechRate = useSpeech((s) => s.rate);
   const setSpeechRate = useSpeech((s) => s.setRate);
+  const serverVoice = useServerVoice();
   const changeLanguage = (language: Locale) => {
     setLocale(language, { unsaved: true });
     save.mutate({ language }, { onSuccess: () => useLocale.setState({ unsaved: false }) });
@@ -530,7 +535,7 @@ function General() {
             </SelectContent>
           </Select>
         </Row>
-        {speechSupported() && (
+        {(serverVoice || speechSupported()) && (
           <Row label={t('general.speechRate')} hint={t('general.speechRateHint')}>
             <Select value={String(speechRate)} onValueChange={(v) => setSpeechRate(Number(v))}>
               <SelectTrigger className="w-56 rounded-full">
