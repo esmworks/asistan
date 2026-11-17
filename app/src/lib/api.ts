@@ -261,6 +261,8 @@ export const api = {
   bot: (id: string) => http.get<Bot>(`/api/bots/${id}`),
   createBot: (b: unknown) => http.post<Bot>('/api/bots', b),
   updateBot: (id: string, b: unknown) => http.patch<Bot>(`/api/bots/${id}`, b),
+  /** Moves every active bot to what new bots start with; says how many changed. */
+  moveBotsToNewEngine: () => http.post<{ changed: number }>('/api/bots/engine'),
   archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
   today: () => http.get<TodayReport>('/api/today'),
   /** Pins a message above its conversation; null takes the pin away. */

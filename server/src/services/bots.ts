@@ -1,11 +1,22 @@
 import { homedir } from 'node:os';
-import type { Bot, BotCreate, BotMove, BotUpdate, Group, GroupMove } from '@yumakbot/shared';
+import {
+  leavesForEngine,
+  type Bot,
+  type BotCreate,
+  type BotEngineChoice,
+  type BotMove,
+  type BotUpdate,
+  type Group,
+  type GroupMove,
+} from '@yumakbot/shared';
 import { asc, eq, isNull, max } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
 import { projectDirProblem } from '../workspace';
 import { toBot, toGroup } from './mappers';
+
+type Tx = Parameters<Parameters<Ctx['db']['transaction']>[0]>[0];
 
 export class BotService {
   constructor(private ctx: Ctx) {}
@@ -69,20 +80,57 @@ export class BotService {
     if (patch.groupId) await this.getGroup(patch.groupId);
     if (patch.projectDir !== undefined && patch.projectDir !== before.projectDir)
       this.checkProjectDir(patch.projectDir);
-    // A session belongs to the engine that made it; the other engine cannot resume it.
-    if (patch.engine && patch.engine !== before.engine) {
-      await this.ctx.db
-        .update(schema.threads)
-        .set({ engineSessionId: null, engineSessionCostUsd: null })
-        .where(eq(schema.threads.botId, id));
-    }
-    const [row] = await this.ctx.db
-      .update(schema.bots)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(schema.bots.id, id))
-      .returning();
+    const leaves = !!patch.engine && patch.engine !== before.engine;
+    const row = await this.ctx.db.transaction(async (tx) => {
+      if (leaves) await this.leaveEngine(tx, id);
+      const [saved] = await tx
+        .update(schema.bots)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(schema.bots.id, id))
+        .returning();
+      return saved;
+    });
     this.ctx.bus.refresh({ scope: 'bots' });
+    if (leaves) this.ctx.bus.refresh({ scope: 'routines' });
     return toBot(row!);
+  }
+
+  /**
+   * Moves every active bot to `target`, what new bots start with, in one write; returns how
+   * many changed. Archived bots stay as they are.
+   */
+  async moveAllTo(target: BotEngineChoice): Promise<number> {
+    const moving = (await this.list()).filter((b) => leavesForEngine(b, target));
+    if (!moving.length) return 0;
+    await this.ctx.db.transaction(async (tx) => {
+      for (const bot of moving) {
+        if (bot.engine !== target.engine) await this.leaveEngine(tx, bot.id);
+        // Only bots on another provider move to Claude, so none of them keeps a model there.
+        await tx
+          .update(schema.bots)
+          .set({ engine: target.engine, model: target.model, updatedAt: new Date() })
+          .where(eq(schema.bots.id, bot.id));
+      }
+    });
+    this.ctx.bus.refresh({ scope: 'bots' });
+    this.ctx.bus.refresh({ scope: 'routines' });
+    return moving.length;
+  }
+
+  /** What a bot leaves behind when it moves to the other engine. */
+  private async leaveEngine(tx: Tx, botId: string) {
+    // A session belongs to the engine that made it; the other engine cannot resume it, so the
+    // next turn starts a new one with the recent exchange. A room member keeps its own session.
+    await tx
+      .update(schema.threads)
+      .set({ engineSessionId: null, engineSessionCostUsd: null })
+      .where(eq(schema.threads.botId, botId));
+    await tx
+      .update(schema.roomMembers)
+      .set({ engineSessionId: null, engineSessionCostUsd: null })
+      .where(eq(schema.roomMembers.botId, botId));
+    // A routine's own model names one of the old engine's models; its runs take the bot's model.
+    await tx.update(schema.routines).set({ model: '' }).where(eq(schema.routines.botId, botId));
   }
 
   /** Moves a bot to another place in the sidebar and renumbers the section it lands in. */

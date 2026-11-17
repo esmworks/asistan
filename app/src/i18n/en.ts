@@ -1502,7 +1502,17 @@ export const en: Catalog<MessageKey> = {
   'model.show': 'Show',
   'model.hide': 'Hide',
   'model.newBots': 'New bots',
-  'model.newBotsHint': 'The AI newly created bots start with. Existing bots do not change.',
+  'model.newBotsHint': 'The AI newly created bots start with. Existing bots do not change on their own.',
+  'model.moveExisting': {
+    one: '1 existing bot uses another AI.',
+    other: '{count} existing bots use another AI.',
+  },
+  'model.moveButton': 'Move them too',
+  'model.moveConfirm.pi': { one: 'Move 1 bot to {model}?', other: 'Move {count} bots to {model}?' },
+  'model.moveConfirm.claude': { one: 'Move 1 bot to Claude?', other: 'Move {count} bots to Claude?' },
+  'model.moveKeeps':
+    "Their conversations stay; each bot picks up from the recent conversation at its next message. When a bot moves between Claude and another provider, a routine of it that names its own model loses that choice and uses the bot's model.",
+  'model.moved': { one: '1 bot moved.', other: '{count} bots moved.' },
   'model.backup': 'Backup model',
   'model.backupHint':
     'When the usage limit is used up, the work goes on with this model instead of waiting; it gets the recent conversation.',

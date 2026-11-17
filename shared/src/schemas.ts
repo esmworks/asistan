@@ -138,6 +138,27 @@ export const BotMove = z.object({
 });
 export type BotMove = z.infer<typeof BotMove>;
 
+/** The engine and model a bot runs on; for another provider the model is `provider/model`. */
+export interface BotEngineChoice {
+  engine: z.infer<typeof EngineKind>;
+  model: string;
+}
+
+/** What new bots start with: the provider picked in the settings, else Claude. */
+export function newBotEngine(settings?: { defaultEngine?: string; piModel?: string }): BotEngineChoice {
+  return settings?.defaultEngine === 'pi' && settings.piModel
+    ? { engine: 'pi', model: settings.piModel }
+    : { engine: 'claude', model: '' };
+}
+
+/**
+ * Whether moving the existing bots to what new bots start with changes this one. A bot already
+ * on Claude keeps its own Claude model; a bot on another provider takes the new model.
+ */
+export function leavesForEngine(bot: BotEngineChoice, target: BotEngineChoice): boolean {
+  return bot.engine !== target.engine || (target.engine === 'pi' && bot.model !== target.model);
+}
+
 export const GroupCreate = z.object({ name: z.string().trim().min(1).max(60) });
 
 /** Moves a group in the sidebar, before `beforeId` or to the end. */

@@ -2,8 +2,10 @@ import {
   botNoteGroups,
   describeSchedule,
   INTL_LOCALE,
+  leavesForEngine,
   LOCALE_NAMES,
   LOCALES,
+  newBotEngine,
   STALE_MEMORY_DAYS,
   type BotNoteGroup,
   type Locale,
@@ -1012,6 +1014,56 @@ function NewBotEngine({
           )}
         </div>
       )}
+      {settings?.defaultEngine === kind && (kind === 'claude' || saved) && <MoveExistingBots />}
+    </div>
+  );
+}
+
+/**
+ * Offers to move the bots that run on another AI to what new bots start with, since changing
+ * that setting leaves every existing bot as it was.
+ */
+function MoveExistingBots() {
+  const t = useT();
+  const qc = useQueryClient();
+  const { data: settings } = useSettings();
+  const { data: bots = [] } = useBots();
+  const target = newBotEngine(settings);
+  const count = bots.filter((b) => leavesForEngine(b, target)).length;
+  const move = useMutation({
+    mutationFn: api.moveBotsToNewEngine,
+    onSuccess: ({ changed }) => {
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+      void qc.invalidateQueries({ queryKey: ['routines'] });
+      toast.success(t('model.moved', { count: changed }));
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  if (!count) return null;
+  const confirm = () => {
+    const pi = target.engine === 'pi';
+    const text = [
+      pi
+        ? t('model.moveConfirm.pi', { count, model: target.model })
+        : t('model.moveConfirm.claude', { count }),
+      t('model.moveKeeps'),
+      ...(pi ? [t('bot.engineHint.pi')] : []),
+    ].join('\n\n');
+    if (window.confirm(text)) move.mutate();
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2">
+      <span className="text-xs text-muted-foreground">{t('model.moveExisting', { count })}</span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="rounded-full"
+        onClick={confirm}
+        disabled={move.isPending}
+      >
+        {move.isPending && <Loader2 className="animate-spin" />}
+        {t('model.moveButton')}
+      </Button>
     </div>
   );
 }

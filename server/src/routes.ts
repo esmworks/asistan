@@ -12,6 +12,7 @@ import {
   BotCreate,
   BotMove,
   BotUpdate,
+  newBotEngine,
   ApnsSet,
   ClaudeAuthSet,
   PushDeviceSet,
@@ -390,6 +391,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.bots.list({ includeArchived: q.archived === '1' });
   });
   app.post('/api/bots', async (req) => s.bots.create(BotCreate.parse(req.body)));
+  // Moves the existing bots to what new bots start with, while its provider can still be reached
+  // the way the engine reaches it: a key, a sign-in with a plan, or an endpoint that takes none.
+  app.post('/api/bots/engine', async () => {
+    const target = newBotEngine(await s.settings.all());
+    if (target.engine === 'pi') {
+      const provider = target.model.slice(0, target.model.indexOf('/'));
+      if (!(await s.keys.auth(provider))?.apiKey) throw new HttpError(400, 'error.noProviderKey');
+    }
+    return { changed: await s.bots.moveAllTo(target) };
+  });
   app.get('/api/bots/:id', async (req) => s.bots.get(IdParams.parse(req.params).id));
   app.patch('/api/bots/:id', async (req) =>
     s.bots.update(IdParams.parse(req.params).id, BotUpdate.parse(req.body)),

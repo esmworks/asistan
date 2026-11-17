@@ -9,6 +9,7 @@ import {
   BotImportRoutine,
   BotImportSkill,
   BOT_IMPORT_VERSION,
+  newBotEngine,
   skillWarnings,
   type BotImportPlan,
   type BotImportResult,
@@ -187,10 +188,7 @@ export class BotImportService {
   async commit(raw: unknown): Promise<BotImportResult> {
     const { plan, avatars, newSkills } = await this.prepare(raw);
     const settings = await this.settings.all();
-    const engine =
-      settings.defaultEngine === 'pi' && settings.piModel
-        ? { engine: 'pi' as const, model: settings.piModel }
-        : { engine: 'claude' as const, model: '' };
+    const engine = newBotEngine(settings);
     const botIds = await this.ctx.db.transaction(async (tx) => {
       const [last] = await tx.select({ n: max(schema.bots.position) }).from(schema.bots);
       let position = (last?.n ?? -1) + 1;

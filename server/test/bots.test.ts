@@ -564,3 +564,84 @@ describe('sohbetleri temizle', () => {
     expect(left.map((x) => x.id)).toEqual([second.id]);
   });
 });
+
+describe('var olan botları yeni botların yapay zekâsına geçirme', () => {
+  let t: TestServer;
+  beforeEach(async () => {
+    t = await testServer();
+  });
+  afterEach(() => t.dispose());
+
+  const SESSION = '11111111-2222-3333-4444-555555555555';
+  const get = async (id: string) => (await t.api<Bot>('GET', `/api/bots/${id}`)).body;
+  const move = () => t.api<{ changed: number }>('POST', '/api/bots/engine');
+
+  it('başka sağlayıcıya geçirir; oturumları sıfırlar, eski motorun rutin modelini kaldırır, arşivdekine dokunmaz', async () => {
+    const claude = await t.bot({ name: 'Kahya', model: 'opus' });
+    const oldPi = await t.bot({ name: 'Eski', engine: 'pi', model: 'openai/gpt-4o' });
+    const same = await t.bot({ name: 'Aynı', engine: 'pi', model: 'openai/gpt-4o-mini' });
+    const archived = await t.bot({ name: 'Arşiv' });
+    await t.api('POST', `/api/bots/${archived.id}/archive`);
+
+    const thread = (await t.api<Thread>('GET', `/api/bots/${claude.id}/main-thread`)).body;
+    await t.services.threads.setSession(thread.id, SESSION);
+    const room = (
+      await t.api<Thread>('POST', '/api/rooms', { title: 'Yönetim', botIds: [claude.id, same.id] })
+    ).body;
+    await t.services.rooms.setSession(room.id, claude.id, SESSION);
+    await t.api('POST', '/api/routines', {
+      botId: claude.id,
+      name: 'Mail',
+      prompt: 'Postayı oku',
+      schedule: { type: 'daily', time: '09:00' },
+      timezone: 'Europe/Istanbul',
+      model: 'haiku',
+    });
+
+    await t.api('PUT', '/api/providers/openai/key', { key: 'sk-test-abcdefgh1234' });
+    await t.api('PATCH', '/api/settings', { defaultEngine: 'pi', piModel: 'openai/gpt-4o-mini' });
+    const r = await move();
+    expect(r).toMatchObject({ status: 200, body: { changed: 2 } });
+
+    for (const id of [claude.id, oldPi.id, same.id]) {
+      expect(await get(id)).toMatchObject({ engine: 'pi', model: 'openai/gpt-4o-mini' });
+    }
+    expect(await get(archived.id)).toMatchObject({ engine: 'claude', model: '' });
+    expect((await t.services.threads.row(thread.id)).engineSessionId).toBeNull();
+    expect((await t.services.rooms.session(room.id, claude.id)).id).toBeNull();
+    const [routine] = await t.db.db
+      .select()
+      .from(schema.routines)
+      .where(eq(schema.routines.botId, claude.id));
+    expect(routine!.model).toBe('');
+  });
+
+  it("Claude'a geçirirken Claude botlarının kendi modeline dokunmaz", async () => {
+    const own = await t.bot({ name: 'Kendi', model: 'opus' });
+    const pi = await t.bot({ name: 'Pi', engine: 'pi', model: 'openai/gpt-4o-mini' });
+    const r = await move();
+    expect(r.body.changed).toBe(1);
+    expect(await get(own.id)).toMatchObject({ engine: 'claude', model: 'opus' });
+    expect(await get(pi.id)).toMatchObject({ engine: 'claude', model: '' });
+    expect((await move()).body.changed).toBe(0);
+  });
+
+  it('tek bot motor değiştirince odadaki oturumu da sıfırlanır', async () => {
+    const a = await t.bot({ name: 'Ada' });
+    const b = await t.bot({ name: 'Bora' });
+    const room = (await t.api<Thread>('POST', '/api/rooms', { title: 'Oda', botIds: [a.id, b.id] })).body;
+    await t.services.rooms.setSession(room.id, a.id, SESSION);
+    await t.api('PATCH', `/api/bots/${a.id}`, { model: 'opus' });
+    expect((await t.services.rooms.session(room.id, a.id)).id).toBe(SESSION);
+    await t.api('PATCH', `/api/bots/${a.id}`, { engine: 'pi', model: 'openai/gpt-4o-mini' });
+    expect((await t.services.rooms.session(room.id, a.id)).id).toBeNull();
+  });
+
+  it('sağlayıcının anahtarı kalmadıysa hiçbir botu değiştirmez', async () => {
+    const bot = await t.bot({ name: 'Kahya' });
+    await t.api('PATCH', '/api/settings', { defaultEngine: 'pi', piModel: 'openai/gpt-4o-mini' });
+    const r = await move();
+    expect(r.status).toBe(400);
+    expect(await get(bot.id)).toMatchObject({ engine: 'claude', model: '' });
+  });
+});
