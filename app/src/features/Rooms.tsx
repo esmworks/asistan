@@ -45,6 +45,7 @@ import { useLocale, useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useThreadActivity } from '@/lib/botActivity';
 import { newClientId, useFormat } from '@/lib/format';
+import { useLiveCards } from '@/lib/liveCards';
 import { PHONE } from '@/lib/media';
 import { useBots, useMessages, useRooms } from '@/lib/queries';
 import { useUi } from '@/lib/store';
@@ -472,9 +473,11 @@ export function RoomView({ room }: { room: Room }) {
 
   const shown = pending.filter((p) => !messages.some((m) => m.clientId === p.clientId));
   // A sent message stays one row, keyed by its clientId, until the server's copy replaces it.
-  const rows = shown.length ? [...messages, ...shown] : messages;
+  const all = shown.length ? [...messages, ...shown] : messages;
   const waiting = new Set(shown.map((m) => m.clientId));
   const streamDone = stream && messages.some((m) => m.turnId === stream.turnId && m.role === 'assistant');
+  // A card asked while the reply streams in goes inside it, where it was asked.
+  const { rows, parts } = useLiveCards(all, stream, !!streamDone);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -498,8 +501,9 @@ export function RoomView({ room }: { room: Room }) {
       : m.role === 'user'
         ? 'user'
         : null;
+  // Of the rows drawn above the streaming reply: a card placed inside it comes after its words.
   const lastSpeaker =
-    [...messages]
+    [...rows]
       .reverse()
       .map(speakerOf)
       .find((s) => s !== null) ?? null;
@@ -545,10 +549,21 @@ export function RoomView({ room }: { room: Room }) {
               </Fragment>
             );
           })}
-          {stream && !streamDone && stream.text && (
+          {parts.length > 0 && (
             <>
               {speaker && speaker.id !== lastSpeaker && <SpeakerLine bot={speaker} />}
-              <AssistantCard text={stream.text} turnId={stream.turnId} streaming />
+              {parts.map((p) =>
+                p.kind === 'text' ? (
+                  <AssistantCard
+                    key={`text-${p.from}`}
+                    text={p.text}
+                    turnId={p.live ? stream?.turnId : undefined}
+                    streaming={p.live}
+                  />
+                ) : (
+                  <MessageItem key={p.card.id} m={p.card} bots={botMap} botId={speaker?.id} />
+                ),
+              )}
             </>
           )}
           {speaker && activity !== 'idle' && !(stream && !streamDone && stream.text) && (

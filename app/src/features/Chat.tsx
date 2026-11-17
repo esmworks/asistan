@@ -57,6 +57,7 @@ import { api } from '@/lib/api';
 import { useBotActivityById, useThreadActivity } from '@/lib/botActivity';
 import { useLocale, useT } from '@/i18n';
 import { useDictation } from '@/lib/dictation';
+import { useLiveCards } from '@/lib/liveCards';
 import { newClientId, useFormat } from '@/lib/format';
 
 /** Mirrors the server's page of messages: a full page means there may be older ones. */
@@ -822,9 +823,11 @@ function Conversation({
   const shown = pending.filter((p) => !messages.some((m) => m.clientId === p.clientId));
   // A sent message stays one row, keyed by its clientId, from the moment it is sent until the
   // server's copy replaces it, so it neither redraws nor moves when that copy arrives.
-  const rows = shown.length ? [...listed, ...shown] : listed;
+  const all = shown.length ? [...listed, ...shown] : listed;
   const waiting = new Set(shown.map((m) => m.clientId));
   const streamDone = stream && messages.some((m) => m.turnId === stream.turnId && m.role === 'assistant');
+  // A card asked while the reply streams in goes inside it, where it was asked.
+  const { rows, parts } = useLiveCards(all, stream, !!streamDone);
   const busy = state === 'running' || state === 'queued';
   const activity = useThreadActivity(bot.id, threadId, state);
 
@@ -1000,8 +1003,25 @@ function Conversation({
                 </ErrorBoundary>
               </Fragment>
             ))}
-            {stream && !streamDone && stream.text && (
-              <AssistantCard text={stream.text} turnId={stream.turnId} streaming />
+            {parts.map((p) =>
+              p.kind === 'text' ? (
+                <AssistantCard
+                  key={`text-${p.from}`}
+                  text={p.text}
+                  turnId={p.live ? stream?.turnId : undefined}
+                  streaming={p.live}
+                />
+              ) : (
+                <ErrorBoundary key={p.card.id} fallback={<BrokenMessage />}>
+                  <MessageItem
+                    m={p.card}
+                    bots={botMap}
+                    tint={bot.color}
+                    botId={bot.id}
+                    onReply={setReplyTo}
+                  />
+                </ErrorBoundary>
+              ),
             )}
             {activity !== 'idle' && !streamDone && (
               <Working bot={bot} activity={activity} threadId={threadId ?? undefined} />
