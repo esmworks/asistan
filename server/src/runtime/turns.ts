@@ -27,6 +27,7 @@ import {
   askRuleFor,
   askRuleMatches,
   blockRuleFor,
+  cappedMode,
   decide,
   modeFor,
   READ_ONLY_TOOLS,
@@ -35,7 +36,7 @@ import {
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { markedOutside, outsideFreeTools, outsideSource } from './outside';
+import { markedOutside, outsideFreeTools, outsideRead, outsideSource } from './outside';
 import { ownerWords, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
@@ -113,7 +114,7 @@ interface Running {
   controller: AbortController;
   done: Promise<void>;
   /** Waiting messages the person asked to hand to this turn while it runs. */
-  steers: { turnId: string; messageId: string; prompt: string }[];
+  steers: { turnId: string; messageId: string; prompt: string; outside: OutsideTrigger | null }[];
   /** Hand-overs still being written down; the turn waits for them before it ends. */
   handing: Promise<void>[];
 }
@@ -277,6 +278,10 @@ export class TurnManager {
     prompt: string;
     jobId?: string | null;
     routineRunId?: string | null;
+    /** Outside text the turn that starts this one had read; this one starts with it read. */
+    outside?: OutsideTrigger | null;
+    /** The freest level the turn may act at, when a stricter bot starts it. */
+    modeCap?: Bot['permissionMode'] | null;
   }): Promise<TurnRow> {
     const [row] = await this.ctx.db
       .insert(schema.turns)
@@ -289,6 +294,8 @@ export class TurnManager {
         prompt: t.prompt,
         jobId: t.jobId ?? null,
         routineRunId: t.routineRunId ?? null,
+        outside: t.outside ?? null,
+        modeCap: t.modeCap ?? null,
       })
       .returning();
     this.emitState(t.threadId, t.botId);
@@ -338,6 +345,8 @@ export class TurnManager {
       .orderBy(asc(schema.turns.createdAt));
     if (!later.length) return turn;
     const prompt = [turn.prompt, ...later.map((t) => t.prompt)].join('\n\n');
+    // One of them carrying someone else's words (a forward) makes the whole turn carry them.
+    const outside = turn.outside ?? later.find((t) => t.outside)?.outside ?? null;
     const ids = later.map((t) => t.id);
     await this.ctx.db
       .update(schema.messages)
@@ -346,10 +355,10 @@ export class TurnManager {
     await this.ctx.db.delete(schema.turns).where(inArray(schema.turns.id, ids));
     const [merged] = await this.ctx.db
       .update(schema.turns)
-      .set({ prompt })
+      .set({ prompt, outside })
       .where(eq(schema.turns.id, turn.id))
       .returning();
-    return merged ?? { ...turn, prompt };
+    return merged ?? { ...turn, prompt, outside };
   }
 
   /** Gives a turn that has not started a new prompt; false once it has. */
@@ -544,7 +553,7 @@ export class TurnManager {
       .limit(1);
     if (!queued || !this.running.has(entry.turn.id)) return false;
     if (!entry.steers.some((s) => s.turnId === turnId)) {
-      entry.steers.push({ turnId, messageId, prompt: queued.prompt });
+      entry.steers.push({ turnId, messageId, prompt: queued.prompt, outside: queued.outside });
     }
     await this.services.threads.markSteering(messageId, true);
     return true;
@@ -604,8 +613,9 @@ export class TurnManager {
     const apiSources = await this.services.apiSources.forBot(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
-    // The person is in the room while its bots talk, as with their own messages.
-    const present = attended(turn.source) || inRoom;
+    // Only a turn the person's own message or emoji started has them there to answer a card. A
+    // room member another bot named, or a new round of the room, is the bots' doing.
+    const present = attended(turn.source);
     // The turn's routine run: what outside text started it, and the model the routine names.
     const [routineRun] = turn.routineRunId
       ? await this.ctx.db
@@ -618,11 +628,52 @@ export class TurnManager {
     // answer, a report written from one): its run's, what the prompt hands over below, and what
     // the session it goes on in has read. The session keeps the mark, and with nobody watching the
     // bot changes nothing and reaches no web page without a card, whatever its level.
-    let reads: OutsideTrigger | null = routineRun?.trigger ?? null;
+    // A turn another bot's run handed over (a request, an answer, a room member naming it) comes
+    // with what that run had read; so does a person's message carrying someone else's words.
+    let reads: OutsideTrigger | null = routineRun?.trigger ?? turn.outside ?? null;
     const note = (x: OutsideTrigger | null | undefined) => {
       if (x && !reads) reads = x;
     };
+    if (turn.source === 'user') {
+      const own = await this.ctx.db
+        .select({ props: schema.messages.props })
+        .from(schema.messages)
+        .where(and(eq(schema.messages.turnId, turn.id), eq(schema.messages.role, 'user')));
+      for (const m of own) note(outsideIn(m.props as Record<string, unknown>));
+    }
+    // Read at every step, so the outside text a tool brings in on the way counts from then on.
     const outside = () => (present ? null : reads);
+    /**
+     * Writes down that the turn read outside text: on the turn, so whatever it hands on carries
+     * it; on the thread's session, so a later turn there carries it; on the routine run, so its
+     * report does.
+     */
+    const persist = async () => {
+      if (!reads) return;
+      await this.ctx.db
+        .update(schema.turns)
+        .set({ outside: reads })
+        .where(and(eq(schema.turns.id, turn.id), isNull(schema.turns.outside)));
+      if (!inRoom) {
+        await this.ctx.db
+          .update(schema.threads)
+          .set({ outsideSession: reads })
+          .where(and(eq(schema.threads.id, thread.id), isNull(schema.threads.outsideSession)));
+      }
+      // The run's report is then written from outside text too, and is marked so where it goes.
+      if (turn.routineRunId) {
+        await this.ctx.db
+          .update(schema.routineRuns)
+          .set({ trigger: reads })
+          .where(and(eq(schema.routineRuns.id, turn.routineRunId), isNull(schema.routineRuns.trigger)));
+      }
+    };
+    /** A tool brought outside text into the run: from here on it is read. */
+    const readOutside = async (x: OutsideTrigger) => {
+      if (reads) return;
+      reads = x;
+      await persist().catch((err) => console.warn('outside mark', err));
+    };
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -662,6 +713,8 @@ export class TurnManager {
         hasTables: await this.services.tables.any(bot.id),
         // Claude keeps its plan with its own to-do tool; other engines get this one.
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
+        outside: () => reads,
+        readOutside,
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
@@ -711,10 +764,24 @@ export class TurnManager {
       )),
     ];
     const connectionNames = await this.services.connections.names();
-    // What a connected app or a web page returns reaches the model marked as data, not instructions.
+    // What a connected app or a web page returns reaches the model marked as data, not instructions,
+    // and the run has read outside text from then on.
     const tools = allTools
       .filter((x) => pickTool(toolPermName(x)))
-      .map((x) => markedOutside(x, outsideSource(x, connectionNames, t), t));
+      .map((x) => {
+        const source = outsideSource(x, connectionNames, t);
+        const kind = outsideRead(x, !!source, present);
+        const marked = markedOutside(x, source, t);
+        if (!kind) return marked;
+        return {
+          ...marked,
+          handler: async (args: Record<string, unknown>) => {
+            const r = await marked.handler(args);
+            await readOutside(kind);
+            return r;
+          },
+        };
+      });
     // Internal app tools, and connection tools marked read, run without a card; `ask` rules can
     // still require one.
     const readOnlyTools = new Set(tools.filter((t) => t.internal || t.readOnly).map(toolPermName));
@@ -754,7 +821,7 @@ export class TurnManager {
         return { behavior: 'deny', message: t('turn.toolOff') };
       }
       // A block rule refuses the call in every mode, before any other rule or card.
-      const blocked = blockRuleFor(await approvals.rules(), ask.toolName, ask.input);
+      const blocked = blockRuleFor(await approvals.rules(bot.id), ask.toolName, ask.input);
       if (blocked) return { behavior: 'deny', message: t('turn.blocked', { rule: blocked.pattern }) };
       // ask_user handles its own card.
       if (ask.toolName === 'mcp__yumakbot__ask_user') return { behavior: 'allow' };
@@ -795,11 +862,14 @@ export class TurnManager {
       }
       // Read for every call: "Hep izin ver" on an earlier card of this turn must count here, and so
       // must an approval level the person changed while the bot works.
-      const rules = await approvals.rules();
+      const rules = await approvals.rules(bot.id);
       const mode = modeFor(
-        await bots.get(bot.id).then(
-          (b) => b.permissionMode,
-          () => bot.permissionMode,
+        cappedMode(
+          await bots.get(bot.id).then(
+            (b) => b.permissionMode,
+            () => bot.permissionMode,
+          ),
+          turn.modeCap,
         ),
         !!outside(),
       );
@@ -890,7 +960,7 @@ export class TurnManager {
 
     const engine = this.engineFor(bot);
     const roomPrompt = (fresh: boolean) =>
-      this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t });
+      this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t, note });
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
     const handoff = async () => {
       if (inRoom) return roomPrompt(true);
@@ -940,18 +1010,14 @@ export class TurnManager {
       return `${t('prompt.postedSince', { posts: posts.map((m) => postedText(m, t)).join('\n\n') })}\n\n${prompt}`;
     };
     // A session the turn goes on in keeps what outside text it had read; the turn's own is added,
-    // and a new one starts from what its prompt hands over. Rooms are watched by the person.
+    // and a new one starts from what its prompt hands over. A room member's session is not the
+    // thread's: what it read comes from the room's lines (see `rooms.prompt`).
     const settle = async (prompt: string, resumed: boolean) => {
-      if (inRoom) return prompt;
-      if (resumed) note(thread.outsideSession);
-      if (!resumed || reads !== thread.outsideSession) await threads.setOutsideSession(thread.id, reads);
-      // The run's report is then written from outside text too, and is marked so where it goes.
-      if (reads && turn.routineRunId && !routineRun?.trigger) {
-        await this.ctx.db
-          .update(schema.routineRuns)
-          .set({ trigger: reads })
-          .where(and(eq(schema.routineRuns.id, turn.routineRunId), isNull(schema.routineRuns.trigger)));
+      if (!inRoom) {
+        if (resumed) note(thread.outsideSession);
+        if (!resumed || reads !== thread.outsideSession) await threads.setOutsideSession(thread.id, reads);
       }
+      await persist();
       return prompt;
     };
     // The bot's plan is one message per turn, rewritten as the plan changes.
@@ -1040,6 +1106,8 @@ export class TurnManager {
         ...(selectsTools(bot.toolSelection) && { pickTool }),
         canUseTool: async (ask) => {
           const answer = await canUseTool(ask);
+          // A page, a search or a host a command reaches answers with text from outside.
+          if (answer.behavior === 'allow' && WEB_READS.includes(ask.toolName)) await readOutside('web');
           if (
             answer.behavior === 'allow' &&
             !READ_ONLY_TOOLS.has(ask.toolName) &&
@@ -1048,6 +1116,7 @@ export class TurnManager {
             acted = true;
           return answer;
         },
+        onReach: () => void readOutside('web'),
         onActivity: (tool) => {
           watchdog.activity(tool);
           if (tool) showTool(tool);
@@ -1079,7 +1148,10 @@ export class TurnManager {
           }),
         steering: () => {
           const entry = this.running.get(turn.id);
-          return entry ? this.takeSteers(entry, t) : [];
+          if (!entry) return [];
+          // A forwarded message handed over is someone else's words in this run too.
+          for (const s of entry.steers) if (s.outside) void readOutside(s.outside);
+          return this.takeSteers(entry, t);
         },
         signal: controller.signal,
       });
@@ -1223,13 +1295,21 @@ export class TurnManager {
     // routine's report is heard from the main conversation it is copied to.
     const heard = kind !== 'bot';
     if (outcome.text.trim() && !isSilentReply(outcome.text)) {
+      // A reply written after reading outside text says so, for whoever reads it later.
+      const [read] = await this.ctx.db
+        .select({ outside: schema.turns.outside })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, turn.id));
       await threads.addMessage({
         threadId: turn.threadId,
         role: 'assistant',
         author: `bot:${turn.botId}`,
         text: outcome.text,
         turnId: turn.id,
-        props: outcome.ok ? {} : { partial: true },
+        props: {
+          ...(outcome.ok ? {} : { partial: true }),
+          ...(read?.outside ? { outside: read.outside } : {}),
+        },
       });
       if (heard && outcome.ok && kind !== 'routine') {
         this.ctx.bus.notice({

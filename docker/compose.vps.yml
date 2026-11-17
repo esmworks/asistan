@@ -5,20 +5,23 @@
 services:
   yumakbot:
     # Pulled for a release; built from the checkout when the image is not published (a branch, or a
-    # release from before images were published).
-    image: ghcr.io/esmworks/yumakbot-server:${YUMAKBOT_VERSION:-latest}
+    # release from before images were published). The installer writes the version it installed, so
+    # the images always match the compose files next to them; there is no `latest` fallback that could
+    # pull a newer server onto older files.
+    image: ghcr.io/esmworks/yumakbot-server:${YUMAKBOT_VERSION:?YUMAKBOT_VERSION gerekli}
     environment:
       # Empty, so off, unless the installer turned the bots' desktops on.
       YUMAKBOT_COMPUTER_URL: ${YUMAKBOT_COMPUTER_URL:-}
 
   computer:
-    image: ghcr.io/esmworks/yumakbot-computer:${YUMAKBOT_VERSION:-latest}
+    image: ghcr.io/esmworks/yumakbot-computer:${YUMAKBOT_VERSION:?YUMAKBOT_VERSION gerekli}
     # Needs about 6 GB of memory of its own, more than a small server has; started only with
     # `--profile computer`.
     profiles: [computer]
 
   caddy:
-    image: caddy:2-alpine
+    # Pinned like the images in compose.yml.
+    image: caddy:${CADDY_VERSION:-2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0}
     restart: unless-stopped
     # On the host's network: it answers on ports 80 and 443 and reaches the server on the loopback
     # port compose.yml publishes, without joining the bots' networks.

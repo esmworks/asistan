@@ -15,6 +15,11 @@ function readLocalConfig(): LocalConfig {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as LocalConfig) : {};
 }
 
+// app.json cannot hold comments, so its network settings are explained here. iOS allows plain http only on the local
+// network (NSAllowsLocalNetworking), where a self-hosted server is often reached by its address. Android's network
+// security configuration can only allow cleartext by domain name, not for private address ranges, so it stays allowed
+// there; the connect screen keeps a server on the internet on https unless the person accepts a warning
+// (src/lib/address.ts).
 export default ({ config }: ConfigContext): ExpoConfig => {
   const local = readLocalConfig();
   const projectId = local.projectId ?? process.env.EAS_BUILD_PROJECT_ID;

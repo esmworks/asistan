@@ -1,3 +1,4 @@
+import { BodyTooLarge, readCapped } from './read-capped';
 import { redactSecrets } from './secrets';
 import type { ProviderKeyService } from './keys';
 
@@ -130,7 +131,14 @@ export class ImageService {
       if (Number(img.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
         throw new ImageError('tooLarge', '', s.provider);
       }
-      data = Buffer.from(await img.arrayBuffer());
+      // Counted as it arrives: without a size header the whole body would otherwise be held first.
+      try {
+        data = await readCapped(img.body, MAX_IMAGE_BYTES);
+      } catch (err) {
+        if (err instanceof BodyTooLarge) throw new ImageError('tooLarge', '', s.provider);
+        if (opts.signal?.aborted) throw err;
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     } else {
       throw new ImageError('notImage', '', s.provider);
     }

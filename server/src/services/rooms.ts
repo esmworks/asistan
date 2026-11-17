@@ -1,7 +1,9 @@
 import {
   findMentions,
+  outsideIn,
   type Bot,
   type Message,
+  type OutsideTrigger,
   type Room,
   type RoomCreate,
   type RoomSend,
@@ -14,6 +16,7 @@ import { isSilentReply, SILENT_REPLY, type TurnOutcome } from '../engine/types';
 import type { T } from '../i18n';
 import { HANDOFF_CHARS, HANDOFF_MESSAGE_CHARS } from '../runtime/prompt';
 import type { TurnRow } from '../runtime/turns';
+import { cappedMode, STRICTNESS } from './approvals';
 import { HttpError, newId, notFound, truncate } from '../util';
 import type { Services } from '.';
 
@@ -292,7 +295,15 @@ export class RoomService {
    * room lines since it last spoke, or with a new session the latest stretch of the room. The
    * place it reaches is kept for when the turn succeeds.
    */
-  async prompt(o: { roomId: string; bot: Bot; turn: TurnRow; fresh: boolean; t: T }): Promise<string> {
+  async prompt(o: {
+    roomId: string;
+    bot: Bot;
+    turn: TurnRow;
+    fresh: boolean;
+    t: T;
+    /** Told of the outside text the room's recent lines carry, which the member reads or has read. */
+    note?: (x: OutsideTrigger | undefined) => void;
+  }): Promise<string> {
     const { roomId, bot, turn, fresh, t } = o;
     const [member] = await this.ctx.db
       .select()
@@ -310,6 +321,8 @@ export class RoomService {
     const talk = (await this.services.threads.messages(roomId, { limit: 200 })).filter(
       (m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim(),
     );
+    // The member's session has read the room's recent stretch, its own lines included.
+    for (const m of talk.slice(-ROOM_WINDOW)) o.note?.(outsideIn(m.props));
     const seen = member?.seenAt ?? null;
     const shown = fresh
       ? talk.slice(-ROOM_WINDOW)
@@ -360,9 +373,20 @@ export class RoomService {
       const others = bots.filter((b) => b.id !== turn.botId);
       const named = findMentions(outcome.text, others);
       const ids = named.everyone ? others.map((b) => b.id) : named.ids;
+      // A bot named in another's answer acts at most as freely as the one that named it, as with
+      // a request sent to it, and starts with what that one had read.
+      const [ran] = await this.ctx.db
+        .select({ outside: schema.turns.outside })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, turn.id));
+      const level = self ? cappedMode(self.permissionMode, turn.modeCap) : 'readonly';
       for (const botId of ids) {
         if (await this.waiting(room.id, botId)) continue;
-        await this.followUp(room.id, botId, t('room.mentionedBy', { by: self?.name ?? '' }));
+        const target = others.find((b) => b.id === botId)!;
+        await this.followUp(room.id, botId, t('room.mentionedBy', { by: self?.name ?? '' }), {
+          outside: ran?.outside ?? null,
+          modeCap: STRICTNESS[target.permissionMode] > STRICTNESS[level] ? level : null,
+        });
       }
     }
     // The round is over once no one is left to speak in it; another begins while the room allows
@@ -409,7 +433,12 @@ export class RoomService {
   }
 
   /** A turn a bot starts for another, if the exchange's budget has one left. */
-  private async followUp(roomId: string, botId: string, why: string): Promise<boolean> {
+  private async followUp(
+    roomId: string,
+    botId: string,
+    why: string,
+    carry: { outside?: OutsideTrigger | null; modeCap?: Bot['permissionMode'] | null } = {},
+  ): Promise<boolean> {
     const [room] = await this.ctx.db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId));
     if (!room || room.botTurnsLeft <= 0) return false;
     const [taken] = await this.ctx.db
@@ -418,7 +447,7 @@ export class RoomService {
       .where(and(eq(schema.rooms.id, roomId), eq(schema.rooms.botTurnsLeft, room.botTurnsLeft)))
       .returning();
     if (!taken) return false;
-    await this.services.turns.enqueue({ threadId: roomId, botId, source: 'bot', prompt: why });
+    await this.services.turns.enqueue({ threadId: roomId, botId, source: 'bot', prompt: why, ...carry });
     return true;
   }
 }

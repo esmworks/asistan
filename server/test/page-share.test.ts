@@ -95,6 +95,34 @@ describe('sayfayı bağlantıyla paylaşma', () => {
     expect(outside.status).toBeGreaterThanOrEqual(400);
   });
 
+  // A page's folder is the conversation's folder, which often holds other files: the link must
+  // hand out the page, not everything that happens to sit beside it.
+  it('paylaşılan sayfa yalnızca adını andığı veri dosyalarını taşır', async () => {
+    const { bot, dir, path } = await page(
+      `<h1>Satışlar</h1><script src="grafik.js"></script><script>fetch('./satis.csv')</script>`,
+    );
+    writeFileSync(join(dir, 'grafik.js'), `fetch('veri/bolgeler.json')`);
+    writeFileSync(join(dir, 'satis.csv'), 'ay,tutar\nocak,100');
+    writeFileSync(join(dir, 'eskisatis.csv'), 'ESKI-GIZLI');
+    writeFileSync(join(dir, 'musteriler.json'), '{"gizli":"MUSTERI-LISTESI"}');
+    mkdirSync(join(dir, 'veri'));
+    writeFileSync(join(dir, 'veri', 'bolgeler.json'), '{"bolge":"EGE"}');
+    writeFileSync(join(dir, 'veri', 'sifreler.txt'), 'SIFRE-DOSYASI');
+    const { body } = await t.api<PageShare>('POST', `/api/bots/${bot.id}/library/share`, { path, name: 'S' });
+
+    const shared = (await open(`/p/${body.token}`)).body;
+    expect(shared).toContain('ocak,100');
+    expect(shared).toContain('EGE');
+    for (const secret of ['düz metin', 'ESKI-GIZLI', 'MUSTERI-LISTESI', 'SIFRE-DOSYASI']) {
+      expect(shared).not.toContain(secret);
+    }
+    // In the app the owner's own view still carries the folder's data, for pages that build a
+    // file's name as they run.
+    const own = (await open(`/api/bots/${bot.id}/library/page?path=${encodeURIComponent(path)}`, AUTH)).body;
+    expect(own).toContain('ocak,100');
+    expect(own).toContain('MUSTERI-LISTESI');
+  });
+
   it('paylaşım listesi ve uygulamadaki yazdırma sayfası oturum ister', async () => {
     const { bot, path } = await page();
     expect((await open('/api/page-shares')).statusCode).toBe(401);

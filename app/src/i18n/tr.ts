@@ -297,6 +297,12 @@ export const tr = {
     'Bu çalıştırma bir webhook’un getirdiği, başkasının yazdığı bir metni okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'approval.outside.watch':
     'Bu çalıştırma izlenen bir sayfadaki ya da bir uygulamadaki, başkasının yazdığı bir değişikliği okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+  'approval.outside.web':
+    'Bu çalıştırma başkasının yazdığı bir web sayfasını, bir API’nin ya da bağlı bir uygulamanın yanıtını okudu: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+  'approval.outside.forward':
+    'Bu çalıştırma başkasından iletilmiş bir mesajı okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+  'approval.outside.stored':
+    'Bu çalıştırma daha önce dışarıdan gelmiş kayıtlı bir metni (bir konuşma, bir iş kartı, bir tablo) okudu: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'chat.dictation': 'Yazmak yerine konuş',
   'chat.dictationStop': 'Durdur ve yazıya dök',
   'chat.dictationFailed': 'Konuşma alınamadı: {message}',
@@ -668,6 +674,9 @@ export const tr = {
   'message.signIn': 'Oturum aç',
   'message.delete': 'Sil',
   'message.confirmDelete': 'Bu mesaj sohbetten silinsin mi? Botun daha önce okuduğu kısmı botta kalır.',
+  'message.openLinkTitle': 'Bu bağlantı açılsın mı?',
+  'message.openLinkConfirm': 'Bu sohbetteki sayfa bir bağlantı açmak istiyor:\n\n{url}\n\nAçılsın mı?',
+  'message.openLink': 'Aç',
   'message.showAll': 'Mesajın tamamını göster ({count} karakter)',
   'message.copyDetails': 'Ayrıntıları kopyala',
   'message.copyCode': 'Kodu kopyala',
@@ -705,6 +714,8 @@ export const tr = {
   'approval.question': 'İzin veriyor musun?',
   'approval.allowOnce': 'Bu seferlik izin ver',
   'approval.allowAlways': 'Hep izin ver',
+  'approval.allowAlwaysHint':
+    'Bundan sonra bu bot bu adımı sormadan atar: aynı komut, aynı klasör ya da aynı site. Diğer botlar yine sorar.',
   'approval.deny': 'İzin verme',
   'approval.never': 'Hiç izin verme',
   'approval.neverHint': 'Bu aracı bundan sonra engeller; Ayarlar → İzinler’den kaldırabilirsin',
@@ -1162,6 +1173,7 @@ export const tr = {
   'rules.appAllTools': '{app}: tüm araçlar',
   'rules.allowHint': '"Sorarak" kipindeki botlar bu araçları kart açmadan kullanır.',
   'rules.block': 'Engelle',
+  'rules.forBot': 'Yalnızca {bot} için',
   'rules.blockHint':
     'Hiçbir kipte ve kart açılmadan asla çalışmaz; engel diğer bütün kurallardan önce gelir. Bota engellendiği söylenir.',
 
@@ -1713,6 +1725,7 @@ export const tr = {
   'memory.change.forget': 'Silme',
   'memory.origin.routine': '“{name}” rutini',
   'memory.origin.bot': '{name} botunun isteği',
+  'memory.origin.outside': '{name} botunun dışarıdan gelen bir metni okuduktan sonraki işi',
   'memory.origin.unknown': 'kimsenin izlemediği bir iş',
   'memory.accept': 'Kabul et',
   'memory.reject': 'Reddet',

@@ -29,7 +29,7 @@ describe('otomatik inceleme', () => {
     expect(req).toMatchObject({ toolName: 'Write', bot: { name: bot.name }, locale: 'tr' });
     // The reviewer reads the person's message as they wrote it, and must quote it.
     expect(req!.words).toEqual(['[izin:Write {"file_path":"güvenli.txt"}]']);
-    expect(note?.props.quote).toBe('[izin:Write ');
+    expect(note?.props.quote).toBe('[izin:Write {"file_path":"güvenli.txt"}]');
   });
 
   it('kişinin yazmadığı bir alıntıyla gelen izni kabul etmez', async () => {

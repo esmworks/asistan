@@ -3,6 +3,7 @@ import { extname, join, relative, resolve } from 'node:path';
 import { quoteExcerpt, titleFrom, type Message, type MessageFile, type ReplyQuote } from '@yumakbot/shared';
 import type { Ctx } from '../context';
 import { attachedFiles, moveIntoThread, promptWithFiles, promptWithReply, stagingDir } from '../uploads';
+import { asOutsideData } from '../runtime/outside';
 import { HttpError, isStopRequest, truncate } from '../util';
 import { workspacePaths } from '../workspace';
 import { MAX_AUDIO_BYTES } from './transcribe';
@@ -119,7 +120,10 @@ export class Inbox {
     };
     // Sent while the bot is busy: it waits its turn, and until then the person may change it.
     const queued = (await s.threads.state(threadId)) !== 'idle';
-    const bare = queued && !files.length && !answered;
+    // A message forwarded from someone else is their words, not the person's: it neither stops the
+    // bot nor answers its card.
+    const forwarded = extra.outside === 'forward';
+    const bare = queued && !files.length && !answered && !forwarded;
     // A bare "stop" while it works stops it, as the Stop button does, instead of waiting behind it.
     if (bare && isStopRequest(input.text)) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
@@ -154,8 +158,19 @@ export class Inbox {
     if (!created) return { message, created };
     // A conversation is named after the words its first message opens with.
     if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60));
-    const prompt = await this.prompt(text, dir, files, answered);
-    const turn = await s.turns.enqueue({ threadId, botId: bot.id, source: 'user', prompt });
+    const t = await s.settings.translator();
+    const from = typeof extra.forwardedFrom === 'string' ? extra.forwardedFrom : '';
+    const said = forwarded
+      ? asOutsideData(from ? t('outside.forwardFrom', { name: from }) : t('outside.forward'), text, t)
+      : text;
+    const prompt = await this.prompt(said, dir, files, answered);
+    const turn = await s.turns.enqueue({
+      threadId,
+      botId: bot.id,
+      source: 'user',
+      prompt,
+      outside: forwarded ? 'forward' : null,
+    });
     await s.threads.updateMessage(message.id, { turnId: turn.id });
     return { message: { ...message, turnId: turn.id }, created };
   }

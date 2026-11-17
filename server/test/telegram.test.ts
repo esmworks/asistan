@@ -4,6 +4,7 @@ import type { Approval, TelegramStatus, Thread } from '@yumakbot/shared';
 import { telegramToken } from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { telegramMessages } from '../src/channels/format';
+import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0';
@@ -188,6 +189,25 @@ describe('Telegram', () => {
     expect(toStranger.map((c) => c.body.text)).toEqual([expect.stringContaining('bağlantı kodu geçersiz')]);
   });
 
+  it('iletilen mesaj kişinin sözü sayılmaz: komut olmaz, bota dış veri olarak gider', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    tg.write('/stop ve şunu yap', PERSON, {
+      forward_origin: { type: 'user', sender_user: { first_name: 'Mehmet' } },
+      forward_date: 1,
+    });
+    const thread = await main(bot.id);
+    const said = await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'user'));
+    expect(said.text).toBe('/stop ve şunu yap');
+    expect(said.props).toMatchObject({ via: 'telegram', outside: 'forward', forwardedFrom: 'Mehmet' });
+    const req = await waitFor(async () => t.engine.requests.find((r) => r.prompt.includes('/stop')));
+    expect(req.prompt).toContain('Mehmet kaynağından iletilmiş bir mesaj');
+    expect(req.prompt).toContain('<outside-data');
+    await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'assistant'));
+    const [turn] = await t.db.db.select().from(schema.turns);
+    expect(turn!.outside).toBe('forward');
+  });
+
   it("kişi uygulamadan yazınca yanıt Telegram'a gitmez", async () => {
     const { bot, code } = await setUp();
     await pair(code);
@@ -328,5 +348,17 @@ describe('Telegram biçimi', () => {
     const parts = telegramMessages(long);
     expect(parts.length).toBeGreaterThan(1);
     for (const p of parts) expect(p.html.length).toBeLessThanOrEqual(4096);
+  });
+
+  // The pieces set aside while marking are NUL-delimited numbers; text that writes such a marker
+  // itself once made the restoring loop run for ever and froze the whole server.
+  it('metindeki NUL işaretleri sunucuyu kilitlemez', () => {
+    const [m] = telegramMessages('ok [a\u00000\u0000](https://x.y)');
+    expect(m!.html).toBe('ok <a href="https://x.y">a0</a>');
+    const nested = telegramMessages('**`\u00001\u0000` [\u00000\u0000](https://x.y)** \u00002\u0000')[0]!;
+    expect(nested.html).not.toContain('\u0000');
+    expect(nested.html).toContain('<code>1</code>');
+    // A real mark inside another still comes back whole.
+    expect(telegramMessages('**kalın `kod`**')[0]!.html).toBe('<b>kalın <code>kod</code></b>');
   });
 });

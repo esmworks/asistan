@@ -301,6 +301,12 @@ export const en: Catalog<MessageKey> = {
     'This run reads what a webhook brought in, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
   'approval.outside.watch':
     'This run reads a change on a watched page or in an app, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+  'approval.outside.web':
+    "This run read a web page, an API's or a connected app's answer, which someone else wrote: every change waits for you, whatever the bot may do otherwise.",
+  'approval.outside.forward':
+    'This run reads a message forwarded from someone else: every change waits for you, whatever the bot may do otherwise.',
+  'approval.outside.stored':
+    'This run read saved text that came from outside (a conversation, a ticket, a table): every change waits for you, whatever the bot may do otherwise.',
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',
@@ -680,6 +686,9 @@ export const en: Catalog<MessageKey> = {
   'message.delete': 'Delete',
   'message.confirmDelete':
     'Delete this message from the conversation? What the bot already read of it stays with the bot.',
+  'message.openLinkTitle': 'Open this link?',
+  'message.openLinkConfirm': 'The page in this conversation wants to open a link:\n\n{url}\n\nOpen it?',
+  'message.openLink': 'Open',
   'message.showAll': 'Show the whole message ({count} characters)',
   'message.copyDetails': 'Copy details',
   'message.copyCode': 'Copy code',
@@ -716,6 +725,8 @@ export const en: Catalog<MessageKey> = {
   'approval.question': 'Do you allow it?',
   'approval.allowOnce': 'Allow this time',
   'approval.allowAlways': 'Always allow',
+  'approval.allowAlwaysHint':
+    'From now on this bot takes this step without asking: the same command, the same folder or the same site. Other bots still ask.',
   'approval.deny': "Don't allow",
   'approval.never': 'Never allow',
   'approval.neverHint': 'Blocks this tool from now on; you can lift it in Settings → Permissions',
@@ -1167,6 +1178,7 @@ export const en: Catalog<MessageKey> = {
   'rules.appAllTools': '{app}: all tools',
   'rules.allowHint': 'Bots in "Ask first" mode use these tools without opening a card.',
   'rules.block': 'Block',
+  'rules.forBot': 'Only for {bot}',
   'rules.blockHint':
     'Never run, in any mode and without a card; a block outranks every other rule. The bot is told it was blocked.',
 
@@ -1717,6 +1729,7 @@ export const en: Catalog<MessageKey> = {
   'memory.change.forget': 'Deletion',
   'memory.origin.routine': 'the “{name}” routine',
   'memory.origin.bot': 'a request from {name}',
+  'memory.origin.outside': 'work of {name} after it read text from outside',
   'memory.origin.unknown': 'work nobody watched',
   'memory.accept': 'Accept',
   'memory.reject': 'Reject',

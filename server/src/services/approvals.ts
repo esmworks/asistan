@@ -7,7 +7,7 @@ import {
   type PermissionMode,
   type PermissionRule,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -34,12 +34,19 @@ export function ruleSubject(toolName: string, input: Record<string, unknown>): s
   );
 }
 
-function globToRegExp(glob: string): RegExp {
-  const esc = glob
+const globBody = (glob: string) =>
+  glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.');
-  return new RegExp(`^${esc}$`, 's');
+
+/**
+ * `glob` as a pattern for the whole text. `prefix:*` is a command and what follows it after a
+ * space: `git status:*` covers `git status` and `git status --short`, not `git statusx`.
+ */
+function globToRegExp(glob: string): RegExp {
+  if (glob.endsWith(':*')) return new RegExp(`^${globBody(glob.slice(0, -2))}(?: .*)?$`, 's');
+  return new RegExp(`^${globBody(glob)}$`, 's');
 }
 
 /** `Tool`, `Tool(arg-glob)`, with `*` wildcards in either part. */
@@ -50,6 +57,79 @@ export function ruleMatches(pattern: string, toolName: string, input: Record<str
   if (!globToRegExp(toolGlob!.trim()).test(toolName)) return false;
   if (argGlob === undefined) return true;
   return globToRegExp(argGlob).test(ruleSubject(toolName, input));
+}
+
+/** What chains, pipes, redirects or substitutes in a shell command line. */
+const SHELL_JOIN = /[;&|<>`\n]|\$\(/;
+
+/**
+ * Whether an "always allow" rule lets this call through. A rule for a command (`Bash(npm test*)`)
+ * means that command: one with another command chained, piped or substituted after it
+ * (`npm test && curl …`) is not covered unless the rule itself spells that out.
+ */
+export function allowRuleMatches(pattern: string, toolName: string, input: Record<string, unknown>): boolean {
+  if (!ruleMatches(pattern, toolName, input)) return false;
+  if (toolName !== 'Bash') return true;
+  const arg = /\((.*)\)$/s.exec(pattern.trim())?.[1];
+  if (arg === undefined) return true;
+  return !SHELL_JOIN.test(ruleSubject(toolName, input)) || SHELL_JOIN.test(arg);
+}
+
+/**
+ * Programs whose words say little about what they do, or that can do anything they are told: an
+ * "always allow" from a card for one of these covers that exact command only.
+ */
+const EXACT_ONLY = new Set([
+  ...['sh', 'bash', 'zsh', 'dash', 'fish', 'ksh', 'csh', 'tcsh', 'pwsh', 'powershell', 'cmd'],
+  ...['python', 'python2', 'python3', 'node', 'nodejs', 'deno', 'bun', 'perl', 'ruby', 'php', 'lua'],
+  ...['osascript', 'awk', 'gawk', 'sed', 'find', 'xargs', 'env', 'sudo', 'doas', 'su', 'exec', 'eval'],
+  ...['nohup', 'time', 'timeout', 'nice', 'watch', 'npx', 'pnpx', 'bunx', 'uvx', 'source', '.'],
+  ...['rm', 'rmdir', 'mv', 'dd', 'shred', 'truncate', 'chmod', 'chown', 'tee', 'kill', 'pkill'],
+  ...['killall', 'curl', 'wget', 'nc', 'ncat', 'netcat', 'socat', 'ssh', 'scp', 'sftp', 'rsync'],
+  ...['ftp', 'telnet', 'crontab', 'launchctl', 'systemctl', 'open', 'xdg-open', 'install'],
+]);
+
+/** File tools whose path an "always allow" keeps to the folder of the file on the card. */
+const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * The "always allow" rule a card's step becomes: as narrow as the step. A command keeps its first
+ * word and subcommand (`Bash(git status:*)`), or itself when its program can do anything; a file
+ * change keeps its folder; a page its site. Null when the step cannot be written as a rule that
+ * covers no more than it (a pattern character in it): the answer then counts for this time only.
+ */
+export function rememberedPattern(toolName: string, input: Record<string, unknown>): string | null {
+  const pick = (k: string) => (typeof input[k] === 'string' ? (input[k] as string).trim() : '');
+  const plain = (s: string) => !!s && !/[*?]/.test(s);
+  if (toolName === 'Bash') {
+    const command = pick('command');
+    if (!plain(command)) return null;
+    const words = command.split(/\s+/);
+    const program = words[0]!.replace(/^.*\//, '');
+    if (SHELL_JOIN.test(command) || /["'\\$]/.test(command) || EXACT_ONLY.has(program)) {
+      return `Bash(${command})`;
+    }
+    const sub = words[1] && /^[a-z][\w.-]*$/i.test(words[1]) ? ` ${words[1]}` : '';
+    return `Bash(${words[0]}${sub}:*)`;
+  }
+  // A path given from the working folder stays in the bot's folders anyway: the bot alone is
+  // the scope then.
+  if (FILE_TOOLS.has(toolName)) {
+    const path = pick('file_path') || pick('notebook_path') || pick('path');
+    if (!path.startsWith('/')) return toolName;
+    const dir = path.replace(/\/[^/]*$/, '');
+    if (!plain(path) || !dir) return null;
+    return `${toolName}(${dir}/*)`;
+  }
+  if (toolName === 'WebFetch') {
+    try {
+      const url = new URL(pick('url'));
+      return /^https?:$/.test(url.protocol) && plain(url.origin) ? `WebFetch(${url.origin}/*)` : null;
+    } catch {
+      return null;
+    }
+  }
+  return toolName;
 }
 
 /** `block`: a block rule covers the call; it is refused in every mode, without a card. */
@@ -68,6 +148,14 @@ export function askRuleFor(rules: PermissionRule[], toolName: string, input: Rec
 /** The block rule that covers this call, if one does. */
 export function blockRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
   return rules.find((r) => r.list === 'block' && ruleMatches(r.pattern, toolName, input)) ?? null;
+}
+
+/** From the strictest level to the freest. */
+export const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
+
+/** The bot's level, held to `cap` when a stricter bot started the turn. */
+export function cappedMode(mode: PermissionMode, cap: PermissionMode | null | undefined): PermissionMode {
+  return cap && STRICTNESS[cap] < STRICTNESS[mode] ? cap : mode;
 }
 
 /**
@@ -95,7 +183,7 @@ export function decide(opts: {
   if (askRuleMatches(rules, toolName, input)) return 'ask';
   if (mode === 'auto' || isRead) return 'allow';
   if (opts.outside) return 'ask';
-  if (rules.some((r) => r.list === 'allow' && ruleMatches(r.pattern, toolName, input))) return 'allow';
+  if (rules.some((r) => r.list === 'allow' && allowRuleMatches(r.pattern, toolName, input))) return 'allow';
   return 'ask';
 }
 
@@ -292,12 +380,16 @@ export class ApprovalService {
     // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
     // that never applies and say the bot no longer asks. It counts as "this time" instead. So it
     // does on a card from a run outside text started: the step it allowed was the text's choice.
+    // The rule is kept for the bot that asked, and only as wide as the step (see
+    // `rememberedPattern`); a step that cannot be written that narrowly counts for this time.
+    const pattern = current.kind === 'tool' ? rememberedPattern(current.toolName, current.input) : null;
     const remembered =
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
+      !!pattern &&
       !stored.outside &&
-      !askRuleMatches(await this.rules(), current.toolName, current.input);
+      !askRuleMatches(await this.rules(stored.botId), current.toolName, current.input);
     let answer = d.answers ? JSON.stringify(d.answers) : (d.answer ?? null);
     /** What the waiting bot gets, when it differs from what the card keeps. */
     let given: string | null | undefined;
@@ -332,10 +424,15 @@ export class ApprovalService {
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
-    if (remembered) {
-      const t = await serverTranslator(this.ctx);
-      await this.addRule({ list: 'allow', pattern: current.toolName, note: t('approval.ruleNote') });
-    }
+    const rule =
+      remembered && pattern
+        ? await this.addRule({
+            list: 'allow',
+            pattern,
+            note: (await serverTranslator(this.ctx))('approval.ruleNote'),
+            botId: stored.botId,
+          })
+        : null;
     // "Never allow": the tool is refused from now on, in every mode, without a card.
     if (d.remember && d.decision === 'deny' && current.kind === 'tool') {
       const t = await serverTranslator(this.ctx);
@@ -343,31 +440,28 @@ export class ApprovalService {
     }
     this.waiters.get(id)?.resolve({ status, answer: given ?? answer, ...(login && { login }) });
     this.waiters.delete(id);
-    if (remembered) await this.allowWaiting(current.toolName, id);
+    if (rule) await this.allowWaiting(rule, id);
     this.ctx.bus.refresh({ scope: 'approvals' });
     return toApproval(row);
   }
 
   /**
-   * After "always allow", other cards still waiting for the same tool are answered too, the way
-   * the new rule would have; a card an "always ask" rule covers keeps waiting.
+   * After "always allow", other cards still waiting that the new rule covers are answered too, the
+   * way it would have: the same bot's, for the same step. A card an "always ask" rule covers keeps
+   * waiting.
    */
-  private async allowWaiting(toolName: string, except: string) {
-    const ask = (await this.rules()).filter((r) => r.list === 'ask');
+  private async allowWaiting(rule: PermissionRule, except: string) {
+    const ask = (await this.rules(rule.botId ?? undefined)).filter((r) => r.list === 'ask');
     const rows = await this.ctx.db
       .select()
       .from(schema.approvals)
-      .where(
-        and(
-          eq(schema.approvals.status, 'pending'),
-          eq(schema.approvals.kind, 'tool'),
-          eq(schema.approvals.toolName, toolName),
-        ),
-      );
+      .where(and(eq(schema.approvals.status, 'pending'), eq(schema.approvals.kind, 'tool')));
     for (const r of rows) {
       // A card from a run outside text started waits for its own answer.
       if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
-      if (ask.some((rule) => ruleMatches(rule.pattern, r.toolName, r.input))) continue;
+      if (rule.botId && r.botId !== rule.botId) continue;
+      if (!allowRuleMatches(rule.pattern, r.toolName, r.input)) continue;
+      if (ask.some((a) => ruleMatches(a.pattern, r.toolName, r.input))) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
         .set({ status: 'allowed', decidedAt: new Date() })
@@ -422,10 +516,14 @@ export class ApprovalService {
     };
   }
 
-  async rules(): Promise<PermissionRule[]> {
+  /** Every rule; with `botId`, the ones that apply to that bot: its own and those for every bot. */
+  async rules(botId?: string | null): Promise<PermissionRule[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.permissionRules)
+      .where(
+        botId ? or(isNull(schema.permissionRules.botId), eq(schema.permissionRules.botId, botId)) : undefined,
+      )
       .orderBy(asc(schema.permissionRules.createdAt));
     return rows.map(toRule);
   }
@@ -434,10 +532,11 @@ export class ApprovalService {
     list: 'ask' | 'allow' | 'block';
     pattern: string;
     note: string;
+    botId?: string | null;
   }): Promise<PermissionRule> {
     const [row] = await this.ctx.db
       .insert(schema.permissionRules)
-      .values({ id: newId(), ...r })
+      .values({ id: newId(), ...r, botId: r.botId ?? null })
       .returning();
     this.ctx.bus.refresh({ scope: 'rules' });
     return toRule(row!);

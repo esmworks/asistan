@@ -362,7 +362,11 @@ export class ConnectionService {
         ? {
             ...t,
             ...(patch.enabled !== undefined && { enabled: patch.enabled }),
-            ...(patch.kind !== undefined && { kind: patch.kind === t.hinted ? null : patch.kind }),
+            // The person calling a tool a read is kept even when the app says the same: only
+            // their word makes it one where outside text could be steering the bot.
+            ...(patch.kind !== undefined && {
+              kind: patch.kind === t.hinted && patch.kind !== 'read' ? null : patch.kind,
+            }),
           }
         : t,
     );
@@ -722,6 +726,8 @@ export class ConnectionService {
       // `$schema` names a draft; some model APIs refuse it inside a tool's parameters.
       jsonSchema: Object.fromEntries(Object.entries(tool.inputSchema).filter(([k]) => k !== '$schema')),
       readOnly: kind === 'read',
+      // Only the app's own word makes it a read until the person says so.
+      ...(kind === 'read' && tool.kind !== 'read' && { readOnlyClaimed: true }),
       internal: false,
       handler: async (args) => {
         // Read again: the connection may have changed or gone since the turn began.

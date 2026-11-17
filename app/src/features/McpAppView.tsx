@@ -1,7 +1,7 @@
 import type { Message } from '@yumakbot/shared';
 import { useEffect, useRef, useState } from 'react';
 import { LiveFrame, type FrameMessage } from '@/components/LiveFrame';
-import { useLocale } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 import { api } from '@/lib/api';
 
 interface AppProps {
@@ -22,6 +22,7 @@ export function McpAppView({ m }: { m: Message }) {
   const post = useRef<((msg: FrameMessage) => void) | null>(null);
   const dark = usePageDark();
   const intl = useLocale((s) => s.intl);
+  const t = useT();
   const theme = dark ? 'dark' : 'light';
   useEffect(() => {
     post.current?.({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme } });
@@ -49,7 +50,14 @@ export function McpAppView({ m }: { m: Message }) {
         );
       case 'ui/open-link': {
         const url = String(params.url ?? '');
-        if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        if (!/^https?:\/\//i.test(url)) return {};
+        // A click inside the app's frame also counts for this page (user activation reaches a frame's
+        // ancestors), so a link the person just clicked opens at once. Without one the app is opening a
+        // page by itself, which the desktop app would do without a browser's popup blocker, so the
+        // person sees the address and decides.
+        if (navigator.userActivation?.isActive || confirm(t('message.openLinkConfirm', { url }))) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
         return {};
       }
       case 'ping':

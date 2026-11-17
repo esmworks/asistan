@@ -1,5 +1,8 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { checkHostOrigin, clientAddress, SESSION_IDLE_MS } from '../src/auth';
+import { checkHostOrigin, clientAddress, needsSignIn, routedPath, SESSION_IDLE_MS } from '../src/auth';
 import { loadConfig, publicUrl } from '../src/config';
 import { KEY, testServer, type TestServer } from './helpers';
 
@@ -145,6 +148,96 @@ describe('erişim', () => {
     expect((await req({ headers: { ...auth, host: 'evil.example' } })).statusCode).toBe(403);
     expect((await req({ headers: { ...auth, origin: 'https://evil.example' } })).statusCode).toBe(403);
     expect((await req({ headers: { ...auth, origin: 'null' } })).statusCode).toBe(403);
+  });
+
+  // The router undoes percent escapes before matching, so `/%61pi/bots` runs the /api/bots
+  // handler; a check on the URL as written once let it through without a sign-in.
+  it('yolun başka yazılışları /api uç noktalarına anahtarsız ulaşamaz', async () => {
+    const auth = { authorization: `Bearer ${KEY}` };
+    for (const url of [
+      '/%61pi/bots',
+      '/ap%69/bots',
+      '/%61%70%69/bots',
+      '/api/./bots',
+      '//api/bots',
+      '/api//bots',
+      '/API/bots',
+      '/Api/Bots',
+      '/%2561pi/bots',
+      '/%61pi/nope',
+      '/api',
+    ]) {
+      expect((await req({ url })).statusCode, url).toBe(401);
+    }
+    expect((await req({ method: 'POST', url: '/ap%69/pairing' })).statusCode).toBe(401);
+    expect((await req({ method: 'POST', url: '/%61pi/mcp', payload: {} })).statusCode).toBe(401);
+    expect((await req({ url: '/%61pi/sessions' })).statusCode).toBe(401);
+    // Signed in, the same spellings still reach the handler.
+    expect((await req({ url: '/%61pi/bots', headers: auth })).statusCode).toBe(200);
+  });
+
+  it('açık uç noktalar her yazılışla açık kalır; webhook ve posta kendi sırrını ister', async () => {
+    expect((await req({ url: '/api/health' })).statusCode).toBe(200);
+    expect((await req({ url: '/%61pi/health' })).statusCode).toBe(200);
+    expect((await req({ url: '/api/session' })).json()).toMatchObject({ authenticated: false });
+    // No access key, but each checks its own secret.
+    const hook = await req({ method: 'POST', url: '/api/hooks/routines/yok/yanlis', payload: { a: 1 } });
+    expect(hook.statusCode).toBe(404);
+    const mail = await t.app.inject({
+      method: 'POST',
+      url: '/api/email/inbound?to=a@b.c',
+      headers: { host: 'localhost', 'content-type': 'message/rfc822' },
+      payload: 'Subject: x\r\n\r\ny',
+    });
+    expect(mail.statusCode).toBe(401);
+  });
+});
+
+describe('oturum gerektiren yollar', () => {
+  const open = (route: string) => route === '/api/health' || route.startsWith('/api/hooks/routines/');
+  it('yolu yönlendiricinin okuduğu gibi çözer', () => {
+    expect(routedPath('/%61pi/bots?x=1')).toBe('/api/bots');
+    expect(routedPath('//API/./x/../bots/')).toBe('/api/bots');
+    expect(routedPath('/%2561pi/bots')).toBe('/api/bots');
+    expect(routedPath('/ap%i/x')).toBe('/ap%i/x');
+    expect(routedPath('/a\\..\\api\\bots')).toBe('/api/bots');
+  });
+
+  it('eşleşen rotaya göre karar verir; rotası olmayan /api isteği oturum ister', () => {
+    expect(needsSignIn('/api/bots', '/%61pi/bots', open)).toBe(true);
+    expect(needsSignIn('/api/health', '/%61pi/health', open)).toBe(false);
+    expect(needsSignIn('/api/hooks/routines/:id/:token', '/api/hooks/routines/a/b', open)).toBe(false);
+    expect(needsSignIn('/p/:token', '/p/abc', open)).toBe(false);
+    expect(needsSignIn(undefined, '/%61pi/nope', open)).toBe(true);
+    expect(needsSignIn(undefined, '/nope', open)).toBe(false);
+    // A catch-all (the app's files) does not decide on its own.
+    expect(needsSignIn('/*', '/API/bots', open)).toBe(true);
+    expect(needsSignIn('/*', '/settings', open)).toBe(false);
+  });
+});
+
+describe('uygulama dosyaları sunulurken', () => {
+  let t: TestServer;
+  beforeAll(async () => {
+    const appDir = mkdtempSync(join(tmpdir(), 'yumakbot-app-'));
+    writeFileSync(join(appDir, 'index.html'), '<!doctype html><title>app</title><div id="root"></div>');
+    t = await testServer({ appDir });
+  });
+  afterAll(() => t.dispose());
+
+  const get = (url: string, headers: Record<string, string> = {}) =>
+    t.app.inject({ method: 'GET', url, headers: { host: 'localhost', ...headers } });
+
+  it('API yolunun hiçbir yazılışı sayfaya ya da anahtarsız yanıta düşmez', async () => {
+    expect((await get('/settings')).statusCode).toBe(200);
+    expect((await get('/settings')).body).toContain('<title>app</title>');
+    for (const url of ['/%61pi/bots', '/API/bots', '//api/bots', '/api/nope', '/%61pi/nope']) {
+      expect((await get(url)).statusCode, url).toBe(401);
+    }
+    // Signed in, an unknown API path is a 404, not the app's page.
+    const missing = await get('/%61pi/nope', { authorization: `Bearer ${KEY}` });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.body).not.toContain('<title>app</title>');
   });
 });
 
