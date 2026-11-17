@@ -1010,6 +1010,7 @@ export const en: Catalog<MessageKey> = {
   'general.behavior': 'Writing',
   'general.speechRate': 'Reading speed',
   'general.speechRateHint': 'Messages are read aloud at this speed. Kept on this device.',
+  'general.speechRateReset': 'Back to the voice’s own speed (1×)',
   'general.sendKey': 'Send a message with',
   'general.sendKeyHint': 'The other one breaks the line. Kept on this device.',
   'general.sendKey.enter': 'Enter',
