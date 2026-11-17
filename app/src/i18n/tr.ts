@@ -763,6 +763,16 @@ export const tr = {
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
     'Çağrının JSON gövdesi için her satıra bir koşul: alan=değer, alan!=değer, alan~=metin (içerir) ya da yalnız alan (var olsun). Noktalar nesnelerin içine girer. Uymayan çağrı hiçbir şey başlatmaz.',
+  'routine.github': 'GitHub’dan başlat',
+  'routine.githubStep1':
+    'Depoda Settings → Webhooks → Add webhook’u aç ve yukarıdaki adresi Payload URL olarak yapıştır.',
+  'routine.githubStep2': 'Content type’ı application/json yap.',
+  'routine.githubStep3':
+    'Secret olarak rutinin anahtarını yapıştır; gövdesi değiştirilmiş çağrılar reddedilir:',
+  'routine.githubCopySecret': 'anahtarı kopyala',
+  'routine.githubSecretCopied': 'Anahtar kopyalandı',
+  'routine.githubStep4':
+    'Olayları seç. GitHub’ın ilk deneme çağrısı rutini çalıştırmaz. Süzgeçle daralt: event=pull_request, action=opened.',
   'routine.webhookCopied': 'Webhook adresi kopyalandı',
   'routine.runs': 'Son çalışmalar',
   'routine.run.running': 'çalışıyor',

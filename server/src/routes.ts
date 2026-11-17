@@ -97,6 +97,8 @@ export const EMAIL_INBOUND_PATH = '/api/email/inbound';
 export const SHARE_PATH = '/p';
 /** Longest text a script may hand a routine run. */
 const MAX_PAYLOAD = 50_000;
+/** The largest webhook body read; GitHub sends up to 25 MB, but what a bot reads is cut far shorter. */
+const WEBHOOK_BODY_MAX = 5 * 1024 * 1024;
 /** Most bytes put in one ZIP download; it is built in memory. */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 import { eq } from 'drizzle-orm';
@@ -1110,6 +1112,21 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.delete('/api/routines/:id/webhook', async (req) =>
     s.routines.setWebhook(IdParams.parse(req.params).id, false),
   );
+  // A signed call is checked against the body exactly as it was sent, before it is parsed.
+  app.addHook('preParsing', async (req, _reply, payload) => {
+    if (req.method !== 'POST' || !req.url.startsWith(`${WEBHOOK_PATH}/`)) return payload;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of payload) {
+      size += (chunk as Buffer).length;
+      if (size > WEBHOOK_BODY_MAX)
+        throw new HttpError(413, 'error.payloadTooLarge', { max: WEBHOOK_BODY_MAX });
+      chunks.push(chunk as Buffer);
+    }
+    const raw = Buffer.concat(chunks);
+    (req as { rawBody?: Buffer }).rawBody = raw;
+    return Readable.from([raw]);
+  });
   // A service without the access key starts a routine through its secret address. The request's
   // body, whatever it is, goes to the bot as data.
   app.post(`${WEBHOOK_PATH}/:id/:token`, async (req, reply) => {
@@ -1134,8 +1151,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       header('x-github-delivery') ??
       header('webhook-id') ??
       header('x-webhook-id');
-    const run = await s.routines.runFromWebhook(p.id, p.token, payload.trim() || undefined, delivery);
+    // Code hosts name the kind of event in a header; GitHub also signs the body.
+    const event = header('x-github-event') ?? header('x-gitlab-event') ?? header('x-event-key');
+    const signature = header('x-hub-signature-256');
+    const run = await s.routines.runFromWebhook(p.id, p.token, payload.trim() || undefined, delivery, {
+      event,
+      signature,
+      raw: (req as { rawBody?: Buffer }).rawBody,
+    });
     if (run === false) throw new HttpError(404, 'error.notFound');
+    if (run === 'signature') throw new HttpError(401, 'error.webhookSignature');
+    if (run === 'ping') return reply.code(200).send({ ok: true, runId: null, status: 'ping' });
     if (run === 'filtered' || run === 'duplicate')
       return reply.code(202).send({ ok: true, runId: null, status: run });
     // An earlier run is still going: the sender is asked to deliver this one again in a minute.

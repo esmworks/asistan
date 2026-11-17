@@ -770,6 +770,16 @@ export const en: Catalog<MessageKey> = {
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
     'One condition per line on the call’s JSON body: field=value, field!=value, field~=text (contains), or just field (present). Dots go into objects. Calls that do not match start nothing.',
+  'routine.github': 'Start it from GitHub',
+  'routine.githubStep1':
+    'In the repository, open Settings → Webhooks → Add webhook and paste the address above as the Payload URL.',
+  'routine.githubStep2': 'Set Content type to application/json.',
+  'routine.githubStep3':
+    'As the Secret, paste the routine’s secret, so calls with a changed body are turned away:',
+  'routine.githubCopySecret': 'copy the secret',
+  'routine.githubSecretCopied': 'Secret copied',
+  'routine.githubStep4':
+    'Pick the events. GitHub’s first test call does not run the routine. Narrow it with the filter: event=pull_request, action=opened.',
   'routine.webhookCopied': 'Webhook address copied',
   'routine.runs': 'Recent runs',
   'routine.run.running': 'running',

@@ -757,6 +757,29 @@ function Webhook({ routine: given }: { routine: Routine }) {
         </div>
       )}
       {localOnly && <p>{t('routine.webhookLocalOnly')}</p>}
+      {url && routine.webhookToken && (
+        <details className="rounded-xl bg-background px-2 py-1">
+          <summary className="cursor-pointer select-none">{t('routine.github')}</summary>
+          <ol className="mt-1 list-decimal space-y-1 pl-5">
+            <li>{t('routine.githubStep1')}</li>
+            <li>{t('routine.githubStep2')}</li>
+            <li>
+              {t('routine.githubStep3')}{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={async () => {
+                  if (await copyText(routine.webhookToken!)) toast.success(t('routine.githubSecretCopied'));
+                  else toast.error(t('message.copyFailed'));
+                }}
+              >
+                {t('routine.githubCopySecret')}
+              </button>
+            </li>
+            <li>{t('routine.githubStep4')}</li>
+          </ol>
+        </details>
+      )}
     </div>
   );
 }
