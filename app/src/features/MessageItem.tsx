@@ -44,7 +44,16 @@ import {
   Play,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { BotAvatar } from '@/components/BotAvatar';
@@ -1037,9 +1046,17 @@ function OpenedFrom({ threadId }: { threadId: string }) {
   );
 }
 
+/**
+ * The place at the end of a conversation for cards waiting in an exchange between bots. The exchange
+ * sits where it began, often far above what the bot wrote since, so a card asked in it would be out
+ * of sight; it shows at the end until it is answered, then in the exchange with the rest.
+ */
+export const CardDock = createContext<HTMLElement | null>(null);
+
 /** One line in the thread for a bot-to-bot exchange; opens to show it. */
 function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
   const t = useT();
+  const dock = useContext(CardDock);
   const [chosen, setChosen] = useState<boolean | null>(null);
   const props = m.props as { jobId?: string; peerBotId?: string; count?: number; replied?: boolean };
   const peer = props.peerBotId ? bots.get(props.peerBotId) : undefined;
@@ -1053,8 +1070,26 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
   const waiting = toThreadId
     ? (approvals ?? []).filter((a) => a.threadId === toThreadId && a.status === 'pending').length
     : 0;
-  // Opens by itself for a waiting card, until the person closes it.
-  const open = chosen ?? waiting > 0;
+  // Opens by itself for a waiting card, until the person closes it, when the card is not at the end.
+  const open = chosen ?? (waiting > 0 && !dock);
+  const pending = new Set((approvals ?? []).filter((a) => a.status === 'pending').map((a) => a.id));
+  const shown = (job.data?.messages ?? []).filter(
+    (x) => x.role === 'user' || x.role === 'assistant' || x.role === 'approval',
+  );
+  const docked = dock
+    ? shown.filter((x) => x.role === 'approval' && pending.has(String(x.props.approvalId ?? '')))
+    : [];
+  const card = (x: Message) => (
+    <ApprovalCard
+      key={x.id}
+      approvalId={String(x.props.approvalId ?? '')}
+      fallback={x.text}
+      bots={bots}
+      heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
+      askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
+      outside={outsideTrigger(x.props.outside)}
+    />
+  );
   // Once read, the exchange counts itself: markers written before it was cut to one request
   // counted the pair's whole history.
   const said = job.data?.messages.filter((x) => x.role === 'user' || x.role === 'assistant').length;
@@ -1090,22 +1125,10 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
           >
             <div className="mt-2 space-y-3 rounded-3xl border p-4">
               {job.isLoading && <div className="text-sm text-muted-foreground">{t('common.loading')}</div>}
-              {job.data?.messages
-                .filter((x) => x.role === 'user' || x.role === 'assistant' || x.role === 'approval')
+              {shown
+                .filter((x) => !docked.includes(x))
                 .map((x) => {
-                  if (x.role === 'approval') {
-                    return (
-                      <ApprovalCard
-                        key={x.id}
-                        approvalId={String(x.props.approvalId ?? '')}
-                        fallback={x.text}
-                        bots={bots}
-                        heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
-                        askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
-                        outside={outsideTrigger(x.props.outside)}
-                      />
-                    );
-                  }
+                  if (x.role === 'approval') return card(x);
                   const who = x.role === 'assistant' ? peer : bots.get(x.author.slice(4));
                   return (
                     <div key={x.id} className="space-y-1">
@@ -1123,6 +1146,7 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
           </motion.div>
         )}
       </AnimatePresence>
+      {dock && docked.length > 0 && createPortal(docked.map(card), dock)}
     </div>
   );
 }
