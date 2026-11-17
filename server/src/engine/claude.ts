@@ -15,6 +15,7 @@ import { translator } from '../i18n';
 import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
 import { gatePrompt, parseGate } from './gate';
 import { parseVerdict, reviewPrompt } from './review';
+import { startSandboxProxy } from './sandbox-proxy';
 import {
   APP_SERVER,
   planItems,
@@ -122,11 +123,13 @@ export function engineEnv(extra: Record<string, string | undefined> = {}): Recor
 /**
  * Folder limits: file tools stay in the working directories; Bash runs in the OS sandbox.
  * `hidden` are folders shell commands may not read (home, the server's data, the Claude login);
- * the bot's own folders inside them are opened again by `allowRead`.
+ * the bot's own folders inside them are opened again by `allowRead`. `proxy`: the ports of the
+ * way out that reaches public addresses only (see `startSandboxProxy`), for a bot with internet.
  */
 export function sandboxOptions(
   sb: Sandbox,
   hidden: string[],
+  proxy?: { httpPort: number; socksPort: number } | null,
 ): Pick<Options, 'settings' | 'sandbox' | 'additionalDirectories' | 'cwd'> {
   return {
     cwd: sb.cwd,
@@ -149,10 +152,17 @@ export function sandboxOptions(
         allowRead: [sb.cwd, ...sb.additionalDirectories],
         allowWrite: sb.writable,
       },
-      // No host is let through ahead: each one a command reaches comes to canUseTool as
-      // SandboxNetworkAccess, where the turn decides by the bot's internet switch.
+      // No host is let through ahead. With the internet off, each one a command reaches comes to
+      // canUseTool as SandboxNetworkAccess and is refused there. With it on, commands go out
+      // through this server's own proxy instead of Claude Code's: that one would let a host
+      // through by its name and look the name up again as it connects, so a name that changes
+      // its answer (to 169.254.169.254, this machine or the private network) in between got
+      // through. Ours connects to the address it checked. What remains: WebFetch runs in the
+      // CLI itself, outside the sandbox and this proxy; its address is checked as the call is
+      // allowed, and the CLI looks the name up again when it fetches.
       network: {
         allowedDomains: [],
+        ...(proxy && { httpProxyPort: proxy.httpPort, socksProxyPort: proxy.socksPort }),
       },
     },
   };
@@ -307,9 +317,15 @@ export class ClaudeEngine implements Engine {
     const hidden = [home, ...(this.opts.hidden ?? [])];
     if (this.opts.configDir) hidden.push(this.opts.configDir);
     const failures = failureStreak();
+    const base = (await this.baseOptions()).options;
+    // A bot with internet reaches the web from its commands through a proxy of this run's own.
+    const proxy =
+      req.sandbox.internet && req.shell !== 'computer'
+        ? await startSandboxProxy({ onReach: (host) => req.onReach?.(host) })
+        : null;
     const options: Options = {
-      ...(await this.baseOptions()).options,
-      ...sandboxOptions(req.sandbox, hidden),
+      ...base,
+      ...sandboxOptions(req.sandbox, hidden, proxy),
       ...(req.model ? { model: req.model } : {}),
       ...(req.effort ? { effort: req.effort } : {}),
       ...(req.sessionId ? { resume: req.sessionId } : {}),
@@ -513,6 +529,7 @@ export class ClaudeEngine implements Engine {
       clearTimeout(closer);
       req.signal.removeEventListener('abort', onAbort);
       input.close();
+      proxy?.close();
     }
     const costUsd = runCost(total, req.sessionId ? req.sessionCostUsd : null);
     const sessionCostUsd = total;

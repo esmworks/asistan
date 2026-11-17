@@ -7,7 +7,7 @@ import { Field } from '@/components/ui';
 import { Pad, Rows } from './common/controls';
 import { ruleLabel } from './common/text';
 import { t, type MessageKey } from '@/i18n';
-import { useConnections, useRules } from '@/lib/queries';
+import { useBots, useConnections, useRules } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 
 /** The "permissions" settings section's content, under the section's own title bar. */
@@ -16,7 +16,9 @@ export function PermissionsSection() {
   const { origin } = useServer();
   const { data: rules = [] } = useRules();
   const { data: connections = [] } = useConnections();
+  const { data: bots = [] } = useBots();
   const apps = new Map(connections.map((c) => [c.slug, c.name]));
+  const botNames = new Map(bots.map((b) => [b.id, b.name]));
   const qc = useQueryClient();
   const [pattern, setPattern] = useState('');
   const [list, setList] = useState<'ask' | 'allow'>('ask');
@@ -40,13 +42,15 @@ export function PermissionsSection() {
       <Section title={t(title)}>
         <Rows>
           {listed.map((r) => {
-            // The readable name on top, the rule as it is matched under it.
+            // The readable name on top, the rule as it is matched under it, and the one bot it is for.
             const label = ruleLabel(r.pattern, t, apps);
+            const forBot = r.botId ? t('rules.forBot', { bot: botNames.get(r.botId) ?? r.botId }) : '';
+            const detail = [label ? r.pattern : '', forBot].filter(Boolean).join(' · ');
             return (
               <Row
                 key={r.id}
                 label={label ?? r.pattern}
-                detail={label ? r.pattern : undefined}
+                detail={detail || undefined}
                 right={
                   <IconButton
                     icon="trash-2"

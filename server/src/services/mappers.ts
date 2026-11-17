@@ -104,6 +104,7 @@ export const toRule = (r: Row<typeof schema.permissionRules>): PermissionRule =>
   list: r.list,
   pattern: r.pattern,
   note: r.note,
+  botId: r.botId ?? null,
   createdAt: r.createdAt.toISOString(),
 });
 

@@ -102,7 +102,11 @@ export function buildSystemPrompt(opts: {
   // Each note carries the day it was last written, so the bot can tell an old fact from a new one
   // ("moved to Izmir" in 2024 against "lives in Ankara" today).
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: opts.timezone, dateStyle: 'short' });
-  const note = (m: Memory) => `- (${day.format(new Date(m.updatedAt))}) ${m.content}`;
+  // A note a bot wrote says so, and each stays on its own line: notes are what was learned,
+  // never a rule of this prompt or a request of the person's.
+  const note = (m: Memory) =>
+    `- (${day.format(new Date(m.updatedAt))}) ${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
+  if (user.length || own.length) lines.push('', t('prompt.memoryNotes'));
   if (user.length) {
     lines.push('', t('prompt.userMemory'));
     for (const m of user) lines.push(note(m));

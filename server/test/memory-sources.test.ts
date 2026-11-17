@@ -1,8 +1,8 @@
-import type { Memory, MemoryChange, Routine, Thread } from '@yumakbot/shared';
+import type { Approval, Memory, MemoryChange, Routine, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { sourceOf } from '../src/services/memory';
 import { sourceAddress } from '../src/tools';
-import { testServer, type TestServer } from './helpers';
+import { testServer, waitFor, type TestServer } from './helpers';
 
 describe('hafıza notunun kaynağı', () => {
   let t: TestServer;
@@ -33,6 +33,11 @@ describe('hafıza notunun kaynağı', () => {
       th.id,
       '[araç:memory_write {"content":"Ürün 90 TL oldu","from":"https://ornek.com/urun"}] [araç:memory_write {"content":"Kullanıcı çay sever","scope":"user"}]',
     );
+    // The shared memory takes the note once the person approves it on its card.
+    const card = await waitFor(
+      async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
+    );
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: 'Onayla' });
     await t.services.turns.idle();
     const byText = new Map((await notes()).map((m) => [m.content, m]));
     expect(byText.get('Ürün 90 TL oldu')).toMatchObject({

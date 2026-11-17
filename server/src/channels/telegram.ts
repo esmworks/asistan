@@ -41,6 +41,41 @@ import {
 
 type Row = typeof schema.channels.$inferSelect;
 
+/** Where a forwarded Telegram message came from, as the Bot API gives it (older fields too). */
+type Forward = {
+  forward_origin?: {
+    type?: string;
+    sender_user?: { first_name?: string; last_name?: string; username?: string };
+    sender_user_name?: string;
+    sender_chat?: { title?: string };
+    chat?: { title?: string };
+  };
+  forward_date?: number;
+  forward_from?: { first_name?: string; last_name?: string };
+  forward_from_chat?: { title?: string };
+  forward_sender_name?: string;
+};
+
+/**
+ * Who a forwarded message came from, as a name; null when the message is the person's own. A
+ * forward is someone else's words, whatever account sent it on.
+ */
+export function forwardedFrom(m: TgMessage): string | null {
+  const f = m as TgMessage & Forward;
+  if (!f.forward_origin && !f.forward_date && !f.forward_from && !f.forward_from_chat) return null;
+  const o = f.forward_origin;
+  const user = o?.sender_user ?? f.forward_from;
+  const name =
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+    o?.sender_user_name ||
+    o?.sender_chat?.title ||
+    o?.chat?.title ||
+    f.forward_from_chat?.title ||
+    f.forward_sender_name ||
+    '';
+  return name.slice(0, 80);
+}
+
 /** A pairing link works this long. */
 const PAIR_MS = 15 * 60_000;
 /** Telegram's limits: files a bot may download, and files it may send. */
@@ -297,7 +332,9 @@ export class TelegramChannels {
     }
     const thread = await this.services.threads.main(bot.id);
     const text = (m.text || m.caption || '').trim();
-    const done = await chatCommand(this.services, thread.id, text, t);
+    // Someone else's words the person passed on: never a command, and the bot reads them as data.
+    const forward = forwardedFrom(m);
+    const done = forward === null ? await chatCommand(this.services, thread.id, text, t) : null;
     if (done) {
       await api.sendMessage(m.chat.id, done);
       return;
@@ -317,7 +354,10 @@ export class TelegramChannels {
       files,
       clientId: `telegram:${m.chat.id}:${m.message_id}`,
       ...(replyTo && { replyTo }),
-      props: { via: 'telegram' },
+      props: {
+        via: 'telegram',
+        ...(forward !== null && { outside: 'forward', ...(forward && { forwardedFrom: forward }) }),
+      },
     });
     await this.remember(row.id, String(m.message_id), message.id);
   }

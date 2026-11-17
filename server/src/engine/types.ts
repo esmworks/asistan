@@ -35,6 +35,11 @@ export interface AppTool {
   input: z.ZodRawShape;
   /** Tools that only read state may run without asking. */
   readOnly: boolean;
+  /**
+   * `readOnly` rests only on what a connected app says of its own tool, not on the person's
+   * choice. Such a tool is not taken at its word where outside text could be steering the bot.
+   */
+  readOnlyClaimed?: boolean;
   /** Only touches YumakBot's own data (memory, bot messages); never asks in `ask` mode. */
   internal: boolean;
   /** Per-call override: some inputs of an internal tool still need a card. */
@@ -110,6 +115,8 @@ export interface TurnRequest {
    */
   pickTool?: (name: string) => boolean;
   canUseTool(ask: PermissionAsk): Promise<PermissionAnswer>;
+  /** A shell command reached a host on the internet: what came back is outside text. */
+  onReach?(host: string): void;
   onText(delta: string): void;
   /** The bot's plan for the task, each time it changes. */
   onPlan?(items: PlanItem[]): void;

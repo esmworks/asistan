@@ -15,7 +15,8 @@ import {
   type Bot,
   type Memory,
   type MemoryChange,
-  type PermissionMode,
+  outsideIn,
+  type OutsideTrigger,
   type Routine,
   type Skill,
 } from '@yumakbot/shared';
@@ -25,6 +26,7 @@ import type { Ctx } from '../context';
 import { schema } from '../db';
 import { planItems, type AppTool, type PlanItem, type ToolResult } from '../engine/types';
 import { attended, type TurnRow } from '../runtime/turns';
+import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
 import { errorText, newId, truncate } from '../util';
@@ -81,8 +83,6 @@ export function sourceAddress(from: string): string | null | undefined {
 
 const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_update', 'memory_forget']);
 const MANAGER_MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_update', 'memory_forget']);
-
-const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -277,15 +277,25 @@ export class ToolFactory {
     plan?: (items: PlanItem[]) => Promise<void>;
     /** Whether the bot keeps any table; without one it gets only the tools to start one. */
     hasTables?: boolean;
+    /** The outside text the turn has read so far, if any. */
+    outside?: () => OutsideTrigger | null;
+    /** Tells the turn a tool showed it outside text. */
+    readOutside?: (kind: OutsideTrigger) => Promise<void>;
   }): AppTool[] {
     const { bot, thread, turn, signal, t, plan } = opts;
+    const reads = () => opts.outside?.() ?? null;
+    /** The outside text among messages a tool shows, if any: a mail, a webhook's post, a forward. */
+    const shows = async (props: Record<string, unknown>[]) => {
+      const kind = props.map(outsideIn).find(Boolean);
+      if (kind) await opts.readOutside?.(kind);
+    };
     const skills = opts.skills ?? [];
     const def = definer(t);
     // Conversations this turn opened; a few at most, so a looping bot cannot fill the list.
     let opened = 0;
     const s = this.services;
-    // The person is in a room while its bots talk, as with their own messages.
-    const fromUser = attended(turn.source) || thread.kind === 'room';
+    // Only the person's own message or emoji has them there; a room member another bot named is not.
+    const fromUser = attended(turn.source);
     // Nobody may be watching a routine's or another bot's turn: its cards close unanswered in time.
     const unattended = fromUser ? undefined : this.ctx.config.unattendedApprovalMs;
     /**
@@ -295,6 +305,8 @@ export class ToolFactory {
     let away: Promise<MemoryChange['origin']> | null = null;
     const awayFrom = () =>
       (away ??= (async (): Promise<MemoryChange['origin']> => {
+        // The person was there, but the run had read someone else's words.
+        if (fromUser) return { kind: 'outside', name: bot.name };
         if (turn.source === 'routine' && turn.routineRunId) {
           const [r] = await this.ctx.db
             .select({ name: schema.routines.name })
@@ -315,16 +327,60 @@ export class ToolFactory {
         }
         return { kind: 'bot', name: '' };
       })());
-    const propose = async (
-      change: Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId'>,
-    ) => {
+    type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId'>;
+    const propose = async (change: Change) => {
       await s.memory.propose({
         ...change,
         proposedBy: bot.id,
         origin: await awayFrom(),
         threadId: thread.id,
       });
-      return t('tool.memoryProposed');
+      return t(fromUser ? 'tool.memoryProposedOutside' : 'tool.memoryProposed');
+    };
+    /**
+     * How a memory change goes: made now, or waiting for the person. A turn nobody watches, or one
+     * that read outside text, only proposes it: what it read may be behind it. The memory every
+     * bot shares, and another bot's own notes, reach other bots' prompts, so a change there
+     * asks the person on a card even while they are there. Null: make it now; otherwise the
+     * answer to give the bot.
+     */
+    const memoryGate = async (change: Change): Promise<string | null> => {
+      if (!fromUser || reads()) return propose(change);
+      const shared = change.scope === 'user' || (!!change.botId && change.botId !== bot.id);
+      if (!shared) return null;
+      const summary =
+        change.action === 'write'
+          ? t('tool.memoryCardWrite', { bot: bot.name, content: truncate(change.content, 400) })
+          : change.action === 'update'
+            ? t('tool.memoryCardUpdate', {
+                bot: bot.name,
+                before: truncate(change.before ?? '', 300),
+                content: truncate(change.content, 400),
+              })
+            : t('tool.memoryCardForget', { bot: bot.name, content: truncate(change.content, 400) });
+      const approve = t('tool.approve');
+      const r = await s.approvals.ask({
+        threadId: thread.id,
+        botId: bot.id,
+        turnId: turn.id,
+        kind: 'question',
+        toolName: `memory_${change.action}`,
+        input: { scope: change.scope, content: change.content },
+        summary,
+        options: [approve, t('tool.reject')],
+        signal,
+        onCreated: async (a) => {
+          await s.threads.addMessage({
+            threadId: thread.id,
+            role: 'approval',
+            author: `bot:${bot.id}`,
+            text: a.summary,
+            props: { approvalId: a.id },
+            turnId: turn.id,
+          });
+        },
+      });
+      return r.status === 'allowed' && (!r.answer || r.answer === approve) ? null : t('tool.memoryDeclined');
     };
     /**
      * The routine a bot names, by name or id: one of its own, or, for a manager, one of another
@@ -748,6 +804,7 @@ export class ToolFactory {
                 (!query || m.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())),
             );
             if (!msgs.length) continue;
+            await shows(msgs.slice(-8).map((m) => m.props));
             out.push(t('tool.conversation', { title: th.title || th.kind, id: th.id }));
             for (const m of msgs.slice(-8))
               out.push(`[${m.createdAt.slice(0, 16)} ${m.role}] ${truncate(m.text, 300)}`);
@@ -762,6 +819,8 @@ export class ToolFactory {
         async ({ query, limit }) => {
           const hits = await s.threads.search(query, { botId: bot.id, limit });
           if (!hits.length) return t('tool.notFound');
+          const found = await Promise.all(hits.map((h) => s.threads.message(h.messageId).catch(() => null)));
+          await shows(found.flatMap((m) => (m ? [m.props] : [])));
           return hits
             .map(
               (h) =>
@@ -788,6 +847,7 @@ export class ToolFactory {
             found,
             ...(await s.threads.messagesAfter(found.threadId, found.id, around)),
           ].filter((m) => m.role === 'user' || m.role === 'assistant');
+          await shows(page.map((m) => m.props));
           const out = [t('tool.conversation', { title: owner.title || owner.kind, id: owner.id })];
           for (const m of page) {
             const mark = m.id === found.id ? '>>' : '  ';
@@ -855,9 +915,14 @@ export class ToolFactory {
             await s.memory.markUsed([same.id]);
             return t('tool.memoryAlreadySaved', { id: same.id });
           }
-          if (!fromUser) {
-            return propose({ action: 'write', memoryId: null, before: null, ...note, sourceUrl });
-          }
+          const held = await memoryGate({
+            action: 'write',
+            memoryId: null,
+            before: null,
+            ...note,
+            sourceUrl,
+          });
+          if (held) return held;
           const m = await s.memory.create({
             ...note,
             source: `bot:${bot.id}`,
@@ -885,19 +950,17 @@ export class ToolFactory {
           const m = await s.memory.get(id);
           if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
           const clean = redactSecrets(content, t('memory.redacted'));
-          if (!fromUser) {
-            const { scope, botId, site } = m;
-            return propose({
-              action: 'update',
-              memoryId: m.id,
-              before: m.content,
-              content: clean.text,
-              scope,
-              botId,
-              site,
-              sourceUrl,
-            });
-          }
+          const held = await memoryGate({
+            action: 'update',
+            memoryId: m.id,
+            before: m.content,
+            content: clean.text,
+            scope: m.scope,
+            botId: m.botId,
+            site: m.site,
+            sourceUrl,
+          });
+          if (held) return held;
           await s.memory.update(
             id,
             { content: clean.text, ...sourceOf({ threadId: thread.id, sourceUrl }) },
@@ -916,19 +979,17 @@ export class ToolFactory {
           const m = await s.memory.get(id);
           const owners = await memoryOwners();
           if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
-          if (!fromUser) {
-            const { scope, botId, site, content } = m;
-            return propose({
-              action: 'forget',
-              memoryId: m.id,
-              before: null,
-              content,
-              scope,
-              botId,
-              site,
-              sourceUrl: null,
-            });
-          }
+          const held = await memoryGate({
+            action: 'forget',
+            memoryId: m.id,
+            before: null,
+            content: m.content,
+            scope: m.scope,
+            botId: m.botId,
+            site: m.site,
+            sourceUrl: null,
+          });
+          if (held) return held;
           await s.memory.remove(id, `bot:${bot.id}`);
           // A manager deleting another bot's note is told what that bot loses.
           return m.botId && m.botId !== bot.id
@@ -961,12 +1022,14 @@ export class ToolFactory {
           if (opened >= MAX_OPENED) return t('tool.conversationsCap', { max: MAX_OPENED });
           opened++;
           const fresh = await s.threads.create(bot.id, { title: title.replace(/\s+/g, ' ') });
+          // What this run had read goes along: the message may carry its words.
+          const outside = reads();
           await s.threads.addMessage({
             threadId: fresh.id,
             role: 'user',
             author: `bot:${bot.id}`,
             text: message,
-            props: { openedFrom: thread.id },
+            props: { openedFrom: thread.id, ...(outside && { outside }) },
           });
           // A turn of its own, as any message gets; the bot works there while this one goes on.
           await s.turns.enqueue({
@@ -974,6 +1037,7 @@ export class ToolFactory {
             botId: bot.id,
             source: 'bot',
             prompt: t('prompt.openedBySelf', { message }),
+            outside,
           });
           await s.threads.addMessage({
             threadId: thread.id,
@@ -1006,6 +1070,7 @@ export class ToolFactory {
             text: message,
             kind: expect_reply ? 'send' : 'notify',
             approvalId: approval_id ?? null,
+            outside: reads(),
           });
           return t(expect_reply ? 'tool.sent' : 'tool.notified', { to: to.name, id: job.id });
         },
@@ -1181,6 +1246,37 @@ export class ToolFactory {
       if (!(await s.keys.credential(provider))) return t('tool.noModelKey', { provider });
       return null;
     };
+    /**
+     * Asks the person on a card in the manager's main conversation; true when they approve. What
+     * another bot is told, which files it shares and what it runs on change what that bot does
+     * next, so the manager does not change them alone.
+     */
+    const confirm = async (summary: string, input: Record<string, unknown>, toolName: string) => {
+      const approve = t('tool.approve');
+      const thread = await s.threads.main(manager.id);
+      const r = await s.approvals.ask({
+        threadId: thread.id,
+        botId: manager.id,
+        turnId: null,
+        kind: 'question',
+        toolName,
+        input,
+        summary,
+        options: [approve, t('tool.reject')],
+        signal,
+        timeoutMs: unattended,
+        onCreated: async (ap) => {
+          await s.threads.addMessage({
+            threadId: thread.id,
+            role: 'approval',
+            author: `bot:${manager.id}`,
+            text: ap.summary,
+            props: { approvalId: ap.id },
+          });
+        },
+      });
+      return r.status === 'allowed' && (!r.answer || r.answer === approve);
+    };
     const groupId = async (name: string | undefined) => {
       if (!name) return undefined;
       const groups = await s.bots.listGroups();
@@ -1306,37 +1402,45 @@ export class ToolFactory {
           const loosens =
             (a.permission_mode && STRICTNESS[a.permission_mode] > STRICTNESS[target.permissionMode]) ||
             (a.internet === true && !target.internet);
-          if (loosens) {
-            const approve = t('tool.approve');
-            const thread = await s.threads.main(manager.id);
-            const r = await s.approvals.ask({
-              threadId: thread.id,
-              botId: manager.id,
-              turnId: null,
-              kind: 'question',
-              toolName: 'bot_update',
-              input: {
-                bot: target.name,
-                permission_mode: a.permission_mode,
-                internet: a.internet,
-              },
-              summary: t('tool.loosenSummary', { manager: manager.name, target: target.name }),
-              options: [approve, t('tool.reject')],
-              signal,
-              timeoutMs: unattended,
-              onCreated: async (ap) => {
-                await s.threads.addMessage({
-                  threadId: thread.id,
-                  role: 'approval',
-                  author: `bot:${manager.id}`,
-                  text: ap.summary,
-                  props: { approvalId: ap.id },
-                });
-              },
+          // Another bot's instructions, its section (whose files it shares) and what it runs on.
+          const other = target.id !== manager.id;
+          const changes = other
+            ? [
+                a.instructions !== undefined && a.instructions !== target.instructions
+                  ? t('tool.changeInstructions')
+                  : '',
+                a.group !== undefined ? t('tool.changeGroup') : '',
+                a.engine !== undefined || a.model !== undefined ? t('tool.changeEngine') : '',
+              ].filter(Boolean)
+            : [];
+          if (loosens && !changes.length) {
+            const ok = await confirm(
+              t('tool.loosenSummary', { manager: manager.name, target: target.name }),
+              { bot: target.name, permission_mode: a.permission_mode, internet: a.internet },
+              'bot_update',
+            );
+            if (!ok) return t('tool.loosenDenied');
+          } else if (changes.length) {
+            if (loosens) changes.push(t('tool.changePermissions'));
+            const said = t('tool.changeSummary', {
+              manager: manager.name,
+              target: target.name,
+              what: changes.join(', '),
             });
-            if (r.status !== 'allowed' || (r.answer && r.answer !== approve)) {
-              return t('tool.loosenDenied');
-            }
+            const ok = await confirm(
+              a.instructions !== undefined ? `${said}\n\n${truncate(a.instructions, 600)}` : said,
+              {
+                bot: target.name,
+                ...(a.instructions !== undefined && { instructions: a.instructions }),
+                ...(a.group !== undefined && { group: a.group }),
+                ...(a.engine !== undefined && { engine: a.engine }),
+                ...(a.model !== undefined && { model: a.model }),
+                ...(a.permission_mode !== undefined && { permission_mode: a.permission_mode }),
+                ...(a.internet !== undefined && { internet: a.internet }),
+              },
+              'bot_update',
+            );
+            if (!ok) return t('tool.changeDenied');
           }
           const patch = {
             ...(a.name !== undefined && { name: a.name }),
@@ -1352,7 +1456,8 @@ export class ToolFactory {
           await audit('update', target.id, target, updated);
           return t('tool.updated', { name: updated.name });
         },
-        // Loosening a bot's limits asks inside the handler; other changes are recorded and undoable.
+        // Loosening a bot's limits, and changing another bot's instructions, section or engine, asks
+        // inside the handler; other changes are recorded and undoable.
         'internal',
       ),
       def(
@@ -1395,6 +1500,16 @@ export class ToolFactory {
           const skill = all.find((k) => k.name === a.skill.trim().toLowerCase() || k.id === a.skill);
           if (!skill)
             return t('tool.noSuchSkill', { name: a.skill, names: all.map((k) => k.name).join(', ') || '-' });
+          // A skill is instructions the bot reads: another bot's are the person's to give.
+          if (target.id !== manager.id) {
+            const said = t(a.on ? 'tool.skillOnSummary' : 'tool.skillOffSummary', {
+              manager: manager.name,
+              target: target.name,
+              skill: skill.name,
+            });
+            const ok = await confirm(said, { bot: target.name, skill: skill.name, on: a.on }, 'bot_skill');
+            if (!ok) return t('tool.changeDenied');
+          }
           await s.skills.setBot(skill.id, target.id, a.on);
           await audit('skill', target.id, null, { skill: skill.name, on: a.on });
           return t(a.on ? 'tool.skillOn' : 'tool.skillOff', { skill: skill.name, name: target.name });
