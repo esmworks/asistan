@@ -241,7 +241,17 @@ export class TurnManager {
     const [later] = await this.ctx.db
       .select({ id: schema.turns.id })
       .from(schema.turns)
-      .where(and(eq(schema.turns.threadId, turn.threadId), gt(schema.turns.createdAt, turn.createdAt)))
+      .where(
+        and(
+          eq(schema.turns.threadId, turn.threadId),
+          // Compared in the database: the row's Date keeps only milliseconds of its microsecond
+          // time, so the turn itself would count as a later one.
+          gt(
+            schema.turns.createdAt,
+            sql`(select ${schema.turns.createdAt} from ${schema.turns} where ${schema.turns.id} = ${turn.id})`,
+          ),
+        ),
+      )
       .limit(1);
     if (later) return null;
     // A retry set for when the usage limit lifts is this one now.

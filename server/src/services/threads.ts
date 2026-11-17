@@ -34,6 +34,13 @@ export const MESSAGE_PAGE = 500;
 /** Messages read back at a time while a search matches sealed text in the server. */
 const SEARCH_PAGE = 1000;
 
+/**
+ * A message's own time, read in the database. A row's Date keeps only the milliseconds of the
+ * stored microsecond time, so comparing against it would put the message after itself.
+ */
+const createdAtOf = (id: string) =>
+  sql`(select ${schema.messages.createdAt} from ${schema.messages} where ${schema.messages.id} = ${id})`;
+
 export class ThreadService {
   constructor(private ctx: Ctx) {}
 
@@ -262,7 +269,7 @@ export class ThreadService {
         and(
           eq(schema.messages.threadId, source.id),
           inArray(schema.messages.role, ['user', 'assistant']),
-          lte(schema.messages.createdAt, new Date(at.createdAt)),
+          lte(schema.messages.createdAt, createdAtOf(at.id)),
         ),
       )
       .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id));
@@ -381,7 +388,7 @@ export class ThreadService {
     const limit = opts.limit ?? MESSAGE_PAGE;
     const edge = opts.before ? await this.message(opts.before) : null;
     if (edge && edge.threadId !== threadId) throw notFound('message');
-    const at = edge ? new Date(edge.createdAt) : null;
+    const at = edge ? createdAtOf(edge.id) : null;
     const rows = await this.ctx.db
       .select()
       .from(schema.messages)
@@ -405,7 +412,7 @@ export class ThreadService {
   async messagesAfter(threadId: string, id: string, limit: number): Promise<Message[]> {
     if (limit <= 0) return [];
     const edge = await this.message(id);
-    const at = new Date(edge.createdAt);
+    const at = createdAtOf(edge.id);
     const rows = await this.ctx.db
       .select()
       .from(schema.messages)
