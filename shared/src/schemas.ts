@@ -127,7 +127,7 @@ export const BotCreate = z.object({
     .regex(/^#[0-9a-f]{6}$/i)
     .default('#4f6bed'),
   avatar: Avatar.default('shape:blob'),
-  permissionMode: PermissionMode.default('ask'),
+  permissionMode: PermissionMode.default('review'),
   internet: z.boolean().default(true),
   projectDir: z.string().max(1000).nullable().default(null),
   memory: z.boolean().default(true),

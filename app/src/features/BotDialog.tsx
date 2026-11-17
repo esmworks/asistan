@@ -112,7 +112,7 @@ function initial(bot?: Bot, start: BotEngine = { engine: 'claude', model: '' }):
     newGroup: '',
     color: bot?.color ?? COLORS[0]!,
     avatar: bot?.avatar ?? 'shape:blob',
-    permissionMode: bot?.permissionMode ?? 'ask',
+    permissionMode: bot?.permissionMode ?? 'review',
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
     effort: bot?.effort ?? '',
