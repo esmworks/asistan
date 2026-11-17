@@ -102,6 +102,9 @@ describe('dış metinden sonra seviye ve dışarı ulaşan adımlar', () => {
       'scp a b:c',
       'python3 x.py https://x.test',
       'git push ssh://x',
+      'python3 -c "import socket"',
+      'node -e "fetch(1)"',
+      'sh -c "cat a"',
     ])
       expect(reachesOut('Bash', { command }), command).toBe(true);
     for (const command of [
@@ -166,5 +169,32 @@ describe('reddedilen adım', () => {
     expect(again.input).toEqual({ file_path: 'rapor.txt' });
     await t.api('POST', `/api/approvals/${again.id}`, { decision: 'allow' });
     await t.services.turns.idle();
+  });
+  it('işi tekrar alan bot, kişinin reddettiği adımı yeniden sormaz', async () => {
+    t = await testServer({ unattendedApprovalMs: 5_000 });
+    const manager = await t.bot({ name: 'Yönetici', isManager: true });
+    const worker = await t.bot({ name: 'İşçi', permissionMode: 'ask' });
+    const thread = await main(t, manager.id);
+    const asked = await t.send(thread.id, 'Raporu yazdır');
+    await t.services.turns.idle();
+    const handOn = () =>
+      t.services.jobs.send({
+        from: manager,
+        fromThreadId: thread.id,
+        fromTurnId: asked.turnId!,
+        parentJobId: null,
+        to: worker,
+        text: STEP,
+        kind: 'send',
+        approvalId: null,
+      });
+    await handOn();
+    const card = await waitFor(async () => (await pending(t))[0]);
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
+    // The manager hands the same work on again: the worker's same step goes without a card.
+    await handOn();
+    await t.services.turns.idle();
+    expect((await t.api<Approval[]>('GET', '/api/approvals')).body).toHaveLength(1);
   });
 });
