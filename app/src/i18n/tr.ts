@@ -418,6 +418,10 @@ export const tr = {
   'board.live.queued': 'Sırada',
   'board.live.waiting': 'Seni bekliyor',
   'board.started': '{name}, #{number} üzerinde çalışmaya başladı',
+  'board.startTitle': '{name} işe başlasın mı?',
+  'board.startBody':
+    '#{number} Sürüyor’a geçer ve {name} hemen üzerinde çalışmaya başlar. Başlayan çalışma geri alınamaz.',
+  'board.startConfirm': 'Başlat',
   'board.statusLabel': 'Durum',
   'board.priority': 'Öncelik',
   'board.priority.low': 'Düşük',

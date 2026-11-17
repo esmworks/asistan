@@ -79,4 +79,39 @@ describe('görev panosu', () => {
     await t.services.turns.idle();
     expect((await ticket(feedback.id)).status).toBe('in_review');
   });
+
+  it('görevler sütunda verilen sırada durur; başka sütuna geçen görev en üste gelir', async () => {
+    const make = async (title: string) => (await t.api<Ticket>('POST', '/api/tickets', { title })).body;
+    const a = await make('Bir');
+    const b = await make('İki');
+    const c = await make('Üç');
+    const order = async (status: string) =>
+      (await t.api<Ticket[]>('GET', '/api/tickets')).body
+        .filter((k) => k.status === status)
+        .sort((x, y) => x.position - y.position)
+        .map((k) => k.title);
+    // The newest stands first.
+    expect(await order('todo')).toEqual(['Üç', 'İki', 'Bir']);
+    // Put between two others, it takes a place between theirs.
+    const [first, second] = [await ticket(c.id), await ticket(b.id)];
+    await t.api('PATCH', `/api/tickets/${a.id}`, { position: (first.position + second.position) / 2 });
+    expect(await order('todo')).toEqual(['Üç', 'Bir', 'İki']);
+    // Moved to another column with no place given, it goes to the top there.
+    await t.api('PATCH', `/api/tickets/${b.id}`, { status: 'done' });
+    await t.api('PATCH', `/api/tickets/${c.id}`, { status: 'done' });
+    expect(await order('done')).toEqual(['Üç', 'İki']);
+    // A ticket says whether its bot is at work on it, so a board opened mid-turn shows it.
+    expect((await ticket(a.id)).turnState).toBe('idle');
+    const bot = await t.bot({ name: 'Yavaş' });
+    const slow = (
+      await t.api<Ticket>('POST', '/api/tickets', {
+        title: 'Uzun iş',
+        description: '[bekle:300]',
+        assigneeBotId: bot.id,
+      })
+    ).body;
+    expect(['queued', 'running']).toContain((await ticket(slow.id)).turnState);
+    await t.services.turns.idle();
+    expect((await ticket(slow.id)).turnState).toBe('idle');
+  });
 });

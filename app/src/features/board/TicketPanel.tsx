@@ -1,4 +1,4 @@
-import type { Ticket } from '@yumakbot/shared';
+import type { Ticket, TicketStatus } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, ExternalLink, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -52,7 +52,16 @@ function useAutosize(value: string) {
  * A ticket's details beside the board: its title and description, edited in place, its
  * properties, and what the person and its bot wrote on it, newest last as in a conversation.
  */
-export function TicketPanel({ ticket, onClose }: { ticket: Ticket; onClose(): void }) {
+export function TicketPanel({
+  ticket,
+  onStatus,
+  onClose,
+}: {
+  ticket: Ticket;
+  /** A new status, made by the board, which asks first when it would start the bot. */
+  onStatus(status: TicketStatus): void;
+  onClose(): void;
+}) {
   const t = useT();
   const qc = useQueryClient();
   const { dayLabel } = useFormat();
@@ -146,7 +155,7 @@ export function TicketPanel({ ticket, onClose }: { ticket: Ticket; onClose(): vo
           <dl className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5 text-sm">
             <dt className="text-muted-foreground">{t('board.statusLabel')}</dt>
             <dd>
-              <StatusSelect quiet value={ticket.status} onChange={(status) => update.mutate({ status })} />
+              <StatusSelect quiet value={ticket.status} onChange={onStatus} />
             </dd>
             <dt className="text-muted-foreground">{t('board.assignee')}</dt>
             <dd>

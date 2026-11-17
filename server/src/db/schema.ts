@@ -780,6 +780,11 @@ export const tickets = pgTable(
     createdBy: text('created_by').notNull(),
     /** The conversation the assignee works on it in; made on its first assignment. */
     threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    /**
+     * Where it stands among the tickets of its column, smallest first. A fraction, so a ticket
+     * moved between two others takes a place between theirs without the rest moving.
+     */
+    position: doublePrecision('position').notNull().default(0),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

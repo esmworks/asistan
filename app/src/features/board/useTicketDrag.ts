@@ -2,7 +2,8 @@ import type { Ticket, TicketStatus } from '@yumakbot/shared';
 import { useEffect, useRef, useState } from 'react';
 
 /*
- * Moving a ticket to another column by pressing anywhere on its card. Pointer events rather than
+ * Moving a ticket to another column, or to another place in its own, by pressing anywhere on its
+ * card. Pointer events rather than
  * native drag and drop, so a short press still opens the ticket, the copy under the pointer looks
  * like the card itself, and the columns can be scrolled while carrying it. Columns carry
  * `data-board-status`. Only a mouse or pen moves cards: on a touch screen a press scrolls, and the
@@ -18,6 +19,8 @@ export interface TicketDrag {
   dy: number;
   width: number;
   over: TicketStatus | null;
+  /** The card it would land before in that column; null for the end of it. */
+  beforeId: string | null;
 }
 
 const THRESHOLD = 5;
@@ -25,7 +28,7 @@ const EDGE = 56;
 
 export function useTicketDrag(
   scroller: React.RefObject<HTMLElement | null>,
-  onDrop: (ticket: Ticket, status: TicketStatus) => void,
+  onDrop: (ticket: Ticket, status: TicketStatus, beforeId: string | null) => void,
 ) {
   const [drag, setDrag] = useState<TicketDrag | null>(null);
   /** Set when a move ends, so the click that follows the release does not open the card. */
@@ -43,9 +46,21 @@ export function useTicketDrag(
     const start = { x: e.clientX, y: e.clientY };
     let current: TicketDrag | null = null;
 
-    const statusAt = (x: number, y: number): TicketStatus | null => {
-      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-board-status]');
-      return (el?.dataset.boardStatus as TicketStatus | undefined) ?? null;
+    const placeAt = (x: number, y: number) => {
+      const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-board-status]');
+      const over = (column?.dataset.boardStatus as TicketStatus | undefined) ?? null;
+      if (!column || !over) return { over: null, beforeId: null };
+      // The first card of that column whose middle is below the pointer; the moved card itself
+      // does not count.
+      const cards = [...column.querySelectorAll<HTMLElement>('[data-ticket-id]')].filter(
+        (c) =>
+          c.dataset.ticketStatus === over && c.dataset.ticketId !== ticket.id && !c.closest('[data-lifted]'),
+      );
+      const below = cards.find((c) => {
+        const r = c.getBoundingClientRect();
+        return r.top + r.height / 2 > y;
+      });
+      return { over, beforeId: below?.dataset.ticketId ?? null };
     };
     const move = (ev: PointerEvent) => {
       if (!current && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < THRESHOLD) return;
@@ -63,7 +78,7 @@ export function useTicketDrag(
         dx: start.x - card.left,
         dy: start.y - card.top,
         width: card.width,
-        over: statusAt(ev.clientX, ev.clientY),
+        ...placeAt(ev.clientX, ev.clientY),
       };
       setDrag(current);
     };
@@ -74,7 +89,7 @@ export function useTicketDrag(
       current = null;
       moved.current = true;
       setTimeout(() => (moved.current = false), 0);
-      if (drop && done.over && done.over !== ticket.status) dropRef.current(ticket, done.over);
+      if (drop && done.over) dropRef.current(ticket, done.over, done.beforeId);
       setDrag(null);
     };
     const up = () => end(true);

@@ -420,6 +420,10 @@ export const en: Catalog<MessageKey> = {
   'board.live.queued': 'Queued',
   'board.live.waiting': 'Waiting for you',
   'board.started': '{name} started on #{number}',
+  'board.startTitle': 'Start {name} on it?',
+  'board.startBody':
+    '#{number} moves to In progress and {name} starts working on it right away. Work once started cannot be undone.',
+  'board.startConfirm': 'Start',
   'board.statusLabel': 'Status',
   'board.priority': 'Priority',
   'board.priority.low': 'Low',

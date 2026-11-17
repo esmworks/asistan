@@ -1,12 +1,20 @@
 import { TICKET_PRIORITIES, type Ticket, type TicketPriority, type TicketStatus } from '@yumakbot/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ListFilter, Plus, Search, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,16 +35,22 @@ import { useTicketDrag } from './useTicketDrag';
 
 /** The columns, left to right; tickets nobody will do are kept at the foot of the done column. */
 const COLUMNS: TicketStatus[] = ['todo', 'in_progress', 'in_review', 'blocked', 'done'];
-const RANK: Record<TicketPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 
-/** Most pressing first, then the most recently touched. */
-const byUrgency = (a: Ticket, b: Ticket) =>
-  RANK[a.priority] - RANK[b.priority] || b.updatedAt.localeCompare(a.updatedAt);
+/** The order the person gave the tickets; newer first where two share a place. */
+const byPosition = (a: Ticket, b: Ticket) => a.position - b.position || b.number - a.number;
 
 /** Whether a move to `to` starts the assigned bot on the ticket, as the server decides it. */
 function startsWork(ticket: Ticket, to: TicketStatus): boolean {
   if (!ticket.assigneeBotId || !OPEN.includes(to)) return false;
   return !OPEN.includes(ticket.status) || (to === 'in_progress' && ticket.status !== 'in_progress');
+}
+
+/** A move asked for and not yet made; one that starts a bot waits for the person's yes. */
+interface Move {
+  ticket: Ticket;
+  status: TicketStatus;
+  /** Left out, the server puts a ticket that changes column at its top. */
+  position?: number;
 }
 
 /**
@@ -62,17 +76,31 @@ export function BoardDialog() {
   const [people, setPeople] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<TicketPriority[]>([]);
   const [showWontDo, setShowWontDo] = useState(false);
+  const [asking, setAsking] = useState<Move | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const current = tickets.find((k) => k.id === openId) ?? null;
 
-  const move = (ticket: Ticket, status: TicketStatus) => {
+  const commit = ({ ticket, status, position }: Move) => {
     const starts = startsWork(ticket, status);
-    // Shown at once; the server may move it on (a bot starting puts it in progress).
+    const top = Math.min(0, ...tickets.map((k) => k.position)) - 1;
+    // Shown at once; the server may move it on (a bot starting puts it at the top of the work).
     qc.setQueryData<Ticket[]>(['tickets'], (old) =>
-      old?.map((k) => (k.id === ticket.id ? { ...k, status: starts ? 'in_progress' : status } : k)),
+      old?.map((k) =>
+        k.id === ticket.id
+          ? {
+              ...k,
+              status: starts ? 'in_progress' : status,
+              position: starts ? top : (position ?? (status === k.status ? k.position : top)),
+            }
+          : k,
+      ),
     );
-    api.updateTicket(ticket.id, { status }).then(
+    const patch = {
+      ...(status !== ticket.status && { status }),
+      ...(position !== undefined && { position }),
+    };
+    api.updateTicket(ticket.id, patch).then(
       () => {
         const bot = bots.find((b) => b.id === ticket.assigneeBotId);
         if (starts && bot) toast(t('board.started', { name: bot.name, number: ticket.number }));
@@ -84,10 +112,40 @@ export function BoardDialog() {
       },
     );
   };
-  const { drag, grab, wasMoved } = useTicketDrag(scroller, move);
+  /** A move from the board or the details; one that would start the bot asks first. */
+  const move = (m: Move) => {
+    if (m.status === m.ticket.status && m.position === undefined) return;
+    if (startsWork(m.ticket, m.status)) setAsking(m);
+    else commit(m);
+  };
+  /** A card dropped in a column, before the card `beforeId` or, when null, at the end. */
+  const drop = (ticket: Ticket, status: TicketStatus, beforeId: string | null) => {
+    const all = tickets.filter((k) => k.status === status).sort(byPosition);
+    const at = (list: Ticket[], id: string | null) => (id ? list.findIndex((k) => k.id === id) : list.length);
+    const rest = all.filter((k) => k.id !== ticket.id);
+    const i = at(rest, beforeId);
+    const prev = rest[i - 1];
+    const next = rest[i];
+    if (status === ticket.status) {
+      // Dropped where it already stood.
+      const j = all.findIndex((k) => k.id === ticket.id);
+      if (all[j - 1]?.id === prev?.id && all[j + 1]?.id === next?.id) return;
+    }
+    const position =
+      prev && next
+        ? (prev.position + next.position) / 2
+        : next
+          ? next.position - 1
+          : prev
+            ? prev.position + 1
+            : ticket.position;
+    move({ ticket, status, position });
+  };
+  const { drag, grab, wasMoved } = useTicketDrag(scroller, drop);
   const openTicket = (id: string) => {
     if (!wasMoved()) setOpenId(id);
   };
+  const askedBot = bots.find((b) => b.id === asking?.ticket.assigneeBotId);
 
   const shown = useMemo(() => {
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -99,7 +157,7 @@ export function BoardDialog() {
         const hay = `#${k.number} ${k.title} ${snippet(k.description)}`.toLocaleLowerCase();
         return words.every((w) => hay.includes(w));
       })
-      .sort(byUrgency);
+      .sort(byPosition);
   }, [tickets, query, people, priorities]);
   const filtering = !!query.trim() || people.length > 0 || priorities.length > 0;
   const clearFilters = () => {
@@ -302,7 +360,14 @@ export function BoardDialog() {
               ))}
             </div>
           )}
-          {current && <TicketPanel key={current.id} ticket={current} onClose={() => setOpenId(null)} />}
+          {current && (
+            <TicketPanel
+              key={current.id}
+              ticket={current}
+              onStatus={(status) => move({ ticket: current, status })}
+              onClose={() => setOpenId(null)}
+            />
+          )}
         </div>
 
         <NewTicketDialog
@@ -311,6 +376,35 @@ export function BoardDialog() {
           assignee={people.length === 1 && people[0] !== NOBODY ? people[0]! : null}
           onCreated={(id) => setOpenId(id)}
         />
+        <Dialog open={!!asking} onOpenChange={(o) => !o && setAsking(null)}>
+          <DialogContent className="rounded-2xl sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{t('board.startTitle', { name: askedBot?.name ?? '' })}</DialogTitle>
+              <DialogDescription>
+                {asking &&
+                  t('board.startBody', {
+                    number: asking.ticket.number,
+                    name: askedBot?.name ?? '',
+                  })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" className="rounded-xl" onClick={() => setAsking(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                autoFocus
+                className="rounded-xl"
+                onClick={() => {
+                  if (asking) commit(asking);
+                  setAsking(null);
+                }}
+              >
+                {t('board.startConfirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {drag &&
           createPortal(
             <div
@@ -399,6 +493,27 @@ function Column({
     />
   );
   const overWontDo = dragging?.over === 'wont_do' && dragging.ticket.status !== 'wont_do';
+  /** The cards of one list, with a line where a carried card would land. */
+  const list = (items: Ticket[], at: TicketStatus) => {
+    const here = dragging?.over === at ? dragging : null;
+    // Before which card the line goes (null: after the last); none where the card already stands.
+    let mark: string | null | undefined;
+    if (here) {
+      const i = items.findIndex((k) => k.id === here.ticket.id);
+      mark = i >= 0 && here.beforeId === (items[i + 1]?.id ?? null) ? undefined : here.beforeId;
+    }
+    return (
+      <>
+        {items.map((k) => (
+          <Fragment key={k.id}>
+            {mark === k.id && <DropLine />}
+            {card(k)}
+          </Fragment>
+        ))}
+        {mark === null && items.length > 0 && <DropLine />}
+      </>
+    );
+  };
   return (
     <section
       data-board-status={status}
@@ -427,7 +542,7 @@ function Column({
         )}
       </h3>
       <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2 phone:overflow-visible">
-        {tickets.map(card)}
+        {list(tickets, status)}
         {!tickets.length && (
           <div
             className={cn(
@@ -463,13 +578,18 @@ function Column({
               <span className="tabular-nums">{wontDo.length}</span>
             </button>
             {showWontDo && wontDo.length > 0 && (
-              <div className="mt-1.5 flex flex-col gap-2">{wontDo.map(card)}</div>
+              <div className="mt-1.5 flex flex-col gap-2">{list(wontDo, 'wont_do')}</div>
             )}
           </div>
         )}
       </div>
     </section>
   );
+}
+
+/** Where a carried card will land; it takes no room, so the cards do not shift under the pointer. */
+function DropLine() {
+  return <div className="-my-[5px] h-0.5 shrink-0 rounded-full bg-blue-500" aria-hidden />;
 }
 
 function EmptyBoard({ onAdd }: { onAdd(): void }) {

@@ -47,7 +47,8 @@ export function TicketCard({
   const { shortTime } = useFormat();
   const { data: bots = [] } = useBots();
   const bot = bots.find((b) => b.id === ticket.assigneeBotId) ?? null;
-  const activity = useThreadActivity(bot?.id ?? '', bot ? ticket.threadId : null);
+  // The state the board was loaded with, until a live event says otherwise.
+  const activity = useThreadActivity(bot?.id ?? '', bot ? ticket.threadId : null, ticket.turnState);
   const live = ticket.status === 'in_progress' ? liveLabel(activity) : null;
   const summary = snippet(ticket.description);
   const closed = ticket.status === 'done' || ticket.status === 'wont_do';
@@ -56,6 +57,8 @@ export function TicketCard({
       role="button"
       tabIndex={lifted ? -1 : 0}
       data-ticket-id={ticket.id}
+      data-ticket-status={ticket.status}
+      data-lifted={lifted || undefined}
       aria-current={selected || undefined}
       onPointerDown={onGrab ? (e) => onGrab(e, ticket) : undefined}
       onClick={() => onOpen?.(ticket.id)}

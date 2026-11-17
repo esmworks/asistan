@@ -351,6 +351,13 @@
       "when": 1794889322740,
       "tag": "0049_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794903994444,
+      "tag": "0050_ticket_position",
+      "breakpoints": true
     }
   ]
 }
