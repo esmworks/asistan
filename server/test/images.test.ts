@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Approval, Message, MessageFile, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ImageService, imageType } from '../src/services/images';
+import { ImageService, imageType, MAX_IMAGE_BYTES } from '../src/services/images';
 import { MAX_IMAGES_PER_TURN } from '../src/tools/images';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -141,6 +141,26 @@ describe('botun resim oluşturması', () => {
 
     useProvider(() => b64(Buffer.concat([PNG, Buffer.alloc(21 * 1024 * 1024)])));
     await expect(t.services.images.create('Bir kedi')).rejects.toMatchObject({ reason: 'tooLarge' });
+  });
+
+  it('stops reading a picture address that sends no size and does not end', async () => {
+    await t.services.keys.set('xai', 'xai-test-image-1234');
+    let pulled = 0;
+    // No content-length, and more bytes for as long as anyone reads.
+    const endless = () =>
+      new ReadableStream<Uint8Array>({
+        pull(c) {
+          pulled += 1024 * 1024;
+          c.enqueue(new Uint8Array(1024 * 1024));
+        },
+      });
+    useProvider((url) =>
+      url.startsWith('https://api.x.ai/')
+        ? new Response(JSON.stringify({ data: [{ url: 'https://imgen.x.ai/r/big.png' }] }))
+        : new Response(endless()),
+    );
+    await expect(t.services.images.create('Bir kedi')).rejects.toMatchObject({ reason: 'tooLarge' });
+    expect(pulled).toBeLessThan(MAX_IMAGE_BYTES + 4 * 1024 * 1024);
   });
 
   it('sağlayıcının hatasını anahtarı göstermeden bota iletir', async () => {
