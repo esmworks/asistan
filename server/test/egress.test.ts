@@ -97,6 +97,18 @@ describe('the way out through the person computer', () => {
     expect((await viaSocks(socks.port, '127.0.0.1', port)).code).toBe(2);
   });
 
+  it('without a way out through a computer, still checks each address it connects to', async () => {
+    const port = await answering('private');
+    const closed = await startLocalSocks(null, []);
+    cleanups.push(closed.close);
+    expect((await viaSocks(closed.port, '127.0.0.1', port)).code).toBe(2);
+    expect((await viaSocks(closed.port, 'localhost', port)).code).toBe(2);
+    expect((await viaSocks(closed.port, '::ffff:127.0.0.1', port)).code).toBe(2);
+    const allowed = await startLocalSocks(null, ['127.0.0.1']);
+    cleanups.push(allowed.close);
+    expect(await viaSocks(allowed.port, '127.0.0.1', port)).toEqual({ code: 0, text: 'private' });
+  });
+
   it('tells each bot once when the way out changes', () => {
     const hub = new EgressHub();
     expect(hub.takeExitNote('a')).toBeNull();

@@ -76,8 +76,11 @@ interface Live {
   modifiers: Set<string>;
   /** The person's input, applied one event at a time. */
   inputs: Promise<void>;
-  /** Passwords typed into this browser from the vault; hidden from everything the bot reads. */
-  secrets: Set<string>;
+  /**
+   * Passwords and codes typed into this browser from the vault, each with when it stops mattering;
+   * hidden from everything the bot reads.
+   */
+  secrets: Map<string, number>;
   lastUsed: number;
   /** Bot actions run one after another, even from two threads of the same bot. */
   queue: Promise<unknown>;
@@ -307,13 +310,34 @@ export class BrowserManager {
     return l ? { pages: l.context.pages(), active: l.page } : null;
   }
 
-  /** Remember a password typed into this bot's browser, so tool output never shows it. */
-  rememberSecret(botId: string, secret: string) {
-    this.live.get(botId)?.secrets.add(secret);
+  /**
+   * Remember a password typed into this bot's browser, so tool output never shows it. A short-lived
+   * secret (a two-step code) is let go after `ttlMs`: six digits would otherwise keep matching
+   * ordinary numbers on later pages.
+   */
+  rememberSecret(botId: string, secret: string, ttlMs = Infinity) {
+    const l = this.live.get(botId);
+    if (!l) return;
+    l.secrets.set(secret, Math.max(l.secrets.get(secret) ?? 0, Date.now() + ttlMs));
   }
 
   secrets(botId: string): string[] {
-    return [...(this.live.get(botId)?.secrets ?? [])];
+    const l = this.live.get(botId);
+    if (!l) return [];
+    const now = Date.now();
+    for (const [secret, until] of l.secrets) if (until <= now) l.secrets.delete(secret);
+    return [...l.secrets.keys()];
+  }
+
+  /**
+   * Whether a host is this computer, or a private host the operator let the browsers reach (a
+   * router's page): plain http there crosses no one else's network.
+   */
+  localHost(raw: string): boolean {
+    const host = raw.replace(/^\[|\]$/g, '').toLowerCase();
+    if (this.opts.localHosts?.includes(host)) return true;
+    if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true;
+    return isIP(host) === 4 && host.startsWith('127.');
   }
 
   async newPage(botId: string): Promise<Page> {
@@ -640,6 +664,9 @@ export class BrowserManager {
         screen: { width: SCREEN.width, height: SCREEN.height },
         deviceScaleFactor: SCREEN.scale,
         acceptDownloads: false,
+        // A service worker's own requests pass neither the request filter nor its notes to the bot,
+        // and it keeps running after the page is gone.
+        serviceWorkers: 'block',
         // Sites such as Google refuse to sign in a browser that says it is driven by a program: no
         // "controlled by automated software" mark, and navigator.webdriver stays false.
         ignoreDefaultArgs: ['--enable-automation'],
@@ -702,7 +729,7 @@ export class BrowserManager {
       lesson: null,
       modifiers: new Set(),
       inputs: Promise.resolve(),
-      secrets: new Set(),
+      secrets: new Map(),
       lastUsed: Date.now(),
       queue: Promise.resolve(),
       dialogs: [],

@@ -68,6 +68,8 @@ async function render(o: RenderOptions): Promise<Buffer> {
         ? route.continue()
         : route.abort('blockedbyclient');
     });
+    // A WebSocket passes the request filter above: it is closed before it connects.
+    await context.routeWebSocket(/.*/, (ws) => ws.close());
     const page = await context.newPage();
     await page.setContent(o.html, { waitUntil: 'load', timeout: LOAD_MS });
     await page.waitForLoadState('networkidle', { timeout: SETTLE_MS }).catch(() => {});

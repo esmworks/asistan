@@ -214,8 +214,47 @@ describe('blockedAddress', () => {
     }
   });
 
+  it('blocks private IPv4 carried inside every IPv6 form, and reserved ranges', () => {
+    for (const ip of [
+      // IPv4-compatible, IPv4-mapped and IPv4-translated loopback and private addresses
+      '::127.0.0.1',
+      '::a00:1',
+      '::ffff:0:a00:1',
+      '::ffff:0:127.0.0.1',
+      // NAT64 and 6to4 wrapped around loopback and the cloud metadata address
+      '64:ff9b::7f00:1',
+      '64:ff9b::169.254.169.254',
+      '2002:7f00:1::',
+      '2002:a9fe:a9fe::1',
+      // NAT64 of the operator's own network, Teredo, site-local, multicast, documentation
+      '64:ff9b:1::808:808',
+      '2001:0:4136:e378::1',
+      'fec0::1',
+      'ff05::1',
+      '2001:db8::1',
+      '100::1',
+      // IETF protocol assignments, benchmarking, documentation, reserved
+      '192.0.0.8',
+      '198.19.255.255',
+      '192.0.2.1',
+      '198.51.100.7',
+      '203.0.113.5',
+      '240.0.0.1',
+    ]) {
+      expect(blockedAddress(ip), ip).toBe(true);
+    }
+  });
+
   it('lets public addresses through', () => {
-    for (const ip of ['104.244.42.1', '8.8.8.8', '2606:4700::1111', '::ffff:8.8.8.8', '2a03:2880:f12f::1']) {
+    for (const ip of [
+      '104.244.42.1',
+      '8.8.8.8',
+      '2606:4700::1111',
+      '::ffff:8.8.8.8',
+      '2a03:2880:f12f::1',
+      '64:ff9b::808:808',
+      '2002:808:808::1',
+    ]) {
       expect(blockedAddress(ip), ip).toBe(false);
     }
   });
