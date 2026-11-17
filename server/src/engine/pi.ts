@@ -11,12 +11,14 @@ import { translator, type T } from '../i18n';
 import { fileTools, PathError, type FileTool } from './pi-files';
 import {
   providerTrouble,
+  replyOf,
   withContext,
   resultImages,
   resultText,
   toolPermName,
   type AppTool,
   type Engine,
+  type ModelStep,
   type ModelTest,
   type ToolResult,
   type TurnOutcome,
@@ -174,29 +176,21 @@ function textOf(m: AssistantMessage) {
   return m.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 }
 
-/** Tools that only add something under the reply; what is written with them is the reply. */
-const REPLY_TOOLS = new Set(['quick_replies']);
-
 /**
- * The reply of a run: its last assistant message, and before it the ones that called only reply
- * tools. A model often writes its answer together with quick_replies and closes with a short line
- * after the call; that line alone would lose the answer. Text before any other tool stays an
- * interim step.
+ * The reply of a run (see replyOf): the steps of its last stretch of assistant messages, up to the
+ * last one, with the tool results between them.
  */
 export function replyText(messages: AgentMessage[]): string {
   const end = messages.findLastIndex((m) => m.role === 'assistant');
-  if (end < 0) return '';
-  const last = textOf(messages[end] as AssistantMessage);
-  const before: string[] = [];
-  for (let i = end - 1; i >= 0; i--) {
+  const steps: ModelStep[] = [];
+  for (let i = end; i >= 0; i--) {
     const m = messages[i]!;
     if (m.role === 'toolResult') continue;
     if (m.role !== 'assistant') break;
-    const calls = m.content.flatMap((c) => (c.type === 'toolCall' ? [c.name] : []));
-    if (!calls.length || calls.some((name) => !REPLY_TOOLS.has(name))) break;
-    before.unshift(textOf(m).trim());
+    const tools = m.content.flatMap((c) => (c.type === 'toolCall' ? [c.name] : []));
+    steps.unshift({ text: textOf(m), tools });
   }
-  return before.some(Boolean) ? [...before, last.trim()].filter(Boolean).join('\n\n') : last;
+  return replyOf(steps);
 }
 
 const fail = (

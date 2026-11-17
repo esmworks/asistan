@@ -19,6 +19,7 @@ import { startSandboxProxy } from './sandbox-proxy';
 import {
   APP_SERVER,
   planItems,
+  replyOf,
   resultImages,
   resultText,
   type AccountStatus,
@@ -26,6 +27,7 @@ import {
   type Engine,
   type GateRequest,
   type GateVerdict,
+  type ModelStep,
   type ReviewRequest,
   type ReviewVerdict,
   type Sandbox,
@@ -449,6 +451,8 @@ export class ClaudeEngine implements Engine {
     input.push(withContext(req));
 
     let text = '';
+    // The model's answers so far, one per API message: the CLI sends each block of one apart.
+    const steps: (ModelStep & { id: string })[] = [];
     let sessionId: string | null = req.sessionId;
     // The session's running cost: a resumed session goes on from the total its transcript kept.
     let total: number | null = null;
@@ -503,6 +507,11 @@ export class ClaudeEngine implements Engine {
           // Keep the text of the last assistant message; earlier ones were interim steps.
           const parts = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : []));
           if (parts.length) text = parts.join('');
+          const id = m.message.id;
+          let step = steps.at(-1);
+          if (!step || step.id !== id) steps.push((step = { id, text: '', tools: [] }));
+          step.text += parts.join('');
+          for (const c of m.message.content) if (c.type === 'tool_use') step.tools.push(c.name);
         } else if (m.type === 'result') {
           finished = true;
           total = m.total_cost_usd ?? null;
@@ -530,6 +539,11 @@ export class ClaudeEngine implements Engine {
       req.signal.removeEventListener('abort', onAbort);
       input.close();
       proxy?.close();
+    }
+    // A reply the last message only closes keeps what was written with its quick replies.
+    if (steps.length > 1 && !steps.at(-1)!.tools.length) {
+      const reply = replyOf(steps);
+      if (reply !== steps.at(-1)!.text) text = reply;
     }
     const costUsd = runCost(total, req.sessionId ? req.sessionCostUsd : null);
     const sessionCostUsd = total;
