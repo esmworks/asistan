@@ -97,7 +97,7 @@ import {
 } from './Attachments';
 import { FindBar } from './FindBar';
 import { RoutineDialog } from './RoutineDialog';
-import { AssistantCard, MessageItem, replyExcerpt, Working } from './MessageItem';
+import { AssistantCard, CardDock, MessageItem, replyExcerpt, Working } from './MessageItem';
 
 export function Chat({ bot }: { bot: Bot }) {
   const selectedThread = useUi((s) => s.threadId);
@@ -828,6 +828,7 @@ function Conversation({
   const streamDone = stream && messages.some((m) => m.turnId === stream.turnId && m.role === 'assistant');
   // A card asked while the reply streams in goes inside it, where it was asked.
   const { rows, parts } = useLiveCards(all, stream, !!streamDone);
+  const [dock, setDock] = useState<HTMLDivElement | null>(null);
   const busy = state === 'running' || state === 'queued';
   const activity = useThreadActivity(bot.id, threadId, state);
 
@@ -952,84 +953,88 @@ function Conversation({
         className="scroll-thin flex-1 overflow-y-auto"
       >
         <FileLinks.Provider value={fileLinks}>
-          <div className="mx-auto flex max-w-(--chat-width) flex-col gap-4 px-3 pt-20 pb-6 sm:px-6">
-            {(thread?.goal || thread?.pinned) && (
-              <div className="sticky top-16 z-[5] flex flex-col gap-1.5">
-                {thread.goal && <GoalBar threadId={threadId} botId={bot.id} goal={thread.goal} />}
-                {thread.pinned && <PinnedBar threadId={threadId} botId={bot.id} pinned={thread.pinned} />}
-              </div>
-            )}
-            {!isLoading && messages.length === 0 && shown.length === 0 && <Empty bot={bot} />}
-            {hasOlder && (
-              <div ref={olderEdge} className="flex justify-center">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  disabled={loadOlder.isPending}
-                  onClick={() => loadOlder.mutate()}
-                >
-                  {t('chat.loadOlder')}
-                </Button>
-              </div>
-            )}
-            {rows.map((m, i) => (
-              <Fragment key={m.clientId ?? m.id}>
-                {needsDivider(rows[i - 1], m) && (
-                  <div className="py-2 text-center text-xs text-muted-foreground">
-                    {dayLabel(m.createdAt)}
-                  </div>
-                )}
-                {m.id === firstNew && (
-                  <div
-                    className="flex items-center gap-3 text-xs font-medium text-sky-600 dark:text-sky-400"
-                    role="separator"
+          <CardDock.Provider value={dock}>
+            <div className="mx-auto flex max-w-(--chat-width) flex-col gap-4 px-3 pt-20 pb-6 sm:px-6">
+              {(thread?.goal || thread?.pinned) && (
+                <div className="sticky top-16 z-[5] flex flex-col gap-1.5">
+                  {thread.goal && <GoalBar threadId={threadId} botId={bot.id} goal={thread.goal} />}
+                  {thread.pinned && <PinnedBar threadId={threadId} botId={bot.id} pinned={thread.pinned} />}
+                </div>
+              )}
+              {!isLoading && messages.length === 0 && shown.length === 0 && <Empty bot={bot} />}
+              {hasOlder && (
+                <div ref={olderEdge} className="flex justify-center">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={loadOlder.isPending}
+                    onClick={() => loadOlder.mutate()}
                   >
-                    <span className="h-px flex-1 bg-sky-500/40" />
-                    {t('chat.newSince')}
-                    <span className="h-px flex-1 bg-sky-500/40" />
-                  </div>
-                )}
-                <ErrorBoundary fallback={<BrokenMessage />}>
-                  <MessageItem
-                    m={m}
-                    bots={botMap}
-                    tint={bot.color}
-                    botId={bot.id}
-                    onReply={setReplyTo}
-                    canRetry={i === rows.length - 1 && activity === 'idle' && !shown.length}
-                    pending={waiting.has(m.clientId)}
+                    {t('chat.loadOlder')}
+                  </Button>
+                </div>
+              )}
+              {rows.map((m, i) => (
+                <Fragment key={m.clientId ?? m.id}>
+                  {needsDivider(rows[i - 1], m) && (
+                    <div className="py-2 text-center text-xs text-muted-foreground">
+                      {dayLabel(m.createdAt)}
+                    </div>
+                  )}
+                  {m.id === firstNew && (
+                    <div
+                      className="flex items-center gap-3 text-xs font-medium text-sky-600 dark:text-sky-400"
+                      role="separator"
+                    >
+                      <span className="h-px flex-1 bg-sky-500/40" />
+                      {t('chat.newSince')}
+                      <span className="h-px flex-1 bg-sky-500/40" />
+                    </div>
+                  )}
+                  <ErrorBoundary fallback={<BrokenMessage />}>
+                    <MessageItem
+                      m={m}
+                      bots={botMap}
+                      tint={bot.color}
+                      botId={bot.id}
+                      onReply={setReplyTo}
+                      canRetry={i === rows.length - 1 && activity === 'idle' && !shown.length}
+                      pending={waiting.has(m.clientId)}
+                    />
+                  </ErrorBoundary>
+                </Fragment>
+              ))}
+              {parts.map((p) =>
+                p.kind === 'text' ? (
+                  <AssistantCard
+                    key={`text-${p.from}`}
+                    text={p.text}
+                    turnId={p.live ? stream?.turnId : undefined}
+                    streaming={p.live}
                   />
-                </ErrorBoundary>
-              </Fragment>
-            ))}
-            {parts.map((p) =>
-              p.kind === 'text' ? (
-                <AssistantCard
-                  key={`text-${p.from}`}
-                  text={p.text}
-                  turnId={p.live ? stream?.turnId : undefined}
-                  streaming={p.live}
-                />
-              ) : (
-                <ErrorBoundary key={p.card.id} fallback={<BrokenMessage />}>
-                  <MessageItem
-                    m={p.card}
-                    bots={botMap}
-                    tint={bot.color}
-                    botId={bot.id}
-                    onReply={setReplyTo}
-                  />
-                </ErrorBoundary>
-              ),
-            )}
-            {activity !== 'idle' && !streamDone && (
-              <Working bot={bot} activity={activity} threadId={threadId ?? undefined} />
-            )}
-            {replies && activity === 'idle' && !shown.length && (
-              <QuickReplies options={replies} onPick={sendText} />
-            )}
-          </div>
+                ) : (
+                  <ErrorBoundary key={p.card.id} fallback={<BrokenMessage />}>
+                    <MessageItem
+                      m={p.card}
+                      bots={botMap}
+                      tint={bot.color}
+                      botId={bot.id}
+                      onReply={setReplyTo}
+                    />
+                  </ErrorBoundary>
+                ),
+              )}
+              {/* Cards waiting in an exchange between bots, out of sight where it began. */}
+              <div ref={setDock} className="flex flex-col gap-4 empty:hidden" />
+              {activity !== 'idle' && !streamDone && (
+                <Working bot={bot} activity={activity} threadId={threadId ?? undefined} />
+              )}
+              {replies && activity === 'idle' && !shown.length && (
+                <QuickReplies options={replies} onPick={sendText} />
+              )}
+            </div>
+          </CardDock.Provider>
         </FileLinks.Provider>
       </div>
       <ReplyAnnouncer messages={messages} bots={botMap} />
