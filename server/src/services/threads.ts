@@ -46,7 +46,8 @@ export class ThreadService {
     };
   }
 
-  private async states(threadIds: string[]): Promise<Map<string, TurnState>> {
+  /** What each conversation's bot is doing now; a conversation at rest is left out. */
+  async states(threadIds: string[]): Promise<Map<string, TurnState>> {
     const map = new Map<string, TurnState>();
     if (!threadIds.length) return map;
     const active = await this.ctx.db

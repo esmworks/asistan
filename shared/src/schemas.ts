@@ -1034,6 +1034,10 @@ export const Ticket = z.object({
   assigneeBotId: Id.nullable(),
   createdBy: z.string(),
   threadId: Id.nullable(),
+  /** Its place among the tickets of its column, smallest first. */
+  position: z.number(),
+  /** Whether its bot is at work on it now, in the ticket's conversation. */
+  turnState: TurnState,
   comments: z.array(TicketComment),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1053,6 +1057,8 @@ export const TicketUpdate = z.object({
   status: TicketStatus.optional(),
   priority: TicketPriority.optional(),
   assigneeBotId: Id.nullable().optional(),
+  /** A new place in its column; left out, a ticket moved to another column goes to its top. */
+  position: z.number().finite().optional(),
 });
 export type TicketUpdate = z.input<typeof TicketUpdate>;
 export const TicketCommentCreate = z.object({ text: z.string().trim().min(1).max(20_000) });

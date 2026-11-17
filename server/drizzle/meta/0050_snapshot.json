@@ -1,5 +1,5 @@
 {
-  "id": "f4d4dc29-32ef-4563-9139-fec7f6f170b9",
+  "id": "ff557fd7-f20c-4b94-afa3-2e29aade6583",
   "prevId": "46b0db87-d8a6-456e-8834-6e9895132340",
   "version": "7",
   "dialect": "postgresql",
@@ -2386,80 +2386,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.routine_revisions": {
-      "name": "routine_revisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "routine_id": {
-          "name": "routine_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routine_revisions_routine_idx": {
-          "name": "routine_revisions_routine_idx",
-          "columns": [
-            {
-              "expression": "routine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "routine_revisions_routine_id_routines_id_fk": {
-          "name": "routine_revisions_routine_id_routines_id_fk",
-          "tableFrom": "routine_revisions",
-          "tableTo": "routines",
-          "columnsFrom": [
-            "routine_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.routine_runs": {
       "name": "routine_runs",
       "schema": "",
@@ -3226,6 +3152,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

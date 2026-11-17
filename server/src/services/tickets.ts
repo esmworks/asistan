@@ -6,6 +6,7 @@ import {
   type TicketCreate as CreateInput,
   type TicketStatus,
   type TicketUpdate as UpdateInput,
+  type TurnState,
 } from '@yumakbot/shared';
 import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
@@ -30,7 +31,10 @@ const toComment = (c: CommentRow): TicketComment => ({
   createdAt: c.createdAt.toISOString(),
 });
 
-const toTicket = (r: Row, comments: CommentRow[]): Ticket => ({
+/** A place above every ticket, so one that comes into a column stands at its top. */
+const TOP = sql<number>`(select coalesce(min(${schema.tickets.position}), 0) - 1 from ${schema.tickets})`;
+
+const toTicket = (r: Row, comments: CommentRow[], turnState: TurnState): Ticket => ({
   id: r.id,
   number: r.number,
   title: r.title,
@@ -40,6 +44,8 @@ const toTicket = (r: Row, comments: CommentRow[]): Ticket => ({
   assigneeBotId: r.assigneeBotId,
   createdBy: r.createdBy,
   threadId: r.threadId,
+  position: r.position,
+  turnState,
   comments: comments.map(toComment),
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
@@ -76,10 +82,12 @@ export class TicketService {
         ),
       )
       .orderBy(asc(schema.ticketComments.createdAt));
+    const states = await this.services.threads.states(rows.flatMap((r) => (r.threadId ? [r.threadId] : [])));
     return rows.map((r) =>
       toTicket(
         r,
         comments.filter((c) => c.ticketId === r.id),
+        (r.threadId && states.get(r.threadId)) || 'idle',
       ),
     );
   }
@@ -133,6 +141,7 @@ export class TicketService {
         priority: input.priority,
         assigneeBotId: input.assigneeBotId,
         createdBy: by,
+        position: TOP,
       })
       .returning();
     this.changed();
@@ -144,9 +153,12 @@ export class TicketService {
     const patch = TicketUpdate.parse(raw);
     const before = await this.row(id);
     if (patch.assigneeBotId) await this.services.bots.get(patch.assigneeBotId);
+    // A ticket moved to another column without a place of its own goes to the top of it.
+    const moved = patch.status !== undefined && patch.status !== before.status;
+    const position = patch.position ?? (moved ? TOP : undefined);
     const [row] = await this.ctx.db
       .update(schema.tickets)
-      .set({ ...patch, updatedAt: new Date() })
+      .set({ ...patch, ...(position !== undefined && { position }), updatedAt: new Date() })
       .where(eq(schema.tickets.id, id))
       .returning();
     this.changed();
@@ -210,7 +222,13 @@ export class TicketService {
     }
     await this.ctx.db
       .update(schema.tickets)
-      .set({ threadId, status: 'in_progress', updatedAt: new Date() })
+      .set({
+        threadId,
+        status: 'in_progress',
+        // Started from another column, it goes to the top of the work in progress.
+        ...(row.status !== 'in_progress' && { position: TOP }),
+        updatedAt: new Date(),
+      })
       .where(eq(schema.tickets.id, row.id));
     const ticket = await this.get(row.id);
     const prompt =
@@ -259,7 +277,7 @@ export class TicketService {
     if (now?.status === 'in_progress') {
       await this.ctx.db
         .update(schema.tickets)
-        .set({ status: outcome.ok ? 'in_review' : 'blocked', updatedAt: new Date() })
+        .set({ status: outcome.ok ? 'in_review' : 'blocked', position: TOP, updatedAt: new Date() })
         .where(eq(schema.tickets.id, ticket.id));
     }
     this.changed();
