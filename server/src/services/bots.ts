@@ -77,6 +77,14 @@ export class BotService {
 
   async update(id: string, patch: BotUpdate): Promise<Bot> {
     const before = await this.get(id);
+    // A bot whose instructions are kept in a document takes them from there, after the person
+    // accepts them; a form opened before an accepted change must not write the old ones back.
+    const linked = patch.instructionsUrl !== undefined ? patch.instructionsUrl : before.instructionsUrl;
+    if (linked) delete patch.instructions;
+    // Another document, or none: what waited from the old one goes.
+    const relinked =
+      patch.instructionsUrl !== undefined &&
+      (patch.instructionsUrl ?? null) !== (before.instructionsUrl ?? null);
     if (patch.groupId) await this.getGroup(patch.groupId);
     if (patch.projectDir !== undefined && patch.projectDir !== before.projectDir)
       this.checkProjectDir(patch.projectDir);
@@ -85,7 +93,16 @@ export class BotService {
       if (leaves) await this.leaveEngine(tx, id);
       const [saved] = await tx
         .update(schema.bots)
-        .set({ ...patch, updatedAt: new Date() })
+        .set({
+          ...patch,
+          ...(relinked && {
+            instructionsPending: null,
+            instructionsDocHash: null,
+            instructionsCheckedAt: null,
+            instructionsError: null,
+          }),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.bots.id, id))
         .returning();
       return saved;

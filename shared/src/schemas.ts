@@ -67,6 +67,15 @@ export const Bot = z.object({
   effort: z.string(),
   /** Which tools the bot gets (see `ToolSelection`). */
   toolSelection: ToolSelection,
+  /**
+   * A document the instructions are kept in. Its text reaches the bot only once the person
+   * accepts it; until then a change waits in `instructionsPending`. Missing from older servers.
+   */
+  instructionsUrl: z.string().nullable().optional(),
+  instructionsPending: z.string().nullable().optional(),
+  instructionsCheckedAt: z.string().nullable().optional(),
+  /** Why the document could not be read the last time it was looked at. */
+  instructionsError: z.string().nullable().optional(),
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -124,6 +133,14 @@ export const BotCreate = z.object({
   effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
   /** Which tools the bot gets; by default every tool its settings allow. */
   toolSelection: ToolSelection.default(ALL_TOOLS),
+  /** A document (https) the instructions are kept in; null for instructions written here. */
+  instructionsUrl: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((v) => /^https:\/\/[^\s]+$/i.test(v), 'validation.instructionsUrl')
+    .nullable()
+    .default(null),
 });
 export type BotCreate = z.infer<typeof BotCreate>;
 
@@ -351,6 +368,45 @@ export const Approval = z.object({
 });
 export type Approval = z.infer<typeof Approval>;
 
+/**
+ * A step that changes something which a bot was let through, and what let it: `card` the person,
+ * `rule` an allow rule, `level` the bot's approval level, `review` the reviewer model.
+ */
+export const BotActionHow = z.enum(['card', 'rule', 'level', 'review']);
+export type BotActionHow = z.infer<typeof BotActionHow>;
+export const BotAction = z.object({
+  id: Id,
+  botId: Id,
+  threadId: Id.nullable(),
+  toolName: z.string(),
+  summary: z.string(),
+  how: BotActionHow,
+  rule: z.string().nullable(),
+  outside: z.boolean(),
+  createdAt: z.string(),
+});
+export type BotAction = z.infer<typeof BotAction>;
+
+/**
+ * Ways to ask less, read from the person's own answers on a bot's cards: steps they always
+ * allowed and never refused, and a bot in `ask` whose cards they nearly always allowed.
+ */
+export const PermissionSuggestions = z.object({
+  rules: z.array(
+    z.object({
+      /** The "always allow" rule the step would become, as a card's "always allow" writes it. */
+      pattern: z.string(),
+      /** The step in words, as a card names it. */
+      summary: z.string(),
+      allowed: z.number().int(),
+    }),
+  ),
+  mode: z.object({ to: z.literal('review'), allowed: z.number().int(), denied: z.number().int() }).nullable(),
+});
+export type PermissionSuggestions = z.infer<typeof PermissionSuggestions>;
+/** Turns down a suggestion: a rule's pattern, or `mode` for the level. */
+export const SuggestionDismiss = z.object({ key: z.string().trim().min(1).max(300) });
+
 export const ApprovalDecision = z.object({
   decision: z.enum(['allow', 'deny']),
   /** For question cards: the chosen option or free text. */
@@ -433,15 +489,31 @@ export const PermissionRule = z.object({
   note: z.string(),
   /** The one bot the rule is for; null (or missing, from older servers) for every bot. */
   botId: Id.nullable().optional(),
+  /**
+   * An amount limit, both or neither: the dotted path of a number in the step's input and the
+   * line. An allow rule covers a step at or under it; an ask or block rule one over it, or one
+   * whose amount cannot be read. Missing from older servers.
+   */
+  field: z.string().nullable().optional(),
+  limit: z.number().nullable().optional(),
   createdAt: z.string(),
 });
 export type PermissionRule = z.infer<typeof PermissionRule>;
-export const PermissionRuleCreate = z.object({
-  list: RuleList,
-  pattern: z.string().trim().min(1).max(200),
-  note: z.string().max(200).default(''),
-  botId: Id.nullable().optional(),
-});
+/** The dotted path of a value in a step's input: `amount`, `refund.amount`. */
+export const LIMIT_FIELD = /^[A-Za-z_$][\w$-]*(?:\.[A-Za-z_$][\w$-]*)*$/;
+export const PermissionRuleCreate = z
+  .object({
+    list: RuleList,
+    pattern: z.string().trim().min(1).max(200),
+    note: z.string().max(200).default(''),
+    botId: Id.nullable().optional(),
+    field: z.string().trim().max(100).regex(LIMIT_FIELD, 'validation.limitField').optional(),
+    limit: z.number().finite().nonnegative().optional(),
+  })
+  .refine((r) => (r.field === undefined) === (r.limit === undefined), {
+    message: 'validation.limitBoth',
+    path: ['limit'],
+  });
 
 export const MemoryScope = z.enum(['bot', 'user']);
 export type MemoryScope = z.infer<typeof MemoryScope>;

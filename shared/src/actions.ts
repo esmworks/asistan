@@ -40,6 +40,8 @@ export interface ActionText {
   wont: string;
   /** What exactly: the command, file or address. Shown only when asked for. */
   detail: string | null;
+  /** The step alone, for a list of what was done: "Bilgisayarda bir komut çalıştırmak" / "Run a command on the computer". */
+  step: string;
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -454,6 +456,7 @@ export function describeAction(
       always: `${bot} can now ${general} without asking`,
       wont: `${bot} won't ${same}`,
       detail,
+      step: upperFirst(want, 'en'),
     };
   }
   const [object, sameObject, [inf, can, wont]] = phrase.tr;
@@ -463,8 +466,12 @@ export function describeAction(
     always: `${bot} artık sormadan ${sameObject} ${can}`,
     wont: `${bot} ${sameObject} ${wont}`,
     detail,
+    step: upperFirst(`${object} ${inf}`, 'tr'),
   };
 }
+
+const upperFirst = (s: string, locale: Locale) =>
+  s.charAt(0).toLocaleUpperCase(locale === 'tr' ? 'tr-TR' : 'en-US') + s.slice(1);
 
 export interface QuestionItem {
   question: string;

@@ -6,6 +6,7 @@ import {
   selectsTools,
   toolPicker,
   type Bot,
+  type BotActionHow,
   type Effort,
   type Locale,
   outsideIn,
@@ -24,6 +25,7 @@ import {
 } from '../engine/types';
 import { translator, type T } from '../i18n';
 import {
+  allowRuleFor,
   askRuleFor,
   askRuleMatches,
   blockRuleFor,
@@ -50,6 +52,9 @@ export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
 
 const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
+
+/** What let a step that changes something through, for the bot's list of what it did. */
+type LetThrough = { how: BotActionHow; rule?: string; approvalId?: string };
 
 /** What Claude Code asks before a sandboxed command reaches a host the sandbox does not list. */
 const SANDBOX_NETWORK = 'SandboxNetworkAccess';
@@ -819,7 +824,7 @@ export class TurnManager {
     const canUseTool = async (raw: {
       toolName: string;
       input: Record<string, unknown>;
-    }): Promise<PermissionAnswer> => {
+    }): Promise<PermissionAnswer & { let?: LetThrough }> => {
       // A command on the bot's desktop is the same to the user as Bash here: same card wording,
       // and the same "always ask" / "always allow" rules apply.
       const ask =
@@ -906,7 +911,15 @@ export class TurnManager {
         readOnlyTools: free,
         outside: !!outside(),
       });
-      if (verdict === 'allow') return { behavior: 'allow' };
+      if (verdict === 'allow') {
+        // A read goes without a line in the bot's list of what it changed.
+        if (free.has(ask.toolName) || READ_ONLY_TOOLS.has(ask.toolName)) return { behavior: 'allow' };
+        const rule = mode === 'auto' ? null : allowRuleFor(rules, ask.toolName, ask.input);
+        return {
+          behavior: 'allow',
+          let: rule ? { how: 'rule', rule: rule.pattern } : { how: 'level' },
+        };
+      }
       if (verdict === 'block')
         return { behavior: 'deny', message: t('turn.blocked', { rule: ask.toolName }) };
       if (verdict === 'deny') {
@@ -923,7 +936,7 @@ export class TurnManager {
         !askRuleMatches(rules, ask.toolName, ask.input)
       ) {
         const review = await this.reviewed({ bot, thread, turn, ask, locale, signal: controller.signal });
-        if (review.allowed) return { behavior: 'allow' };
+        if (review.allowed) return { behavior: 'allow', let: { how: 'review' } };
         reviewReason = review.reason;
       }
       // The card names an "always ask" rule that covers this call, in every mode: "always allow"
@@ -965,7 +978,10 @@ export class TurnManager {
         },
       });
       this.emitState(thread.id, bot.id);
-      return approvals.toAnswer(result, t);
+      const answer = approvals.toAnswer(result, t);
+      return answer.behavior === 'allow'
+        ? { ...answer, let: { how: 'card', approvalId: result.approvalId } }
+        : answer;
     };
 
     const engine = this.engineFor(bot);
@@ -1118,7 +1134,31 @@ export class TurnManager {
         tools,
         ...(selectsTools(bot.toolSelection) && { pickTool }),
         canUseTool: async (ask) => {
-          const answer = await canUseTool(ask);
+          const { let: letThrough, ...answer } = await canUseTool(ask);
+          // A step that changes something goes into the bot's list, with what let it through.
+          if (answer.behavior === 'allow' && letThrough) {
+            const step = ask.toolName === 'mcp__yumakbot__run_command' ? 'Bash' : ask.toolName;
+            const input = step === 'Bash' ? { command: ask.input.command } : ask.input;
+            const server = tools.find((x) => toolPermName(x) === ask.toolName)?.server;
+            const said = describeAction(step, input, {
+              bot: bot.name,
+              locale,
+              service: server ? connectionNames.get(server) : undefined,
+            });
+            await this.services.actions
+              .record({
+                botId: bot.id,
+                threadId: thread.id,
+                turnId: turn.id,
+                toolName: step,
+                summary: said.detail ? `${said.step}: ${said.detail}` : said.step,
+                how: letThrough.how,
+                rule: letThrough.rule ?? null,
+                approvalId: letThrough.approvalId ?? null,
+                outside: !!outside(),
+              })
+              .catch((err: unknown) => console.warn(`Could not keep a bot's step: ${String(err)}`));
+          }
           // A page, a search or a host a command reaches answers with text from outside.
           if (answer.behavior === 'allow' && WEB_READS.includes(ask.toolName)) await readOutside('web');
           if (

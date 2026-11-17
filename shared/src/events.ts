@@ -18,6 +18,7 @@ export type RefreshScope =
   | { scope: 'channels' }
   | { scope: 'tickets' }
   | { scope: 'tables'; botId: string }
+  | { scope: 'actions'; botId: string }
   | { scope: 'info' };
 
 export interface HelloEvent {

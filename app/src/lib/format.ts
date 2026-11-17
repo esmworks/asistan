@@ -19,6 +19,7 @@ export function formatters(locale: Locale) {
   const weekdayShort = new Intl.DateTimeFormat(tag, { weekday: 'short' });
   const decimal = new Intl.NumberFormat(tag, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const dollars = new Intl.NumberFormat(tag, { style: 'currency', currency: 'USD' });
+  const plain = new Intl.NumberFormat(tag, { maximumFractionDigits: 6 });
   // A day key is a calendar date, not a moment: read and shown in UTC so no time zone shifts it.
   const calendar = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'long', timeZone: 'UTC' });
   const calendarShort = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -53,6 +54,11 @@ export function formatters(locale: Locale) {
     /** A YYYY-MM-DD day: "16 Kasım" / "November 16", or short: "16 Kas". */
     calendarDay(key: string, short = false): string {
       return (short ? calendarShort : calendar).format(new Date(`${key}T00:00:00Z`));
+    },
+
+    /** A plain number with the language's separators: "1.500,5" / "1,500.5". */
+    number(n: number): string {
+      return plain.format(n);
     },
 
     fileSize(n: number): string {

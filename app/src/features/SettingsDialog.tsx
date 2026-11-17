@@ -1157,6 +1157,7 @@ function NoProvider({ onAdd }: { onAdd(): void }) {
 
 function Permissions() {
   const t = useT();
+  const f = useFormat();
   const { data: rules = [] } = useRules();
   const { data: connections = [] } = useConnections();
   const { data: bots = [] } = useBots();
@@ -1165,14 +1166,25 @@ function Permissions() {
   const qc = useQueryClient();
   const [pattern, setPattern] = useState('');
   const [list, setList] = useState<'ask' | 'allow' | 'block'>('ask');
+  // An amount limit is optional; both parts or neither go with the rule.
+  const [field, setField] = useState('');
+  const [limit, setLimit] = useState('');
+  const limitNumber = limit.trim() ? Number(limit.trim().replace(',', '.')) : null;
+  const limitBad = !!limit.trim() && (!Number.isFinite(limitNumber) || (limitNumber ?? 0) < 0);
+  const limited = !!field.trim() && limitNumber !== null && !limitBad;
   const add = useMutation({
-    mutationFn: () => api.addRule({ list, pattern }),
+    mutationFn: () =>
+      api.addRule({ list, pattern, ...(limited && { field: field.trim(), limit: limitNumber! }) }),
     onSuccess: () => {
       setPattern('');
+      setField('');
+      setLimit('');
       void qc.invalidateQueries({ queryKey: ['rules'] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  // Half a limit would be dropped without a word; the rule waits until both parts are there.
+  const limitIncomplete = !!field.trim() !== !!limit.trim() || limitBad;
   const remove = useMutation({
     mutationFn: api.removeRule,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rules'] }),
@@ -1186,7 +1198,14 @@ function Permissions() {
           // The readable name on top, the rule as it is matched under it, and the one bot it is for.
           const label = ruleLabel(r.pattern, t, apps);
           const forBot = r.botId ? t('rules.forBot', { bot: botNames.get(r.botId) ?? r.botId }) : '';
-          const hint = [label ? r.pattern : '', forBot].filter(Boolean).join(' · ');
+          const bound =
+            r.field && typeof r.limit === 'number'
+              ? t(r.list === 'allow' ? 'rules.limitAllow' : 'rules.limitOver', {
+                  field: r.field,
+                  limit: f.number(r.limit),
+                })
+              : '';
+          const hint = [label ? r.pattern : '', bound, forBot].filter(Boolean).join(' · ');
           return (
             <Row key={r.id} label={label ?? r.pattern} hint={hint || undefined}>
               <Button
@@ -1206,31 +1225,55 @@ function Permissions() {
   return (
     <>
       <form
-        className="mb-6 flex gap-2"
+        className="mb-6 space-y-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (pattern.trim()) add.mutate();
+          if (pattern.trim() && !limitIncomplete) add.mutate();
         }}
       >
-        <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow' | 'block')}>
-          <SelectTrigger className="w-48 rounded-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ask">{t('rules.ask')}</SelectItem>
-            <SelectItem value="allow">{t('rules.allow')}</SelectItem>
-            <SelectItem value="block">{t('rules.block')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          value={pattern}
-          onChange={(e) => setPattern(e.target.value)}
-          placeholder={t('rules.placeholder')}
-          className="flex-1 rounded-full"
-        />
-        <Button className="rounded-full" disabled={!pattern.trim()}>
-          {t('common.add')}
-        </Button>
+        <div className="flex gap-2">
+          <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow' | 'block')}>
+            <SelectTrigger className="w-48 rounded-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ask">{t('rules.ask')}</SelectItem>
+              <SelectItem value="allow">{t('rules.allow')}</SelectItem>
+              <SelectItem value="block">{t('rules.block')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            placeholder={t('rules.placeholder')}
+            className="flex-1 rounded-full"
+          />
+          <Button className="rounded-full" disabled={!pattern.trim() || limitIncomplete}>
+            {t('common.add')}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{t('rules.limit')}</span>
+          <Input
+            value={field}
+            onChange={(e) => setField(e.target.value)}
+            placeholder={t('rules.limitField')}
+            aria-label={t('rules.limitField')}
+            className="h-8 w-40 rounded-full"
+          />
+          <Input
+            value={limit}
+            onChange={(e) => setLimit(e.target.value)}
+            inputMode="decimal"
+            placeholder={t('rules.limitValue')}
+            aria-label={t('rules.limitValue')}
+            aria-invalid={limitBad || undefined}
+            className="h-8 w-28 rounded-full"
+          />
+        </div>
+        <p className={cn('text-xs', limitBad ? 'text-destructive' : 'text-muted-foreground')}>
+          {t(limitBad ? 'rules.limitInvalid' : 'rules.limitHint')}
+        </p>
       </form>
       {section('ask', 'rules.ask', 'rules.askHint')}
       {section('allow', 'rules.allow', 'rules.allowHint')}

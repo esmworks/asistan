@@ -38,6 +38,7 @@ import {
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MODE_LABEL } from './RightPanel';
+import { InstructionsDocStatus } from './InstructionsDoc';
 import { availableStarters, starterBot, type StarterId } from './onboarding/profile';
 import { MissingApps } from './MissingApps';
 import { Field } from './RoutineDialog';
@@ -61,6 +62,8 @@ const NO_GROUP = '__none__';
 /** Tool names as cards name them; examples, the same in every language. */
 const TOOLS_EXAMPLE = 'Read\nmcp__yumakbot__memory_*\nmcp__gmail__search_threads';
 const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__yumakbot__browser_*';
+/** An instructions document address; an example, the same in every language. */
+const DOC_EXAMPLE = 'https://github.com/…/BOT.md';
 
 /** Validation messages are message keys; `Field` shows them in the current language. */
 const Form = z
@@ -81,6 +84,11 @@ const Form = z
     toolsExclude: z.string().max(80_000),
     internet: z.boolean(),
     projectDir: z.string().max(1000),
+    instructionsUrl: z
+      .string()
+      .trim()
+      .max(1000)
+      .refine((v) => !v || /^https:\/\/\S+$/i.test(v), 'bot.instructionsUrlInvalid'),
     engine: z.enum(['claude', 'pi']),
     provider: z.string(),
     model: z.string().trim().max(100),
@@ -113,6 +121,7 @@ function initial(bot?: Bot, start: BotEngine = { engine: 'claude', model: '' }):
     toolsExclude: bot?.toolSelection.exclude.join('\n') ?? '',
     internet: bot?.internet ?? true,
     projectDir: bot?.projectDir ?? '',
+    instructionsUrl: bot?.instructionsUrl ?? '',
     engine: bot?.engine ?? start.engine,
     ...modelFields(bot ?? start),
   };
@@ -200,6 +209,13 @@ function BotForm({
   });
   const v = useWatch({ control: form.control }) as Form;
   const { isDirty } = form.formState;
+  // Instructions taken from the document while the form is open replace the ones it opened with,
+  // so unlinking later does not write the old text back.
+  const savedInstructions = bot?.instructions;
+  useEffect(() => {
+    if (savedInstructions === undefined || form.getFieldState('instructions').isDirty) return;
+    form.resetField('instructions', { defaultValue: savedInstructions });
+  }, [savedInstructions, form]);
   useEffect(() => {
     onDirty(isDirty);
   }, [isDirty, onDirty]);
@@ -238,10 +254,14 @@ function BotForm({
     mutationFn: async (f: Form) => {
       let groupId: string | null = f.groupId === NO_GROUP ? null : f.groupId;
       if (f.newGroup.trim()) groupId = (await api.createGroup(f.newGroup.trim())).id;
+      const instructionsUrl = f.instructionsUrl.trim() || null;
       const body = {
         name: f.name,
         description: f.description,
-        instructions: f.instructions,
+        // Instructions kept in a document come from there, once the person accepts them.
+        ...(!instructionsUrl && { instructions: f.instructions }),
+        // An older server does not know the field; it goes only when there is something to say.
+        ...((instructionsUrl || bot?.instructionsUrl) && { instructionsUrl }),
         groupId,
         color: f.color,
         avatar: f.avatar,
@@ -361,9 +381,14 @@ function BotForm({
           <Textarea
             {...form.register('instructions')}
             rows={5}
-            className="rounded-xl"
+            readOnly={!!v.instructionsUrl?.trim()}
+            className={cn('rounded-xl', v.instructionsUrl?.trim() && 'text-muted-foreground')}
             placeholder={t('bot.instructionsPlaceholder')}
           />
+          {v.instructionsUrl?.trim() && !bot?.instructionsUrl && (
+            <p className="text-xs text-muted-foreground">{t('bot.instructionsFromDoc')}</p>
+          )}
+          {bot && <InstructionsDocStatus bot={bot} />}
           <MissingApps text={v.instructions ?? ''} botId={bot?.id ?? null} />
         </Field>
         <ModelPicker
@@ -434,6 +459,15 @@ function BotForm({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{t(`bot.modeHint.${v.permissionMode}`)}</p>
+              </Field>
+              <Field label={t('bot.instructionsUrl')} error={err.instructionsUrl?.message}>
+                <Input
+                  {...form.register('instructionsUrl')}
+                  className="rounded-xl"
+                  inputMode="url"
+                  placeholder={DOC_EXAMPLE}
+                />
+                <p className="text-xs text-muted-foreground">{t('bot.instructionsUrlHint')}</p>
               </Field>
               <Field label={t('bot.projectDir')}>
                 <Input

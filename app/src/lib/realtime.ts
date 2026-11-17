@@ -109,6 +109,8 @@ function refresh(qc: QueryClient, e: RefreshScope) {
     case 'approvals':
       inv('approvals');
       inv('summaries');
+      // An answered card counts toward ways to ask less.
+      inv('suggestions');
       break;
     case 'memory':
       inv('memory');
@@ -121,6 +123,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       break;
     case 'rules':
       inv('rules');
+      inv('suggestions');
       break;
     case 'vault':
       inv('vault');
@@ -141,6 +144,9 @@ function refresh(qc: QueryClient, e: RefreshScope) {
     case 'tables':
       inv('tables', e.botId);
       inv('table-rows');
+      break;
+    case 'actions':
+      inv('actions', e.botId);
       break;
     case 'info':
       inv('info');

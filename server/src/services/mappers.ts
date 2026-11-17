@@ -45,6 +45,10 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   memory: r.memory,
   effort: r.effort,
   toolSelection: (r.toolSelection as ToolSelection | null) ?? ALL_TOOLS,
+  instructionsUrl: r.instructionsUrl,
+  instructionsPending: r.instructionsPending,
+  instructionsCheckedAt: iso(r.instructionsCheckedAt),
+  instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
@@ -105,6 +109,8 @@ export const toRule = (r: Row<typeof schema.permissionRules>): PermissionRule =>
   pattern: r.pattern,
   note: r.note,
   botId: r.botId ?? null,
+  field: r.field ?? null,
+  limit: r.limit ?? null,
   createdAt: r.createdAt.toISOString(),
 });
 

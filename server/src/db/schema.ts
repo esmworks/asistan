@@ -58,6 +58,18 @@ export const bots = pgTable('bots', {
   effort: text('effort').notNull().default(''),
   /** Which tools the bot gets (`ToolSelection`); null for every tool. */
   toolSelection: jsonb('tool_selection'),
+  /**
+   * A document the instructions are kept in, read now and then. What it says reaches the bot only
+   * after the person accepts it: a change waits in `instructionsPending` until then.
+   */
+  instructionsUrl: text('instructions_url'),
+  /** The document's text that differs from the instructions and waits for the person; kept as they are. */
+  instructionsPending: text('instructions_pending'),
+  /** The fingerprint of the document's text the person last accepted or turned down. */
+  instructionsDocHash: text('instructions_doc_hash'),
+  instructionsCheckedAt: ts('instructions_checked_at'),
+  /** Why the document could not be read the last time; null when it was. */
+  instructionsError: text('instructions_error'),
   archivedAt: ts('archived_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
@@ -246,10 +258,41 @@ export const approvals = pgTable(
     remembered: boolean('remembered').notNull().default(false),
     /** Asked in a run outside text started: "always allow" is not taken from it. */
     outside: boolean('outside').notNull().default(false),
+    /**
+     * Who closed the card: the person pressing a button, a rule they made on another card, or
+     * their message in the chat in place of an answer. Null on cards from before it was kept.
+     */
+    decidedBy: text('decided_by', { enum: ['person', 'rule', 'typed'] }),
     createdAt: created(),
     decidedAt: ts('decided_at'),
   },
   (t) => [index('approvals_status_idx').on(t.status)],
+);
+
+/**
+ * A step that changes something which a bot was let through, and what let it: the person on a
+ * card, a rule, the bot's level, or the reviewer. Reads are not kept.
+ */
+export const botActions = pgTable(
+  'bot_actions',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    turnId: text('turn_id'),
+    toolName: text('tool_name').notNull(),
+    summary: sealedText('summary').notNull().default(''),
+    how: text('how', { enum: ['card', 'rule', 'level', 'review'] }).notNull(),
+    /** The rule that let it through, when one did. */
+    rule: text('rule'),
+    approvalId: text('approval_id'),
+    /** Taken in a run outside text started. */
+    outside: boolean('outside').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('bot_actions_bot_idx').on(t.botId, t.createdAt)],
 );
 
 export const permissionRules = pgTable('permission_rules', {
@@ -262,6 +305,13 @@ export const permissionRules = pgTable('permission_rules', {
    * the bot that asked, since another bot's work is another matter.
    */
   botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
+  /**
+   * An amount limit, set both or neither: the dotted path of a number in the call's input
+   * (`amount`), and the line. An allow rule covers a call at or under it; an ask or block rule one
+   * over it, or one whose amount cannot be read.
+   */
+  field: text('field'),
+  limit: doublePrecision('limit_value'),
   createdAt: created(),
 });
 

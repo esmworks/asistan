@@ -1343,6 +1343,7 @@ export class ToolFactory {
             memory: true,
             effort: '',
             toolSelection: ALL_TOOLS,
+            instructionsUrl: null,
           });
           await audit('create', created.id, null, created);
           return t('tool.created', { name: created.name, id: created.id });
@@ -1388,6 +1389,9 @@ export class ToolFactory {
         async (a) => {
           const target = await s.bots.resolve(a.bot, manager);
           if (target.isManager && target.id !== manager.id) return t('tool.otherManager');
+          // Instructions kept in a document change there, by whoever keeps the document.
+          if (a.instructions !== undefined && target.instructionsUrl)
+            return t('tool.instructionsLinked', { bot: target.name });
           let modelPatch = {};
           if (a.engine !== undefined || a.model !== undefined) {
             const engine = a.engine ?? target.engine;

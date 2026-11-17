@@ -46,7 +46,9 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { ComputerCard, useBrowserAvailable } from './Computer';
 import { canPreview, usePreview } from './FilePreview';
+import { BotSteps, BotSuggestions } from './BotSteps';
 import { BotTables } from './BotTables';
+import { InstructionsDocNotice } from './InstructionsDoc';
 import { AppLogo, openTo, useToggleBot } from './Connections';
 import { RoutineDialog } from './RoutineDialog';
 
@@ -125,7 +127,10 @@ export function RightPanel({ bot, beside }: { bot: Bot; beside?: boolean }) {
         <TabsContent value="activity" className="mt-4 space-y-6">
           {/* A bot with the internet off gets no browser. */}
           {browser && bot.internet !== false && <ComputerCard bot={bot} />}
+          <InstructionsDocNotice bot={bot} />
+          <BotSuggestions bot={bot} />
           <Upcoming bot={bot} />
+          <BotSteps bot={bot} />
           <BotApps bot={bot} />
           <BotSkills bot={bot} />
           <BotTables bot={bot} />

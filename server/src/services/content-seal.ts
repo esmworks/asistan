@@ -64,6 +64,11 @@ const SEALED: Sealed[] = [
     columns: [['values', schema.botTableRows.values, 'json']],
   },
   {
+    table: schema.botActions,
+    id: schema.botActions.id,
+    columns: [['summary', schema.botActions.summary, 'text']],
+  },
+  {
     table: schema.approvals,
     id: schema.approvals.id,
     columns: [
