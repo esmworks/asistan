@@ -3,6 +3,93 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## 0.4.0 — 2026-11-17
+
+### Safety
+
+- A routine started by outside text (a mail, a webhook's body, a watched page, an app's new answer) asks before every
+  change: "always allow" rules do not count, the auto review is skipped, and only reads and talking to the person go
+  without a card. Reaching the web asks too, since an address could carry away what the bot read. The card says what
+  started the run and offers no "always allow". The same holds for a later turn that reads that text: a resumed
+  session, a routine report read in the main chat, or a report carried into the next run. A read-only bot stays
+  read-only, and runs the person starts are as before.
+- A mail or watched change that arrives while its routine is still running waits and starts once the run ends, instead
+  of being dropped; pausing the routine drops what waited.
+- Block a tool outright: a block rule refuses the call in every mode, before any other rule, review or card, and tells
+  the bot so. A card's "Never allow" adds one; blocks are listed with the other rules under Settings → Permissions.
+- Encrypt conversations in the database (Settings → Vault): message text, turn prompts, memory notes, bot-to-bot
+  requests, mail and ticket text are stored with AES-256-GCM under a key derived from the vault key, which lives in the
+  data folder and never in the database. Turning it on or off converts what is stored in the background; a value that
+  cannot be opened is never written over and is counted in the settings. Text search is slower while it is on.
+
+### Board
+
+- A board of tickets the person and the bots work from, with a status, priority, assignee and comments. Assigning a
+  ticket to a bot starts it in a conversation of the ticket's own; its reply comes back as a comment and the ticket
+  moves to review, where a comment from the person sends it back. Bots list, read, open and update tickets; a ticket a
+  bot opens while working on one waits for the person instead of starting its assignee.
+- The board fills the window with five columns, cards show the priority, the bot, a line of the description and
+  whether the bot is working on it, and a ticket opens beside the columns. Cards are dragged between columns and into
+  any place in a column; a move that would start a bot asks first. The board can be searched and filtered.
+
+### Bots
+
+- Bots get mail addresses of their own under a domain set in Settings → Chat apps. The server runs no mail server: a
+  relay (Cloudflare Email Routing, a provider's inbound webhook) posts each message with a secret, and attachments go
+  to the bot's folder. Mail starts a bot only through routines marked to run on mail, filtered by sender, subject or
+  text, and is outside data wherever the bot reads it.
+- API keys a bot never sees: a key is saved by name for one address and sealed with the vault key. A bot asks for one
+  on a card that shows where it will go and names it in `api_request`; the server adds the key to requests for that
+  address alone, does not follow redirects and takes the key out of the response. Keys are listed in the vault.
+- An OpenAPI JSON document, added by address or pasted, lets a bot list its operations and call one by its id; the
+  request goes only to that API, through the saved key the person picked, and operations that change something ask.
+- Teach a bot a task by showing it: start teach mode in the bot's browser, do the task once, and get a skill back to
+  look over and save. Typing into password fields is never recorded.
+- A bot can keep tables with typed columns; the person reads, corrects and downloads them from the bot's panel.
+
+### Connections
+
+- Install a plugin from its address, in the shared format or as a Claude Code plugin: its remote MCP servers and
+  skills are listed, the person picks what goes in, and they install as ordinary connections and switched-off skills.
+  Parts that would run the plugin's own code on the server (hooks, local servers) are never installed and are named.
+- A routine's webhook takes GitHub events: calls signed with `X-Hub-Signature-256` are checked against the routine's
+  secret, the filter reads the event kind as `event`, and GitHub's set-up ping only answers. The routine dialog walks
+  through adding the webhook on GitHub.
+- Settings → AI services sets three services of the person's own: memory search by meaning through an
+  OpenAI-compatible embedding service (such as bge-m3 on Ollama), speech to text through a Whisper server and reading
+  aloud through a Kokoro server. Plain http is accepted only on the private network. When left empty, the
+  `AI_EMBEDDINGS_*`, `STT_*` and `TTS_*` environment variables apply.
+
+### Memory
+
+- A search finds notes near the query in meaning, with word matches ranked higher; it falls back to words while the
+  embedding service is down.
+- A note keeps the conversation it was written in and the page the fact came from, with anything that could sign
+  someone in taken out of the address.
+
+### Routines
+
+- A routine keeps the instructions it has had; an older one can be compared with the current text and brought back.
+- An instruction that names an app the bot cannot use yet says so, with a way to connect it.
+
+### Chat
+
+- Pages a bot builds can be shared by link with someone without an account, served sandboxed as the app frames them;
+  links are turned off from the page card or the vault. The page card also opens the page with the print dialog, to
+  save it as a PDF.
+- Voice notes from Telegram and WhatsApp are written out, so the bot reads what was said.
+- Replies read aloud pause at headings, list items and table rows and leave out emoji, addresses and drawn marks; the
+  most natural system voice is chosen, and a reply in English is read with an English voice. The reading speed is a
+  slider from 0.5x to 2x that a reply being read follows as it moves.
+
+### Apps
+
+- In the desktop app, Cmd/Ctrl+Shift+Space opens a small window listing what the bots wait on, answered from the
+  keyboard without switching to the app; it can be turned off from the menu bar.
+- Each kind of notice has its own sound, so a question, a permission request and an error can be told apart.
+- The folded sidebar keeps the today, board and apps buttons, two to a row, and is wider; a room's faces fit the square
+  of a bot's avatar; the sidebar's footer stays tidy at every width.
+
 ## 0.3.0 — 2026-11-17
 
 ### Safety

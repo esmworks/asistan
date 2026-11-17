@@ -18,7 +18,7 @@ const answer = (r: AskResult) =>
 
 /** The tools an outside agent gets: the bots, and a way to ask one and read its reply. */
 function server(s: Services): McpServer {
-  const mcp = new McpServer({ name: 'yumakbot', version: '0.3.0' });
+  const mcp = new McpServer({ name: 'yumakbot', version: '0.4.0' });
   mcp.registerTool(
     'list_bots',
     { description: 'List the bots in Yumak Bot: their ids, names and what each is for.', inputSchema: {} },
