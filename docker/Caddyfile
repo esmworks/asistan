@@ -7,6 +7,10 @@
 }
 
 {$YUMAKBOT_DOMAIN} {
+	# Browsers that have once opened the site go straight to HTTPS from then on, so a network in the
+	# middle cannot keep them on plain HTTP and read the session cookie. Set after the server's own
+	# copy (`>`), so the reply carries it once.
+	header >Strict-Transport-Security "max-age=31536000"
 	reverse_proxy 127.0.0.1:{$YUMAKBOT_PORT:4319} {
 		# Tells the server this request came through the proxy, so it may count sign-in attempts by
 		# the address Caddy writes into X-Forwarded-For instead of the proxy's own.

@@ -122,7 +122,17 @@ Pushing a version tag (`v` and the version in `desktop/package.json`) runs the R
 installers and attaches them to a draft release for that tag. It signs and notarizes the macOS app with these
 repository secrets: `MAC_CERTIFICATE` (the Developer ID Application certificate exported as `.p12`, base64-encoded),
 `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. The Windows installer is not
-signed yet, so Windows shows a SmartScreen warning before it runs.
+signed yet, so Windows shows a SmartScreen warning before it runs. To sign it, add a code signing certificate as the
+secrets `WIN_CERTIFICATE` (the `.p12`, base64-encoded) and `WIN_CERTIFICATE_PASSWORD`; the workflow hands them to
+electron-builder as `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`. A signed installer records the certificate's publisher
+name, and from then on the installed app refuses an update that is not signed by the same publisher. Certificates
+issued since mid-2023 keep their key on hardware or in a cloud service rather than in a `.p12`; for Azure Trusted
+Signing, set `win.azureSignOptions` in `desktop/electron-builder.yml` and give the job the `AZURE_TENANT_ID`,
+`AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` secrets instead.
+
+Until then the Windows and AppImage updates are trusted because they come from this repository's own release: the
+`latest*.yml` file there names each installer with its SHA-512, and only the release workflow's last job, which runs
+none of the project's code or dependencies, can write to a release.
 
 The installed app updates itself from the latest published release: it looks for a new version at start and every six
 hours, downloads it in the background and offers to restart into it; a version left waiting installs when the app
@@ -209,6 +219,10 @@ pnpm --filter @yumakbot/mobile start
 
 `pnpm --filter @yumakbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
 name, icon and network settings.
+
+A server on the internet is reached over HTTPS: an address typed without `http://` or `https://` falls back to plain
+http only for this device, the local network (private addresses, `.local`, single-word names) and a Tailscale tailnet,
+and an `http://` address on the internet is used only after a warning. iOS allows plain http only on the local network.
 
 ## Development
 

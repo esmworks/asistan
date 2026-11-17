@@ -661,9 +661,10 @@ async function switchTo(next: DesktopConfig) {
 function hardenSessions() {
   // Everything is refused except, for the app's own page, writing to the clipboard (copying a
   // picture has no other route there) and the microphone alone (speaking a message instead of
-  // typing it). The camera and the screen stay closed.
+  // typing it). The camera and the screen stay closed. Only the top frame counts: a frame inside the
+  // page (a bot's page, a connected app) gets nothing, even one served from the same address.
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) => {
-    if (!isAppOrigin(details.requestingUrl)) return cb(false);
+    if (!details.isMainFrame || !isAppOrigin(details.requestingUrl)) return cb(false);
     if (perm === 'clipboard-sanitized-write') return cb(true);
     const media = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
     cb(perm === 'media' && media.length > 0 && media.every((m) => m === 'audio'));
@@ -674,7 +675,9 @@ function hardenSessions() {
       return { action: 'deny' };
     });
     contents.on('will-navigate', (e, url) => {
-      const allowed = url.startsWith('file://') || (!!origin && url.startsWith(origin));
+      // The origin is compared whole: a prefix would also let https://bot.example.com.evil.net or
+      // https://bot.example.com@evil.net through.
+      const allowed = url.startsWith('file://') || isAppOrigin(url);
       if (!allowed) {
         e.preventDefault();
         if (/^https?:\/\//.test(url)) void shell.openExternal(url);

@@ -38,7 +38,7 @@ import { computerErrorText } from './tools/computer';
 import { linkComputer } from './egress/computer-link';
 import { EgressHub, startLocalSocks } from './egress/hub';
 import type { Config } from './config';
-import { appPolicy } from './csp';
+import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
 import { setContentKey } from './db/sealed';
@@ -333,6 +333,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     reply.code(err.status).send({ error: err.localized(await requestT(req.headers)) });
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (config.secureCookies) void reply.header('strict-transport-security', STRICT_TRANSPORT_SECURITY);
     const problem = checkHostOrigin(
       { host: req.headers.host, origin: req.headers.origin, method: req.method },
       config,

@@ -2,9 +2,12 @@
 #   cp docker/.env.example docker/.env   (fill in the values)
 #   docker compose -f docker/compose.yml up -d --build
 name: yumakbot
+# Images from elsewhere are pinned to a version and its digest, so a server gets what this release was
+# tried with, and a changed or taken-over tag cannot slip other code in. They move with Yumak Bot's
+# releases; the *_VERSION variables choose another version (a tag, with or without its digest).
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:${POSTGRES_VERSION:-17.12-alpine@sha256:a77aa70e641402a21411b92b721c58d10f23b50ae5fdd2333efd22d166e1e5f7}
     restart: unless-stopped
     environment:
       POSTGRES_USER: yumakbot
@@ -105,7 +108,7 @@ services:
   # host and HTTPS from Cloudflare. Started only with `--profile cloudflare`; see "Uzaktan erişim"
   # in docker/README.md.
   cloudflared:
-    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d}
     profiles: [cloudflare]
     restart: unless-stopped
     command: tunnel --no-autoupdate run
@@ -124,7 +127,7 @@ services:
   # with no port open on this host. Started only with `--profile tailscale`; see "Uzaktan erişim"
   # in docker/README.md.
   tailscale:
-    image: tailscale/tailscale:${TAILSCALE_VERSION:-latest}
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.104.7@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4}
     profiles: [tailscale]
     restart: unless-stopped
     hostname: ${TAILSCALE_HOSTNAME:-yumakbot}
@@ -140,8 +143,15 @@ services:
     depends_on:
       yumakbot: { condition: service_healthy }
     networks: [edge, outbound]
+    # In user space Tailscale needs no capability, no TUN device and no writable root: its state is on
+    # the volume and its control socket in /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     mem_limit: 256m
+    pids_limit: 128
 
 networks:
   # Database traffic only; no route to the internet.
