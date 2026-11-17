@@ -138,6 +138,31 @@
   scrollbar-color: color-mix(in oklab, var(--foreground) 18%, transparent) transparent;
 }
 
+/*
+ * Fades a scrolling list's bottom edge while more of it lies below, so an item cut by the edge
+ * reads as the list going on. The fade follows the scroll and is gone at the end; a list that
+ * does not scroll, or a browser without scroll-driven animations, keeps a plain edge.
+ */
+@property --fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes fade-end {
+  0%,
+  90% {
+    --fade-end: 2.5rem;
+  }
+  100% {
+    --fade-end: 0px;
+  }
+}
+.scroll-fade-end {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-end)), transparent);
+  animation: fade-end linear both;
+  animation-timeline: scroll(self);
+}
+
 .prose-chat p {
   margin: 0.4em 0;
 }

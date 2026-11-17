@@ -144,7 +144,7 @@ function SidebarPanel({
         <div className="window-drag h-12 shrink-0" />
         <div
           ref={scroller}
-          className="scroll-thin flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto pb-4"
+          className="scroll-thin scroll-fade-end flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto pb-4"
         >
           {(pinned.length > 0 || dragging) && (
             <SectionBox section={PINNED} className="flex flex-col items-center gap-1 p-0.5">
@@ -167,8 +167,9 @@ function SidebarPanel({
           ))}
           <RoomRail />
         </div>
-        {/* The line marks where the list scrolls under, so a half-hidden icon reads as more list. */}
-        <div className="flex flex-col items-center gap-2 border-t py-3">
+        {/* The line marks where the list scrolls under, so a half-hidden icon reads as more list.
+            The same buttons as the wide sidebar's footer, so folding it hides nothing. */}
+        <div className="flex flex-col items-center gap-1 border-t py-3">
           <RoundButton
             label={t('sidebar.newBot')}
             onClick={() => openBotDialog({ mode: 'create' })}
@@ -176,6 +177,30 @@ function SidebarPanel({
             side="right"
           >
             <Plus />
+          </RoundButton>
+          <RoundButton
+            label={t('today.title')}
+            onClick={() => useUi.getState().setTodayOpen(true)}
+            variant="ghost"
+            side="right"
+          >
+            <CalendarCheck />
+          </RoundButton>
+          <RoundButton
+            label={t('board.title')}
+            onClick={() => useUi.getState().setBoardOpen(true)}
+            variant="ghost"
+            side="right"
+          >
+            <KanbanSquare />
+          </RoundButton>
+          <RoundButton
+            label={t('apps.open')}
+            onClick={() => openApps({ botId: null })}
+            variant="ghost"
+            side="right"
+          >
+            <Blocks />
           </RoundButton>
           <RoundButton
             label={t('settings.title')}
