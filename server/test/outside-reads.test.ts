@@ -228,8 +228,18 @@ describe('bağlı uygulamanın kendine "salt okunur" demesi', () => {
     expect(takesAddress(undefined)).toBe(false);
   });
 
-  it('sonucu dışarıdan gelen araçları türüyle tanır', () => {
-    expect(outsideRead(tool({}), true, true)).toBe('web');
+  it('sonucu dışarıdan gelen araçları türüyle tanır, bağlı uygulamanın verisini değil', () => {
+    expect(outsideRead(tool({ name: 'browser_open', server: undefined }), true, true)).toBe('web');
+    expect(outsideRead(tool({ name: 'api_request', server: undefined }), true, false)).toBe('web');
+    // A connected app's answer is the person's own data; one that takes an address reads the web.
+    expect(outsideRead(tool({ name: 'searchOrders' }), true, false)).toBeNull();
+    expect(
+      outsideRead(
+        tool({ jsonSchema: { type: 'object', properties: { url: { type: 'string' } } } }),
+        true,
+        false,
+      ),
+    ).toBe('web');
     expect(outsideRead(tool({ name: 'email_read', server: undefined }), true, true)).toBe('email');
     expect(outsideRead(tool({ name: 'table_rows', server: undefined }), false, false)).toBe('stored');
     expect(outsideRead(tool({ name: 'table_rows', server: undefined }), false, true)).toBeNull();
