@@ -26,13 +26,14 @@ import {
   askRuleMatches,
   blockRuleFor,
   decide,
+  modeFor,
   READ_ONLY_TOOLS,
   summarize,
 } from '../services/approvals';
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { markedOutside, outsideSource } from './outside';
+import { markedOutside, outsideFreeTools, outsideSource } from './outside';
 import { ownerWords, quoteFound } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
@@ -44,6 +45,7 @@ import type { Services } from '../services';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
+type OutsideTrigger = NonNullable<(typeof schema.routineRuns.$inferSelect)['trigger']>;
 
 const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
 
@@ -603,6 +605,17 @@ export class TurnManager {
     const inRoom = thread.kind === 'room';
     // The person is in the room while its bots talk, as with their own messages.
     const present = attended(turn.source) || inRoom;
+    // What outside text started the turn's routine run (a mail, a webhook's body, a watched page,
+    // an app's new answer): the bot then changes nothing and reaches no web page without a card,
+    // whatever its level. Webhook posts handed to an unattended turn below count the same.
+    let outside: OutsideTrigger | null = null;
+    if (turn.routineRunId) {
+      const [run] = await this.ctx.db
+        .select({ trigger: schema.routineRuns.trigger })
+        .from(schema.routineRuns)
+        .where(eq(schema.routineRuns.id, turn.routineRunId));
+      outside = run?.trigger ?? null;
+    }
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -755,11 +768,12 @@ export class TurnManager {
       ) {
         return { behavior: 'deny', message: t('turn.safetyFloor') };
       }
-      let free = readOnlyTools;
+      // Outside text started the run: only reads and talking to the person go without a card.
+      let free = outside ? outsideFreeTools(tools) : readOnlyTools;
       const appTool = tools.find((t) => toolPermName(t) === ask.toolName);
       const gated = !!appTool?.gated && (await appTool.gated(ask.input));
       if (gated) {
-        free = new Set(readOnlyTools);
+        free = new Set(free);
         free.delete(ask.toolName);
       }
       // Reading a page is a plain read only on the public internet: an address on this computer or
@@ -775,9 +789,12 @@ export class TurnManager {
       // Read for every call: "Hep izin ver" on an earlier card of this turn must count here, and so
       // must an approval level the person changed while the bot works.
       const rules = await approvals.rules();
-      const mode = await bots.get(bot.id).then(
-        (b) => b.permissionMode,
-        () => bot.permissionMode,
+      const mode = modeFor(
+        await bots.get(bot.id).then(
+          (b) => b.permissionMode,
+          () => bot.permissionMode,
+        ),
+        !!outside,
       );
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
@@ -800,6 +817,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
+        outside: !!outside,
       });
       if (verdict === 'allow') return { behavior: 'allow' };
       if (verdict === 'block')
@@ -840,6 +858,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
+        outside: !!outside,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -849,6 +868,8 @@ export class TurnManager {
             props: {
               approvalId: a.id,
               ...held,
+              // The card says what started the run, and offers no "always allow".
+              ...(outside ? { outside } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
@@ -864,20 +885,23 @@ export class TurnManager {
     const roomPrompt = (fresh: boolean) =>
       this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t });
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
-    const handoff = async () =>
-      inRoom
-        ? roomPrompt(true)
-        : handoffPrompt({
-            messages: (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
-              (m) => new Date(m.createdAt) <= turn.createdAt,
-            ),
-            prompt: asked,
-            names: new Map([
-              ...(settings.userName ? [['user', settings.userName] as const] : []),
-              ...allBots.map((b) => [`bot:${b.id}`, b.name] as const),
-            ]),
-            locale,
-          });
+    const handoff = async () => {
+      if (inRoom) return roomPrompt(true);
+      const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
+        (m) => new Date(m.createdAt) <= turn.createdAt,
+      );
+      // A webhook post among them is read again by a new session: unattended, as below.
+      if (!present && !outside && messages.some((m) => m.props.posted)) outside = 'webhook';
+      return handoffPrompt({
+        messages,
+        prompt: asked,
+        names: new Map([
+          ...(settings.userName ? [['user', settings.userName] as const] : []),
+          ...allBots.map((b) => [`bot:${b.id}`, b.name] as const),
+        ]),
+        locale,
+      });
+    };
     // Skills the person named with `$name` are read before the work starts.
     const tagged = skills.filter((k) => taggedSkill(turn.prompt, k.name));
     const asked = tagged.length
@@ -904,6 +928,9 @@ export class TurnManager {
         })
         .slice(-5);
       if (!posts.length) return prompt;
+      // A webhook post is someone else's words: with nobody watching, the turn reading it is run
+      // as one a webhook started.
+      if (!present && !outside && posts.some((m) => m.props.posted)) outside = 'webhook';
       return `${t('prompt.postedSince', { posts: posts.map((m) => postedText(m, t)).join('\n\n') })}\n\n${prompt}`;
     };
     // The bot's plan is one message per turn, rewritten as the plan changes.

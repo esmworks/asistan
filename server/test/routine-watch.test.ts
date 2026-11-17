@@ -1,5 +1,6 @@
 import type { Routine, RoutineRun } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { schema } from '../src/db';
 import { pageText } from '../src/services/routines';
 import type * as SkillLink from '../src/services/skill-link';
 import { testServer, type TestServer } from './helpers';
@@ -52,6 +53,9 @@ describe('izlenen sayfa', () => {
     await tick();
     expect(await runs()).toHaveLength(1);
     expect(t.engine.requests.at(-1)!.prompt).toContain('Fiyat 90');
+    // Someone else wrote the page: the run is marked, so its turns change nothing without a card.
+    const [row] = await t.db.db.select({ trigger: schema.routineRuns.trigger }).from(schema.routineRuns);
+    expect(row!.trigger).toBe('watch');
     await tick();
     expect(await runs()).toHaveLength(1);
   });

@@ -1,4 +1,4 @@
-import { quoteExcerpt, type Bot, type Message, type ReplyQuote } from '@yumakbot/shared';
+import { outsideTrigger, quoteExcerpt, type Bot, type Message, type ReplyQuote } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -129,6 +129,7 @@ function MessageBody({
           heldBy={typeof m.props.heldBy === 'string' ? m.props.heldBy : undefined}
           reviewReason={typeof m.props.reviewReason === 'string' ? m.props.reviewReason : undefined}
           askRule={typeof m.props.askRule === 'string' ? m.props.askRule : undefined}
+          outside={outsideTrigger(m.props.outside)}
           onAnswerLate={onReply ? () => onReply(m) : undefined}
         />
       );

@@ -295,6 +295,12 @@ export const en: Catalog<MessageKey> = {
   'approval.heldBy': 'The bot may go ahead by itself, but your rule “{rule}” asks first.',
   'approval.askRule':
     'Your rule “{rule}” asks every time; while it stands, "Always allow" would change nothing.',
+  'approval.outside.email':
+    'A mail started this run, and anyone can write one: every change waits for you, whatever the bot may do otherwise.',
+  'approval.outside.webhook':
+    'A webhook call started this run, with text someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+  'approval.outside.watch':
+    'A change on a watched page or in an app started this run, with text someone else wrote: every change waits for you, whatever the bot may do otherwise.',
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',

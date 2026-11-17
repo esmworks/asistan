@@ -755,6 +755,8 @@ export class RoutineService {
           status: 'running',
           threadId: thread.id,
           promptSnapshot: routine.prompt,
+          // Text from outside starts it: its turns change nothing without a card.
+          trigger: check?.trigger ?? null,
         })
         .returning()) as [typeof schema.routineRuns.$inferSelect];
     } catch (err) {

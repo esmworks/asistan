@@ -1,4 +1,4 @@
-import type { Bot, Message } from '@yumakbot/shared';
+import { outsideTrigger, type Bot, type Message } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -77,6 +77,7 @@ export function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
                     bots={bots}
                     heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
                     askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
+                    outside={outsideTrigger(x.props.outside)}
                   />
                 );
               }

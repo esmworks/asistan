@@ -291,6 +291,12 @@ export const tr = {
   'approval.heldBy': 'Bot kendi başına ilerleyebilir, ama “{rule}” kuralınız önce sormasını istiyor.',
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
+  'approval.outside.email':
+    'Bu çalıştırmayı bir e-posta başlattı ve e-postayı herkes yazabilir: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+  'approval.outside.webhook':
+    'Bu çalıştırmayı bir webhook çağrısı, başkasının yazdığı bir metinle başlattı: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+  'approval.outside.watch':
+    'Bu çalıştırmayı izlenen bir sayfadaki ya da bir uygulamadaki değişiklik, başkasının yazdığı bir metinle başlattı: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'chat.dictation': 'Yazmak yerine konuş',
   'chat.dictationStop': 'Durdur ve yazıya dök',
   'chat.dictationFailed': 'Konuşma alınamadı: {message}',

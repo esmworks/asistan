@@ -1,4 +1,4 @@
-import { questionItems, type Approval, type Message } from '@yumakbot/shared';
+import { outsideTrigger, questionItems, type Approval, type Message } from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -28,9 +28,12 @@ export function cardView(
   if (a.kind === 'tool') {
     const reason =
       typeof props.reviewReason === 'string' && props.reviewReason ? `\n_${props.reviewReason}_` : '';
-    const always = !props.askRule && !props.heldBy;
+    // A run outside text started takes no "always allow": the step was the text's choice.
+    const outside = outsideTrigger(props.outside);
+    const why = outside ? `\n_${t(`channel.outside.${outside}`)}_` : '';
+    const always = !props.askRule && !props.heldBy && !outside;
     return {
-      text: `🔐 ${a.summary}${reason}`,
+      text: `🔐 ${a.summary}${why}${reason}`,
       buttons: [
         { label: t('channel.allow'), data: `a:${a.id}:y` },
         ...(always ? [{ label: t('channel.always'), data: `a:${a.id}:r` }] : []),

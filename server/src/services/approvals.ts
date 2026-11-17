@@ -70,19 +70,31 @@ export function blockRuleFor(rules: PermissionRule[], toolName: string, input: R
   return rules.find((r) => r.list === 'block' && ruleMatches(r.pattern, toolName, input)) ?? null;
 }
 
+/**
+ * The level a step is decided at. Text someone else wrote started an `outside` run, so it is
+ * never freer than asking: what the text says cannot make the bot change anything by itself.
+ */
+export function modeFor(mode: PermissionMode, outside: boolean): PermissionMode {
+  return outside && mode !== 'readonly' ? 'ask' : mode;
+}
+
 export function decide(opts: {
   mode: PermissionMode;
   toolName: string;
   input: Record<string, unknown>;
   rules: PermissionRule[];
   readOnlyTools: Set<string>;
+  /** A run outside text started: "always allow" rules, given for the person's own work, do not count. */
+  outside?: boolean;
 }): Verdict {
-  const { mode, toolName, input, rules } = opts;
+  const { toolName, input, rules } = opts;
+  const mode = modeFor(opts.mode, !!opts.outside);
   const isRead = READ_ONLY_TOOLS.has(toolName) || opts.readOnlyTools.has(toolName);
   if (blockRuleFor(rules, toolName, input)) return 'block';
   if (mode === 'readonly') return isRead ? 'allow' : 'deny';
   if (askRuleMatches(rules, toolName, input)) return 'ask';
   if (mode === 'auto' || isRead) return 'allow';
+  if (opts.outside) return 'ask';
   if (rules.some((r) => r.list === 'allow' && ruleMatches(r.pattern, toolName, input))) return 'allow';
   return 'ask';
 }
@@ -222,6 +234,8 @@ export class ApprovalService {
     /** Close the card unanswered after this long (turns nobody watches). */
     timeoutMs?: number;
     onCreated?: (a: Approval) => Promise<void>;
+    /** Asked in a run outside text started; see `answer`. */
+    outside?: boolean;
   }): Promise<Outcome & { approvalId: string }> {
     const id = newId();
     const [row] = await this.ctx.db
@@ -237,6 +251,7 @@ export class ApprovalService {
         input: opts.input,
         options: opts.options ?? [],
         status: 'pending',
+        outside: !!opts.outside,
       })
       .returning();
     const result = new Promise<Outcome>((resolve) => {
@@ -270,11 +285,13 @@ export class ApprovalService {
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
     const status = d.decision === 'allow' ? 'allowed' : 'denied';
     // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
-    // that never applies and say the bot no longer asks. It counts as "this time" instead.
+    // that never applies and say the bot no longer asks. It counts as "this time" instead. So it
+    // does on a card from a run outside text started: the step it allowed was the text's choice.
     const remembered =
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
+      !(await this.askedOutside(id)) &&
       !askRuleMatches(await this.rules(), current.toolName, current.input);
     let answer = d.answers ? JSON.stringify(d.answers) : (d.answer ?? null);
     /** What the waiting bot gets, when it differs from what the card keeps. */
@@ -343,7 +360,8 @@ export class ApprovalService {
         ),
       );
     for (const r of rows) {
-      if (r.id === except || !this.waiters.has(r.id)) continue;
+      // A card from a run outside text started waits for its own answer.
+      if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
       if (ask.some((rule) => ruleMatches(rule.pattern, r.toolName, r.input))) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
@@ -354,6 +372,15 @@ export class ApprovalService {
       this.waiters.get(r.id)?.resolve({ status: 'allowed', answer: null });
       this.waiters.delete(r.id);
     }
+  }
+
+  private async askedOutside(id: string): Promise<boolean> {
+    const [row] = await this.ctx.db
+      .select({ outside: schema.approvals.outside })
+      .from(schema.approvals)
+      .where(eq(schema.approvals.id, id))
+      .limit(1);
+    return !!row?.outside;
   }
 
   async expire(id: string, timedOut = false) {

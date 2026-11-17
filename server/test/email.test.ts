@@ -145,6 +145,9 @@ describe('botların e-posta adresi', () => {
     await t.services.turns.idle();
     expect(runs).toHaveLength(1);
     expect(runs[0]!.occurrence).toMatch(/^mail:/);
+    // Anyone can write a mail: the run is marked, so its turns change nothing without a card.
+    const [row] = await t.db.db.select({ trigger: schema.routineRuns.trigger }).from(schema.routineRuns);
+    expect(row!.trigger).toBe('email');
     const prompt = t.engine.requests.at(-1)!.prompt;
     expect(prompt).toContain('Kasım FATURASI');
     expect(prompt).toContain('482913');
