@@ -43,3 +43,49 @@ export function newClientId(): string {
   const rand = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0');
   return `${Date.now().toString(36)}-${rand()}${rand()}`;
 }
+
+/**
+ * Where the cards that just showed up were asked in their turn's streaming reply, by message id.
+ * The bot waits for the answer, so the text that has arrived when a card does is the text before
+ * it. A card asked before the reply wrote a word (still pending, no text of its turn yet) goes at
+ * the start, so what the bot writes after the answer goes below it. A card's first note stays.
+ */
+export function newCardCuts(
+  messages: readonly Message[],
+  stream: Stream | undefined,
+  pendingApprovals: ReadonlySet<string>,
+  known: Readonly<Record<string, number>>,
+): Record<string, number> {
+  const fresh: Record<string, number> = {};
+  for (const m of messages) {
+    if (m.role !== 'approval' || !m.turnId || m.id in known) continue;
+    if (stream?.turnId === m.turnId) fresh[m.id] = stream.text.length;
+    else if (pendingApprovals.has(String(m.props.approvalId ?? ''))) fresh[m.id] = 0;
+  }
+  return fresh;
+}
+
+/**
+ * Takes the cards of the turn still streaming in out of the list, to be drawn inside its reply
+ * where they were asked. The card is saved the moment it is asked, the reply only when the turn
+ * ends, so in the list the card would sit above everything written before it. `end` is the point
+ * of the last card: the text after it is the part still being written.
+ */
+export function placeCards(
+  messages: readonly Message[],
+  liveTurnId: string | null,
+  cuts: Readonly<Record<string, number>>,
+): { messages: readonly Message[]; cards: { card: Message; at: number }[]; end: number } {
+  if (!liveTurnId) return { messages, cards: [], end: 0 };
+  const cards: { card: Message; at: number }[] = [];
+  for (const m of messages)
+    if (m.role === 'approval' && m.turnId === liveTurnId && m.id in cuts)
+      cards.push({ card: m, at: cuts[m.id]! });
+  if (!cards.length) return { messages, cards, end: 0 };
+  const placed = new Set(cards.map((c) => c.card.id));
+  return {
+    messages: messages.filter((m) => !placed.has(m.id)),
+    cards,
+    end: Math.max(...cards.map((c) => c.at)),
+  };
+}

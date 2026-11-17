@@ -1,4 +1,4 @@
-import type { Bot, Message, Room } from '@yumakbot/shared';
+import { streamParts, type Bot, type Message, type Room } from '@yumakbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,7 +17,13 @@ import { Avatar } from '@/components/Avatar';
 import { Composer, type SendExtra } from '@/components/chat/Composer';
 import { MessageBoundary } from '@/components/chat/Bars';
 import { MESSAGE_PAGE } from '@/components/chat/text';
-import { LiveReply, MessageItem, Working, type WorkingActivity } from '@/components/message/MessageItem';
+import {
+  LiveReply,
+  LiveText,
+  MessageItem,
+  Working,
+  type WorkingActivity,
+} from '@/components/message/MessageItem';
 import { confirm, toastError } from '@/components/overlay';
 import { IconButton, Sheet, back, type SheetItem } from '@/components/page';
 import { Button } from '@/components/ui';
@@ -26,6 +32,7 @@ import { ApiError } from '@/lib/api';
 import { useTapToDismiss } from '@/lib/dismiss';
 import { formatters, needsDivider } from '@/lib/format';
 import { nav } from '@/lib/nav';
+import { useLiveCards } from '@/lib/liveCards';
 import { useBots, useMessages } from '@/lib/queries';
 import { useLiveState, useStream } from '@/lib/realtime';
 import { useApi, useServer } from '@/lib/server';
@@ -40,7 +47,8 @@ type Row =
   | { kind: 'divider'; key: string; label: string }
   | { kind: 'speaker'; key: string; bot: Bot | undefined }
   | { kind: 'message'; key: string; m: Message; bot: Bot | undefined }
-  | { kind: 'live'; key: string; bot: Bot | undefined }
+  | { kind: 'part'; key: string; text: string }
+  | { kind: 'live'; key: string; bot: Bot | undefined; from: number }
   | { kind: 'working'; key: string; bot: Bot; activity: WorkingActivity };
 
 /** Whose words a row is: a bot's id, `user`, or null for the room's own notes. */
@@ -113,12 +121,16 @@ export function RoomView({ room }: { room: Room }) {
   const streamDone = streamSaved(stream, messages);
   const streaming = !!stream?.text && !streamDone;
   const listed = useMemo(() => withPending(messages, pending), [messages, pending]);
+  // A card asked while the reply streams in goes inside it, where it was asked.
+  const { messages: shown, cards, head, end } = useLiveCards(listed, stream, streamDone);
+  // Whether anything was written after the last card: until then the turn waits on its answer.
+  const tail = (stream?.text.length ?? 0) > end;
 
   const rows = useMemo(() => {
     const out: Row[] = [];
     let last: string | null = null;
-    listed.forEach((m, i) => {
-      if (needsDivider(listed[i - 1], m))
+    shown.forEach((m, i) => {
+      if (needsDivider(shown[i - 1], m))
         out.push({ kind: 'divider', key: `d-${m.id}`, label: fmt.dayLabel(m.createdAt) });
       const who = speakerOf(m);
       const bot = who && who !== 'user' ? botMap.get(who) : undefined;
@@ -126,16 +138,24 @@ export function RoomView({ room }: { room: Room }) {
       if (who) last = who;
       out.push({ kind: 'message', key: m.clientId || m.id, m, bot });
     });
-    if (streaming) {
-      if (speaker && speaker.id !== last) out.push({ kind: 'speaker', key: 's-live', bot: speaker });
-      out.push({ kind: 'live', key: 'live', bot: speaker });
-    } else if (speaker && busy) {
+    const held = cards.length > 0 && !tail && state === 'waiting';
+    if ((streaming || cards.length) && speaker && speaker.id !== last)
+      out.push({ kind: 'speaker', key: 's-live', bot: speaker });
+    for (const p of streamParts(head, cards)) {
+      if (p.kind === 'text') out.push({ kind: 'part', key: `part-${p.from}`, text: p.text });
+      else {
+        const who = speakerOf(p.card);
+        out.push({ kind: 'message', key: p.card.id, m: p.card, bot: who ? botMap.get(who) : undefined });
+      }
+    }
+    if (streaming && !held) out.push({ kind: 'live', key: 'live', bot: speaker, from: end });
+    else if (speaker && busy) {
       const activity: WorkingActivity =
         state === 'queued' ? 'queued' : state === 'waiting' ? 'waiting' : 'thinking';
       out.push({ kind: 'working', key: 'working', bot: speaker, activity });
     }
     return out.reverse();
-  }, [listed, botMap, streaming, speaker, busy, state]);
+  }, [shown, cards, head, end, tail, botMap, streaming, speaker, busy, state]);
 
   const send = useCallback(
     async (text: string, extra?: SendExtra): Promise<string | null> => {
@@ -198,8 +218,10 @@ export function RoomView({ room }: { room: Room }) {
           return <Text style={[styles.divider, { color: c.mutedForeground }]}>{item.label}</Text>;
         case 'speaker':
           return <SpeakerLine bot={item.bot} />;
+        case 'part':
+          return <LiveText text={item.text} />;
         case 'live':
-          return <LiveReply text={stream?.text ?? ''} bot={item.bot} threadId={room.id} />;
+          return <LiveReply text={stream?.text.slice(item.from) ?? ''} bot={item.bot} threadId={room.id} />;
         case 'working':
           return <Working bot={item.bot} activity={item.activity} threadId={room.id} />;
         case 'message': {
