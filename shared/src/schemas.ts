@@ -956,3 +956,48 @@ export const PluginInstall = z.object({
 export type PluginInstall = z.input<typeof PluginInstall>;
 export const PluginInstallResult = z.object({ servers: z.number(), skills: z.number() });
 export type PluginInstallResult = z.infer<typeof PluginInstallResult>;
+
+/** One operation of an OpenAPI document, as a bot is shown it. */
+export const ApiOperation = z.object({
+  id: z.string(),
+  method: z.string(),
+  path: z.string(),
+  summary: z.string(),
+  /** Path, query and header parameters: name, where, required, and type. */
+  params: z.array(z.object({ name: z.string(), in: z.string(), required: z.boolean(), type: z.string() })),
+  /** The JSON request body's schema, shortened; empty when it takes none. */
+  body: z.string(),
+});
+export type ApiOperation = z.infer<typeof ApiOperation>;
+
+/** An OpenAPI document bots may call operations of, with an API key saved in the vault. */
+export const ApiSource = z.object({
+  id: Id,
+  name: z.string(),
+  title: z.string(),
+  specUrl: z.string().nullable(),
+  baseUrl: z.string(),
+  /** The saved API key's name the calls go with; null for an API that needs none. */
+  credential: z.string().nullable(),
+  operations: z.number(),
+  botIds: z.array(Id).nullable(),
+  createdAt: z.string(),
+});
+export type ApiSource = z.infer<typeof ApiSource>;
+
+export const ApiSourceCreate = z
+  .object({
+    name: ApiCredentialName,
+    /** Where the document is read from; or `spec`, the document pasted in. */
+    specUrl: z.string().trim().max(2000).optional(),
+    spec: z
+      .string()
+      .max(4 * 1024 * 1024)
+      .optional(),
+    /** Overrides the document's own server address. */
+    baseUrl: z.string().trim().max(2000).optional(),
+    credential: ApiCredentialName.nullable().default(null),
+    botIds: z.array(Id).max(500).nullable().optional(),
+  })
+  .refine((v) => !!v.specUrl || !!v.spec, 'validation.openapiSource');
+export type ApiSourceCreate = z.input<typeof ApiSourceCreate>;

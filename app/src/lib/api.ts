@@ -67,6 +67,8 @@ import type {
   PluginInstall,
   PluginInstallResult,
   PluginPlan,
+  ApiSource,
+  ApiSourceCreate,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -420,6 +422,10 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  apiSources: () => http.get<ApiSource[]>('/api/api-sources'),
+  addApiSource: (input: ApiSourceCreate) => http.post<ApiSource>('/api/api-sources', input),
+  refreshApiSource: (id: string) => http.post<ApiSource>(`/api/api-sources/${id}/refresh`),
+  removeApiSource: (id: string) => http.del<{ ok: true }>(`/api/api-sources/${id}`),
   previewPlugin: (url: string) => http.post<PluginPlan>('/api/plugins/preview', { url }),
   installPlugin: (input: PluginInstall) => http.post<PluginInstallResult>('/api/plugins/install', input),
   aiEndpoints: () =>

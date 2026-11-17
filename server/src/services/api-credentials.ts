@@ -183,31 +183,53 @@ export class ApiCredentialService {
     const row = await this.byName(name);
     if (!row) throw new ApiCallError('noKey', name);
     if (row.botIds && !row.botIds.includes(botId)) throw new ApiCallError('notAllowed', name);
+    const auth = ApiAuth.parse(row.auth);
+    const result = await this.send(row.origin, { auth, value: this.vault.open(row.secret) }, req, signal);
+    await this.ctx.db
+      .update(schema.apiCredentials)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(schema.apiCredentials.id, row.id));
+    return result;
+  }
+
+  /** A call to `origin` with no key, for an API the person added that needs none. */
+  callOpen(origin: string, req: ApiCall, signal?: AbortSignal): Promise<ApiResult> {
+    return this.send(origin, null, req, signal);
+  }
+
+  private async send(
+    origin: string,
+    key: { auth: ApiAuth; value: string } | null,
+    req: ApiCall,
+    signal?: AbortSignal,
+  ): Promise<ApiResult> {
     let url: URL;
     try {
-      url = new URL(req.url, row.origin);
+      url = new URL(req.url, origin);
     } catch {
       throw new ApiCallError('badUrl', req.url);
     }
-    if (url.origin !== row.origin || url.username || url.password) {
-      throw new ApiCallError('origin', row.origin);
-    }
-    const auth = ApiAuth.parse(row.auth);
-    const value = this.vault.open(row.secret);
+    if (url.origin !== origin || url.username || url.password) throw new ApiCallError('origin', origin);
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers ?? {})) {
-      const key = k.toLowerCase();
-      if (RESERVED_HEADERS.has(key) || (auth.type === 'header' && key === auth.header.toLowerCase())) {
+      const lower = k.toLowerCase();
+      if (
+        RESERVED_HEADERS.has(lower) ||
+        (key?.auth.type === 'header' && lower === key.auth.header.toLowerCase())
+      ) {
         throw new ApiCallError('header', k);
       }
       headers.set(k, v);
     }
-    if (auth.type === 'bearer') headers.set('authorization', `Bearer ${value}`);
-    if (auth.type === 'header') headers.set(auth.header, value);
-    if (auth.type === 'basic') {
-      headers.set('authorization', `Basic ${Buffer.from(`${auth.username}:${value}`).toString('base64')}`);
+    if (key?.auth.type === 'bearer') headers.set('authorization', `Bearer ${key.value}`);
+    if (key?.auth.type === 'header') headers.set(key.auth.header, key.value);
+    if (key?.auth.type === 'basic') {
+      headers.set(
+        'authorization',
+        `Basic ${Buffer.from(`${key.auth.username}:${key.value}`).toString('base64')}`,
+      );
     }
-    if (auth.type === 'query') url.searchParams.set(auth.param, value);
+    if (key?.auth.type === 'query') url.searchParams.set(key.auth.param, key.value);
     let body: string | undefined;
     if (req.body !== undefined && req.body !== null) {
       if (typeof req.body === 'string') body = req.body;
@@ -217,28 +239,23 @@ export class ApiCredentialService {
       }
     }
     const method = req.method.toUpperCase();
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     const res = await this.fetcher(url, {
       method,
       headers,
       body: method === 'GET' || method === 'HEAD' ? undefined : body,
       redirect: 'manual',
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
-        : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
-    await this.ctx.db
-      .update(schema.apiCredentials)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(schema.apiCredentials.id, row.id));
     const text = await readLimited(res, MAX_RESPONSE_BYTES);
-    const clean = scrub(text, value, auth);
+    const clean = key ? scrub(text, key.value, key.auth) : text;
     const location = res.headers.get('location');
     return {
       status: res.status,
       type: res.headers.get('content-type') ?? '',
       body: clean.slice(0, MAX_RESPONSE_CHARS),
       cut: clean.length > MAX_RESPONSE_CHARS,
-      location: location ? scrub(location, value, auth) : null,
+      location: location ? (key ? scrub(location, key.value, key.auth) : location) : null,
     };
   }
 }

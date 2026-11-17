@@ -1,4 +1,4 @@
-import { ApiAuth, ApiCredentialName, ApiOrigin, type Bot } from '@yumakbot/shared';
+import { ApiAuth, ApiCredentialName, ApiOrigin, type ApiSource, type Bot } from '@yumakbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
@@ -18,6 +18,8 @@ export function apiTools(opts: {
   def: Define;
   services: Services;
   bot: Bot;
+  /** OpenAPI documents the bot may call; with any, it gets the tools for their operations. */
+  sources?: ApiSource[];
   thread: { id: string };
   turn: TurnRow;
   signal: AbortSignal;
@@ -26,6 +28,7 @@ export function apiTools(opts: {
   t: T;
 }): AppTool[] {
   const { def, services: s, bot, thread, turn, signal, unattended, t } = opts;
+  const sources = opts.sources ?? [];
   const describe = (auth: ApiAuth) =>
     auth.type === 'header'
       ? t('tool.apiAuth.header', { header: auth.header })
@@ -133,5 +136,74 @@ export function apiTools(opts: {
       // changes something there goes by the bot's approval level.
       async ({ method }) => method !== 'GET' && method !== 'HEAD',
     ),
+    ...(sources.length
+      ? [
+          def(
+            'api_operations',
+            { api: z.string().max(64).optional(), query: z.string().max(200).optional() },
+            async ({ api, query }) => {
+              if (!api) {
+                return sources
+                  .map(
+                    (x) =>
+                      `- ${x.name}: ${x.title || x.baseUrl} (${t('tool.apiOperationCount', { count: x.operations })})`,
+                  )
+                  .join('\n');
+              }
+              const ops = await s.apiSources.operations(bot.id, api, query);
+              if (!ops)
+                return t('tool.apiSourceMissing', { api, names: sources.map((x) => x.name).join(', ') });
+              if (!ops.length) return t('tool.apiOperationsNone');
+              const shown = ops.slice(0, 60).map((o) => {
+                const params = o.params
+                  .map((p) => `${p.name}${p.required ? '*' : ''} (${p.in}, ${p.type})`)
+                  .join(', ');
+                return [
+                  `- ${o.id}: ${o.method} ${o.path}${o.summary ? ` — ${o.summary}` : ''}`,
+                  params && `  ${t('tool.apiParams')}: ${params}`,
+                  o.body && `  body: ${o.body}`,
+                ]
+                  .filter(Boolean)
+                  .join('\n');
+              });
+              return [...shown, ops.length > 60 && t('tool.apiOperationsMore', { count: ops.length - 60 })]
+                .filter(Boolean)
+                .join('\n');
+            },
+            'read',
+          ),
+          def(
+            'api_call',
+            {
+              api: z.string().max(64),
+              operation: z.string().max(120),
+              params: z.record(z.string(), z.unknown()).optional(),
+              body: z.unknown().optional(),
+            },
+            async ({ api, operation, params, body }) => {
+              try {
+                const res = await s.apiSources.call(bot.id, api, operation, { params, body }, signal);
+                const head = [
+                  `HTTP ${res.status}${res.type ? ` · ${res.type}` : ''}`,
+                  res.location && t('tool.apiRedirect', { location: res.location }),
+                ]
+                  .filter(Boolean)
+                  .join('\n');
+                return [head, res.body, res.cut && t('tool.apiCut')].filter(Boolean).join('\n\n');
+              } catch (err) {
+                if (!(err instanceof ApiCallError)) throw err;
+                return t(`tool.apiRefused.${err.reason}`, { detail: err.detail });
+              }
+            },
+            'read',
+            // Reading is free; an operation that changes something goes by the bot's approval level.
+            async ({ api, operation }) => {
+              const ops = await s.apiSources.operations(bot.id, api);
+              const op = ops?.find((o) => o.id === operation);
+              return !op || (op.method !== 'GET' && op.method !== 'HEAD');
+            },
+          ),
+        ]
+      : []),
   ];
 }

@@ -598,6 +598,7 @@ export class TurnManager {
     const t = translator(locale);
     const skills = await this.services.skills.forBot(bot.id);
     const email = await this.services.email.addressOf(bot.id);
+    const apiSources = await this.services.apiSources.forBot(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
     // The person is in the room while its bots talk, as with their own messages.
@@ -637,6 +638,7 @@ export class TurnManager {
         t,
         skills,
         email,
+        apiSources,
         // Claude keeps its plan with its own to-do tool; other engines get this one.
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
       }),

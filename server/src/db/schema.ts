@@ -729,3 +729,27 @@ export const emails = pgTable(
       .where(sql`${t.messageId} is not null`),
   ],
 );
+
+/**
+ * OpenAPI documents bots may call operations of. The operations are read from the document when
+ * it is added; calls go through the API key named here, to the document's server only.
+ */
+export const apiSources = pgTable(
+  'api_sources',
+  {
+    id: text('id').primaryKey(),
+    /** The reference name bots use, e.g. `weather`. */
+    name: text('name').notNull(),
+    title: text('title').notNull().default(''),
+    specUrl: text('spec_url'),
+    /** Where the operations are called: the document's server, or the person's own address. */
+    baseUrl: text('base_url').notNull(),
+    /** The saved API key's name; null for an API that needs none. */
+    credential: text('credential'),
+    operations: jsonb('operations').$type<Record<string, unknown>[]>().notNull().default([]),
+    botIds: jsonb('bot_ids').$type<string[]>(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('api_sources_name_uq').on(t.name)],
+);

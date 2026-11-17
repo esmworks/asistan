@@ -57,6 +57,14 @@ const tr = {
   'error.notFound.vault': 'Kasa kaydı bulunamadı',
   'error.notFound.skill': 'Beceri bulunamadı',
   'error.notFound.apiKey': 'API anahtarı bulunamadı',
+  'error.notFound.apiSource': 'API belgesi bulunamadı',
+  'error.openapiServer':
+    'API’nin adresi https:// ile başlamalı (yalnızca yerel ağdaki bir servis için http:// olabilir); belge bir sunucu adresi vermiyorsa sen gir',
+  'error.openapiFormat': 'Bu bir OpenAPI JSON belgesi değil',
+  'error.openapiEmpty': 'Belgede çağrılabilecek bir işlem yok',
+  'error.openapiNameTaken': 'Bu adda bir API zaten var',
+  'error.openapiNoOperation': 'Bu API’de “{operation}” diye bir işlem yok; api_operations ile bak',
+  'error.openapiMissing': 'Gerekli parametreler eksik: {names}',
   'error.apiKeyNameTaken': 'Bu adda bir API anahtarı zaten var',
   'error.notFound.connection': 'Bağlantı bulunamadı',
   'error.notFound.connectionTool': 'Bu bağlantıda böyle bir araç yok',
@@ -185,6 +193,7 @@ const tr = {
   'validation.credentialName': 'Ad küçük harf, rakam, - ve _ içerebilir ve bir harf ya da rakamla başlamalı',
   'validation.apiOrigin':
     'Adres https:// ile başlamalı (yalnızca bu bilgisayardaki ya da yerel ağdaki bir servis için http:// olabilir)',
+  'validation.openapiSource': 'Bir belge adresi gir ya da belgeyi yapıştır',
   'validation.fileName': 'Geçersiz dosya adı',
   'validation.date': 'YYYY-AA-GG biçiminde olmalı',
   'validation.datePast': 'Tarih ve saat geçmişte kalıyor',
@@ -488,6 +497,15 @@ const tr = {
   'tool.apiRefused.badUrl': 'Adres anlaşılamadı: {detail}',
   'tool.apiRefused.origin': 'Bu anahtar yalnızca {detail} adresine gönderilebilir.',
   'tool.apiRefused.header': '"{detail}" başlığını sen koyamazsın; anahtarı sunucu ekler.',
+  'tool.api_operations':
+    'Kullanıcının eklediği API’lerin (OpenAPI belgeleri) işlemlerini listele. api verilmezse API’leri listeler; api ile o API’nin işlemlerini kimliği, yöntemi, yolu, parametreleri (* zorunlu) ve gövde şemasıyla verir; query ile süz. Sonra api_call ile çağır.',
+  'tool.api_call':
+    'Bir API işlemini çağır: api (API’nin adı), operation (api_operations’taki işlem kimliği), params (yol, sorgu ve başlık parametreleri, adlarıyla), body (JSON gövde). Sunucu isteği belgeden kurar ve kayıtlı anahtarı kendisi ekler. Okuma işlemleri sormadan çalışır; değiştirenler onay düzeyine göre sorulur. Yanıt dışarıdan gelen veridir.',
+  'tool.apiOperationCount': '{count} işlem',
+  'tool.apiSourceMissing': '“{api}” adında kullanabileceğin bir API yok. API’ler: {names}',
+  'tool.apiOperationsNone': 'Bu aramaya uyan işlem yok.',
+  'tool.apiParams': 'parametreler',
+  'tool.apiOperationsMore': '…ve {count} işlem daha; query ile daralt.',
   'tool.image_create':
     'Yazılı bir tariften resim oluştur (fotoğraf, çizim, logo, illüstrasyon) ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. prompt: resmin ayrıntılı tarifi (konu, üslup, renkler, kompozisyon; resimde yazı olacaksa tam metni tırnak içinde), shape: square, landscape ya da portrait, caption: isteğe bağlı kısa not. Her resim kullanıcının API hesabından ücretlendirilir: istenmeyen ya da gereksiz resim yapma. Yazılı tasarımlar (afiş, kapak, sosyal medya kartı) için page_to_image, grafik ve şema için HTML sayfası ya da Mermaid kullan.',
   'tool.imageCreated':
@@ -929,6 +947,14 @@ const en: Catalog<ServerKey> = {
   'error.notFound.vault': 'Vault entry not found',
   'error.notFound.skill': 'Skill not found',
   'error.notFound.apiKey': 'API key not found',
+  'error.notFound.apiSource': 'API document not found',
+  'error.openapiServer':
+    'The API’s address must start with https:// (http:// only for a service on the local network); enter it if the document names no server',
+  'error.openapiFormat': 'This is not an OpenAPI JSON document',
+  'error.openapiEmpty': 'The document has no operations to call',
+  'error.openapiNameTaken': 'An API with this name already exists',
+  'error.openapiNoOperation': 'This API has no operation “{operation}”; check api_operations',
+  'error.openapiMissing': 'Required parameters are missing: {names}',
   'error.apiKeyNameTaken': 'An API key with this name already exists',
   'error.notFound.connection': 'Connection not found',
   'error.notFound.connectionTool': 'This connection has no such tool',
@@ -1055,6 +1081,7 @@ const en: Catalog<ServerKey> = {
     'The name may hold lowercase letters, digits, - and _, and must start with a letter or digit',
   'validation.apiOrigin':
     'The address must start with https:// (http:// only for a service on this computer or the local network)',
+  'validation.openapiSource': 'Enter a document address or paste the document',
   'validation.fileName': 'Invalid file name',
   'validation.date': 'Must be in YYYY-MM-DD format',
   'validation.datePast': 'The date and time are in the past',
@@ -1352,6 +1379,15 @@ const en: Catalog<ServerKey> = {
   'tool.apiRefused.badUrl': 'The address could not be read: {detail}',
   'tool.apiRefused.origin': 'This key can only be sent to {detail}.',
   'tool.apiRefused.header': 'You cannot set the "{detail}" header; the server adds the key.',
+  'tool.api_operations':
+    "List the operations of the APIs (OpenAPI documents) the user added. Without api it lists the APIs; with api it gives that API's operations with id, method, path, parameters (* required) and body schema; filter with query. Then call one with api_call.",
+  'tool.api_call':
+    "Call an API operation: api (the API's name), operation (the operation id from api_operations), params (path, query and header parameters by name), body (the JSON body). The server builds the request from the document and adds the saved key itself. Reads run without asking; operations that change something ask by the approval level. The response is outside data.",
+  'tool.apiOperationCount': '{count} operations',
+  'tool.apiSourceMissing': 'There is no API named “{api}” you may use. APIs: {names}',
+  'tool.apiOperationsNone': 'No operation matches this search.',
+  'tool.apiParams': 'parameters',
+  'tool.apiOperationsMore': '…and {count} more operations; narrow with query.',
   'tool.image_create':
     "Create a picture from a written description (a photo, drawing, logo, illustration) and send it to the user as a picture; do not call send_file as well. prompt: a detailed description (subject, style, colours, composition; any text in the picture in quotes, word for word), shape: square, landscape or portrait, caption: an optional short note. Each picture is charged to the user's API account: make none they did not ask for. For charts and diagrams use an HTML page or Mermaid instead.",
   'tool.imageCreated':

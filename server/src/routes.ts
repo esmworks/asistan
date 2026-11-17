@@ -66,6 +66,7 @@ import {
   AI_KINDS,
   AiEndpointSet,
   PluginInstall,
+  ApiSourceCreate,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -945,6 +946,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     } catch (err) {
       return { ok: false, detail: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // OpenAPI documents whose operations bots may call, with a saved API key.
+  app.get('/api/api-sources', async () => s.apiSources.list());
+  app.post('/api/api-sources', async (req) => s.apiSources.create(ApiSourceCreate.parse(req.body)));
+  app.post('/api/api-sources/:id/refresh', async (req) =>
+    s.apiSources.refresh(IdParams.parse(req.params).id),
+  );
+  app.delete('/api/api-sources/:id', async (req) => {
+    await s.apiSources.remove(IdParams.parse(req.params).id);
+    return { ok: true };
   });
 
   // API keys bots call services with; listed without their values.

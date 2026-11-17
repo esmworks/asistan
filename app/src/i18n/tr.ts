@@ -364,6 +364,20 @@ export const tr = {
   'apiKeys.newValue': 'Yeni anahtar (aynı kalsın diye boş bırak)',
   'apiKeys.confirmDelete':
     '“{name}” API anahtarı silinsin mi? Onu kullanan botlar yeniden istemek zorunda kalır.',
+  'apiSources.title': 'API belgeleri (OpenAPI)',
+  'apiSources.note':
+    'Botlar bir API’nin işlemlerini listeler ve adıyla çağırır. Çağrılar yalnızca API’nin adresine gider; seçtiğin anahtarı sunucu ekler. Okumalar serbestçe çalışır, değişiklikler botun onay düzeyine göre sorulur.',
+  'apiSources.summary': '{count} işlem · {url}',
+  'apiSources.refresh': 'Belgeyi yeniden oku',
+  'apiSources.confirmDelete': '“{name}” API’si kaldırılsın mı? Botlar artık onu çağıramaz.',
+  'apiSources.name': 'Botların kullanacağı ad (ör. hava)',
+  'apiSources.specUrl': 'OpenAPI JSON belgesinin adresi',
+  'apiSources.paste': 'OpenAPI JSON belgesini yapıştır',
+  'apiSources.usePaste': 'Bunun yerine belgeyi yapıştır',
+  'apiSources.useUrl': 'Bunun yerine bir adresten oku',
+  'apiSources.baseUrl': 'API adresi (isteğe bağlı; yoksa belgedeki sunucu)',
+  'apiSources.key': 'API anahtarı',
+  'apiSources.noKey': 'Anahtar yok: API istemiyor',
   'plugin.add': 'Eklenti ekle',
   'plugin.title': 'Eklenti ekle',
   'plugin.hint':

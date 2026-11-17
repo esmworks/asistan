@@ -11,6 +11,7 @@ import {
   type RoutineUpdate,
   searchCatalog,
   skillSlug,
+  type ApiSource,
   type Bot,
   type Memory,
   type MemoryChange,
@@ -111,6 +112,8 @@ export type ToolName =
   | 'api_keys_list'
   | 'credential_request'
   | 'api_request'
+  | 'api_operations'
+  | 'api_call'
   | 'email_inbox'
   | 'email_read'
   | 'page_to_image'
@@ -227,6 +230,8 @@ export class ToolFactory {
     skills?: Skill[];
     /** The bot's mail address; with one, it gets its inbox. */
     email?: string | null;
+    /** OpenAPI documents the bot may call operations of. */
+    apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
     plan?: (items: PlanItem[]) => Promise<void>;
   }): AppTool[] {
@@ -999,7 +1004,9 @@ export class ToolFactory {
     // Listed without a saved key too: the bot then tells the person which key to add.
     if (bot.internet) {
       tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
-      tools.push(...apiTools({ def, services: s, bot, thread, turn, signal, unattended, t }));
+      tools.push(
+        ...apiTools({ def, services: s, bot, thread, turn, signal, unattended, t, sources: opts.apiSources }),
+      );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.

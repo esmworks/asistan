@@ -19,6 +19,7 @@ import { EmbeddingService } from './embeddings';
 import { TranscribeService } from './transcribe';
 import { SpeechService } from './speech';
 import { PluginService } from './plugins';
+import { ApiSourceService } from './api-sources';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -67,6 +68,7 @@ export class Services {
   readonly transcribe: TranscribeService;
   readonly speech: SpeechService;
   readonly plugins: PluginService;
+  readonly apiSources: ApiSourceService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -115,6 +117,7 @@ export class Services {
     this.transcribe = new TranscribeService(this.keys, this.ai);
     this.speech = new SpeechService(this.ai);
     this.plugins = new PluginService(this);
+    this.apiSources = new ApiSourceService(ctx, this.apiCredentials);
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }
