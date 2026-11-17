@@ -296,11 +296,11 @@ export const en: Catalog<MessageKey> = {
   'approval.askRule':
     'Your rule “{rule}” asks every time; while it stands, "Always allow" would change nothing.',
   'approval.outside.email':
-    'A mail started this run, and anyone can write one: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads a mail, and anyone can write one: every change waits for you, whatever the bot may do otherwise.',
   'approval.outside.webhook':
-    'A webhook call started this run, with text someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads what a webhook brought in, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
   'approval.outside.watch':
-    'A change on a watched page or in an app started this run, with text someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads a change on a watched page or in an app, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',
@@ -920,6 +920,7 @@ export const en: Catalog<MessageKey> = {
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
   'routine.run.skipped': 'skipped',
+  'routine.run.queued': 'queued',
   'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
   'routine.gateWouldSkipNoReason': 'The pre-check would have skipped it',
   'routine.runCommandHint': 'A script or another service can start this routine and hand it some text.',

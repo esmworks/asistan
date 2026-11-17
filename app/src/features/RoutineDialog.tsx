@@ -594,7 +594,7 @@ function RecentRuns({
                   r.status === 'done' && 'bg-emerald-500',
                   r.status === 'error' && 'bg-destructive',
                   (r.status === 'running' || r.status === 'waiting') && 'bg-amber-500',
-                  r.status === 'skipped' && 'bg-muted-foreground/40',
+                  (r.status === 'skipped' || r.status === 'queued') && 'bg-muted-foreground/40',
                 )}
               />
               <span className="min-w-0 flex-1">

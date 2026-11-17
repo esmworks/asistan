@@ -292,11 +292,11 @@ export const tr = {
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
   'approval.outside.email':
-    'Bu çalıştırmayı bir e-posta başlattı ve e-postayı herkes yazabilir: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma bir e-posta okuyor ve e-postayı herkes yazabilir: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'approval.outside.webhook':
-    'Bu çalıştırmayı bir webhook çağrısı, başkasının yazdığı bir metinle başlattı: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma bir webhook’un getirdiği, başkasının yazdığı bir metni okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'approval.outside.watch':
-    'Bu çalıştırmayı izlenen bir sayfadaki ya da bir uygulamadaki değişiklik, başkasının yazdığı bir metinle başlattı: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma izlenen bir sayfadaki ya da bir uygulamadaki, başkasının yazdığı bir değişikliği okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
   'chat.dictation': 'Yazmak yerine konuş',
   'chat.dictationStop': 'Durdur ve yazıya dök',
   'chat.dictationFailed': 'Konuşma alınamadı: {message}',
@@ -912,6 +912,7 @@ export const tr = {
   'routine.run.done': 'tamamlandı',
   'routine.run.error': 'başarısız',
   'routine.run.skipped': 'atlandı',
+  'routine.run.queued': 'sırada',
   'routine.gateWouldSkip': 'Ön kontrol bunu atlardı: {reason}',
   'routine.gateWouldSkipNoReason': 'Ön kontrol bunu atlardı',
   'routine.runCommandHint': 'Bir betik ya da başka bir hizmet bu rutini başlatıp ona bir metin verebilir.',

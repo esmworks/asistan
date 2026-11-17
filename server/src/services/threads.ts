@@ -3,6 +3,7 @@ import {
   type BotSummary,
   type Message,
   type MessageRole,
+  type OutsideTrigger,
   type SearchHit,
   type Thread,
   type TurnState,
@@ -351,7 +352,19 @@ export class ThreadService {
   async setSession(id: string, sessionId: string | null) {
     await this.ctx.db
       .update(schema.threads)
-      .set({ engineSessionId: sessionId, ...(sessionId === null && { engineSessionCostUsd: null }) })
+      .set({
+        engineSessionId: sessionId,
+        // A session that ends takes the outside text it had read with it.
+        ...(sessionId === null && { engineSessionCostUsd: null, outsideSession: null }),
+      })
+      .where(eq(schema.threads.id, id));
+  }
+
+  /** What outside text the thread's engine session has read; see `threads.outsideSession`. */
+  async setOutsideSession(id: string, outside: OutsideTrigger | null) {
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ outsideSession: outside })
       .where(eq(schema.threads.id, id));
   }
 

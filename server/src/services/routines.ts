@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { BotEmail, RoutineUpdate } from '@yumakbot/shared';
+import type { BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/shared';
 import {
   nextRun,
   zonedTime,
@@ -12,7 +12,22 @@ import {
   type RoutineRun,
   type Schedule,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, notExists, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Ctx } from '../context';
 import type { T } from '../i18n';
@@ -148,6 +163,12 @@ export class RoutineService {
       )
       .returning({ id: schema.routineRuns.id });
     if (orphaned.length) this.ctx.bus.refresh({ scope: 'routines' });
+    // Runs that waited for one the stop cut short go on now.
+    const waiting = await this.ctx.db
+      .selectDistinct({ routineId: schema.routineRuns.routineId })
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.status, 'queued'));
+    for (const { routineId } of waiting) await this.startQueued(routineId);
   }
 
   /** Runs each enabled routine set to run when the server starts, once for this start. */
@@ -231,6 +252,8 @@ export class RoutineService {
     if (current.enabled && !enabled) {
       const t = await this.services.settings.translator();
       await this.endStaleWait(id, t, 0, 'routine.pausedWait');
+      // What waited for a run of it is not run either.
+      await this.startQueued(id);
     }
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRoutine(row!);
@@ -679,7 +702,7 @@ export class RoutineService {
     botId: string,
     routineThreadId: string,
     text: string,
-    props: { routineRunId: string; routineName: string; posted?: boolean },
+    props: { routineRunId: string; routineName: string; posted?: boolean; outside?: OutsideTrigger },
   ) {
     const main = await this.services.threads.main(botId);
     await this.services.threads.addMessage({
@@ -773,6 +796,10 @@ export class RoutineService {
       // An earlier run stuck on a question nobody answered gives way to this one, once.
       if (!retried && (await this.endStaleWait(routine.id, t, STALE_WAIT_MS, 'routine.staleWait')))
         return this.fire(routine, occurrence, payload, true, check);
+      // A mail or a changed page does not come again: it waits for the run going now to end. A
+      // webhook caller is told to send it again instead.
+      if (check && !occurrence.startsWith('hook:'))
+        return this.queue(routine, thread.id, occurrence, payload, check.trigger, t);
       // A delivery skipped here must still run when its sender sends it again.
       const skipped = occurrence.startsWith('hook:')
         ? `${occurrence}:busy:${newId().slice(0, 8)}`
@@ -795,6 +822,96 @@ export class RoutineService {
     }
     await this.begin(routine, bot.id, thread.id, run, payload, t);
     return toRun(run);
+  }
+
+  /**
+   * Keeps outside text that found a run of the routine going, to start once that run ends. It
+   * skips the pre-check then: what is new was already found. A long queue drops what comes after.
+   */
+  private async queue(
+    routine: Routine,
+    threadId: string,
+    occurrence: string,
+    payload: string | undefined,
+    trigger: OutsideTrigger,
+    t: T,
+  ): Promise<RoutineRun | null> {
+    const [{ queued } = { queued: 0 }] = await this.ctx.db
+      .select({ queued: count() })
+      .from(schema.routineRuns)
+      .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.routineRuns.status, 'queued')));
+    if (queued >= MAX_QUEUED) return this.record(routine, occurrence, 'skipped', t('routine.stillRunning'));
+    try {
+      const [row] = await this.ctx.db
+        .insert(schema.routineRuns)
+        .values({
+          id: newId(),
+          routineId: routine.id,
+          occurrence,
+          status: 'queued',
+          reason: t('routine.queued'),
+          threadId,
+          promptSnapshot: routine.prompt,
+          trigger,
+          payload: payload ?? null,
+        })
+        .returning();
+      this.ctx.bus.refresh({ scope: 'routines' });
+      // The run it waited for may have ended meanwhile.
+      await this.startQueued(routine.id);
+      return toRun(row!);
+    } catch (err) {
+      if (isUniqueViolation(err)) return null;
+      throw err;
+    }
+  }
+
+  /** Starts the routine's oldest queued run, when no other run of it is going. */
+  async startQueued(routineId: string): Promise<void> {
+    const [next] = await this.ctx.db
+      .select()
+      .from(schema.routineRuns)
+      .where(and(eq(schema.routineRuns.routineId, routineId), eq(schema.routineRuns.status, 'queued')))
+      .orderBy(asc(schema.routineRuns.startedAt))
+      .limit(1);
+    if (!next) return;
+    const t = await this.services.settings.translator();
+    const routine = await this.get(routineId).catch(() => null);
+    const bot = routine ? await this.services.bots.get(routine.botId).catch(() => null) : null;
+    if (!routine?.enabled || !bot || bot.archivedAt) {
+      // A paused routine, or one whose bot is gone, does not take up what waited for it.
+      await this.ctx.db
+        .update(schema.routineRuns)
+        .set({
+          status: 'skipped',
+          reason: t(bot && !bot.archivedAt ? 'routine.queuePaused' : 'routine.botMissing'),
+          finishedAt: this.clock(),
+        })
+        .where(and(eq(schema.routineRuns.routineId, routineId), eq(schema.routineRuns.status, 'queued')));
+      this.ctx.bus.refresh({ scope: 'routines' });
+      return;
+    }
+    let started: typeof schema.routineRuns.$inferSelect | undefined;
+    try {
+      [started] = await this.ctx.db
+        .update(schema.routineRuns)
+        // The mail or change it waited with goes into the prompt; it is not kept beside the run.
+        .set({ status: 'running', reason: null, startedAt: this.clock(), payload: null })
+        .where(and(eq(schema.routineRuns.id, next.id), eq(schema.routineRuns.status, 'queued')))
+        .returning();
+    } catch (err) {
+      // Another run of the routine is going: this one starts when that one ends.
+      if (isUniqueViolation(err)) return;
+      throw err;
+    }
+    if (!started) return;
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ lastRunAt: this.clock() })
+      .where(eq(schema.routines.id, routineId));
+    const threadId = started.threadId ?? (await this.threadFor(routine, bot.id)).id;
+    await this.begin(routine, bot.id, threadId, started, next.payload ?? undefined, t);
+    this.ctx.bus.refresh({ scope: 'routines' });
   }
 
   /**
@@ -859,8 +976,10 @@ export class RoutineService {
       .where(and(eq(schema.routineRuns.id, run.id), eq(schema.routineRuns.status, 'running')))
       .returning({ id: schema.routineRuns.id });
     if (!still) return;
-    if (skip) this.ctx.bus.refresh({ scope: 'routines' });
-    else await start();
+    if (skip) {
+      this.ctx.bus.refresh({ scope: 'routines' });
+      await this.startQueued(routine.id);
+    } else await start();
   }
 
   /** Writes the run's instruction into its conversation and queues the bot's turn for it. */
@@ -872,15 +991,29 @@ export class RoutineService {
     payload: string | undefined,
     t: T,
   ) {
+    const report = routine.carryReport ? await this.lastReport(routine.id, run.id) : null;
+    // A report written from outside text carries it on: this run reads it too.
+    const outside = run.trigger ?? report?.outside ?? null;
+    if (outside && !run.trigger) {
+      await this.ctx.db
+        .update(schema.routineRuns)
+        .set({ trigger: outside })
+        .where(eq(schema.routineRuns.id, run.id));
+    }
     await this.services.threads.addMessage({
       threadId,
       role: 'user',
       author: `routine:${routine.id}`,
       text: payload ? `${routine.prompt}\n\n${t('routine.payloadShown', { payload })}` : routine.prompt,
-      props: { routineRunId: run.id, routineName: routine.name, ...(payload ? { payload: true } : {}) },
+      props: {
+        routineRunId: run.id,
+        routineName: routine.name,
+        ...(payload ? { payload: true } : {}),
+        // A new session that reads this conversation again reads outside text here.
+        ...(outside ? { outside } : {}),
+      },
     });
     const base = t('routine.prompt', { name: routine.name, prompt: routine.prompt, silent: SILENT_REPLY });
-    const report = routine.carryReport ? await this.lastReport(routine.id, run.id) : null;
     const prompt = report
       ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
       : base;
@@ -897,9 +1030,16 @@ export class RoutineService {
    * What the bot wrote at the end of the routine's latest finished run before `except`, cut to a
    * size that keeps every later prompt small; null when no run has finished with a report.
    */
-  async lastReport(routineId: string, except?: string): Promise<{ text: string; at: string } | null> {
+  async lastReport(
+    routineId: string,
+    except?: string,
+  ): Promise<{ text: string; at: string; outside: OutsideTrigger | null } | null> {
     const [row] = await this.ctx.db
-      .select({ text: schema.messages.text, createdAt: schema.messages.createdAt })
+      .select({
+        text: schema.messages.text,
+        createdAt: schema.messages.createdAt,
+        outside: schema.routineRuns.trigger,
+      })
       .from(schema.routineRuns)
       .innerJoin(schema.turns, eq(schema.turns.routineRunId, schema.routineRuns.id))
       .innerJoin(schema.messages, eq(schema.messages.turnId, schema.turns.id))
@@ -915,7 +1055,7 @@ export class RoutineService {
       .limit(1);
     if (!row?.text.trim()) return null;
     const text = row.text.length > REPORT_MAX ? `${row.text.slice(0, REPORT_MAX)}…` : row.text;
-    return { text, at: row.createdAt.toISOString().slice(0, 16).replace('T', ' ') };
+    return { text, at: row.createdAt.toISOString().slice(0, 16).replace('T', ' '), outside: row.outside };
   }
 
   private async record(routine: Routine, occurrence: string, status: 'skipped', reason: string) {
@@ -981,7 +1121,12 @@ export class RoutineService {
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.routineRunId) return;
     const [run] = await this.ctx.db
-      .select({ failedByBot: schema.routineRuns.failedByBot, routineName: schema.routines.name })
+      .select({
+        failedByBot: schema.routineRuns.failedByBot,
+        routineName: schema.routines.name,
+        routineId: schema.routineRuns.routineId,
+        outside: schema.routineRuns.trigger,
+      })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
       .where(eq(schema.routineRuns.id, turn.routineRunId));
@@ -996,6 +1141,8 @@ export class RoutineService {
       await this.report(turn.botId, thread.id, outcome.text, {
         routineRunId: turn.routineRunId,
         routineName: run.routineName,
+        // Written from outside text: a turn that is handed the report reads that text too.
+        ...(run.outside ? { outside: run.outside } : {}),
       });
     }
     await this.ctx.db
@@ -1071,11 +1218,14 @@ export class RoutineService {
       }
     }
     this.ctx.bus.refresh({ scope: 'routines' });
+    if (run) await this.startQueued(run.routineId);
   }
 }
 
 /** A run waiting this long on a card nobody answered gives way to the routine's next run. */
 const STALE_WAIT_MS = 30 * 60_000;
+/** The most runs of one routine kept waiting for the one going to end. */
+const MAX_QUEUED = 20;
 /** A run that failed for a passing reason starts again this long after. */
 const TRANSIENT_RETRY_DELAY_MS = 5 * 60_000;
 /** A failed run that ended this recently before the failing one means it was already the second try. */

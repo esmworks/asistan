@@ -8,6 +8,8 @@ import {
   type Bot,
   type Effort,
   type Locale,
+  outsideIn,
+  type OutsideTrigger,
 } from '@yumakbot/shared';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
@@ -45,7 +47,6 @@ import type { Services } from '../services';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
-type OutsideTrigger = NonNullable<(typeof schema.routineRuns.$inferSelect)['trigger']>;
 
 const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
 
@@ -605,17 +606,23 @@ export class TurnManager {
     const inRoom = thread.kind === 'room';
     // The person is in the room while its bots talk, as with their own messages.
     const present = attended(turn.source) || inRoom;
-    // What outside text started the turn's routine run (a mail, a webhook's body, a watched page,
-    // an app's new answer): the bot then changes nothing and reaches no web page without a card,
-    // whatever its level. Webhook posts handed to an unattended turn below count the same.
-    let outside: OutsideTrigger | null = null;
-    if (turn.routineRunId) {
-      const [run] = await this.ctx.db
-        .select({ trigger: schema.routineRuns.trigger })
-        .from(schema.routineRuns)
-        .where(eq(schema.routineRuns.id, turn.routineRunId));
-      outside = run?.trigger ?? null;
-    }
+    // The turn's routine run: what outside text started it, and the model the routine names.
+    const [routineRun] = turn.routineRunId
+      ? await this.ctx.db
+          .select({ trigger: schema.routineRuns.trigger, model: schema.routines.model })
+          .from(schema.routineRuns)
+          .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+          .where(eq(schema.routineRuns.id, turn.routineRunId))
+      : [];
+    // Outside text the turn reads (a mail, a webhook's body or post, a watched page, an app's new
+    // answer, a report written from one): its run's, what the prompt hands over below, and what
+    // the session it goes on in has read. The session keeps the mark, and with nobody watching the
+    // bot changes nothing and reaches no web page without a card, whatever its level.
+    let reads: OutsideTrigger | null = routineRun?.trigger ?? null;
+    const note = (x: OutsideTrigger | null | undefined) => {
+      if (x && !reads) reads = x;
+    };
+    const outside = () => (present ? null : reads);
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -769,7 +776,7 @@ export class TurnManager {
         return { behavior: 'deny', message: t('turn.safetyFloor') };
       }
       // Outside text started the run: only reads and talking to the person go without a card.
-      let free = outside ? outsideFreeTools(tools) : readOnlyTools;
+      let free = outside() ? outsideFreeTools(tools) : readOnlyTools;
       const appTool = tools.find((t) => toolPermName(t) === ask.toolName);
       const gated = !!appTool?.gated && (await appTool.gated(ask.input));
       if (gated) {
@@ -794,7 +801,7 @@ export class TurnManager {
           (b) => b.permissionMode,
           () => bot.permissionMode,
         ),
-        !!outside,
+        !!outside(),
       );
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
@@ -817,7 +824,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: !!outside,
+        outside: !!outside(),
       });
       if (verdict === 'allow') return { behavior: 'allow' };
       if (verdict === 'block')
@@ -858,7 +865,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: !!outside,
+        outside: !!outside(),
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -869,7 +876,7 @@ export class TurnManager {
               approvalId: a.id,
               ...held,
               // The card says what started the run, and offers no "always allow".
-              ...(outside ? { outside } : {}),
+              ...(outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
@@ -890,8 +897,8 @@ export class TurnManager {
       const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
         (m) => new Date(m.createdAt) <= turn.createdAt,
       );
-      // A webhook post among them is read again by a new session: unattended, as below.
-      if (!present && !outside && messages.some((m) => m.props.posted)) outside = 'webhook';
+      // Outside text among them is read again by the new session.
+      for (const m of messages) note(outsideIn(m.props));
       return handoffPrompt({
         messages,
         prompt: asked,
@@ -928,10 +935,24 @@ export class TurnManager {
         })
         .slice(-5);
       if (!posts.length) return prompt;
-      // A webhook post is someone else's words: with nobody watching, the turn reading it is run
-      // as one a webhook started.
-      if (!present && !outside && posts.some((m) => m.props.posted)) outside = 'webhook';
+      // A webhook post, or a report from a run outside text started, is someone else's words.
+      for (const m of posts) note(outsideIn(m.props));
       return `${t('prompt.postedSince', { posts: posts.map((m) => postedText(m, t)).join('\n\n') })}\n\n${prompt}`;
+    };
+    // A session the turn goes on in keeps what outside text it had read; the turn's own is added,
+    // and a new one starts from what its prompt hands over. Rooms are watched by the person.
+    const settle = async (prompt: string, resumed: boolean) => {
+      if (inRoom) return prompt;
+      if (resumed) note(thread.outsideSession);
+      if (!resumed || reads !== thread.outsideSession) await threads.setOutsideSession(thread.id, reads);
+      // The run's report is then written from outside text too, and is marked so where it goes.
+      if (reads && turn.routineRunId && !routineRun?.trigger) {
+        await this.ctx.db
+          .update(schema.routineRuns)
+          .set({ trigger: reads })
+          .where(and(eq(schema.routineRuns.id, turn.routineRunId), isNull(schema.routineRuns.trigger)));
+      }
+      return prompt;
     };
     // The bot's plan is one message per turn, rewritten as the plan changes.
     let planMessage: Promise<string> | null = null;
@@ -969,15 +990,8 @@ export class TurnManager {
         ? this.services.rooms.setSessionCost(thread.id, bot.id, costUsd)
         : threads.setSessionCost(thread.id, costUsd);
     // A routine may name a cheaper or stronger model for its runs, on the bot's own engine.
-    const [routineModel] = turn.routineRunId
-      ? await this.ctx.db
-          .select({ model: schema.routines.model })
-          .from(schema.routineRuns)
-          .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
-          .where(eq(schema.routineRuns.id, turn.routineRunId))
-      : [];
     const model =
-      routineModel?.model ||
+      routineRun?.model ||
       bot.model ||
       (bot.engine === 'claude' ? settings.defaultModel : '') ||
       this.ctx.config.claudeModel;
@@ -1080,13 +1094,18 @@ export class TurnManager {
     // What runs of this turn that were replaced by another (a new session, the backup) spent.
     let spent = 0;
     try {
-      outcome = await run(session ? await (inRoom ? roomPrompt(false) : withPosts(asked)) : await handoff());
+      outcome = await run(
+        await settle(
+          session ? await (inRoom ? roomPrompt(false) : withPosts(asked)) : await handoff(),
+          !!session,
+        ),
+      );
       if (!outcome.ok && outcome.kind === 'lostSession') {
         // Its transcript is gone: a new session takes the thread over, once, with the recent exchange.
         session = null;
         await saveSession(null);
         spent += outcome.costUsd ?? 0;
-        outcome = await run(await handoff());
+        outcome = await run(await settle(await handoff(), false));
         if (!outcome.ok && outcome.kind === 'lostSession') outcome = { ...outcome, kind: 'engine' };
       }
       if (!outcome.ok && outcome.kind === 'engine' && session && CONTEXT_FULL.test(outcome.message)) {
@@ -1105,7 +1124,7 @@ export class TurnManager {
         streamed = '';
         shown = 0;
         spent += outcome.costUsd ?? 0;
-        outcome = await run(await handoff());
+        outcome = await run(await settle(await handoff(), false));
       }
       const backup = settings.backupModel;
       // A turn that already changed something is never run again from the start: the backup would

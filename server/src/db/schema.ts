@@ -78,6 +78,12 @@ export const threads = pgTable(
     engineSessionId: text('engine_session_id'),
     /** What the engine session had cost by its last run; the next run's cost is what it adds. */
     engineSessionCostUsd: doublePrecision('engine_session_cost_usd'),
+    /**
+     * Outside text the engine session has read (a mail, a webhook's body or post, a watched page,
+     * or a report written from one); null when it has read none. A turn nobody watches that goes
+     * on in such a session changes nothing without a card. A new session starts it again.
+     */
+    outsideSession: text('outside_session', { enum: ['watch', 'webhook', 'email'] }),
     /** What the conversation is for, set by the person; every turn in it sees it. */
     goal: text('goal').notNull().default(''),
     /** One message the person pinned above the conversation; null for none. */
@@ -345,9 +351,12 @@ export const routineRuns = pgTable(
       .notNull()
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
-    status: text('status', { enum: ['running', 'done', 'error', 'skipped', 'waiting'] }).notNull(),
+    // `queued`: outside text that arrived while another run was going, kept until that one ends.
+    status: text('status', { enum: ['running', 'done', 'error', 'skipped', 'waiting', 'queued'] }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
+    /** What a queued run carries in, kept until it starts. */
+    payload: sealedText('payload'),
     promptSnapshot: text('prompt_snapshot').notNull(),
     /** The bot itself said the run could not do its task. */
     failedByBot: boolean('failed_by_bot').notNull().default(false),
