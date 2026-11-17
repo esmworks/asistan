@@ -113,6 +113,9 @@ function retakes(segment: string): boolean {
 const INLINE_CODE =
   /\b(?:ba|z|da|k|fi)?sh\s+-\w*c\b|\b(?:python[\d.]*|node|nodejs|deno|bun|perl|ruby|php)\b[^\n]*?\s-(?:c|e|r|-eval)\b/i;
 
+/** Whether a command hands code to a program to run (`sh -c`, `python3 -c`, `node -e`). */
+export const runsInlineCode = (command: string): boolean => INLINE_CODE.test(command.replace(/\\\n/g, ' '));
+
 /** Whether a shell command is one that must never run, whoever allowed it. */
 export function catastrophic(command: string): boolean {
   const flat = command.replace(/\\\n/g, ' ');

@@ -273,6 +273,8 @@ const tr = {
   'turn.interruptedByRestart': 'Sunucu yeniden başladığı için bu tur yarıda kaldı.',
   'turn.stoppedByUser': 'Kullanıcı durdurdu',
   'turn.readOnly': 'Bu bot salt okunur kipte; bu işlem yapılamaz.',
+  'turn.refusedLately':
+    'Kullanıcı tam bu adımı az önce reddetti; yeni bir şey yazana kadar tekrar sorma. Başka bir yol dene ya da durumu ona anlat.',
   'turn.blocked':
     'Kullanıcı bunu engelledi ({rule}); bu işlem hiçbir zaman yapılmaz. Başka bir yol dene ya da yapamadığını söyle.',
   'turn.internetOff': 'Bu botun internet erişimi kapalı; komutlar internete çıkamaz.',
@@ -1027,19 +1029,20 @@ const tr = {
   'channel.allow': 'İzin ver',
   'channel.always': 'Hep izin ver',
   'channel.deny': 'Reddet',
-  'channel.outside.email': 'Bu çalıştırma bir e-posta okuyor; her değişiklik seni bekler.',
+  'channel.outside.email': 'Bu çalıştırma bir e-posta okuyor; bu adım için senin sözün gerekiyor.',
   'channel.alwaysWord': 'hep',
   'channel.alwaysHow': 'hep izin vermek için “{answer}” yaz',
   'channel.alwaysByWord':
     'Yalnız bir sayı “hep izin ver”i seçmez. Hep izin vermek için “{answer}” yaz; yalnızca bu kez izin vermek için “İzin ver”in sayısını gönder.',
   'channel.outside.webhook':
-    'Bu çalıştırma bir webhook’un getirdiği metni okuyor; her değişiklik seni bekler.',
-  'channel.outside.watch': 'Bu çalıştırma izlenen bir değişikliği okuyor; her değişiklik seni bekler.',
+    'Bu çalıştırma bir webhook’un getirdiği metni okuyor; bu adım için senin sözün gerekiyor.',
+  'channel.outside.watch':
+    'Bu çalıştırma izlenen bir değişikliği okuyor; bu adım için senin sözün gerekiyor.',
   'channel.outside.web':
-    'Bu çalıştırma bir sayfa, bir API ya da bağlı bir uygulamanın yanıtını okudu; her değişiklik seni bekler.',
-  'channel.outside.forward': 'Bu çalıştırma iletilmiş bir mesajı okuyor; her değişiklik seni bekler.',
+    'Bu çalıştırma bir sayfayı ya da bir API’nin yanıtını okudu; bu adım için senin sözün gerekiyor.',
+  'channel.outside.forward': 'Bu çalıştırma iletilmiş bir mesajı okuyor; bu adım için senin sözün gerekiyor.',
   'channel.outside.stored':
-    'Bu çalıştırma daha önce dışarıdan gelmiş kayıtlı bir metni okudu; her değişiklik seni bekler.',
+    'Bu çalıştırma daha önce dışarıdan gelmiş kayıtlı bir metni okudu; bu adım için senin sözün gerekiyor.',
   'channel.allowed': 'İzin verildi',
   'channel.denied': 'Reddedildi',
   'channel.orType': 'Bir seçeneğe dokun ya da cevabını yaz.',
@@ -1330,6 +1333,8 @@ const en: Catalog<ServerKey> = {
   'turn.interruptedByRestart': 'This turn was cut short because the server restarted.',
   'turn.stoppedByUser': 'Stopped by the user',
   'turn.readOnly': 'This bot is in read-only mode; this action is not allowed.',
+  'turn.refusedLately':
+    'The user refused this very step a moment ago; do not ask again until they write something new. Try another way, or tell them where things stand.',
   'turn.blocked':
     'The user blocked this ({rule}); it is never allowed. Try another way, or say you cannot do it.',
   'turn.internetOff': "This bot's internet access is off; commands cannot reach the internet.",
@@ -2075,17 +2080,16 @@ const en: Catalog<ServerKey> = {
   'channel.allow': 'Allow',
   'channel.always': 'Always allow',
   'channel.deny': 'Deny',
-  'channel.outside.email': 'This run reads a mail; every change waits for you.',
+  'channel.outside.email': 'This run reads a mail; this step needs your word.',
   'channel.alwaysWord': 'always',
   'channel.alwaysHow': 'write “{answer}” to always allow',
   'channel.alwaysByWord':
     'A number alone does not choose “Always allow”. To always allow, write “{answer}”; to allow only this time, send the number of “Allow”.',
-  'channel.outside.webhook': 'This run reads what a webhook brought in; every change waits for you.',
-  'channel.outside.watch': 'This run reads a watched change; every change waits for you.',
-  'channel.outside.web':
-    "This run read a page, an API's or a connected app's answer; every change waits for you.",
-  'channel.outside.forward': 'This run reads a forwarded message; every change waits for you.',
-  'channel.outside.stored': 'This run read saved text that came from outside; every change waits for you.',
+  'channel.outside.webhook': 'This run reads what a webhook brought in; this step needs your word.',
+  'channel.outside.watch': 'This run reads a watched change; this step needs your word.',
+  'channel.outside.web': "This run read a page or an API's answer; this step needs your word.",
+  'channel.outside.forward': 'This run reads a forwarded message; this step needs your word.',
+  'channel.outside.stored': 'This run read saved text that came from outside; this step needs your word.',
   'channel.allowed': 'Allowed',
   'channel.denied': 'Denied',
   'channel.orType': 'Tap a choice or type your answer.',

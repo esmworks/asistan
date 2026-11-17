@@ -292,17 +292,17 @@ export const tr = {
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
   'approval.outside.email':
-    'Bu çalıştırma bir e-posta okuyor ve e-postayı herkes yazabilir: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma bir e-posta okuyor ve e-postayı herkes yazabilir: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.webhook':
-    'Bu çalıştırma bir webhook’un getirdiği, başkasının yazdığı bir metni okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma bir webhook’un getirdiği, başkasının yazdığı bir metni okuyor: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.watch':
-    'Bu çalıştırma izlenen bir sayfadaki ya da bir uygulamadaki, başkasının yazdığı bir değişikliği okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma izlenen bir sayfadaki ya da bir uygulamadaki, başkasının yazdığı bir değişikliği okuyor: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.web':
-    'Bu çalıştırma başkasının yazdığı bir web sayfasını, bir API’nin ya da bağlı bir uygulamanın yanıtını okudu: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma başkasının yazdığı bir web sayfasını ya da bir API’nin yanıtını okudu: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.forward':
-    'Bu çalıştırma başkasından iletilmiş bir mesajı okuyor: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma başkasından iletilmiş bir mesajı okuyor: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.stored':
-    'Bu çalıştırma daha önce dışarıdan gelmiş kayıtlı bir metni (bir konuşma, bir iş kartı, bir tablo) okudu: bot başka zaman kendi başına yapabilse de her değişiklik seni bekler.',
+    'Bu çalıştırma daha önce dışarıdan gelmiş kayıtlı bir metni (bir konuşma, bir iş kartı, bir tablo) okudu: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'chat.dictation': 'Yazmak yerine konuş',
   'chat.dictationStop': 'Durdur ve yazıya dök',
   'chat.dictationFailed': 'Konuşma alınamadı: {message}',

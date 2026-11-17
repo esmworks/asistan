@@ -62,6 +62,24 @@ export async function ownerWords(ctx: Ctx, turn: TurnRow, hops = 0): Promise<str
 }
 
 /**
+ * Whether the work a turn does goes back to a message the person wrote: their own turn, or work
+ * bots handed on from one, followed back. A routine, a room's round or a chain whose start is gone
+ * is not: nobody asked for it just now.
+ */
+export async function personAsked(ctx: Ctx, turn: TurnRow, hops = 0): Promise<boolean> {
+  if (turn.source === 'user' || turn.source === 'reaction') return true;
+  if (!turn.jobId || hops >= MAX_HOPS) return false;
+  const [job] = await ctx.db
+    .select({ fromTurnId: schema.jobs.fromTurnId })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, turn.jobId))
+    .limit(1);
+  if (!job?.fromTurnId) return false;
+  const [from] = await ctx.db.select().from(schema.turns).where(eq(schema.turns.id, job.fromTurnId)).limit(1);
+  return from ? personAsked(ctx, from, hops + 1) : false;
+}
+
+/**
  * The person's latest messages in the turn's conversation, oldest first; messages written while
  * the turn runs are handed to it too, so they count. A message they forwarded from someone else
  * is that one's words, and does not.

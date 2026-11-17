@@ -270,6 +270,8 @@ export interface ReviewRequest {
    * saved instructions (see `ownerWords`). Never a payload, a page or another bot's message.
    */
   words: string[];
+  /** The run has read text someone else wrote (a page, an API's answer, a mail). */
+  outside?: boolean;
   /** Language of the reason the person reads. */
   locale: Locale;
   signal: AbortSignal;

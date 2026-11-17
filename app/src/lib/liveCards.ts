@@ -1,8 +1,7 @@
-import type { Message } from '@yumakbot/shared';
+import { streamParts, type Message, type StreamPart } from '@yumakbot/shared';
 import { useLayoutEffect } from 'react';
 import { useApprovals } from './queries';
 import { useUi, type Stream } from './store';
-import { streamParts, type StreamPart } from './streamParts';
 import { restartTyping } from './typewriter';
 
 /**

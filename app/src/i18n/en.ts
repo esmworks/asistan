@@ -296,17 +296,17 @@ export const en: Catalog<MessageKey> = {
   'approval.askRule':
     'Your rule “{rule}” asks every time; while it stands, "Always allow" would change nothing.',
   'approval.outside.email':
-    'This run reads a mail, and anyone can write one: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads a mail, and anyone can write one: nothing in it can ask for a step, so this one needs your word.',
   'approval.outside.webhook':
-    'This run reads what a webhook brought in, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads what a webhook brought in, which someone else wrote: nothing in it can ask for a step, so this one needs your word.',
   'approval.outside.watch':
-    'This run reads a change on a watched page or in an app, which someone else wrote: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads a change on a watched page or in an app, which someone else wrote: nothing in it can ask for a step, so this one needs your word.',
   'approval.outside.web':
-    "This run read a web page, an API's or a connected app's answer, which someone else wrote: every change waits for you, whatever the bot may do otherwise.",
+    "This run read a web page or an API's answer, which someone else wrote: nothing in it can ask for a step, so this one needs your word.",
   'approval.outside.forward':
-    'This run reads a message forwarded from someone else: every change waits for you, whatever the bot may do otherwise.',
+    'This run reads a message forwarded from someone else: nothing in it can ask for a step, so this one needs your word.',
   'approval.outside.stored':
-    'This run read saved text that came from outside (a conversation, a ticket, a table): every change waits for you, whatever the bot may do otherwise.',
+    'This run read saved text that came from outside (a conversation, a ticket, a table): nothing in it can ask for a step, so this one needs your word.',
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',
