@@ -69,6 +69,9 @@ import type {
   PluginPlan,
   ApiSource,
   ApiSourceCreate,
+  Ticket,
+  TicketCreate,
+  TicketUpdate,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -422,6 +425,11 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  tickets: () => http.get<Ticket[]>('/api/tickets'),
+  createTicket: (input: TicketCreate) => http.post<Ticket>('/api/tickets', input),
+  updateTicket: (id: string, patch: TicketUpdate) => http.patch<Ticket>(`/api/tickets/${id}`, patch),
+  removeTicket: (id: string) => http.del<{ ok: true }>(`/api/tickets/${id}`),
+  commentTicket: (id: string, text: string) => http.post<Ticket>(`/api/tickets/${id}/comments`, { text }),
   apiSources: () => http.get<ApiSource[]>('/api/api-sources'),
   addApiSource: (input: ApiSourceCreate) => http.post<ApiSource>('/api/api-sources', input),
   refreshApiSource: (id: string) => http.post<ApiSource>(`/api/api-sources/${id}/refresh`),

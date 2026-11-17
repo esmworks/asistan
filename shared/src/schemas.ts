@@ -130,7 +130,7 @@ export const GroupMove = z.object({ beforeId: Id.nullable() });
 export type GroupMove = z.infer<typeof GroupMove>;
 
 /** `api`: messages sent to the bot from a script or another app through its API. */
-export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room']);
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket']);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
 export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);
@@ -1001,3 +1001,52 @@ export const ApiSourceCreate = z
   })
   .refine((v) => !!v.specUrl || !!v.spec, 'validation.openapiSource');
 export type ApiSourceCreate = z.input<typeof ApiSourceCreate>;
+
+export const TICKET_STATUSES = ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] as const;
+export const TicketStatus = z.enum(TICKET_STATUSES);
+export type TicketStatus = z.infer<typeof TicketStatus>;
+export const TICKET_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
+export const TicketPriority = z.enum(TICKET_PRIORITIES);
+export type TicketPriority = z.infer<typeof TicketPriority>;
+
+export const TicketComment = z.object({
+  id: Id,
+  author: z.string(),
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type TicketComment = z.infer<typeof TicketComment>;
+
+/** A ticket of the board. */
+export const Ticket = z.object({
+  id: Id,
+  number: z.number(),
+  title: z.string(),
+  description: z.string(),
+  status: TicketStatus,
+  priority: TicketPriority,
+  assigneeBotId: Id.nullable(),
+  createdBy: z.string(),
+  threadId: Id.nullable(),
+  comments: z.array(TicketComment),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Ticket = z.infer<typeof Ticket>;
+
+export const TicketCreate = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20_000).default(''),
+  priority: TicketPriority.default('normal'),
+  assigneeBotId: Id.nullable().default(null),
+});
+export type TicketCreate = z.input<typeof TicketCreate>;
+export const TicketUpdate = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(20_000).optional(),
+  status: TicketStatus.optional(),
+  priority: TicketPriority.optional(),
+  assigneeBotId: Id.nullable().optional(),
+});
+export type TicketUpdate = z.input<typeof TicketUpdate>;
+export const TicketCommentCreate = z.object({ text: z.string().trim().min(1).max(20_000) });

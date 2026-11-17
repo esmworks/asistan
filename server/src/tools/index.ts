@@ -34,6 +34,7 @@ import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
+import { ticketTools } from './tickets';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -114,6 +115,10 @@ export type ToolName =
   | 'api_request'
   | 'api_operations'
   | 'api_call'
+  | 'tickets_list'
+  | 'ticket_read'
+  | 'ticket_create'
+  | 'ticket_update'
   | 'email_inbox'
   | 'email_read'
   | 'page_to_image'
@@ -1009,6 +1014,7 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    tools.push(...ticketTools({ def, services: s, bot, turn, t }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
       const askLogin: AskLogin = async (site, host) => {

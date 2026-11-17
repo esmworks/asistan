@@ -20,6 +20,7 @@ import { TranscribeService } from './transcribe';
 import { SpeechService } from './speech';
 import { PluginService } from './plugins';
 import { ApiSourceService } from './api-sources';
+import { TicketService } from './tickets';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -69,6 +70,7 @@ export class Services {
   readonly speech: SpeechService;
   readonly plugins: PluginService;
   readonly apiSources: ApiSourceService;
+  readonly tickets: TicketService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -118,6 +120,8 @@ export class Services {
     this.speech = new SpeechService(this.ai);
     this.plugins = new PluginService(this);
     this.apiSources = new ApiSourceService(ctx, this.apiCredentials);
+    this.tickets = new TicketService(ctx, this);
+    this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }

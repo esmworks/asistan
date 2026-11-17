@@ -58,6 +58,25 @@ const tr = {
   'error.notFound.skill': 'Beceri bulunamadı',
   'error.notFound.apiKey': 'API anahtarı bulunamadı',
   'error.notFound.apiSource': 'API belgesi bulunamadı',
+  'error.notFound.ticket': 'Görev bulunamadı',
+  'ticket.prompt':
+    'Panodaki #{number} numaralı görev sana verildi.\nBaşlık: {title}\nÖncelik: {priority}\n\nAçıklama:\n{description}\n\nYorumlar:\n{comments}\n\nGörevi yap. Bitince ne yaptığını ve sonucu kısaca yaz; bu yazdığın göreve yorum olarak eklenir ve görev incelemeye alınır. Sürdüremiyorsan ticket_update ile durumu blocked yap ve nedenini yorum olarak yaz; kullanıcıdan bir şey gerekiyorsa sor.',
+  'ticket.commentPrompt':
+    'Kullanıcı #{number} numaralı göreve yorum yazdı:\n\n{comment}\n\nBuna göre işe devam et ve sonucu kısaca yaz.',
+  'ticket.noDescription': '(açıklama yok)',
+  'ticket.noComments': '(yorum yok)',
+  'ticket.failed': 'Çalışma yarıda kaldı: {message}',
+  'ticket.you': 'Kullanıcı',
+  'ticket.status.todo': 'yapılacak',
+  'ticket.status.in_progress': 'sürüyor',
+  'ticket.status.in_review': 'incelemede',
+  'ticket.status.blocked': 'engelli',
+  'ticket.status.done': 'bitti',
+  'ticket.status.wont_do': 'yapılmayacak',
+  'ticket.priority.low': 'düşük',
+  'ticket.priority.normal': 'normal',
+  'ticket.priority.high': 'yüksek',
+  'ticket.priority.urgent': 'acil',
   'error.openapiServer':
     'API’nin adresi https:// ile başlamalı (yalnızca yerel ağdaki bir servis için http:// olabilir); belge bir sunucu adresi vermiyorsa sen gir',
   'error.openapiFormat': 'Bu bir OpenAPI JSON belgesi değil',
@@ -506,6 +525,19 @@ const tr = {
   'tool.apiOperationsNone': 'Bu aramaya uyan işlem yok.',
   'tool.apiParams': 'parametreler',
   'tool.apiOperationsMore': '…ve {count} işlem daha; query ile daralt.',
+  'tool.tickets_list':
+    'Panodaki görevleri listele: numara, durum, başlık, öncelik ve kime verildiği. status ile durumlara göre süz (todo, in_progress, in_review, blocked, done, wont_do); mine: true yalnız sana verilenleri getirir.',
+  'tool.ticket_read': 'Bir görevi açıklaması ve yorumlarıyla oku (ticket: numarası, ör. 12).',
+  'tool.ticket_create':
+    'Panoya yeni bir görev ekle: title, description, priority (low, normal, high, urgent), assign_to (bir botun adı; verilirse o bot hemen işe başlar). Kullanıcı panodan görür.',
+  'tool.ticket_update':
+    'Bir görevi güncelle (ticket: numarası): status, comment (göreve yorum), assign_to (bir botun adı; boş bırakmak için ""), priority, title, description. Yalnız değişecek alanları ver.',
+  'tool.ticketsNone': 'Panoda böyle bir görev yok.',
+  'tool.ticketMissing': '#{ticket} numaralı görev yok.',
+  'tool.ticketCreated': '#{number} numaralı görev panoya eklendi.',
+  'tool.ticketCreatedWaiting':
+    '#{number} numaralı görev panoya eklendi; bir görev üzerinde çalışırken açıldığı için atanan bot kullanıcı başlatana kadar bekler.',
+  'tool.ticketUpdated': '#{number} numaralı görev güncellendi.',
   'tool.image_create':
     'Yazılı bir tariften resim oluştur (fotoğraf, çizim, logo, illüstrasyon) ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. prompt: resmin ayrıntılı tarifi (konu, üslup, renkler, kompozisyon; resimde yazı olacaksa tam metni tırnak içinde), shape: square, landscape ya da portrait, caption: isteğe bağlı kısa not. Her resim kullanıcının API hesabından ücretlendirilir: istenmeyen ya da gereksiz resim yapma. Yazılı tasarımlar (afiş, kapak, sosyal medya kartı) için page_to_image, grafik ve şema için HTML sayfası ya da Mermaid kullan.',
   'tool.imageCreated':
@@ -948,6 +980,25 @@ const en: Catalog<ServerKey> = {
   'error.notFound.skill': 'Skill not found',
   'error.notFound.apiKey': 'API key not found',
   'error.notFound.apiSource': 'API document not found',
+  'error.notFound.ticket': 'Ticket not found',
+  'ticket.prompt':
+    'Ticket #{number} of the board was assigned to you.\nTitle: {title}\nPriority: {priority}\n\nDescription:\n{description}\n\nComments:\n{comments}\n\nDo the work. When done, write briefly what you did and the result; what you write is added to the ticket as a comment and the ticket moves to review. If you cannot go on, set its status to blocked with ticket_update and say why in a comment; ask the user if you need something from them.',
+  'ticket.commentPrompt':
+    'The user commented on ticket #{number}:\n\n{comment}\n\nGo on with the work accordingly and write the result briefly.',
+  'ticket.noDescription': '(no description)',
+  'ticket.noComments': '(no comments)',
+  'ticket.failed': 'The work stopped midway: {message}',
+  'ticket.you': 'User',
+  'ticket.status.todo': 'to do',
+  'ticket.status.in_progress': 'in progress',
+  'ticket.status.in_review': 'in review',
+  'ticket.status.blocked': 'blocked',
+  'ticket.status.done': 'done',
+  'ticket.status.wont_do': "won't do",
+  'ticket.priority.low': 'low',
+  'ticket.priority.normal': 'normal',
+  'ticket.priority.high': 'high',
+  'ticket.priority.urgent': 'urgent',
   'error.openapiServer':
     'The API’s address must start with https:// (http:// only for a service on the local network); enter it if the document names no server',
   'error.openapiFormat': 'This is not an OpenAPI JSON document',
@@ -1388,6 +1439,19 @@ const en: Catalog<ServerKey> = {
   'tool.apiOperationsNone': 'No operation matches this search.',
   'tool.apiParams': 'parameters',
   'tool.apiOperationsMore': '…and {count} more operations; narrow with query.',
+  'tool.tickets_list':
+    'List the tickets of the board: number, status, title, priority and who has it. Filter by status (todo, in_progress, in_review, blocked, done, wont_do); mine: true lists only yours.',
+  'tool.ticket_read': 'Read a ticket with its description and comments (ticket: its number, e.g. 12).',
+  'tool.ticket_create':
+    "Add a ticket to the board: title, description, priority (low, normal, high, urgent), assign_to (a bot's name; if given, that bot starts on it at once). The user sees it on the board.",
+  'tool.ticket_update':
+    'Update a ticket (ticket: its number): status, comment (a comment on it), assign_to (a bot\'s name; "" to clear), priority, title, description. Give only the fields that change.',
+  'tool.ticketsNone': 'No such tickets on the board.',
+  'tool.ticketMissing': 'There is no ticket #{ticket}.',
+  'tool.ticketCreated': 'Ticket #{number} was added to the board.',
+  'tool.ticketCreatedWaiting':
+    'Ticket #{number} was added to the board; since it was opened during ticket work, its bot waits until the user starts it.',
+  'tool.ticketUpdated': 'Ticket #{number} was updated.',
   'tool.image_create':
     "Create a picture from a written description (a photo, drawing, logo, illustration) and send it to the user as a picture; do not call send_file as well. prompt: a detailed description (subject, style, colours, composition; any text in the picture in quotes, word for word), shape: square, landscape or portrait, caption: an optional short note. Each picture is charged to the user's API account: make none they did not ask for. For charts and diagrams use an HTML page or Mermaid instead.",
   'tool.imageCreated':

@@ -16,6 +16,7 @@ export type RefreshScope =
   | { scope: 'skills' }
   | { scope: 'rooms' }
   | { scope: 'channels' }
+  | { scope: 'tickets' }
   | { scope: 'info' };
 
 export interface HelloEvent {

@@ -68,7 +68,8 @@ export const threads = pgTable(
       .references(() => bots.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default(''),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
-    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room'] })
+    // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
+    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
       .notNull()
       .default('user'),
     /** For bot-to-bot threads: the other bot. */
@@ -178,7 +179,8 @@ export const turns = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
-    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot'] }).notNull(),
+    // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
+    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
     status: text('status', {
       enum: ['queued', 'running', 'done', 'error', 'interrupted'],
     }).notNull(),
@@ -752,4 +754,48 @@ export const apiSources = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('api_sources_name_uq').on(t.name)],
+);
+
+/**
+ * The board: tickets the person and the bots both work from. A ticket assigned to a bot starts it
+ * on the work in a conversation of its own; what the bot reports comes back as a comment.
+ */
+export const tickets = pgTable(
+  'tickets',
+  {
+    id: text('id').primaryKey(),
+    /** Shown as #12; grows by one with each ticket. */
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })
+      .notNull()
+      .default('todo'),
+    priority: text('priority', { enum: ['low', 'normal', 'high', 'urgent'] })
+      .notNull()
+      .default('normal'),
+    assigneeBotId: text('assignee_bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    /** `user`, or `bot:<id>` for a ticket a bot made. */
+    createdBy: text('created_by').notNull(),
+    /** The conversation the assignee works on it in; made on its first assignment. */
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('tickets_number_uq').on(t.number), index('tickets_status_idx').on(t.status)],
+);
+
+export const ticketComments = pgTable(
+  'ticket_comments',
+  {
+    id: text('id').primaryKey(),
+    ticketId: text('ticket_id')
+      .notNull()
+      .references(() => tickets.id, { onDelete: 'cascade' }),
+    /** `user` or `bot:<id>`. */
+    author: text('author').notNull(),
+    text: text('text').notNull(),
+    createdAt: created(),
+  },
+  (t) => [index('ticket_comments_ticket_idx').on(t.ticketId, t.createdAt)],
 );

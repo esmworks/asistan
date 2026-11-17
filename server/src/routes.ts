@@ -67,6 +67,9 @@ import {
   AiEndpointSet,
   PluginInstall,
   ApiSourceCreate,
+  TicketCommentCreate,
+  TicketCreate,
+  TicketUpdate,
 } from '@yumakbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -525,6 +528,20 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { skills, servers };
   });
+  // The board: tickets the person and the bots work from.
+  app.get('/api/tickets', async () => s.tickets.list());
+  app.post('/api/tickets', async (req) => s.tickets.create(TicketCreate.parse(req.body)));
+  app.patch('/api/tickets/:id', async (req) =>
+    s.tickets.update(IdParams.parse(req.params).id, TicketUpdate.parse(req.body)),
+  );
+  app.delete('/api/tickets/:id', async (req) => {
+    await s.tickets.remove(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+  app.post('/api/tickets/:id/comments', async (req) =>
+    s.tickets.comment(IdParams.parse(req.params).id, TicketCommentCreate.parse(req.body).text),
+  );
+
   // Plugins: read first, so the person sees what each would add, then installed as connections
   // and skills.
   app.post('/api/plugins/preview', async (req) =>

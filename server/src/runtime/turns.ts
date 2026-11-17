@@ -45,7 +45,7 @@ import type { Services } from '../services';
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
 
-const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, bot: 2 };
+const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
 
 /** What Claude Code asks before a sandboxed command reaches a host the sandbox does not list. */
 const SANDBOX_NETWORK = 'SandboxNetworkAccess';

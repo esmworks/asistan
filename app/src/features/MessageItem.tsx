@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   Ban,
+  KanbanSquare,
   Check,
   Circle,
   CircleCheck,
@@ -105,6 +106,12 @@ export function MessageItem({
       return (
         <div className="group/own flex flex-col items-end gap-1" data-message-id={m.id}>
           {quote && <QuoteLine quote={quote} threadId={m.threadId} />}
+          {m.author.startsWith('ticket:') && (
+            <span className="flex items-center gap-1 px-2 text-xs text-muted-foreground">
+              <KanbanSquare className="size-3" />
+              {t('message.ticketNamed', { number: String(m.props.ticketNumber ?? '') })}
+            </span>
+          )}
           {m.author.startsWith('routine:') && (
             <span className="flex items-center gap-1 px-2 text-xs text-muted-foreground">
               <Clock className="size-3" />
