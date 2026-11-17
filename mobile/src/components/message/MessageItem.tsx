@@ -876,6 +876,15 @@ export function LiveReply({ text, bot, threadId }: { text: string; bot: Bot | un
   );
 }
 
+/** Text a bot wrote before a card it asked in the same reply, while that reply still streams in. */
+export function LiveText({ text }: { text: string }) {
+  return (
+    <View style={styles.assistantCol}>
+      <AssistantCard text={text} streaming />
+    </View>
+  );
+}
+
 export type WorkingActivity = 'queued' | 'thinking' | 'writing' | 'browsing' | 'waiting';
 
 /** The bot at work under the conversation: who it is, and what it does. */

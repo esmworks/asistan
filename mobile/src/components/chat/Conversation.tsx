@@ -1,5 +1,5 @@
 import type { SlashCommand } from '@yumakbot/app/src/lib/slash';
-import type { Bot, Message, Thread } from '@yumakbot/shared';
+import { streamParts, type Bot, type Message, type Thread } from '@yumakbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
@@ -16,7 +16,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Avatar } from '@/components/Avatar';
-import { LiveReply, MessageItem, Working } from '@/components/message/MessageItem';
+import { LiveReply, LiveText, MessageItem, Working } from '@/components/message/MessageItem';
 import { toast, toastError } from '@/components/overlay';
 import { Button } from '@/components/ui';
 import { locale, t } from '@/i18n';
@@ -24,6 +24,7 @@ import { ApiError } from '@/lib/api';
 import { useTapToDismiss } from '@/lib/dismiss';
 import { formatters, needsDivider } from '@/lib/format';
 import { nav } from '@/lib/nav';
+import { useLiveCards } from '@/lib/liveCards';
 import { useMessages } from '@/lib/queries';
 import { useLiveState, useStream } from '@/lib/realtime';
 import { useApi, useServer } from '@/lib/server';
@@ -42,7 +43,8 @@ type Row =
   | { kind: 'divider'; key: string; label: string }
   | { kind: 'new'; key: string }
   | { kind: 'message'; key: string; m: Message }
-  | { kind: 'live'; key: string }
+  | { kind: 'part'; key: string; text: string }
+  | { kind: 'live'; key: string; from: number }
   | { kind: 'waiting'; key: string }
   | { kind: 'replies'; key: string; options: string[] };
 
@@ -155,27 +157,52 @@ export function Conversation({
   const streamDone = streamSaved(stream, messages);
   const hasText = !!stream?.text;
   const hasPending = pending.length > 0;
+  // A card asked while the reply streams in goes inside it, where it was asked.
+  const { messages: shown, cards, head, end } = useLiveCards(listed, stream, streamDone);
+  // Whether anything was written after the last card: until then the turn waits on its answer.
+  const tail = (stream?.text.length ?? 0) > end;
   const rows = useMemo(() => {
     const firstNew =
       readUntil == null
         ? null
         : (messages.find((m, i) => i > 0 && m.role === 'assistant' && m.createdAt > readUntil)?.id ?? null);
     const out: Row[] = [];
-    listed.forEach((m, i) => {
-      if (needsDivider(listed[i - 1], m))
+    shown.forEach((m, i) => {
+      if (needsDivider(shown[i - 1], m))
         out.push({ kind: 'divider', key: `d-${m.id}`, label: fmt.dayLabel(m.createdAt) });
       if (m.id === firstNew) out.push({ kind: 'new', key: `n-${m.id}` });
       // A message keeps its row from the moment it is sent until the server's copy replaces it.
       out.push({ kind: 'message', key: m.clientId || m.id, m });
     });
+    for (const p of streamParts(head, cards))
+      out.push(
+        p.kind === 'text'
+          ? { kind: 'part', key: `part-${p.from}`, text: p.text }
+          : { kind: 'message', key: p.card.id, m: p.card },
+      );
     out.reverse();
-    if (!streamDone && (hasText || working)) out.unshift({ kind: 'live', key: 'live' });
+    const held = cards.length > 0 && !tail && state === 'waiting';
+    if (!streamDone && (hasText || working) && !held) out.unshift({ kind: 'live', key: 'live', from: end });
     // A turn held on the person's answer says so under the card that asks.
     else if (state === 'waiting') out.unshift({ kind: 'waiting', key: 'waiting' });
     else if (replies && !working && !hasPending)
       out.unshift({ kind: 'replies', key: 'replies', options: replies });
     return out;
-  }, [listed, messages, readUntil, streamDone, hasText, working, state, replies, hasPending]);
+  }, [
+    shown,
+    cards,
+    head,
+    end,
+    tail,
+    messages,
+    readUntil,
+    streamDone,
+    hasText,
+    working,
+    state,
+    replies,
+    hasPending,
+  ]);
 
   const targetIndex = useMemo(
     () => (target ? rows.findIndex((r) => r.kind === 'message' && r.m.id === target.id) : -1),
@@ -315,8 +342,10 @@ export function Conversation({
           return <Text style={[styles.divider, { color: c.mutedForeground }]}>{item.label}</Text>;
         case 'new':
           return <NewSince />;
+        case 'part':
+          return <LiveText text={item.text} />;
         case 'live':
-          return <LiveRow threadId={threadId} bot={bot} />;
+          return <LiveRow threadId={threadId} bot={bot} from={item.from} />;
         case 'waiting':
           return <Working bot={bot} activity="waiting" threadId={threadId} />;
         case 'replies':
@@ -484,10 +513,13 @@ function NewLine() {
   return <View style={styles.newLine} />;
 }
 
-/** The reply being written; reads the live text itself so the saved rows are not drawn again. */
-function LiveRow({ threadId, bot }: { threadId: string; bot: Bot }) {
+/**
+ * The reply being written, from `from` (after the cards asked in it); reads the live text itself so
+ * the saved rows are not drawn again.
+ */
+function LiveRow({ threadId, bot, from }: { threadId: string; bot: Bot; from: number }) {
   const stream = useStream(threadId);
-  return <LiveReply text={stream?.text ?? ''} bot={bot} threadId={threadId} />;
+  return <LiveReply text={stream?.text.slice(from) ?? ''} bot={bot} threadId={threadId} />;
 }
 
 const MessageRow = memo(function MessageRow({

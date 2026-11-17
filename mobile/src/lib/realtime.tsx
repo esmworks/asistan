@@ -18,6 +18,8 @@ class LiveStore {
   streams: Streams = {};
   states: Readonly<Record<string, TurnState>> = {};
   tools: Readonly<Record<string, string | null>> = {};
+  /** How much of its turn's streaming text had arrived when each card (by message id) did. */
+  cardCuts: Readonly<Record<string, number>> = {};
   connected = false;
   private listeners = new Set<() => void>();
 
@@ -53,6 +55,12 @@ class LiveStore {
     this.emit();
   }
 
+  /** Notes where cards were asked in their turn's text; a card's first note stays. */
+  markCards = (cuts: Record<string, number>) => {
+    this.cardCuts = { ...cuts, ...this.cardCuts };
+    this.emit();
+  };
+
   setConnected(on: boolean) {
     this.connected = on;
     this.emit();
@@ -62,6 +70,7 @@ class LiveStore {
     this.streams = {};
     this.states = {};
     this.tools = {};
+    this.cardCuts = {};
     this.emit();
   }
 }
@@ -90,6 +99,13 @@ export function useLiveState(threadId: string | undefined): TurnState | undefine
 export function useLiveTool(threadId: string | undefined): string | null {
   const store = useLive();
   return useSyncExternalStore(store.subscribe, () => (threadId ? (store.tools[threadId] ?? null) : null));
+}
+
+/** Where the cards of streaming turns were asked, and how to note new ones. */
+export function useCardCuts(): [Readonly<Record<string, number>>, (cuts: Record<string, number>) => void] {
+  const store = useLive();
+  const cuts = useSyncExternalStore(store.subscribe, () => store.cardCuts);
+  return [cuts, store.markCards];
 }
 
 /** Whether the socket to the server is up, for the connection dot. */
