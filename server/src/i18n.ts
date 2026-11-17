@@ -828,6 +828,22 @@ const tr = {
   'browser.fillSkipped': 'Şu alanlar gizli bilgi istediği için doldurulmadı: {fields}.',
   'browser.codeNone': '{site} için kasada iki adımlı kod kaydı yok; kullanıcıdan kodu girmesini iste.',
   'browser.codeTyped': '{site} için iki adımlı kod kasadan yazıldı.',
+  'browser.loginInsecure':
+    'Bu sayfa şifrelenmemiş bir bağlantı (http) kullanıyor; yoldaki herkes okuyabileceği için giriş bilgileri ve kodlar yazılmaz. Sitenin https adresini dene ya da kullanıcıya söyle.',
+  'browser.loginNotPassword':
+    'password_ref bir şifre alanını göstermiyor; şifre yalnızca şifre alanına yazılır. browser_snapshot ile doğru alanı bul.',
+  'browser.loginNotUsername':
+    'username_ref bir kullanıcı adı ya da e-posta alanını göstermiyor; kullanıcı adı yalnızca böyle bir alana yazılır. browser_snapshot ile doğru alanı bul.',
+  'browser.codeNotField':
+    'ref bir kod alanını göstermiyor; kod yalnızca kodu soran alana yazılır. browser_snapshot ile doğru alanı bul.',
+  'browser.loginFrame':
+    'Bu alan başka bir siteye ({origin}) ya da şifrelenmemiş bir sayfaya ait; giriş bilgileri yalnızca {site} sitesinin kendi sayfasına yazılır.',
+  'browser.loginAction':
+    'Bu alanın formu bilgileri başka bir adrese ({target}) gönderiyor; giriş bilgileri yalnızca {site} sitesine gönderilen bir forma yazılır.',
+  'browser.screenshotSecret':
+    'Kasadan yazılmış bir şifre ya da kod sayfada açıkça görünüyor; ekran görüntüsü alınmadı. Sayfayı browser_snapshot ile oku ya da o sayfadan ayrıl.',
+  'browser.sendHeld':
+    'Bu adımdan sonra sayfa bir form göndermeye çalıştı; gönderilmedi ve sayfa olduğu gibi kaldı. Göndermek kullanıcının istediği bir şeyse formun gönder düğmesine sends: true ile tıkla; kullanıcı onaylar.',
   'browser.cut': '… (sayfa uzun; gerisi için kaydır ve yeniden bak)',
   'browser.uploadTooBig': 'Dosyalar birlikte {max} MB sınırını aşıyor; daha azını ya da daha küçüğünü yükle.',
   'computer.screen': 'Ekran görüntüsü ({width}x{height}).',
@@ -1817,6 +1833,22 @@ const en: Catalog<ServerKey> = {
   'browser.fillSkipped': 'These fields ask for a secret and were not filled: {fields}.',
   'browser.codeNone': 'The vault keeps no two-step code for {site}; ask the user to enter the code.',
   'browser.codeTyped': 'The two-step code for {site} was typed from the vault.',
+  'browser.loginInsecure':
+    'This page uses an unencrypted connection (http): anyone along the way could read sign-in details and codes, so they are not typed in. Try the site’s https address, or tell the user.',
+  'browser.loginNotPassword':
+    'password_ref does not point at a password field; the password is only typed into a password field. Find the right field with browser_snapshot.',
+  'browser.loginNotUsername':
+    'username_ref does not point at a username or email field; the username is only typed into such a field. Find the right field with browser_snapshot.',
+  'browser.codeNotField':
+    'ref does not point at a code field; the code is only typed into the field that asks for it. Find the right field with browser_snapshot.',
+  'browser.loginFrame':
+    'This field belongs to another site ({origin}) or to an unencrypted page; sign-in details are only typed into a page of {site} itself.',
+  'browser.loginAction':
+    'This field’s form sends what it holds to another address ({target}); sign-in details are only typed into a form that sends them to {site}.',
+  'browser.screenshotSecret':
+    'A password or code typed from the vault shows in plain text on the page, so no screenshot was taken. Read the page with browser_snapshot, or leave that page.',
+  'browser.sendHeld':
+    'After this step the page tried to send a form; it was not sent, and the page stayed as it was. If sending is what the user wants, click the form’s send button with sends: true; the user then approves.',
   'browser.cut': '… (long page; scroll and look again for the rest)',
   'browser.uploadTooBig': 'The files together are over the {max} MB limit; upload fewer or smaller ones.',
   'computer.screen': 'Screenshot ({width}x{height}).',
