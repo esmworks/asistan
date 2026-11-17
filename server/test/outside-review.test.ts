@@ -18,10 +18,11 @@ describe('dış metin okumuş, kişinin isteğinden gelen iş', () => {
    * The person asks the manager, the manager read an API's answer and hands the work to the
    * worker: the worker's run carries the mark of that outside text.
    */
-  const handOver = async (worker: Partial<BotCreate>, step: string, fromPerson = true) => {
+  const handOver = async (worker: Partial<BotCreate>, step: string, fromPerson = true, allow?: string) => {
     t = await testServer({ unattendedApprovalMs: 5_000 });
     const manager = await t.bot({ name: 'Yönetici', isManager: true });
     const to: Bot = await t.bot({ name: 'İşçi', ...worker });
+    if (allow) await t.services.approvals.addRule({ list: 'allow', pattern: allow, note: '', botId: to.id });
     const thread = await main(t, manager.id);
     const asked = await t.send(thread.id, 'Tabloyu düzelt');
     await t.services.turns.idle();
@@ -54,11 +55,34 @@ describe('dış metin okumuş, kişinin isteğinden gelen iş', () => {
     expect(req!.words).toEqual(['Tabloyu düzelt']);
   });
 
-  it('kendi başına iş yapan bot da böyle bir işte incelemeden geçer', async () => {
+  it('kendi başına iş yapan bot böyle bir işte kendi düzeyinde kalır: kart da inceleme de yok', async () => {
     await handOver({ permissionMode: 'auto' }, '[izin:Write {"file_path":"emin-değil.txt"}]');
+    await t.services.turns.idle();
+    expect((await t.api<Approval[]>('GET', '/api/approvals')).body).toHaveLength(0);
+    expect(t.engine.reviews).toHaveLength(0);
+  });
+
+  it('kişinin "hep izin ver" kuralı böyle bir işte de geçer', async () => {
+    await handOver({ permissionMode: 'ask' }, '[izin:Write {"file_path":"güvenli.txt"}]', true, 'Write');
+    await t.services.turns.idle();
+    expect((await t.api<Approval[]>('GET', '/api/approvals')).body).toHaveLength(0);
+  });
+
+  it('kişinin istemediği işte "hep izin ver" kuralı sayılmaz, kart hep izin vermeyi önermez', async () => {
+    await handOver({ permissionMode: 'ask' }, '[izin:Write {"file_path":"güvenli.txt"}]', false, 'Write');
     const card = await cardAsked();
     expect(card.toolName).toBe('Write');
-    expect(t.engine.reviews).toHaveLength(1);
+    const marks = await t.services.threads.messages(card.threadId, { limit: 20 });
+    expect(marks.find((m) => m.role === 'approval')?.props.outside).toBe('web');
+  });
+
+  it('kişinin isteğindeki kart nereden geldiğini söylemez, hep izin vermeyi önerebilir', async () => {
+    await handOver({ permissionMode: 'ask' }, '[izin:Write {"file_path":"güvenli.txt"}]');
+    const card = await waitFor(async () => (await pending(t))[0]);
+    const marks = await t.services.threads.messages(card.threadId, { limit: 20 });
+    expect(marks.find((m) => m.role === 'approval')?.props.outside).toBeUndefined();
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
   });
 
   it('başka bir adrese ulaşabilen adım incelemeye gitmez, kişiye sorulur', async () => {
@@ -84,8 +108,8 @@ describe('dış metin okumuş, kişinin isteğinden gelen iş', () => {
 });
 
 describe('dış metinden sonra seviye ve dışarı ulaşan adımlar', () => {
-  it('yalnızca kişinin isteğinden gelen işte "inceleme"ye iner; başka yerde sormak', () => {
-    expect(modeFor('auto', true, true)).toBe('review');
+  it('kişinin isteğinden gelen işte bot kendi düzeyinde kalır; başka yerde sorar', () => {
+    expect(modeFor('auto', true, true)).toBe('auto');
     expect(modeFor('review', true, true)).toBe('review');
     expect(modeFor('ask', true, true)).toBe('ask');
     expect(modeFor('readonly', true, true)).toBe('readonly');

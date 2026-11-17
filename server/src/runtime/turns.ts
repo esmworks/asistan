@@ -895,6 +895,9 @@ export class TurnManager {
         !!outside(),
         !!outside() && (await rootedInPerson()),
       );
+      // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
+      // the card says what started the run. In the person's own request they count as always.
+      const locked = !!outside() && !(await rootedInPerson());
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -916,7 +919,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: !!outside(),
+        outside: locked,
       });
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
@@ -980,7 +983,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: !!outside(),
+        outside: locked,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -991,7 +994,7 @@ export class TurnManager {
               approvalId: a.id,
               ...held,
               // The card says what started the run, and offers no "always allow".
-              ...(outside() ? { outside: outside() } : {}),
+              ...(locked && outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
