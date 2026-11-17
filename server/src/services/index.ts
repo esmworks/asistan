@@ -3,7 +3,9 @@ import type { Ctx } from '../context';
 import type { Engine } from '../engine/types';
 import { TurnManager } from '../runtime/turns';
 import { ToolFactory } from '../tools';
+import { ActionService } from './actions';
 import { ApprovalService } from './approvals';
+import { InstructionDocService } from './instruction-docs';
 import { BotImportService } from './bot-import';
 import { BotService } from './bots';
 import { ClaudeAuthService } from './claude-auth';
@@ -44,6 +46,8 @@ export class Services {
   readonly threads: ThreadService;
   readonly rooms: RoomService;
   readonly approvals: ApprovalService;
+  readonly actions: ActionService;
+  readonly instructionDocs: InstructionDocService;
   readonly vault: VaultService;
   readonly claudeAuth: ClaudeAuthService;
   readonly connections: ConnectionService;
@@ -90,11 +94,13 @@ export class Services {
   ) {
     this.bots = new BotService(ctx);
     this.threads = new ThreadService(ctx);
+    this.instructionDocs = new InstructionDocService(ctx, this.threads);
     this.rooms = new RoomService(ctx, this);
     this.vault = new VaultService(ctx);
     this.claudeAuth = new ClaudeAuthService(ctx, this.vault);
     this.connections = new ConnectionService(ctx, this.vault);
     this.approvals = new ApprovalService(ctx, this.vault);
+    this.actions = new ActionService(ctx);
     this.memory = new MemoryService(ctx);
     this.push = new PushService(ctx, this.vault);
     this.settings = new SettingsService(ctx);

@@ -8,6 +8,8 @@ import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
   AccessRequest,
   AccountSet,
+  connectionToolParts,
+  describeAction,
   ApprovalDecision,
   BotCreate,
   BotMove,
@@ -34,6 +36,7 @@ import {
   MessageReaction,
   patchOf,
   PermissionRuleCreate,
+  SuggestionDismiss,
   ProviderKeyInput,
   ProviderSignInStart,
   LOCALES,
@@ -87,7 +90,7 @@ import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile } from './services/skill-link';
-import { Settings } from './services/settings';
+import { serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
 import { HttpError, truncate } from './util';
@@ -400,7 +403,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const q = z.object({ archived: z.enum(['0', '1']).optional() }).parse(req.query);
     return s.bots.list({ includeArchived: q.archived === '1' });
   });
-  app.post('/api/bots', async (req) => s.bots.create(BotCreate.parse(req.body)));
+  // A bot linked to a document reads it right away, so its text waits for the person at once.
+  app.post('/api/bots', async (req) => {
+    const bot = await s.bots.create(BotCreate.parse(req.body));
+    return bot.instructionsUrl ? s.instructionDocs.check(bot.id) : bot;
+  });
   // Moves the existing bots to what new bots start with, while its provider can still be reached
   // the way the engine reaches it: a key, a sign-in with a plan, or an endpoint that takes none.
   app.post('/api/bots/engine', async () => {
@@ -412,8 +419,23 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { changed: await s.bots.moveAllTo(target) };
   });
   app.get('/api/bots/:id', async (req) => s.bots.get(IdParams.parse(req.params).id));
-  app.patch('/api/bots/:id', async (req) =>
-    s.bots.update(IdParams.parse(req.params).id, BotUpdate.parse(req.body)),
+  app.patch('/api/bots/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const before = await s.bots.get(id);
+    const bot = await s.bots.update(id, BotUpdate.parse(req.body));
+    const relinked = !!bot.instructionsUrl && bot.instructionsUrl !== before.instructionsUrl;
+    return relinked ? s.instructionDocs.check(id) : bot;
+  });
+  // The document a bot's instructions are kept in: read it now, take its text, or turn it down.
+  app.post('/api/bots/:id/instructions/check', async (req) =>
+    s.instructionDocs.check(IdParams.parse(req.params).id),
+  );
+  app.post('/api/bots/:id/instructions/accept', async (req) => {
+    const { expected } = z.object({ expected: z.string().max(100_000).optional() }).parse(req.body ?? {});
+    return s.instructionDocs.accept(IdParams.parse(req.params).id, expected);
+  });
+  app.post('/api/bots/:id/instructions/decline', async (req) =>
+    s.instructionDocs.decline(IdParams.parse(req.params).id),
   );
   app.post('/api/bots/:id/move', async (req) =>
     s.bots.move(IdParams.parse(req.params).id, BotMove.parse(req.body)),
@@ -961,6 +983,45 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/approvals/:id', async (req) =>
     s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body)),
   );
+  // What a bot changed, and what let each step through.
+  app.get('/api/bots/:id/actions', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100) })
+      .parse(req.query);
+    await s.bots.get(id);
+    return s.actions.list(id, limit);
+  });
+  // Ways to ask less, from the person's own answers on the bot's cards.
+  app.get('/api/bots/:id/suggestions', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    const locale = await serverLocale(s.ctx);
+    const names = await s.connections.names();
+    // The step the rule would let through, in the words a card uses for it.
+    return s.approvals.suggestions(bot.id, bot.permissionMode, (c, pattern) => {
+      const server = connectionToolParts(c.toolName)?.server;
+      // A rule for the whole tool is said without the latest card's details ("a routine", not "Morning").
+      const input = pattern === c.toolName ? {} : c.input;
+      return describeAction(c.toolName, input, {
+        bot: bot.name,
+        locale,
+        service: server ? names.get(server) : undefined,
+      }).step;
+    });
+  });
+  app.post('/api/bots/:id/suggestions/dismiss', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    await s.approvals.dismissSuggestion(bot.id, SuggestionDismiss.parse(req.body).key);
+    return { ok: true };
+  });
+  app.get('/api/bots/:id/actions.csv', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    await s.bots.get(id);
+    return reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header('content-disposition', `attachment; filename="yumakbot-steps-${id}.csv"`)
+      .send(await s.actions.csv(id));
+  });
   app.get('/api/rules', async () => s.approvals.rules());
   app.post('/api/rules', async (req) => s.approvals.addRule(PermissionRuleCreate.parse(req.body)));
   app.delete('/api/rules/:id', async (req) => {

@@ -1,4 +1,6 @@
 import type {
+  BotAction,
+  PermissionSuggestions,
   BotTable,
   RowValues,
   TableRow,
@@ -261,6 +263,10 @@ export const api = {
   bot: (id: string) => http.get<Bot>(`/api/bots/${id}`),
   createBot: (b: unknown) => http.post<Bot>('/api/bots', b),
   updateBot: (id: string, b: unknown) => http.patch<Bot>(`/api/bots/${id}`, b),
+  checkInstructionsDoc: (id: string) => http.post<Bot>(`/api/bots/${id}/instructions/check`, {}),
+  acceptInstructionsDoc: (id: string, expected: string) =>
+    http.post<Bot>(`/api/bots/${id}/instructions/accept`, { expected }),
+  declineInstructionsDoc: (id: string) => http.post<Bot>(`/api/bots/${id}/instructions/decline`, {}),
   /** Moves every active bot to what new bots start with; says how many changed. */
   moveBotsToNewEngine: () => http.post<{ changed: number }>('/api/bots/engine'),
   archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
@@ -403,8 +409,18 @@ export const api = {
   updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
   removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
   rules: () => http.get<PermissionRule[]>('/api/rules'),
-  addRule: (r: { list: 'ask' | 'allow' | 'block'; pattern: string }) =>
-    http.post<PermissionRule>('/api/rules', r),
+  botActions: (botId: string, limit = 100) =>
+    http.get<BotAction[]>(`/api/bots/${botId}/actions?limit=${limit}`),
+  suggestions: (botId: string) => http.get<PermissionSuggestions>(`/api/bots/${botId}/suggestions`),
+  dismissSuggestion: (botId: string, key: string) =>
+    http.post<{ ok: true }>(`/api/bots/${botId}/suggestions/dismiss`, { key }),
+  addRule: (r: {
+    list: 'ask' | 'allow' | 'block';
+    pattern: string;
+    botId?: string | null;
+    field?: string;
+    limit?: number;
+  }) => http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),

@@ -6,8 +6,9 @@ import {
   type ApprovalDecision,
   type PermissionMode,
   type PermissionRule,
+  type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -132,6 +133,51 @@ export function rememberedPattern(toolName: string, input: Record<string, unknow
   return toolName;
 }
 
+/** A plain decimal number as text: `1500`, `-20`, `99.95`; no thousands marks, no exponent. */
+const PLAIN_NUMBER = /^-?\d+(?:\.\d+)?$/;
+
+/**
+ * The size of the number at `field` (a dotted path, `refund.amount`) in a call's input, without
+ * its sign, since a refund written as -500 moves as much money as 500. Null when the field is
+ * missing or is not a plain number: `1.000,50` or `1,000` could be read more than one way, so it
+ * is not read at all.
+ */
+export function limitValue(input: Record<string, unknown>, field: string): number | null {
+  let value: unknown = input;
+  for (const key of field.split('.')) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, key))
+      return null;
+    value = (value as Record<string, unknown>)[key];
+  }
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && PLAIN_NUMBER.test(value.trim())
+        ? Number(value.trim())
+        : NaN;
+  return Number.isFinite(n) ? Math.abs(n) : null;
+}
+
+/**
+ * Whether a rule's amount limit lets it cover this call; a rule without one always does. Each list
+ * fails closed: an allow rule covers only a number it can read at or under the limit, while an ask
+ * or block rule covers anything over it and anything it cannot read.
+ */
+export function withinLimit(rule: PermissionRule, input: Record<string, unknown>): boolean {
+  if (!rule.field || rule.limit === null || rule.limit === undefined) return true;
+  const value = limitValue(input, rule.field);
+  if (rule.list === 'allow') return value !== null && value <= rule.limit;
+  return value === null || value > rule.limit;
+}
+
+/** Whether this rule covers the call: its pattern matches and its amount limit lets it. */
+export function ruleCovers(rule: PermissionRule, toolName: string, input: Record<string, unknown>): boolean {
+  if (!withinLimit(rule, input)) return false;
+  return rule.list === 'allow'
+    ? allowRuleMatches(rule.pattern, toolName, input)
+    : ruleMatches(rule.pattern, toolName, input);
+}
+
 /** `block`: a block rule covers the call; it is refused in every mode, without a card. */
 export type Verdict = 'allow' | 'ask' | 'deny' | 'block';
 
@@ -142,12 +188,17 @@ export function askRuleMatches(rules: PermissionRule[], toolName: string, input:
 
 /** The "always ask" rule that covers this call, if one does. */
 export function askRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
-  return rules.find((r) => r.list === 'ask' && ruleMatches(r.pattern, toolName, input)) ?? null;
+  return rules.find((r) => r.list === 'ask' && ruleCovers(r, toolName, input)) ?? null;
 }
 
 /** The block rule that covers this call, if one does. */
 export function blockRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
-  return rules.find((r) => r.list === 'block' && ruleMatches(r.pattern, toolName, input)) ?? null;
+  return rules.find((r) => r.list === 'block' && ruleCovers(r, toolName, input)) ?? null;
+}
+
+/** The allow rule that lets this call through, if one does. */
+export function allowRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
+  return rules.find((r) => r.list === 'allow' && ruleCovers(r, toolName, input)) ?? null;
 }
 
 /** From the strictest level to the freest. */
@@ -183,9 +234,91 @@ export function decide(opts: {
   if (askRuleMatches(rules, toolName, input)) return 'ask';
   if (mode === 'auto' || isRead) return 'allow';
   if (opts.outside) return 'ask';
-  if (rules.some((r) => r.list === 'allow' && allowRuleMatches(r.pattern, toolName, input))) return 'allow';
+  if (allowRuleFor(rules, toolName, input)) return 'allow';
   return 'ask';
 }
+
+/** How far back the person's answers on a bot's cards are read for ways to ask less. */
+export const SUGGEST_DAYS = 30;
+/** How many times the person must have allowed a step, and never refused it, before it is suggested. */
+export const SUGGEST_RULE_MIN = 5;
+/** How many answered cards a bot in `ask` needs before the reviewer is suggested. */
+export const SUGGEST_MODE_MIN = 20;
+/** The most refusals, as a share of those cards, that still suggest the reviewer. */
+export const SUGGEST_MODE_DENIED = 0.05;
+/** The most "always allow" suggestions shown at once. */
+const SUGGEST_RULES_MAX = 5;
+
+/** A card the person answered with a button, as suggestions read it. */
+export interface AnsweredCard {
+  toolName: string;
+  input: Record<string, unknown>;
+  summary: string;
+  status: 'allowed' | 'denied';
+}
+
+/**
+ * Ways to ask less, from the person's own answers on a bot's cards (newest first): each step they
+ * allowed every time, at least `SUGGEST_RULE_MIN` times, as the "always allow" rule a card would
+ * write; and for a bot in `ask`, the reviewer, when they allowed nearly every card it could pass.
+ * A step an "always ask" rule covers, or one that sends something, is never the reviewer's to pass,
+ * so it does not count toward the reviewer; a step whose tool has an amount limit is never offered
+ * a plain rule, which would outrank the limit.
+ */
+export function permissionSuggestions(o: {
+  mode: PermissionMode;
+  cards: AnsweredCard[];
+  rules: PermissionRule[];
+  dismissed: ReadonlySet<string>;
+  /** What the rule would let the bot do, in words; the latest card's own words without it. */
+  describe?: (c: AnsweredCard, pattern: string) => string;
+}): PermissionSuggestions {
+  // A bot that never asks, or may only read, has no cards a rule or the reviewer would spare.
+  if (o.mode !== 'ask' && o.mode !== 'review') return { rules: [], mode: null };
+  const steps = new Map<string, { latest: AnsweredCard; allowed: number; denied: number }>();
+  for (const c of o.cards) {
+    const pattern = rememberedPattern(c.toolName, c.input);
+    if (!pattern) continue;
+    const step = steps.get(pattern) ?? { latest: c, allowed: 0, denied: 0 };
+    if (c.status === 'allowed') step.allowed++;
+    else step.denied++;
+    steps.set(pattern, step);
+  }
+  const rules = [...steps]
+    .filter(
+      ([pattern, s]) =>
+        s.allowed >= SUGGEST_RULE_MIN &&
+        s.denied === 0 &&
+        !o.dismissed.has(pattern) &&
+        !askRuleMatches(o.rules, s.latest.toolName, s.latest.input) &&
+        !allowRuleFor(o.rules, s.latest.toolName, s.latest.input) &&
+        // A plain "always allow" would outrank an amount limit the person set for the tool.
+        !o.rules.some((r) => r.field && ruleMatches(r.pattern, s.latest.toolName, s.latest.input)),
+    )
+    .sort((a, b) => b[1].allowed - a[1].allowed)
+    .slice(0, SUGGEST_RULES_MAX)
+    .map(([pattern, s]) => ({
+      pattern,
+      summary: o.describe?.(s.latest, pattern) ?? s.latest.summary,
+      allowed: s.allowed,
+    }));
+  let mode: PermissionSuggestions['mode'] = null;
+  if (o.mode === 'ask' && !o.dismissed.has('mode')) {
+    const passable = o.cards.filter(
+      (c) => c.input.sends !== true && !askRuleMatches(o.rules, c.toolName, c.input),
+    );
+    const denied = passable.filter((c) => c.status === 'denied').length;
+    if (passable.length >= SUGGEST_MODE_MIN && denied <= passable.length * SUGGEST_MODE_DENIED) {
+      mode = { to: 'review', allowed: passable.length - denied, denied };
+    }
+  }
+  return { rules, mode };
+}
+
+/** Where a bot's turned-down suggestions are kept. */
+const dismissedKey = (botId: string) => `suggestions.dismissed.${botId}`;
+/** The most turned-down suggestions kept for a bot; the oldest go first. */
+const DISMISSED_MAX = 200;
 
 export function summarize(toolName: string, input: Record<string, unknown>): string {
   const subject = ruleSubject(toolName, input);
@@ -280,7 +413,7 @@ export class ApprovalService {
   async redirect(id: string, text: string) {
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status: 'denied', answer: text, decidedAt: new Date() })
+      .set({ status: 'denied', answer: text, decidedBy: 'typed', decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) return;
@@ -420,7 +553,7 @@ export class ApprovalService {
     }
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status, answer, remembered, decidedAt: new Date() })
+      .set({ status, answer, remembered, decidedBy: 'person', decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
@@ -460,11 +593,11 @@ export class ApprovalService {
       // A card from a run outside text started waits for its own answer.
       if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
       if (rule.botId && r.botId !== rule.botId) continue;
-      if (!allowRuleMatches(rule.pattern, r.toolName, r.input)) continue;
-      if (ask.some((a) => ruleMatches(a.pattern, r.toolName, r.input))) continue;
+      if (!ruleCovers(rule, r.toolName, r.input)) continue;
+      if (ask.some((a) => ruleCovers(a, r.toolName, r.input))) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
-        .set({ status: 'allowed', decidedAt: new Date() })
+        .set({ status: 'allowed', decidedBy: 'rule', decidedAt: new Date() })
         .where(and(eq(schema.approvals.id, r.id), eq(schema.approvals.status, 'pending')))
         .returning();
       if (!done) continue;
@@ -516,6 +649,62 @@ export class ApprovalService {
     };
   }
 
+  /** Ways to ask less for a bot, from the cards the person answered with a button lately. */
+  async suggestions(
+    botId: string,
+    mode: PermissionMode,
+    describe?: (c: AnsweredCard, pattern: string) => string,
+    now = new Date(),
+  ): Promise<PermissionSuggestions> {
+    const since = new Date(now.getTime() - SUGGEST_DAYS * 86_400_000);
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.botId, botId),
+          eq(schema.approvals.kind, 'tool'),
+          eq(schema.approvals.outside, false),
+          eq(schema.approvals.decidedBy, 'person'),
+          inArray(schema.approvals.status, ['allowed', 'denied']),
+          gte(schema.approvals.decidedAt, since),
+        ),
+      )
+      .orderBy(desc(schema.approvals.decidedAt))
+      .limit(1000);
+    return permissionSuggestions({
+      mode,
+      cards: rows.map((r) => ({
+        toolName: r.toolName,
+        input: r.input,
+        summary: r.summary,
+        status: r.status === 'allowed' ? 'allowed' : 'denied',
+      })),
+      rules: await this.rules(botId),
+      dismissed: new Set(await this.dismissed(botId)),
+      describe,
+    });
+  }
+
+  private async dismissed(botId: string): Promise<string[]> {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.kv)
+      .where(eq(schema.kv.key, dismissedKey(botId)))
+      .limit(1);
+    return Array.isArray(row?.value) ? row.value.filter((x): x is string => typeof x === 'string') : [];
+  }
+
+  /** Turns a suggestion down for good: a rule's pattern, or `mode`. */
+  async dismissSuggestion(botId: string, key: string): Promise<void> {
+    const kept = [...(await this.dismissed(botId)).filter((k) => k !== key), key].slice(-DISMISSED_MAX);
+    await this.ctx.db
+      .insert(schema.kv)
+      .values({ key: dismissedKey(botId), value: kept })
+      .onConflictDoUpdate({ target: schema.kv.key, set: { value: kept } });
+    this.ctx.bus.refresh({ scope: 'rules' });
+  }
+
   /** Every rule; with `botId`, the ones that apply to that bot: its own and those for every bot. */
   async rules(botId?: string | null): Promise<PermissionRule[]> {
     const rows = await this.ctx.db
@@ -533,10 +722,22 @@ export class ApprovalService {
     pattern: string;
     note: string;
     botId?: string | null;
+    /** An amount limit: both or neither (see `withinLimit`). */
+    field?: string | null;
+    limit?: number | null;
   }): Promise<PermissionRule> {
+    const limited = !!r.field && typeof r.limit === 'number';
     const [row] = await this.ctx.db
       .insert(schema.permissionRules)
-      .values({ id: newId(), ...r, botId: r.botId ?? null })
+      .values({
+        id: newId(),
+        list: r.list,
+        pattern: r.pattern,
+        note: r.note,
+        botId: r.botId ?? null,
+        field: limited ? r.field : null,
+        limit: limited ? r.limit : null,
+      })
       .returning();
     this.ctx.bus.refresh({ scope: 'rules' });
     return toRule(row!);

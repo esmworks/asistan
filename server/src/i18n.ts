@@ -23,6 +23,10 @@ const tr = {
   'error.originNotAllowed': 'İzin verilmeyen Origin: {origin}',
   'error.server': 'Sunucu hatası',
   'error.notFound': 'Bulunamadı',
+  'error.instructionsNotLinked': 'Bu botun talimatları bir belgede tutulmuyor',
+  'error.instructionsDocEmpty': 'Belgede okunacak metin yok',
+  'error.instructionsDocTooLong': 'Belge talimat için çok uzun (en çok {max} karakter)',
+  'error.instructionsChanged': 'Belge bu arada yine değişti; yeni haline bakıp yeniden karar ver',
   'error.skillLinkHttps': 'Bağlantı https:// ile başlamalı',
   'error.skillLinkInvalid': 'Bu bir bağlantı değil',
   'error.skillLinkUnreachable': 'Bağlantıdaki adrese ulaşılamadı',
@@ -246,6 +250,10 @@ const tr = {
   'validation.timezone': 'Geçersiz saat dilimi',
   'validation.usageRange': 'Dönem 7, 30 ya da 90 gün olmalı',
   'validation.avatar': 'Geçersiz avatar',
+  'validation.limitField':
+    'Alan adı harf, rakam, _ ve - içerebilir; iç içe alanlar noktayla ayrılır (ör. iade.tutar)',
+  'validation.limitBoth': 'Tutar sınırı için hem alanı hem sınırı gir',
+  'validation.instructionsUrl': 'Talimat belgesi https:// ile başlayan bir adres olmalı',
   'validation.domain': 'Geçersiz alan adı',
   'validation.headerName': 'Başlık adı yalnızca harf, rakam ve - içerebilir',
   'validation.queryParam': 'Parametre adı yalnızca harf, rakam, _, . ve - içerebilir',
@@ -927,6 +935,10 @@ const tr = {
   'tool.conversation': '## Sohbet {title} ({id})',
   'tool.noConversations': 'Yazışma yok.',
   'tool.created': '{name} oluşturuldu ({id}).',
+  'instructions.docChanged':
+    'Talimat belgesi değişti. Sen kabul edene kadar bot yeni hâlini kullanmaz; botun panelinden bakıp kabul edebilir ya da reddedebilirsin.',
+  'tool.instructionsLinked':
+    '"{bot}" botunun talimatları bir belgede tutuluyor; buradan değiştirilemez. Değişiklik o belgede yapılmalı, kişi de kabul etmeli.',
   'tool.otherManager': 'Başka bir yöneticiyi düzenleyemezsin.',
   'tool.loosenSummary': '{manager}, {target} için izinleri gevşetmek istiyor',
   'tool.approve': 'Onayla',
@@ -1068,6 +1080,11 @@ const en: Catalog<ServerKey> = {
   'error.originNotAllowed': 'Origin not allowed: {origin}',
   'error.server': 'Server error',
   'error.notFound': 'Not found',
+  'error.instructionsNotLinked': "This bot's instructions are not kept in a document",
+  'error.instructionsDocEmpty': 'The document has no text to read',
+  'error.instructionsDocTooLong': 'The document is too long for instructions (at most {max} characters)',
+  'error.instructionsChanged':
+    'The document changed again meanwhile; look at the new version and decide again',
   'error.skillLinkHttps': 'The link must start with https://',
   'error.skillLinkInvalid': 'That is not a link',
   'error.skillLinkUnreachable': 'The address in the link could not be reached',
@@ -1290,6 +1307,10 @@ const en: Catalog<ServerKey> = {
   'validation.timezone': 'Invalid time zone',
   'validation.usageRange': 'The period must be 7, 30 or 90 days',
   'validation.avatar': 'Invalid avatar',
+  'validation.limitField':
+    'A field name may hold letters, digits, _ and -; nested fields are joined with a dot (e.g. refund.amount)',
+  'validation.limitBoth': 'An amount limit needs both the field and the limit',
+  'validation.instructionsUrl': 'The instructions document must be an address starting with https://',
   'validation.domain': 'Invalid domain name',
   'validation.headerName': 'A header name may hold only letters, digits and -',
   'validation.queryParam': 'A parameter name may hold only letters, digits, _, . and -',
@@ -1965,6 +1986,10 @@ const en: Catalog<ServerKey> = {
   'tool.conversation': '## Conversation {title} ({id})',
   'tool.noConversations': 'No conversations.',
   'tool.created': '{name} created ({id}).',
+  'instructions.docChanged':
+    "The instructions document changed. The bot does not use the new version until you accept it; look at it in the bot's panel to accept or turn it down.",
+  'tool.instructionsLinked':
+    'The instructions of "{bot}" are kept in a document and cannot be changed from here. The change goes in that document, and the person accepts it.',
   'tool.otherManager': 'You cannot edit another manager.',
   'tool.loosenSummary': '{manager} wants to loosen the permissions of {target}',
   'tool.approve': 'Approve',
