@@ -167,7 +167,8 @@ function SidebarPanel({
           ))}
           <RoomRail />
         </div>
-        <div className="flex flex-col items-center gap-2 py-3">
+        {/* The line marks where the list scrolls under, so a half-hidden icon reads as more list. */}
+        <div className="flex flex-col items-center gap-2 border-t py-3">
           <RoundButton
             label={t('sidebar.newBot')}
             onClick={() => openBotDialog({ mode: 'create' })}
@@ -329,21 +330,35 @@ function SidebarPanel({
         </div>
       </SidebarMenu>
 
-      <div className="flex items-center gap-2 border-t px-2 py-2">
+      {/* Too narrow for the name beside the four buttons, the avatar stands alone and carries the
+          connection dot, as in the rail. */}
+      <div className="@container flex items-center gap-1 border-t px-2 py-2 @xs:gap-2">
         <button
           type="button"
           onClick={() => openSettings('profile')}
-          title={t('profile.open')}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-accent"
+          title={`${userName} · ${connected ? t('sidebar.connected') : t('sidebar.connecting')}`}
+          aria-label={t('profile.open')}
+          className="mr-auto flex min-w-0 items-center gap-3 rounded-2xl p-0.5 text-left transition-colors hover:bg-accent @xs:mr-0 @xs:flex-1 @xs:px-2 @xs:py-1.5"
         >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
+          <span className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
             {initials(userName, intl)}
+            <span
+              className={cn(
+                'absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-sidebar @xs:hidden',
+                connected ? 'bg-emerald-500' : 'bg-amber-500',
+              )}
+            />
           </span>
-          <span className="min-w-0 flex-1">
+          <span className="hidden min-w-0 flex-1 @xs:block">
             <span className="block truncate text-sm font-medium">{userName}</span>
-            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-              <span className={cn('size-1.5 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')} />
-              {connected ? t('sidebar.connected') : t('sidebar.connecting')}
+            <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
+              <span
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  connected ? 'bg-emerald-500' : 'bg-amber-500',
+                )}
+              />
+              <span className="truncate">{connected ? t('sidebar.connected') : t('sidebar.connecting')}</span>
             </span>
           </span>
         </button>
