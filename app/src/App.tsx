@@ -22,7 +22,7 @@ import { SearchDialog } from '@/features/SearchDialog';
 import { SettingsDialog } from '@/features/SettingsDialog';
 import { ShortcutsDialog } from '@/features/ShortcutsDialog';
 import { TodayDialog } from '@/features/TodayDialog';
-import { BoardDialog } from '@/features/BoardDialog';
+import { BoardDialog } from '@/features/board/BoardDialog';
 import { OpenedRoutineDialog } from '@/features/RoutineDialog';
 import { Sidebar } from '@/features/Sidebar';
 import { useLocale, useT } from '@/i18n';

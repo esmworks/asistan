@@ -93,7 +93,7 @@ const tr = {
   'ticket.status.todo': 'yapılacak',
   'ticket.status.in_progress': 'sürüyor',
   'ticket.status.in_review': 'incelemede',
-  'ticket.status.blocked': 'engelli',
+  'ticket.status.blocked': 'takıldı',
   'ticket.status.done': 'bitti',
   'ticket.status.wont_do': 'yapılmayacak',
   'ticket.priority.low': 'düşük',
