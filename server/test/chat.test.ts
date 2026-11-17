@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isSilentReply, maybeSilentReply, planItems } from '../src/engine/types';
 import { resetTime } from '../src/engine/claude';
 import { CONTEXT_FULL } from '../src/runtime/turns';
+import { sql } from 'drizzle-orm';
 import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
 import { isStopRequest } from '../src/util';
@@ -397,6 +398,27 @@ describe('sohbet', () => {
     await t.send(thread.id, 'başka bir şey');
     await t.services.turns.idle();
     expect((await t.api('POST', `/api/messages/${failed.id}/retry`)).status).toBe(409);
+  });
+
+  it('kayıt zamanı mikrosaniyeli olan son tur da yeniden çalıştırılır, dal da o mesajı içerir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[hata] bozuk');
+    await t.services.turns.idle();
+    // Postgres keeps microseconds; a row read into a Date keeps only milliseconds.
+    await t.db.db.execute(
+      sql`update turns set created_at = date_trunc('milliseconds', created_at) + interval '500 microseconds' where thread_id = ${thread.id}`,
+    );
+    await t.db.db.execute(
+      sql`update messages set created_at = date_trunc('milliseconds', created_at) + interval '500 microseconds' where thread_id = ${thread.id}`,
+    );
+    const all = await t.messages(thread.id);
+    const asked = all.find((m) => m.role === 'user')!;
+    const branch = (await t.api<Thread>('POST', `/api/messages/${asked.id}/fork`)).body;
+    expect((await t.messages(branch.id)).map((m) => m.text)).toEqual(['[hata] bozuk']);
+    const failed = all.at(-1)!;
+    expect(failed.role).toBe('error');
+    expect((await t.api('POST', `/api/messages/${failed.id}/retry`)).status).toBe(200);
   });
 
   it('bot meşgulken art arda gelen mesajlar tek turda birlikte cevaplanır', async () => {
