@@ -777,8 +777,15 @@ function Conversation({
   );
   const [dragging, setDragging] = useState(false);
   // Quick replies are not messages to read: the latest set shows as buttons at the end, and only
-  // while nothing was said after it.
-  const listed = useMemo(() => messages.filter((m) => !Array.isArray(m.props.quickReplies)), [messages]);
+  // while nothing was said after it. An error whose request was run again has its answer, or a
+  // new error, after it.
+  const listed = useMemo(
+    () =>
+      messages.filter(
+        (m) => !Array.isArray(m.props.quickReplies) && !(m.role === 'error' && m.props.retried),
+      ),
+    [messages],
+  );
   const replies = useMemo(() => {
     const at = messages.findLastIndex((m) => Array.isArray(m.props.quickReplies));
     if (at < 0 || messages.slice(at + 1).some((m) => m.role === 'user')) return null;
