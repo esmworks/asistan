@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sealedText } from './sealed';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const created = () => ts('created_at').notNull().defaultNow();
@@ -109,7 +110,7 @@ export const messages = pgTable(
       .references(() => threads.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['user', 'assistant', 'system', 'marker', 'approval', 'error'] }).notNull(),
     author: text('author').notNull(),
-    text: text('text').notNull().default(''),
+    text: sealedText('text').notNull().default(''),
     props: jsonb('props').$type<Record<string, unknown>>().notNull().default({}),
     clientId: text('client_id'),
     turnId: text('turn_id'),
@@ -184,7 +185,7 @@ export const turns = pgTable(
     status: text('status', {
       enum: ['queued', 'running', 'done', 'error', 'interrupted'],
     }).notNull(),
-    prompt: text('prompt').notNull(),
+    prompt: sealedText('prompt').notNull(),
     jobId: text('job_id'),
     routineRunId: text('routine_run_id'),
     error: text('error'),
@@ -243,7 +244,7 @@ export const memories = pgTable(
     id: text('id').primaryKey(),
     scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
+    content: sealedText('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
     source: text('source').notNull().default('user'),
@@ -381,8 +382,8 @@ export const jobs = pgTable(
     toThreadId: text('to_thread_id').notNull(),
     /** Server-side approval record carried with the request, if any. */
     approvalId: text('approval_id'),
-    request: text('request').notNull(),
-    reply: text('reply'),
+    request: sealedText('request').notNull(),
+    reply: sealedText('reply'),
     status: text('status', { enum: ['pending', 'done', 'error', 'stopped'] }).notNull(),
     createdAt: created(),
     finishedAt: ts('finished_at'),
@@ -627,9 +628,9 @@ export const memoryChanges = pgTable(
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
     site: text('site'),
     /** The note's words after the change (for a forget, the words that would go). */
-    content: text('content').notNull(),
+    content: sealedText('content').notNull(),
     /** The note's words before an update. */
-    before: text('before'),
+    before: sealedText('before'),
     /** The bot that asked for it. */
     proposedBy: text('proposed_by')
       .notNull()
@@ -711,9 +712,9 @@ export const emails = pgTable(
     to: text('to').notNull(),
     from: text('from').notNull(),
     fromName: text('from_name').notNull().default(''),
-    subject: text('subject').notNull().default(''),
+    subject: sealedText('subject').notNull().default(''),
     /** The mail's text: its plain part, or its HTML part reduced to text. */
-    text: text('text').notNull().default(''),
+    text: sealedText('text').notNull().default(''),
     /** The sender's Message-ID; the same mail delivered twice is kept once. */
     messageId: text('message_id'),
     /** Attached files, saved in the bot's own folder (`{ name, size, path }`). */
@@ -767,7 +768,7 @@ export const tickets = pgTable(
     /** Shown as #12; grows by one with each ticket. */
     number: integer('number').notNull(),
     title: text('title').notNull(),
-    description: text('description').notNull().default(''),
+    description: sealedText('description').notNull().default(''),
     status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })
       .notNull()
       .default('todo'),
@@ -794,7 +795,7 @@ export const ticketComments = pgTable(
       .references(() => tickets.id, { onDelete: 'cascade' }),
     /** `user` or `bot:<id>`. */
     author: text('author').notNull(),
-    text: text('text').notNull(),
+    text: sealedText('text').notNull(),
     createdAt: created(),
   },
   (t) => [index('ticket_comments_ticket_idx').on(t.ticketId, t.createdAt)],

@@ -1,5 +1,5 @@
 import { getDomain } from 'tldts';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { VaultLogin, VaultLoginCreate, VaultLoginUpdate } from '@yumakbot/shared';
@@ -79,6 +79,14 @@ export class VaultService {
     if (key.length !== 32) throw new Error(`Invalid vault key: ${file}`);
     this.key = key;
     return key;
+  }
+
+  /**
+   * The key content is sealed with in the database (see db/sealed.ts): derived from the vault key,
+   * so it lives in the data folder and never in the database.
+   */
+  contentKey(): Buffer {
+    return Buffer.from(hkdfSync('sha256', this.cipherKey(), Buffer.alloc(0), 'yumakbot content at rest', 32));
   }
 
   /** Encrypts a secret with the vault key; also used for the Claude token and API key. */

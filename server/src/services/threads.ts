@@ -11,6 +11,7 @@ import {
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
+import { contentSealed } from '../db/sealed';
 import type { T } from '../i18n';
 import { DOTTED_AND_DOTLESS_I, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toMessage, toThread } from './mappers';
@@ -29,6 +30,11 @@ export interface NewMessage {
 
 /** How many messages a conversation opens with, and how many each "load older" adds. */
 export const MESSAGE_PAGE = 500;
+/** While content is sealed, a search reads back this many of the latest messages to match in. */
+const SEALED_SEARCH_ROWS = 20_000;
+/** Text as a search compares it: spaces closed up, case folded, ı and İ read as i. */
+const foldSearch = (v: string) => v.replace(/\s+/g, ' ').replace(/[ıİ]/g, 'i').toLowerCase();
+
 export class ThreadService {
   constructor(private ctx: Ctx) {}
 
@@ -427,6 +433,7 @@ export class ThreadService {
     // The database folds case for most letters but reads I as i, never as the dotless ı: both
     // sides take ı and İ as i, so "ığdır" finds "Iğdır".
     const pattern = `%${q.replace(/[ıİ]/g, 'i').replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const sealed = contentSealed();
     const rows = await this.ctx.db
       .select({
         id: schema.messages.id,
@@ -448,11 +455,19 @@ export class ThreadService {
           isNull(schema.bots.archivedAt),
           opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
           opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
-          sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
+          // Sealed text cannot be matched in the database: it is opened and matched here instead.
+          sealed
+            ? undefined
+            : sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
         ),
       )
       .orderBy(desc(schema.messages.createdAt))
-      .limit(limit);
+      .limit(sealed ? SEALED_SEARCH_ROWS : limit)
+      .then((found) => {
+        if (!sealed) return found;
+        const needle = foldSearch(q);
+        return found.filter((r) => foldSearch(r.text).includes(needle)).slice(0, limit);
+      });
     return rows.map((r) => ({
       messageId: r.id,
       threadId: r.threadId,

@@ -21,6 +21,7 @@ import { SpeechService } from './speech';
 import { PluginService } from './plugins';
 import { ApiSourceService } from './api-sources';
 import { TicketService } from './tickets';
+import { ContentSealService } from './content-seal';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -71,6 +72,7 @@ export class Services {
   readonly plugins: PluginService;
   readonly apiSources: ApiSourceService;
   readonly tickets: TicketService;
+  readonly contentSeal: ContentSealService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -121,6 +123,7 @@ export class Services {
     this.plugins = new PluginService(this);
     this.apiSources = new ApiSourceService(ctx, this.apiCredentials);
     this.tickets = new TicketService(ctx, this);
+    this.contentSeal = new ContentSealService(ctx);
     this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);

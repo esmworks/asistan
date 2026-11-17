@@ -530,6 +530,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { skills, servers };
   });
+  // Content sealed at rest: the switch, and how far the stored rows are converted.
+  app.get('/api/content-encryption', async () => s.contentSeal.status());
+  app.put('/api/content-encryption', async (req) => {
+    await s.contentSeal.set(z.object({ on: z.boolean() }).parse(req.body).on);
+    return s.contentSeal.status();
+  });
+
   // Teaching a task by showing it in the bot's browser; the steps come back as a skill draft.
   app.post('/api/bots/:id/teach', async (req) => {
     const bot = await s.bots.get(IdParams.parse(req.params).id);

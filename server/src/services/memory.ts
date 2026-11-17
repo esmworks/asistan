@@ -8,6 +8,7 @@ import {
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
+import { contentSealed } from '../db/sealed';
 import { lastActive, MEMORY_PROMPT_CHARS, withinBudget } from '../runtime/prompt';
 import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
@@ -142,16 +143,25 @@ export class MemoryService {
     }
     // ı and İ read as i on both sides, as the message search does.
     const q = query && `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    // Sealed notes cannot be matched in the database: they are opened and matched here instead.
+    const sealed = contentSealed();
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
-        q
+        q && !sealed
           ? and(visible, sql`translate(${schema.memories.content}, ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${q}`)
           : visible,
       )
       .orderBy(asc(schema.memories.createdAt))
-      .limit(q ? 50 : 500);
+      .limit(q && !sealed ? 50 : sealed ? 5000 : 500)
+      .then((found) =>
+        sealed && query
+          ? found.filter((r) => fold(r.content).includes(fold(query.trim()))).slice(0, 50)
+          : sealed
+            ? found.slice(0, 500)
+            : found,
+      );
     if (q) await this.markUsed(rows.map((r) => r.id));
     return rows.map(toMemory);
   }

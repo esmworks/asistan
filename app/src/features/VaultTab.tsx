@@ -11,6 +11,7 @@ import { useFormat } from '@/lib/format';
 import { useBots, useVault } from '@/lib/queries';
 import { ApiKeys } from './ApiKeys';
 import { ApiSources } from './ApiSources';
+import { ContentSeal } from './ContentSeal';
 import { SharedPages } from './SharedPages';
 
 /** The password vault: saved sign-ins, listed without their passwords. */
@@ -62,6 +63,7 @@ export function VaultTab() {
       <ApiKeys />
       <ApiSources />
       <SharedPages />
+      <ContentSeal />
     </div>
   );
 }
