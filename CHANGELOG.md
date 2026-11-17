@@ -3,6 +3,91 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## 0.4.1 — 2026-11-18
+
+### Safety
+
+- Outside text now counts from the step a run reads it, not only when it started the run: a page, a search, an API's
+  answer, a mail, a host a command reached, or (with nobody watching) a ticket or a table marks the run from there on,
+  in both engines. The mark goes with the reply, a request to another bot and its answer, a conversation the bot
+  opens and the session it resumes. Work nobody asked for (a mail, a webhook, a watched page) asks for every change;
+  work that goes back to the person's own message keeps the bot's level and "always allow" rules, the reviewer is told
+  outside text was read, and steps that can reach another host (a page, the browser, an API call, a network command,
+  inline interpreter code) still ask.
+- A connected app's answer is no longer counted as outside text, and an app's own read-only tools run without a card
+  in handed-over runs; app tools that take an address still count as reading the web.
+- "Always allow" covers only the bot that asked and only as wide as the step: a command and its subcommand, a file's
+  folder, a page's site. A command rule no longer covers another command chained after it.
+- Permission rules can carry an amount limit on a field: an allow rule covers a call only while the value is readable
+  and within the limit, an ask or block rule once it is above or cannot be read.
+- Every step that goes through is kept for 90 days with what let it (a card, a rule, the bot's level or the reviewer),
+  shown in the bot's panel and downloadable as a spreadsheet. From the last 30 days of answers the panel suggests an
+  "always allow" for steps the person always allowed, or the review for a bot whose cards they nearly always allowed.
+- A step the person just refused is refused again without a card until they write something new. Answers on a bot's
+  question cards count as the person's words for the review.
+- Bots the person creates, a manager creates or an import brings start on the auto review instead of asking for
+  everything. A manager changing another bot's instructions, section, engine, model or skills asks the person.
+- Instructions can be kept in a public document owned elsewhere: it is read once a day or on request, and a change
+  reaches the bot only after the person accepts the diff in the bot's panel.
+- Memory changes from a run that read outside text are only proposed; shared memory and another bot's notes change
+  after a card. Messages forwarded on Telegram or WhatsApp reach the bot as outside data.
+- The safety floor also refuses removing a top-level or home folder, deleting from one with find, recursive chmod or
+  chown on one, writing over device mapper disks, and such commands inside inline interpreter code.
+- Saved passwords and two-step codes go only into a password, username or code field of the saved site over https,
+  in a form that posts only to that site; they are hidden from every text a browser step returns and no screenshot is
+  taken while one shows. Clicks and keys that send a form ask the person whatever the bot said, and a form submission
+  not approved as sending is cancelled.
+- Vault secrets and API keys are sealed together with their row and site or origin, so a value moved or redirected in
+  the database no longer opens; older values are bound once on first use. The mail relay's secret is sealed too.
+- Backups and new password hashes use stronger scrypt settings; older ones still work and passwords are hashed again
+  on the next sign-in. A restore checks entry sizes, the unpacked total and the free disk space.
+- Sign-in is decided by the route a request matched, so a percent-escaped path no longer skips it. Sign-in tries are
+  counted before the password check, per /64 on IPv6, with a daily ceiling across all addresses that slows guesses
+  without shutting the owner out; wrong access keys are limited too. A password change signs out every other device.
+- Link fetches (skills, plugins, API specs, watched pages) check every address a name resolves to and connect only to
+  those, refuse more wrapped and reserved private ranges, and stop reading at the size limit. The bots' browser goes
+  through the checking proxy on the person's own computer too, and service workers are blocked in it.
+- Commands of a bot with internet go out through a proxy that connects to the address it checked.
+- A page in a conversation or a connected app asks before opening a link by itself; on the phone every such link asks.
+- The server sends Strict-Transport-Security when reached over HTTPS.
+
+### Server
+
+- The bots' containers can no longer reach services on the host itself, and more reserved and NAT64 ranges are
+  blocked on the way out.
+- PostgreSQL, Caddy, cloudflared and Tailscale images are pinned to a version and digest, `YUMAKBOT_VERSION` is
+  required in the compose file, and the Tailscale container drops every capability and runs on a read-only root.
+- The Cloudflare guide shows how to send the proxy header so sign-in limits count each visitor, and the sandbox guide
+  explains each relaxed container setting.
+- Chat formatting no longer loops for ever (freezing the server) on a reply that contains its own markers.
+- katex, esbuild and minimatch were moved past their security advisories.
+
+### Apps
+
+- The desktop app compares the server's whole origin before letting a page navigate, gives the microphone and
+  clipboard only to the top frame, and ships with Electron's fuses set.
+- The phone app uses plain http only for this device, the local network and Tailscale; an internet server is reached
+  over https, and an `http://` internet address is used only after a warning.
+- A card asked while a reply is streaming shows below the text written before it, on the desktop and the phone. A card
+  waiting in an exchange between bots shows at the end of the conversation.
+- Settings → Connection offers to move existing bots to the AI new bots start with. A bot that changes engine drops its
+  room sessions too, and its routines' models are cleared.
+
+### Fixes
+
+- A reply the provider cut off is retried once on the same model before the backup model, when nothing was changed
+  yet.
+- "Retry" no longer refuses almost every failed turn: row times are compared in the database, which also fixes a
+  forked conversation missing its chosen message, a skipped message between pages and a repeated search result.
+- An answer written together with quick replies is kept instead of being replaced by the closing line, and an error
+  whose request was run again is hidden.
+
+### Releases
+
+- The release workflow runs in three jobs, so only the jobs that create the draft and attach the files hold a writing
+  token and none of them runs project code. Third-party actions are pinned to a commit. Windows signing is used when a
+  certificate is set up.
+
 ## 0.4.0 — 2026-11-17
 
 ### Safety
