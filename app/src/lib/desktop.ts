@@ -24,6 +24,14 @@ interface DesktopBridge {
   takeLink?(): Promise<{ kind: 'thread' | 'bot' | 'room'; id: string } | null>;
   /** Calls `fn` when a link arrives while the page is open. Missing in older shells. */
   onOpenLink?(fn: () => void): () => void;
+  /** Puts the quick window away. Missing in older shells. */
+  quickHide?(): Promise<void>;
+  /** Opens a conversation in the main window, from the quick window. Missing in older shells. */
+  openThread?(id: string): Promise<void>;
+  /** The global shortcut that opens the quick window, or null when none was free. Missing in older shells. */
+  quickKey?(): Promise<string | null>;
+  /** Calls `fn` each time the quick window is shown again. Missing in older shells. */
+  onQuickShown?(fn: () => void): () => void;
   /** The window has no title bar; the page leaves room for the window buttons. Missing in older shells. */
   framelessTitleBar?: boolean;
 }

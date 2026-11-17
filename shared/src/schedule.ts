@@ -172,6 +172,14 @@ export const RoutineRun = z.object({
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
 
+/** An instruction a routine had, with when it was saved; the newest is the one it has now. */
+export const RoutineRevision = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  createdAt: z.string(),
+});
+export type RoutineRevision = z.infer<typeof RoutineRevision>;
+
 export function isValidTimeZone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });

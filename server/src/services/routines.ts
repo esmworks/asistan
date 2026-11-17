@@ -8,6 +8,7 @@ import {
   type Routine,
   type RoutineCheck,
   type RoutineCreate,
+  type RoutineRevision,
   type RoutineRun,
   type Schedule,
 } from '@yumakbot/shared';
@@ -69,6 +70,9 @@ export function pageText(html: string): string {
 
 /** The longest previous report carried into a run. */
 const REPORT_MAX = 4000;
+
+/** A write that is part of a larger one, so they succeed or fail together. */
+type Tx = Parameters<Parameters<Ctx['db']['transaction']>[0]>[0];
 
 /** The report inside markers it cannot close itself, so it stays read as data. */
 export function fence(report: string): string {
@@ -180,14 +184,21 @@ export class RoutineService {
     if (input.check) await this.checkCheck(input.botId, input.check);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
-    const [row] = await this.ctx.db
-      .insert(schema.routines)
-      .values({
-        id: newId(),
-        ...input,
-        nextRunAt: input.enabled ? nextRun(input.schedule, input.timezone, now) : null,
-      })
-      .returning();
+    // The routine and the first line of its history are written together, or neither is.
+    const row = await this.ctx.db.transaction(async (tx) => {
+      const [made] = await tx
+        .insert(schema.routines)
+        .values({
+          id: newId(),
+          ...input,
+          nextRunAt: input.enabled ? nextRun(input.schedule, input.timezone, now) : null,
+        })
+        .returning();
+      await tx
+        .insert(schema.routineRevisions)
+        .values({ id: newId(), routineId: made!.id, prompt: made!.prompt, createdAt: now });
+      return made;
+    });
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRoutine(row!);
   }
@@ -200,16 +211,22 @@ export class RoutineService {
     const last = current.lastRunAt ? new Date(current.lastRunAt) : null;
     if (patch.schedule) this.checkOnce(schedule, timezone, this.clock());
     if (patch.check) await this.checkCheck(current.botId, patch.check);
-    const [row] = await this.ctx.db
-      .update(schema.routines)
-      .set({
-        ...patch,
-        // A new check starts from its own first answer, not from what the old one returned.
-        ...(patch.check !== undefined && { checkHash: null }),
-        nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null,
-      })
-      .where(eq(schema.routines.id, id))
-      .returning();
+    // A changed instruction goes into the history in the same write: a failed save leaves none.
+    const row = await this.ctx.db.transaction(async (tx) => {
+      const [saved] = await tx
+        .update(schema.routines)
+        .set({
+          ...patch,
+          // A new check starts from its own first answer, not from what the old one returned.
+          ...(patch.check !== undefined && { checkHash: null }),
+          nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null,
+        })
+        .where(eq(schema.routines.id, id))
+        .returning();
+      if (patch.prompt !== undefined && patch.prompt !== current.prompt)
+        await this.keepRevision(tx, current, patch.prompt);
+      return saved;
+    });
     // Pausing a routine also ends a run of it that waits on the person; one at work goes on.
     if (current.enabled && !enabled) {
       const t = await this.services.settings.translator();
@@ -217,6 +234,49 @@ export class RoutineService {
     }
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRoutine(row!);
+  }
+
+  /**
+   * Writes a changed instruction into the routine's history. A routine made before the history
+   * was kept gets its old instruction written first, dated when the routine was made, so the
+   * first change can still be undone.
+   */
+  private async keepRevision(db: Tx, current: Routine, prompt: string) {
+    const [first] = await db
+      .select({ id: schema.routineRevisions.id })
+      .from(schema.routineRevisions)
+      .where(eq(schema.routineRevisions.routineId, current.id))
+      .limit(1);
+    const now = this.clock();
+    const rows = [
+      ...(first
+        ? []
+        : [
+            {
+              id: newId(),
+              routineId: current.id,
+              prompt: current.prompt,
+              // Never after the change itself, whatever the clocks say.
+              createdAt: new Date(Math.min(Date.parse(current.createdAt), now.getTime() - 1)),
+            },
+          ]),
+      { id: newId(), routineId: current.id, prompt, createdAt: now },
+    ];
+    await db.insert(schema.routineRevisions).values(rows);
+  }
+
+  /** The instructions the routine has had, newest first; the first is the one it has now. */
+  async revisions(routineId: string, limit = 50): Promise<RoutineRevision[]> {
+    const routine = await this.get(routineId);
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.routineRevisions)
+      .where(eq(schema.routineRevisions.routineId, routineId))
+      .orderBy(desc(schema.routineRevisions.createdAt), desc(schema.routineRevisions.id))
+      .limit(limit);
+    const list = rows.map((r) => ({ id: r.id, prompt: r.prompt, createdAt: r.createdAt.toISOString() }));
+    // A routine never changed since before the history was kept has only the one it has now.
+    return list.length ? list : [{ id: routine.id, prompt: routine.prompt, createdAt: routine.createdAt }];
   }
 
   /**

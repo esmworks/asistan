@@ -113,24 +113,86 @@ export const useNotify = create<{
   },
 }));
 
+/** What a notice sounds like: each kind its own, so it can be told apart without looking. */
+export type SoundKind = 'reply' | 'question' | 'approval' | 'error';
+export const SOUND_KINDS: SoundKind[] = ['reply', 'question', 'approval', 'error'];
+
+/** One note: its pitch (Hz), when it starts and how long it rings (s), and a pitch it slides to. */
+export interface Note {
+  freq: number;
+  at: number;
+  length: number;
+  slideTo?: number;
+}
+
+/**
+ * The notes of each sound, made on the spot: no sound file to load. A reply is two soft rising
+ * notes; a question slides up, as a voice does when it asks; a permission request rings like a
+ * small bell; an error steps down.
+ */
+export const SOUNDS: Record<SoundKind, { wave: OscillatorType; volume: number; notes: Note[] }> = {
+  reply: {
+    wave: 'sine',
+    volume: 0.15,
+    notes: [
+      { freq: 660, at: 0, length: 0.35 },
+      { freq: 880, at: 0.12, length: 0.35 },
+    ],
+  },
+  question: {
+    wave: 'sine',
+    volume: 0.14,
+    notes: [
+      { freq: 523, at: 0, length: 0.18 },
+      { freq: 587, at: 0.16, length: 0.32, slideTo: 880 },
+    ],
+  },
+  approval: {
+    wave: 'sine',
+    volume: 0.13,
+    notes: [
+      { freq: 1319, at: 0, length: 0.9 },
+      { freq: 2637, at: 0, length: 0.45 },
+      { freq: 1319, at: 0.22, length: 0.9 },
+    ],
+  },
+  error: {
+    wave: 'triangle',
+    volume: 0.16,
+    notes: [
+      { freq: 494, at: 0, length: 0.22 },
+      { freq: 370, at: 0.18, length: 0.4 },
+    ],
+  },
+};
+
+/** The sound of a notice: its card's kind when something waits on the person. */
+export function soundFor(e: Pick<NoticeEvent, 'kind' | 'need'>): SoundKind {
+  if (e.kind === 'error') return 'error';
+  if (e.kind === 'reply') return 'reply';
+  return e.need === 'question' ? 'question' : 'approval';
+}
+
 let audio: AudioContext | null = null;
-/** Two soft notes, made on the spot: no sound file to load. */
-export function chime() {
+/** Plays the sound of one kind of notice; a reply's by default. */
+export function chime(kind: SoundKind = 'reply') {
   try {
     audio ??= new AudioContext();
     const now = audio.currentTime;
-    for (const [i, freq] of [660, 880].entries()) {
+    const sound = SOUNDS[kind];
+    for (const note of sound.notes) {
       const osc = audio.createOscillator();
       const gain = audio.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const at = now + i * 0.12;
+      osc.type = sound.wave;
+      const at = now + note.at;
+      osc.frequency.setValueAtTime(note.freq, at);
+      if (note.slideTo) osc.frequency.exponentialRampToValueAtTime(note.slideTo, at + note.length * 0.8);
       gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.exponentialRampToValueAtTime(0.15, at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+      gain.gain.exponentialRampToValueAtTime(sound.volume, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + note.length);
       osc.connect(gain).connect(audio.destination);
       osc.start(at);
-      osc.stop(at + 0.4);
+      osc.stop(at + note.length + 0.05);
     }
   } catch {
     // No sound output on this device.
@@ -214,7 +276,7 @@ export function notice(qc: QueryClient, e: NoticeEvent) {
     )
   )
     return;
-  if (prefs.sound) chime();
+  if (prefs.sound) chime(soundFor(e));
   if (!notificationsSupported() || Notification.permission !== 'granted') return;
   const t = getT();
   const bot = qc.getQueryData<Bot[]>(['bots'])?.find((b) => b.id === e.botId);

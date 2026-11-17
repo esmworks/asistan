@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isMuted, muteUntil, wanted } from './notify';
+import { isMuted, muteUntil, SOUND_KINDS, SOUNDS, soundFor, wanted } from './notify';
 
 describe('bildirimler', () => {
   const away = { focused: false, botId: null };
@@ -20,6 +20,28 @@ describe('bildirimler', () => {
     expect(wanted({ kind: 'needsYou', botId: 'a' }, 'all', { focused: true, botId: 'a' })).toBe(false);
     expect(wanted({ kind: 'needsYou', botId: 'a' }, 'all', { focused: true, botId: 'b' })).toBe(true);
     expect(wanted({ kind: 'reply', botId: 'a' }, 'all', { focused: false, botId: 'a' })).toBe(true);
+  });
+});
+
+describe('bildirim sesleri', () => {
+  it('her olay türü kendi sesini çalar', () => {
+    expect(soundFor({ kind: 'reply' })).toBe('reply');
+    expect(soundFor({ kind: 'error' })).toBe('error');
+    expect(soundFor({ kind: 'needsYou', need: 'question' })).toBe('question');
+    expect(soundFor({ kind: 'needsYou', need: 'tool' })).toBe('approval');
+    expect(soundFor({ kind: 'needsYou', need: 'login' })).toBe('approval');
+    // Eski bir sunucu kartın türünü söylemez; izin sesi çalar.
+    expect(soundFor({ kind: 'needsYou' })).toBe('approval');
+  });
+
+  it('sesler birbirinden ayrı ve kısa', () => {
+    const shapes = SOUND_KINDS.map((k) => JSON.stringify(SOUNDS[k]));
+    expect(new Set(shapes).size).toBe(SOUND_KINDS.length);
+    for (const k of SOUND_KINDS) {
+      const end = Math.max(...SOUNDS[k].notes.map((n) => n.at + n.length));
+      expect(end).toBeLessThanOrEqual(1.2);
+      expect(SOUNDS[k].volume).toBeLessThanOrEqual(0.2);
+    }
   });
 });
 

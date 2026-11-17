@@ -68,6 +68,7 @@ import {
   PluginInstall,
   ApiSourceCreate,
   TicketCommentCreate,
+  RowValues,
   TicketCreate,
   TicketUpdate,
   skillSlug,
@@ -89,7 +90,7 @@ import { Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
 import { HttpError, truncate } from './util';
-import { findSetup } from './services/setup-import';
+import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
 import { stepsText } from './browser/teach';
@@ -501,6 +502,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       servers: found.servers,
     };
   });
+  // Folders the person's coding tools work in, each one a bot could be made to work in.
+  app.get('/api/setup-import/projects', async () => {
+    if (!d.config.onUserComputer) return { available: false, projects: [] };
+    const bots = await s.bots.list({ includeArchived: true });
+    const dirs = bots.map((b) => b.projectDir).filter((p): p is string => !!p);
+    return { available: true, projects: await findProjects({ dirs }, { dataDir: d.config.dataDir }) };
+  });
   app.post('/api/setup-import', async (req) => {
     if (!d.config.onUserComputer) throw new HttpError(404, 'error.notFound');
     const body = z
@@ -563,6 +571,42 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       ),
       steps: steps.length,
     };
+  });
+
+  // Bots' tables: the person reads, corrects and clears what a bot keeps there.
+  app.get('/api/bots/:id/tables', async (req) => s.tables.list(IdParams.parse(req.params).id));
+  app.get('/api/tables/:id/rows', async (req) => s.tables.rows(IdParams.parse(req.params).id));
+  app.get('/api/tables/:id/rows.csv', async (req, reply) => {
+    const t = await s.settings.translator();
+    const { name, text } = await s.tables.csv(
+      IdParams.parse(req.params).id,
+      t('tool.tableYes'),
+      t('tool.tableNo'),
+    );
+    // The table's own name, in any letters, with a plain fallback for older clients.
+    const file = `${name.replace(/[\\/:*?"<>|]|\p{Cc}/gu, '_')}.csv`;
+    return reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header(
+        'content-disposition',
+        `attachment; filename="table.csv"; filename*=UTF-8''${encodeURIComponent(file)}`,
+      )
+      .send(text);
+  });
+  app.post('/api/tables/:id/rows', async (req) =>
+    s.tables.addRows(IdParams.parse(req.params).id, [RowValues.parse(req.body)]).then((r) => r[0]),
+  );
+  app.patch('/api/tables/:id/rows/:rowId', async (req) => {
+    const p = z.object({ id: z.string(), rowId: z.string() }).parse(req.params);
+    return s.tables.updateRow(p.id, p.rowId, RowValues.parse(req.body));
+  });
+  app.delete('/api/tables/:id/rows/:rowId', async (req) => {
+    const p = z.object({ id: z.string(), rowId: z.string() }).parse(req.params);
+    return { deleted: await s.tables.deleteRows(p.id, [p.rowId]) };
+  });
+  app.delete('/api/tables/:id', async (req) => {
+    await s.tables.remove(IdParams.parse(req.params).id);
+    return { ok: true };
   });
 
   // The board: tickets the person and the bots work from.
@@ -1243,6 +1287,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return reply.code(202).send({ ok: true, runId: run?.id ?? null, status: run?.status ?? 'skipped' });
   });
   app.get('/api/routines/:id/runs', async (req) => s.routines.runs(IdParams.parse(req.params).id));
+  app.get('/api/routines/:id/revisions', async (req) => s.routines.revisions(IdParams.parse(req.params).id));
 
   // Library: files in the bot's folders (read-only listing and download).
   const libraryRoots = async (botId: string) => {

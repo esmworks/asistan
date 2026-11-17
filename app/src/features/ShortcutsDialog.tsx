@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useT, type MessageKey } from '@/i18n';
+import { desktop } from '@/lib/desktop';
+import { shortcutLabel } from '@/lib/quick';
 import { useSendKey } from '@/lib/sendKey';
 import { useUi } from '@/lib/store';
 
@@ -13,6 +15,15 @@ export function ShortcutsDialog() {
   const open = useUi((s) => s.shortcutsOpen);
   const setOpen = useUi((s) => s.setShortcutsOpen);
   const sendKey = useSendKey((s) => s.key);
+  // The desktop app's global shortcut for the quick window, when it got one.
+  const [quickKey, setQuickKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    void desktop
+      ?.quickKey?.()
+      .then(setQuickKey)
+      .catch(() => {});
+  }, [open]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key === '/') {
@@ -36,6 +47,7 @@ export function ShortcutsDialog() {
     [['/'], 'shortcuts.commands'],
     [['$'], 'shortcuts.skills'],
     [['Esc'], 'shortcuts.escape'],
+    ...(quickKey ? [[shortcutLabel(quickKey, mac), 'shortcuts.quick'] as [string[], MessageKey]] : []),
   ];
   return (
     <Dialog open={open} onOpenChange={setOpen}>

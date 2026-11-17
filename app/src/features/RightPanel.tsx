@@ -46,6 +46,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { ComputerCard, useBrowserAvailable } from './Computer';
 import { canPreview, usePreview } from './FilePreview';
+import { BotTables } from './BotTables';
 import { AppLogo, openTo, useToggleBot } from './Connections';
 import { RoutineDialog } from './RoutineDialog';
 
@@ -127,6 +128,7 @@ export function RightPanel({ bot, beside }: { bot: Bot; beside?: boolean }) {
           <Upcoming bot={bot} />
           <BotApps bot={bot} />
           <BotSkills bot={bot} />
+          <BotTables bot={bot} />
           <BotFacts bot={bot} />
         </TabsContent>
         <TabsContent value="library" className="mt-4">

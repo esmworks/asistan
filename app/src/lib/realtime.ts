@@ -115,6 +115,8 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       break;
     case 'routines':
       inv('routines');
+      // A routine's instruction may have changed, by a bot or on another device.
+      inv('routine-revisions');
       inv('summaries');
       break;
     case 'rules':
@@ -135,6 +137,10 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       break;
     case 'tickets':
       inv('tickets');
+      break;
+    case 'tables':
+      inv('tables', e.botId);
+      inv('table-rows');
       break;
     case 'info':
       inv('info');

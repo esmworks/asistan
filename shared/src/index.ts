@@ -20,3 +20,6 @@ export * from './memory-groups';
 export * from './tool-selection';
 export * from './channels';
 export * from './ai-endpoints';
+export * from './text-diff';
+export * from './app-mentions';
+export * from './tables';

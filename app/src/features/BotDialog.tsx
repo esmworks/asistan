@@ -39,6 +39,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MODE_LABEL } from './RightPanel';
 import { availableStarters, starterBot, type StarterId } from './onboarding/profile';
+import { MissingApps } from './MissingApps';
 import { Field } from './RoutineDialog';
 
 export const COLORS = [
@@ -155,6 +156,7 @@ export function BotDialog() {
           <BotForm
             key={bot?.id ?? 'new'}
             bot={bot}
+            preset={dialog.mode === 'create' ? dialog.preset : undefined}
             onDone={() => {
               dirty.current = false;
               close(null);
@@ -172,11 +174,14 @@ export function BotDialog() {
 
 function BotForm({
   bot,
+  preset,
   onDone,
   onCancel,
   onDirty,
 }: {
   bot?: Bot;
+  /** What a new bot starts with besides the defaults. */
+  preset?: { name: string; projectDir: string };
   onDone(): void;
   onCancel(): void;
   /** Whether the form holds changes not saved yet, each time that changes. */
@@ -191,7 +196,7 @@ function BotForm({
   // A new bot starts on the AI picked in the settings; Claude when none was picked.
   const form = useForm<Form>({
     resolver: zodResolver(Form),
-    defaultValues: initial(bot, newBotEngine(settings)),
+    defaultValues: { ...initial(bot, newBotEngine(settings)), ...preset },
   });
   const v = useWatch({ control: form.control }) as Form;
   const { isDirty } = form.formState;
@@ -199,7 +204,8 @@ function BotForm({
     onDirty(isDirty);
   }, [isDirty, onDirty]);
   const err = form.formState.errors;
-  const [advanced, setAdvanced] = useState(false);
+  // A bot made for a folder shows where the folder is set.
+  const [advanced, setAdvanced] = useState(!!preset?.projectDir);
   const { data: bots = [] } = useBots();
   // Offered once, when the dialog opens: a bot made meanwhile does not reshuffle the choices.
   const [starters] = useState(() =>
@@ -358,6 +364,7 @@ function BotForm({
             className="rounded-xl"
             placeholder={t('bot.instructionsPlaceholder')}
           />
+          <MissingApps text={v.instructions ?? ''} botId={bot?.id ?? null} />
         </Field>
         <ModelPicker
           value={v}

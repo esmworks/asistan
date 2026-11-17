@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld('yumakbotDesktop', {
     ipcRenderer.on('yumakbot:open-link', listener);
     return () => ipcRenderer.removeListener('yumakbot:open-link', listener);
   },
+  /** Puts the quick window away. */
+  quickHide: (): Promise<void> => ipcRenderer.invoke('yumakbot:quick-hide'),
+  /** Opens a conversation in the main window (from the quick window). */
+  openThread: (id: string): Promise<void> => ipcRenderer.invoke('yumakbot:open-thread', id),
+  /** The global shortcut that opens the quick window, or null when none was free. */
+  quickKey: (): Promise<string | null> => ipcRenderer.invoke('yumakbot:quick-key'),
+  /** Calls `fn` each time the quick window is shown again; returns a function that stops it. */
+  onQuickShown: (fn: () => void): (() => void) => {
+    const listener = () => fn();
+    ipcRenderer.on('yumakbot:quick-shown', listener);
+    return () => ipcRenderer.removeListener('yumakbot:quick-shown', listener);
+  },
   /** Calls `fn` when the menu bar's Settings item is chosen; returns a function that stops it. */
   onOpenSettings: (fn: () => void): (() => void) => {
     const listener = () => fn();

@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { useFormat } from '@/lib/format';
 import { useBots } from '@/lib/queries';
+import { FoundProjects } from './FoundProjects';
 import { Card, Row } from './SettingsDialog';
 
 /** The instructions the other app follows to write the import file; served with the app. */
@@ -234,6 +235,7 @@ export function ImportTab() {
           </div>
         </>
       )}
+      <FoundProjects />
       <ExportCard />
       <BackupCard />
     </>

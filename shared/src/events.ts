@@ -17,6 +17,7 @@ export type RefreshScope =
   | { scope: 'rooms' }
   | { scope: 'channels' }
   | { scope: 'tickets' }
+  | { scope: 'tables'; botId: string }
   | { scope: 'info' };
 
 export interface HelloEvent {
@@ -38,6 +39,8 @@ export interface DeltaEvent {
  */
 export interface NoticeEvent {
   kind: 'reply' | 'needsYou' | 'error';
+  /** For `needsYou`: what kind of card waits, so each can sound different. Missing from older servers. */
+  need?: 'tool' | 'question' | 'login';
   botId: string;
   threadId: string;
   text: string;

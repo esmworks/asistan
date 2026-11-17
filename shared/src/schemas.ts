@@ -417,6 +417,10 @@ export const Memory = z.object({
   lastUsedAt: z.string().nullable(),
   /** How many times a bot looked the note up. */
   useCount: z.number().int(),
+  /** The conversation a bot last wrote the note in; null for notes written by hand. Missing from older servers. */
+  threadId: Id.nullable().optional(),
+  /** The page the fact came from, as the bot gave it. Missing from older servers. */
+  sourceUrl: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -439,6 +443,8 @@ export interface MemoryChange {
   proposedBy: string;
   origin: { kind: 'routine' | 'bot'; name: string };
   threadId: string | null;
+  /** The page the bot said the fact came from. */
+  sourceUrl: string | null;
   createdAt: string;
 }
 /**

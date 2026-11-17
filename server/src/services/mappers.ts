@@ -117,6 +117,8 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   source: r.source,
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
   useCount: r.useCount,
+  threadId: r.threadId,
+  sourceUrl: r.sourceUrl,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -171,6 +173,7 @@ export function toMemoryChange(r: typeof schema.memoryChanges.$inferSelect): Mem
     proposedBy: r.proposedBy,
     origin: r.origin,
     threadId: r.threadId,
+    sourceUrl: r.sourceUrl,
     createdAt: r.createdAt.toISOString(),
   };
 }

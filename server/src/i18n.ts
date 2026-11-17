@@ -59,6 +59,20 @@ const tr = {
   'error.notFound.apiKey': 'API anahtarı bulunamadı',
   'error.notFound.apiSource': 'API belgesi bulunamadı',
   'error.notFound.ticket': 'Görev bulunamadı',
+  'error.notFound.table': 'Tablo bulunamadı',
+  'error.notFound.tableRow': 'Satır bulunamadı',
+  'error.tableNoColumn': 'Tabloda "{column}" diye bir sütun yok. Sütunlar: {columns}',
+  'error.tableColumns': 'Bir tabloda en çok 30 sütun olabilir.',
+  'error.tableNoColumns': 'Yeni bir tablo için en az bir sütun ver.',
+  'error.tableCount': 'Bir botun en çok 20 tablosu olabilir; yenisi için birini silin.',
+  'error.tableExists': 'Bu adda bir tablo zaten var.',
+  'error.tableRows': 'Bir tabloda en çok 5000 satır olabilir.',
+  'table.badNumber': '"{column}" sütunu bir sayı bekliyor.',
+  'table.badDate':
+    '"{column}" sütunu YYYY-AA-GG biçiminde bir tarih bekliyor; saatiyle YYYY-AA-GG SS:DD, saat dilimi olmadan.',
+  'table.badBool': '"{column}" sütunu evet ya da hayır bekliyor.',
+  'table.badUrl': '"{column}" sütunu bir web adresi bekliyor.',
+  'table.tooLong': '"{column}" sütunundaki değer çok uzun (en çok 2000 karakter).',
   'error.teachNoBrowser': 'Bu sunucuda botların tarayıcısı yok',
   'error.teachNothing': 'Kaydedilen bir adım yok: kontrol sende iken tarayıcıda işi göster',
   'teach.defaultGoal': 'Gösterilen işi yap',
@@ -210,6 +224,7 @@ const tr = {
 
   // Custom validation messages from the shared schemas (their message is the key).
   'validation.time': 'SS:DD biçiminde olmalı',
+  'validation.columnName': 'Sütun adında satır sonu ya da sekme olamaz',
   'validation.snoozeFuture': 'Erteleme zamanı ileride olmalı',
   'prompt.goal':
     '## Bu sohbetin hedefi\nKullanıcı bu sohbet için şu hedefi koydu. Her adımı buna göre seç, hedefe ne kadar yaklaştığını söyle ve hedef tamamlanınca bunu açıkça belirt:',
@@ -555,6 +570,35 @@ const tr = {
     'Panoya yeni bir görev ekle: title, description, priority (low, normal, high, urgent), assign_to (bir botun adı; verilirse o bot hemen işe başlar). Kullanıcı panodan görür.',
   'tool.ticket_update':
     'Bir görevi güncelle (ticket: numarası): status, comment (göreve yorum), assign_to (bir botun adı; boş bırakmak için ""), priority, title, description. Yalnız değişecek alanları ver.',
+  'tool.tables_list':
+    'Kendi tablolarını listele: adı, satır sayısı ve sütunları (türleriyle). Tablolar, takip ettiğin kayıtları (müşteri adayları, fiyatlar, siparişler) satır satır tuttuğun yerdir; kullanıcı da görür, düzeltir ve dışa aktarır.',
+  'tool.table_define':
+    'Bir tablo kur ya da var olana sütun ekle: name (tablonun adı), columns (her biri name ve type: text, number, date, bool, url; varsayılan text). Aynı adda tablo varsa yalnız eksik sütunlar eklenir; sütun silinmez, türü değişmez.',
+  'tool.table_rows':
+    'Bir tablonun satırlarını oku: table (adı), where (sütun adı → tam eşleşecek değer), search (herhangi bir hücrede geçen metin), offset ve limit (en çok 200, varsayılan 50). Her satır [kimliği] ile gelir; değiştirmek ya da silmek için bu kimliği kullan.',
+  'tool.table_add':
+    'Bir tabloya satır ekle: table (adı), rows (her biri sütun adı → değer). Sayılar 1.250,5 ya da 1250.5, tarihler YYYY-AA-GG (saat varsa YYYY-AA-GG SS:DD), evet/hayır true/false olarak yazılabilir.',
+  'tool.table_update':
+    'Bir satırın hücrelerini değiştir: table (adı), id (satırın kimliği), values (yalnız değişecek sütunlar; boş değer hücreyi temizler).',
+  'tool.table_delete_rows': 'Bir tablodan satır sil: table (adı), ids (satırların kimlikleri).',
+  'tool.tablesNone': 'Henüz tablon yok; table_define ile kurabilirsin.',
+  'tool.tableMissing': '“{table}” adında bir tablon yok. Tabloların: {tables}',
+  'tool.tableRowCount': 'satır sayısı {count}',
+  'tool.tableDefined': '“{table}” tablosu hazır. Sütunlar: {columns}',
+  'tool.tableUnchanged': '“{table}” tablosunda bu sütunlar zaten var: {columns}',
+  'tool.tableNoRows': '“{table}” tablosunda buna uyan satır yok.',
+  'tool.tableRowsHeader': '“{table}”: {total} satırdan {shown} tanesi',
+  'tool.tableMore': '…kalan satır sayısı {count}; devamı için offset: {offset} ver.',
+  'tool.tableAdded': '“{table}” tablosuna eklenen satır sayısı {count}. Kimlikleri: {ids}',
+  'tool.tableUpdated': '“{table}” tablosundaki satır güncellendi:',
+  'tool.tableDeleted': '“{table}” tablosundan silinen satır sayısı {count}.',
+  'tool.tableYes': 'evet',
+  'tool.tableNo': 'hayır',
+  'tool.tableType.text': 'metin',
+  'tool.tableType.number': 'sayı',
+  'tool.tableType.date': 'tarih',
+  'tool.tableType.bool': 'evet/hayır',
+  'tool.tableType.url': 'bağlantı',
   'tool.ticketsNone': 'Panoda böyle bir görev yok.',
   'tool.ticketMissing': '#{ticket} numaralı görev yok.',
   'tool.ticketCreated': '#{number} numaralı görev panoya eklendi.',
@@ -622,6 +666,9 @@ const tr = {
   'tool.memory_search':
     'Hafızada ara: kendi hafızan ve kullanıcının ortak hafızası. query vermezsen bütün kayıtları kimlikleriyle listeler.',
   'tool.memoryBadSite': '{site} bir site adresi değil.',
+  'tool.memoryBadSource':
+    '{from} bir web adresi değil; from için http:// ya da https:// ile başlayan sayfa adresini ver.',
+  'tool.memorySource': 'kaynak: {url}',
   'tool.skill_read': 'Becerilerinden birinin tam talimatlarını adıyla oku.',
   'tool.skill_save':
     'Bir işi nasıl yapacağını beceri olarak kaydet ya da sende olan bir beceriyi düzelt: kullanıcı bir yöntemi düzelttiğinde ya da tekrar edecek bir yöntem işe yaradığında. Kullanıcı kartta onaylar.',
@@ -677,9 +724,9 @@ const tr = {
   'tool.planShown': 'Plan sohbette gösterildi.',
   'tool.noSkill': '{name} adında bir becerin yok. Becerilerin: {names}',
   'tool.memory_write':
-    'Kalıcı bir bilgiyi kaydet. scope "bot" yalnızca senin hafızan; "user" bütün botların gördüğü kullanıcı bilgisi (ad, saat dilimi, tercihler). Bir sitenin nasıl kullanıldığına dair bir not (bir düğmenin yeri, işe yarayan bir adım) için site ver (ör. "ornek.com"): not her turda değil, o siteyi açtığında gelir.',
+    'Kalıcı bir bilgiyi kaydet. scope "bot" yalnızca senin hafızan; "user" bütün botların gördüğü kullanıcı bilgisi (ad, saat dilimi, tercihler). Bir sitenin nasıl kullanıldığına dair bir not (bir düğmenin yeri, işe yarayan bir adım) için site ver (ör. "ornek.com"): not her turda değil, o siteyi açtığında gelir. Bilgiyi bir sayfada okuduysan o sayfanın adresini from olarak ver; kullanıcı notun nereden geldiğini görüp doğrulayabilir.',
   'tool.memory_update':
-    'Hafızadaki bir kaydın metnini değiştir: kendi notun ya da kullanıcının ortak hafızası (kimliğini memory_search verir).',
+    'Hafızadaki bir kaydın metnini değiştir: kendi notun ya da kullanıcının ortak hafızası (kimliğini memory_search verir). Yeni bilgiyi bir sayfada okuduysan adresini from olarak ver.',
   'tool.memory_forget':
     'Hafızadan bir kaydı sil: kendi notun ya da kullanıcının ortak hafızası (kimliğini memory_search verir).',
   'tool.bots_list': 'Yazabileceğin botları listele.',
@@ -1004,6 +1051,20 @@ const en: Catalog<ServerKey> = {
   'error.notFound.apiKey': 'API key not found',
   'error.notFound.apiSource': 'API document not found',
   'error.notFound.ticket': 'Ticket not found',
+  'error.notFound.table': 'Table not found',
+  'error.notFound.tableRow': 'Row not found',
+  'error.tableNoColumn': 'The table has no column "{column}". Columns: {columns}',
+  'error.tableColumns': 'A table can have at most 30 columns.',
+  'error.tableNoColumns': 'Give at least one column for a new table.',
+  'error.tableCount': 'A bot can have at most 20 tables; delete one to make another.',
+  'error.tableExists': 'A table with this name already exists.',
+  'error.tableRows': 'A table can have at most 5000 rows.',
+  'table.badNumber': 'The column "{column}" takes a number.',
+  'table.badDate':
+    'The column "{column}" takes a date as YYYY-MM-DD; with a time, YYYY-MM-DD HH:MM, without a time zone.',
+  'table.badBool': 'The column "{column}" takes yes or no.',
+  'table.badUrl': 'The column "{column}" takes a web address.',
+  'table.tooLong': 'The value in the column "{column}" is too long (2000 characters at most).',
   'error.teachNoBrowser': 'Bots have no browser on this server',
   'error.teachNothing': 'No steps were recorded: show the task in the browser while you have control',
   'teach.defaultGoal': 'Do the task that was shown',
@@ -1153,6 +1214,7 @@ const en: Catalog<ServerKey> = {
   'error.jobStopForbidden': 'Only the sender or a manager can stop this job',
 
   'validation.time': 'Must be in HH:MM format',
+  'validation.columnName': 'A column name cannot hold a line break or a tab',
   'validation.snoozeFuture': 'The snooze must end in the future',
   'prompt.goal':
     '## Goal of this conversation\nThe user set this goal for the conversation. Choose each step by it, say how close you are, and say plainly when it is reached:',
@@ -1493,6 +1555,35 @@ const en: Catalog<ServerKey> = {
     "Add a ticket to the board: title, description, priority (low, normal, high, urgent), assign_to (a bot's name; if given, that bot starts on it at once). The user sees it on the board.",
   'tool.ticket_update':
     'Update a ticket (ticket: its number): status, comment (a comment on it), assign_to (a bot\'s name; "" to clear), priority, title, description. Give only the fields that change.',
+  'tool.tables_list':
+    'List your tables: name, row count and columns (with their types). Tables are where you keep records you track (leads, prices, orders) row by row; the person sees, corrects and exports them too.',
+  'tool.table_define':
+    'Set up a table or add columns to one: name (the table name), columns (each a name and type: text, number, date, bool, url; text by default). If a table of that name exists only the missing columns are added; columns are never removed or retyped.',
+  'tool.table_rows':
+    'Read rows of a table: table (its name), where (column name → value to match exactly), search (text found in any cell), offset and limit (at most 200, 50 by default). Each row comes with its [id]; use it to change or delete the row.',
+  'tool.table_add':
+    'Add rows to a table: table (its name), rows (each a column name → value). Numbers may be written 1,250.5 or 1250.5, dates YYYY-MM-DD (with a time YYYY-MM-DD HH:MM), yes/no as true/false.',
+  'tool.table_update':
+    'Change cells of a row: table (its name), id (the row id), values (only the columns that change; an empty value clears the cell).',
+  'tool.table_delete_rows': 'Delete rows from a table: table (its name), ids (the row ids).',
+  'tool.tablesNone': 'You have no tables yet; set one up with table_define.',
+  'tool.tableMissing': 'You have no table called “{table}”. Your tables: {tables}',
+  'tool.tableRowCount': 'rows: {count}',
+  'tool.tableDefined': 'Table “{table}” is ready. Columns: {columns}',
+  'tool.tableUnchanged': 'Table “{table}” already has these columns: {columns}',
+  'tool.tableNoRows': 'No rows in “{table}” match.',
+  'tool.tableRowsHeader': '“{table}”: {shown} of {total} rows',
+  'tool.tableMore': '…rows left: {count}; pass offset: {offset} for the rest.',
+  'tool.tableAdded': 'Rows added to “{table}”: {count}. Their ids: {ids}',
+  'tool.tableUpdated': 'Row updated in “{table}”:',
+  'tool.tableDeleted': 'Rows deleted from “{table}”: {count}.',
+  'tool.tableYes': 'yes',
+  'tool.tableNo': 'no',
+  'tool.tableType.text': 'text',
+  'tool.tableType.number': 'number',
+  'tool.tableType.date': 'date',
+  'tool.tableType.bool': 'yes/no',
+  'tool.tableType.url': 'link',
   'tool.ticketsNone': 'No such tickets on the board.',
   'tool.ticketMissing': 'There is no ticket #{ticket}.',
   'tool.ticketCreated': 'Ticket #{number} was added to the board.',
@@ -1561,6 +1652,9 @@ const en: Catalog<ServerKey> = {
   'tool.memory_search':
     "Search memory: your own memory and the user's shared memory. Without a query it lists every entry with its id.",
   'tool.memoryBadSite': '{site} is not a site address.',
+  'tool.memoryBadSource':
+    '{from} is not a web address; give from as the page address, starting with http:// or https://.',
+  'tool.memorySource': 'source: {url}',
   'tool.skill_read': 'Read the full instructions of one of your skills, by its name.',
   'tool.skill_save':
     'Save how to do a task as a skill, or fix a skill you have: when the user corrects a method, or a method worth repeating worked. The user approves on a card.',
@@ -1615,9 +1709,9 @@ const en: Catalog<ServerKey> = {
   'tool.planShown': 'The plan is shown in the chat.',
   'tool.noSkill': 'You have no skill named {name}. Your skills: {names}',
   'tool.memory_write':
-    'Save a lasting fact. scope "bot" is only your memory; "user" is information about the user that every bot sees (name, time zone, preferences). For a note on how a site works (where a button is, a step that worked), give site (e.g. "example.com"): the note comes when you open that site, not every turn.',
+    'Save a lasting fact. scope "bot" is only your memory; "user" is information about the user that every bot sees (name, time zone, preferences). For a note on how a site works (where a button is, a step that worked), give site (e.g. "example.com"): the note comes when you open that site, not every turn. If you read the fact on a page, give its address as from; the user can then see where the note came from and check it.',
   'tool.memory_update':
-    "Change the text of a memory entry: your own note or the user's shared memory (memory_search gives its id).",
+    "Change the text of a memory entry: your own note or the user's shared memory (memory_search gives its id). If you read the new fact on a page, give its address as from.",
   'tool.memory_forget':
     "Delete a memory entry: your own note or the user's shared memory (memory_search gives its id).",
   'tool.bots_list': 'List the bots you can write to.',

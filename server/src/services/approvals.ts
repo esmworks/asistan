@@ -253,6 +253,7 @@ export class ApprovalService {
     this.ctx.bus.refresh({ scope: 'approvals' });
     this.ctx.bus.notice({
       kind: 'needsYou',
+      need: row!.kind,
       botId: opts.botId,
       threadId: opts.threadId,
       text: truncate(row!.summary, 200),

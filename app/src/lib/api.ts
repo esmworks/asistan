@@ -1,4 +1,7 @@
 import type {
+  BotTable,
+  RowValues,
+  TableRow,
   TelegramStatus,
   WhatsAppSet,
   WhatsAppStatus,
@@ -30,6 +33,7 @@ import type {
   Skill,
   SkillCreate,
   SkillUpdate,
+  RoutineRevision,
   RoutineRun,
   SearchHit,
   ServerInfo,
@@ -279,6 +283,11 @@ export const api = {
   /** Deletes every conversation of the bot but its main one. */
   clearThreads: (botId: string) => http.del<{ deleted: number }>(`/api/bots/${botId}/threads`),
   fetchSkill: (url: string) => http.post<{ text: string; name: string }>('/api/skills/fetch', { url }),
+  setupProjects: () =>
+    http.get<{
+      available: boolean;
+      projects: { path: string; name: string; sources: string[]; lastUsed: string | null }[];
+    }>('/api/setup-import/projects'),
   setupImport: () =>
     http.get<{
       available: boolean;
@@ -417,6 +426,7 @@ export const api = {
   runRoutine: (id: string) => http.post<RoutineRun | null>(`/api/routines/${id}/run`),
   routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
   routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
+  routineRevisions: (id: string) => http.get<RoutineRevision[]>(`/api/routines/${id}/revisions`),
 
   library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),
   /** `inline`: an image to show on the page rather than a download. */
@@ -445,6 +455,16 @@ export const api = {
         on,
       },
     ),
+  botTables: (botId: string) => http.get<BotTable[]>(`/api/bots/${botId}/tables`),
+  tableRows: (id: string) => http.get<TableRow[]>(`/api/tables/${id}/rows`),
+  addTableRow: (id: string, values: RowValues = {}) => http.post<TableRow>(`/api/tables/${id}/rows`, values),
+  updateTableRow: (id: string, rowId: string, values: RowValues) =>
+    http.patch<TableRow>(`/api/tables/${id}/rows/${rowId}`, values),
+  deleteTableRow: (id: string, rowId: string) =>
+    http.del<{ deleted: number }>(`/api/tables/${id}/rows/${rowId}`),
+  removeTable: (id: string) => http.del<{ ok: true }>(`/api/tables/${id}`),
+  /** Where the table downloads as a CSV file. */
+  tableCsvUrl: (id: string) => `/api/tables/${id}/rows.csv`,
   tickets: () => http.get<Ticket[]>('/api/tickets'),
   createTicket: (input: TicketCreate) => http.post<Ticket>('/api/tickets', input),
   updateTicket: (id: string, patch: TicketUpdate) => http.patch<Ticket>(`/api/tickets/${id}`, patch),

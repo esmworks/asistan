@@ -96,7 +96,11 @@ interface UiState {
   /** The apps (connections) window; `botId` is the bot it was opened for, whose switch a new connection turns on. */
   /** The apps window; `catalogId` opens it on one service of the catalog. */
   apps: { botId: string | null; catalogId?: string; connectionId?: string } | null;
-  botDialog: { mode: 'create' } | { mode: 'edit'; botId: string } | null;
+  /** A new bot may start with a name and a folder filled in, as for a folder found on this computer. */
+  botDialog:
+    | { mode: 'create'; preset?: { name: string; projectDir: string } }
+    | { mode: 'edit'; botId: string }
+    | null;
   /** The bot whose computer (browser) is open. */
   computerBotId: string | null;
   /** Whether that browser shows in a small window over the chat rather than the large view. */

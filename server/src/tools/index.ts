@@ -26,7 +26,7 @@ import { schema } from '../db';
 import { planItems, type AppTool, type PlanItem, type ToolResult } from '../engine/types';
 import { attended, type TurnRow } from '../runtime/turns';
 import type { Services } from '../services';
-import type { T } from '../i18n';
+import { isServerKey, type T } from '../i18n';
 import { errorText, newId, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
@@ -34,7 +34,9 @@ import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
+import { tableTools } from './tables';
 import { ticketTools } from './tickets';
+import { sourceOf } from '../services/memory';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -50,6 +52,32 @@ const Choice = z.union([
   z.object({ label: z.string().min(1).max(200), description: z.string().max(500).optional() }),
 ]);
 const choiceLabel = (c: z.infer<typeof Choice>) => (typeof c === 'string' ? c : c.label);
+
+/** Query parameters that carry a sign-in or a signature rather than say which page it is. */
+const SECRET_PARAM =
+  /(?:^|[_.-])(?:token|secret|password|passwd|pwd|key|apikey|sig|signature|auth|session|sessionid|sid|credential|code)s?(?:$|[_.-])|^x-(?:amz|goog)-/i;
+
+/**
+ * The page a bot says a fact came from, as a web address the person can open; null for none and
+ * undefined for something that is not one. Whatever could sign someone in is taken out first: the
+ * address is kept and shown, while what it held would leak with it.
+ */
+export function sourceAddress(from: string): string | null | undefined {
+  try {
+    const url = new URL(from.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    url.username = '';
+    url.password = '';
+    // A fragment is where sign-in pages hand over their tokens; it never names another page.
+    url.hash = '';
+    for (const [name, value] of [...url.searchParams]) {
+      if (SECRET_PARAM.test(name) || redactSecrets(value, '').redacted) url.searchParams.delete(name);
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
 
 const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_update', 'memory_forget']);
 const MANAGER_MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_update', 'memory_forget']);
@@ -82,7 +110,9 @@ const definer =
       handler: async (raw) => {
         const parsed = parser.safeParse(raw);
         if (!parsed.success) {
-          return t('tool.invalidInput', { issues: parsed.error.issues.map((i) => i.message).join('; ') });
+          // A shared schema's own message is a key into the catalog.
+          const issues = parsed.error.issues.map((i) => (isServerKey(i.message) ? t(i.message) : i.message));
+          return t('tool.invalidInput', { issues: issues.join('; ') });
         }
         try {
           return await handler(parsed.data);
@@ -119,6 +149,12 @@ export type ToolName =
   | 'ticket_read'
   | 'ticket_create'
   | 'ticket_update'
+  | 'tables_list'
+  | 'table_define'
+  | 'table_rows'
+  | 'table_add'
+  | 'table_update'
+  | 'table_delete_rows'
   | 'email_inbox'
   | 'email_read'
   | 'page_to_image'
@@ -239,6 +275,8 @@ export class ToolFactory {
     apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
     plan?: (items: PlanItem[]) => Promise<void>;
+    /** Whether the bot keeps any table; without one it gets only the tools to start one. */
+    hasTables?: boolean;
   }): AppTool[] {
     const { bot, thread, turn, signal, t, plan } = opts;
     const skills = opts.skills ?? [];
@@ -782,7 +820,10 @@ export class ToolFactory {
                 ? t('tool.scopeBot')
                 : owners.get(m.botId!);
           return found
-            .map((m) => `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}`)
+            .map(
+              (m) =>
+                `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}${m.sourceUrl ? ` (${t('tool.memorySource', { url: m.sourceUrl })})` : ''}`,
+            )
             .join('\n');
         },
         'read',
@@ -793,8 +834,11 @@ export class ToolFactory {
           content: z.string().min(1).max(2000),
           scope: z.enum(['bot', 'user']).default('bot'),
           site: z.string().max(253).optional(),
+          from: z.string().max(2000).optional(),
         },
-        async ({ content, scope, site }) => {
+        async ({ content, scope, site, from }) => {
+          const sourceUrl = from?.trim() ? sourceAddress(from) : null;
+          if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
           let host: string | null = null;
           if (site) {
             try {
@@ -812,9 +856,14 @@ export class ToolFactory {
             return t('tool.memoryAlreadySaved', { id: same.id });
           }
           if (!fromUser) {
-            return propose({ action: 'write', memoryId: null, before: null, ...note });
+            return propose({ action: 'write', memoryId: null, before: null, ...note, sourceUrl });
           }
-          const m = await s.memory.create({ ...note, source: `bot:${bot.id}` });
+          const m = await s.memory.create({
+            ...note,
+            source: `bot:${bot.id}`,
+            threadId: thread.id,
+            sourceUrl,
+          });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
             : t('tool.memorySaved', { id: m.id });
@@ -825,8 +874,14 @@ export class ToolFactory {
       ),
       def(
         'memory_update',
-        { id: z.string(), content: z.string().trim().min(1).max(2000) },
-        async ({ id, content }) => {
+        {
+          id: z.string(),
+          content: z.string().trim().min(1).max(2000),
+          from: z.string().max(2000).optional(),
+        },
+        async ({ id, content, from }) => {
+          const sourceUrl = from?.trim() ? sourceAddress(from) : null;
+          if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
           const m = await s.memory.get(id);
           if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
           const clean = redactSecrets(content, t('memory.redacted'));
@@ -840,9 +895,14 @@ export class ToolFactory {
               scope,
               botId,
               site,
+              sourceUrl,
             });
           }
-          await s.memory.update(id, { content: clean.text }, `bot:${bot.id}`);
+          await s.memory.update(
+            id,
+            { content: clean.text, ...sourceOf({ threadId: thread.id, sourceUrl }) },
+            `bot:${bot.id}`,
+          );
           return clean.redacted
             ? `${t('tool.memoryUpdated')} ${t('tool.memoryRedacted')}`
             : t('tool.memoryUpdated');
@@ -858,7 +918,16 @@ export class ToolFactory {
           if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
           if (!fromUser) {
             const { scope, botId, site, content } = m;
-            return propose({ action: 'forget', memoryId: m.id, before: null, content, scope, botId, site });
+            return propose({
+              action: 'forget',
+              memoryId: m.id,
+              before: null,
+              content,
+              scope,
+              botId,
+              site,
+              sourceUrl: null,
+            });
           }
           await s.memory.remove(id, `bot:${bot.id}`);
           // A manager deleting another bot's note is told what that bot loses.
@@ -1015,6 +1084,7 @@ export class ToolFactory {
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
     tools.push(...ticketTools({ def, services: s, bot, turn, t }));
+    tools.push(...tableTools({ def, services: s, botId: bot.id, t, hasTables: opts.hasTables ?? true }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
       const askLogin: AskLogin = async (site, host) => {

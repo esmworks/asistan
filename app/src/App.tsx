@@ -24,9 +24,11 @@ import { ShortcutsDialog } from '@/features/ShortcutsDialog';
 import { TodayDialog } from '@/features/TodayDialog';
 import { BoardDialog } from '@/features/BoardDialog';
 import { OpenedRoutineDialog } from '@/features/RoutineDialog';
+import { QuickPanel } from '@/features/QuickPanel';
 import { Sidebar } from '@/features/Sidebar';
 import { useLocale, useT } from '@/i18n';
 import { api, setUnauthorizedHandler } from '@/lib/api';
+import { isQuickView } from '@/lib/quick';
 import { takeLinkedThread } from '@/lib/threadLink';
 import { desktop } from '@/lib/desktop';
 import { useLayout } from '@/lib/layout';
@@ -103,6 +105,8 @@ function Authed() {
   const account = useQuery({ queryKey: ['account'], queryFn: api.account, enabled: !desktop, retry: false });
   const [accountDone, setAccountDone] = useState(false);
   useLocaleSync();
+  // The desktop app's quick window shows only what waits for the person.
+  if (isQuickView()) return <QuickPanel />;
   if (!desktop && !accountDone) {
     if (account.isPending) return <Loading />;
     if (account.data?.username === null) return <CreateAccount onDone={() => setAccountDone(true)} />;

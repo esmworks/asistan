@@ -47,6 +47,7 @@ const ALLOWED_TEXT: { file: string; text: string; reason: string }[] = [
     text: 'Copyright © 2026 esmworks (Erhan Erbaş)',
     reason: 'copyright notice, the same in every language',
   },
+  { file: 'shared/src/tables.ts', text: 'hayır', reason: 'a word read from input, never shown' },
 ];
 
 const TURKISH = /[çğıöşüÇĞİÖŞÜ]/;

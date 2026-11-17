@@ -28,6 +28,8 @@ import {
 } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { MissingApps } from './MissingApps';
+import { PromptHistory } from './PromptHistory';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -195,6 +197,7 @@ export function RoutineDialog({
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['routines'] });
+      if (routine) void qc.invalidateQueries({ queryKey: ['routine-revisions', routine.id] });
       onOpenChange(false);
       form.reset();
     },
@@ -234,6 +237,16 @@ export function RoutineDialog({
                 placeholder={t('routine.promptPlaceholder')}
                 className="scroll-thin max-h-72 overflow-y-auto rounded-xl"
               />
+              <MissingApps text={values.prompt ?? ''} botId={botId} />
+              {routine && (
+                <PromptHistory
+                  routineId={routine.id}
+                  current={values.prompt ?? ''}
+                  onRestore={(prompt) =>
+                    form.setValue('prompt', prompt, { shouldDirty: true, shouldValidate: true })
+                  }
+                />
+              )}
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('routine.when')}>

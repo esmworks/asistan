@@ -33,13 +33,21 @@ const SEALED: Sealed[] = [
   },
   { table: schema.threads, id: schema.threads.id, columns: [['title', schema.threads.title, 'text']] },
   { table: schema.turns, id: schema.turns.id, columns: [['prompt', schema.turns.prompt, 'text']] },
-  { table: schema.memories, id: schema.memories.id, columns: [['content', schema.memories.content, 'text']] },
+  {
+    table: schema.memories,
+    id: schema.memories.id,
+    columns: [
+      ['content', schema.memories.content, 'text'],
+      ['sourceUrl', schema.memories.sourceUrl, 'text'],
+    ],
+  },
   {
     table: schema.memoryChanges,
     id: schema.memoryChanges.id,
     columns: [
       ['content', schema.memoryChanges.content, 'text'],
       ['before', schema.memoryChanges.before, 'text'],
+      ['sourceUrl', schema.memoryChanges.sourceUrl, 'text'],
     ],
   },
   {
@@ -49,6 +57,11 @@ const SEALED: Sealed[] = [
       ['before', schema.auditLog.before, 'json'],
       ['after', schema.auditLog.after, 'json'],
     ],
+  },
+  {
+    table: schema.botTableRows,
+    id: schema.botTableRows.id,
+    columns: [['values', schema.botTableRows.values, 'json']],
   },
   {
     table: schema.approvals,

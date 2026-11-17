@@ -639,6 +639,7 @@ export class TurnManager {
         skills,
         email,
         apiSources,
+        hasTables: await this.services.tables.any(bot.id),
         // Claude keeps its plan with its own to-do tool; other engines get this one.
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
       }),

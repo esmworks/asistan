@@ -35,6 +35,7 @@ import {
   Shield,
   Smartphone,
   Sparkles,
+  Volume2,
   SlidersHorizontal,
   Trash2,
   UserRound,
@@ -67,10 +68,12 @@ import {
 } from '@/lib/queries';
 import { desktop, useDesktopServer } from '@/lib/desktop';
 import { useUi, type SettingsTab } from '@/lib/store';
+import { NoteSource } from './NoteSource';
 import {
   allowNotifications,
   chime,
   NOTIFY_LEVELS,
+  SOUND_KINDS,
   notificationsSupported,
   testNotification,
   useNotify,
@@ -342,6 +345,17 @@ function Notifications() {
           aria-label={t('notify.sound')}
         />
       </Row>
+      {sound && (
+        <Row label={t('notify.soundListen')}>
+          <div className="flex flex-wrap justify-end gap-1">
+            {SOUND_KINDS.map((k) => (
+              <Button key={k} variant="ghost" size="sm" className="rounded-full" onClick={() => chime(k)}>
+                <Volume2 /> {t(`notify.soundKind.${k}`)}
+              </Button>
+            ))}
+          </div>
+        </Row>
+      )}
       {notificationsSupported() && (
         <Row label={t('notify.test')}>
           <Button
@@ -1268,6 +1282,7 @@ function MemoryTab() {
                   : t('memory.neverUsed', { when: dayLabel(m.updatedAt) })
               }`}
             >
+              <NoteSource m={m} />
               <Button
                 variant="ghost"
                 size="icon"
@@ -1287,6 +1302,7 @@ function MemoryTab() {
         )}
         {user.map((m) => (
           <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
+            <NoteSource m={m} />
             <Button
               variant="ghost"
               size="icon"
@@ -1348,6 +1364,7 @@ function MemoryTab() {
                 <div className="divide-y border-t">
                   {g.notes.map((m) => (
                     <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
+                      <NoteSource m={m} />
                       <Button
                         variant="ghost"
                         size="icon"

@@ -238,13 +238,15 @@ export class MemoryService {
     const actor = `bot:${row.proposedBy}`;
     if (row.action === 'write') {
       const note = { scope: row.scope, botId: row.botId, content: words, site: row.site };
-      if (!(await this.findSame(note))) await this.create({ ...note, source: actor });
+      if (!(await this.findSame(note)))
+        await this.create({ ...note, source: actor, threadId: row.threadId, sourceUrl: row.sourceUrl });
     } else if (row.memoryId) {
       const exists = await this.get(row.memoryId).then(
         () => true,
         () => false,
       );
-      if (exists && row.action === 'update') await this.update(row.memoryId, { content: words }, actor);
+      if (exists && row.action === 'update')
+        await this.update(row.memoryId, { content: words, ...sourceOf(row) }, actor);
       if (exists && row.action === 'forget') await this.remove(row.memoryId, actor);
     }
     await this.ctx.db.delete(schema.memoryChanges).where(eq(schema.memoryChanges.id, id));
@@ -268,6 +270,9 @@ export class MemoryService {
     content: string;
     source: string;
     site?: string | null;
+    /** The conversation the bot wrote it in, and the page the fact came from. */
+    threadId?: string | null;
+    sourceUrl?: string | null;
   }): Promise<Memory> {
     if (input.scope === 'bot' && !input.botId) throw new HttpError(400, 'error.memoryNeedsBot');
     const [row] = await this.ctx.db
@@ -279,6 +284,8 @@ export class MemoryService {
         content: input.content,
         site: input.site ?? null,
         source: input.source,
+        threadId: input.threadId ?? null,
+        sourceUrl: input.sourceUrl ?? null,
       })
       .returning();
     await this.log(row!.id, 'create', null, row!.content, input.source);
@@ -287,7 +294,12 @@ export class MemoryService {
     return toMemory(row!);
   }
 
-  async update(id: string, patch: { content: string }, actor: string): Promise<Memory> {
+  /** A bot's change also says where it learned the new words; the person's own edit leaves that as it was. */
+  async update(
+    id: string,
+    patch: { content: string; threadId?: string | null; sourceUrl?: string | null },
+    actor: string,
+  ): Promise<Memory> {
     const before = await this.get(id);
     const [row] = await this.ctx.db
       .update(schema.memories)
@@ -390,4 +402,17 @@ export function staleNotes(
     for (const m of [...fit.user, ...fit.bot]) inPrompt.add(m.id);
   }
   return old.filter((m) => !inPrompt.has(m.id)).sort((a, b) => lastActive(a).localeCompare(lastActive(b)));
+}
+
+/**
+ * Where a bot's change to a note says the new words came from. The conversation and the page go
+ * together: words changed in another conversation with no page given came from that conversation,
+ * so the old page no longer stands behind them. A change that knows neither leaves both as they were.
+ */
+export function sourceOf(change: { threadId: string | null; sourceUrl: string | null }): {
+  threadId?: string | null;
+  sourceUrl?: string | null;
+} {
+  if (change.threadId) return { threadId: change.threadId, sourceUrl: change.sourceUrl };
+  return change.sourceUrl ? { sourceUrl: change.sourceUrl } : {};
 }

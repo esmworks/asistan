@@ -6,6 +6,7 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -30,6 +31,7 @@ import { startEgress } from './egress';
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
 import { LINK_SCHEME, linkInArgs, parseLink, type AppLink } from './links';
+import { claimQuickKey, isThreadId, quickBounds, quickUrl, readQuickOn, writeQuickOn } from './quick';
 import { ServerProcess } from './server-process';
 import { startUpdates, type Updates } from './updates';
 import { MIN_SIZE, readWindowState, resolveWindowState, writeWindowState } from './window-state';
@@ -91,6 +93,10 @@ const dataDir = join(userData, 'data');
 
 let win: BrowserWindow | null = null;
 let connectWin: BrowserWindow | null = null;
+/** The small window the global shortcut opens; kept hidden between uses so it opens at once. */
+let quickWin: BrowserWindow | null = null;
+/** The global shortcut that opens it, or null when another app holds every one we try. */
+let quickKey: string | null = null;
 let tray: Tray | null = null;
 let server: ServerProcess | null = null;
 let config: DesktopConfig = { mode: 'local' };
@@ -165,6 +171,7 @@ async function boot() {
   registerIpc();
   registerLinks();
   createTray();
+  registerQuickKey();
   watchForUpdates();
   config = readDesktopConfig(userData, safeStorage);
   await connect();
@@ -392,6 +399,80 @@ function showContextMenu(target: BrowserWindow, params: Electron.ContextMenuPara
   if (items.length) Menu.buildFromTemplate(items).popup({ window: target });
 }
 
+/**
+ * Takes the first free global shortcut for the quick window, unless the person turned it off in
+ * the tray menu; the menu shows which one it is.
+ */
+function registerQuickKey() {
+  if (quickKey) globalShortcut.unregister(quickKey);
+  quickKey = readQuickOn(userData) ? claimQuickKey((key) => globalShortcut.register(key, toggleQuick)) : null;
+  if (!quickKey && readQuickOn(userData)) log.warn('no global shortcut was free for the quick window');
+  rebuildMenu();
+}
+
+/** Opens the quick window over whatever app is in front, or puts it away when it is already up. */
+function toggleQuick() {
+  if (!origin) return;
+  if (quickWin && !quickWin.isDestroyed() && quickWin.isVisible() && quickWin.isFocused()) {
+    quickWin.hide();
+    return;
+  }
+  const bounds = quickBounds(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea);
+  if (!quickWin || quickWin.isDestroyed()) {
+    quickWin = new BrowserWindow({
+      ...bounds,
+      frame: false,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      show: false,
+      title: 'Yumak Bot',
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
+      webPreferences: {
+        preload: join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+        spellcheck: false,
+      },
+    });
+    // It floats over full-screen apps too, on whichever desktop the person is on.
+    quickWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Clicking elsewhere puts it away, as a launcher does; closing it only hides it.
+    quickWin.on('blur', () => quickWin?.hide());
+    quickWin.on('close', (e) => {
+      if (!quitting) {
+        e.preventDefault();
+        quickWin?.hide();
+      }
+    });
+    quickWin.webContents.on('context-menu', (_e, params) => showContextMenu(quickWin!, params));
+    quickWin.once('ready-to-show', () => {
+      quickWin?.show();
+      quickWin?.focus();
+    });
+    void quickWin.loadURL(quickUrl(origin));
+    return;
+  }
+  quickWin.setBounds(bounds);
+  quickWin.show();
+  quickWin.focus();
+  // The page refetches and starts again from the top each time it is shown.
+  quickWin.webContents.send('yumakbot:quick-shown');
+}
+
+function closeQuick() {
+  if (quickWin && !quickWin.isDestroyed()) {
+    quitting = true;
+    quickWin.close();
+    quitting = false;
+  }
+  quickWin = null;
+}
+
 function openConnectWindow() {
   if (connectWin && !connectWin.isDestroyed()) return connectWin.focus();
   connectWin = new BrowserWindow({
@@ -474,6 +555,17 @@ function registerIpc() {
   ipcMain.handle('yumakbot:server', (e) =>
     fromMainPage(e) ? { mode: config.mode, url: config.mode === 'remote' ? config.url : null } : null,
   );
+  // The quick window: putting itself away, opening a conversation in the main window, and the
+  // shortcut that opens it, for the app to show.
+  ipcMain.handle('yumakbot:quick-hide', (e) => {
+    if (fromMainPage(e)) quickWin?.hide();
+  });
+  ipcMain.handle('yumakbot:open-thread', (e, id: unknown) => {
+    if (!fromMainPage(e) || !isThreadId(id)) return;
+    quickWin?.hide();
+    openLink({ kind: 'thread', id });
+  });
+  ipcMain.handle('yumakbot:quick-key', (e) => (fromMainPage(e) ? quickKey : null));
   ipcMain.handle('yumakbot:open-connect', (e) => {
     if (fromMainPage(e)) openConnectWindow();
   });
@@ -556,6 +648,7 @@ async function switchTo(next: DesktopConfig) {
   server = null;
   config = next;
   // The old page belongs to another origin; start fresh.
+  closeQuick();
   if (win && !win.isDestroyed()) {
     quitting = true;
     win.close();
@@ -674,6 +767,21 @@ function rebuildMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: t('menu.open'), click: () => showWindow(), enabled: !!origin },
+      {
+        label: t('menu.quick'),
+        click: () => toggleQuick(),
+        enabled: !!origin,
+        ...(quickKey && { accelerator: quickKey, registerAccelerator: false }),
+      },
+      {
+        label: t('menu.quickKey'),
+        type: 'checkbox',
+        checked: !!quickKey,
+        click: (item) => {
+          writeQuickOn(userData, item.checked);
+          registerQuickKey();
+        },
+      },
       { type: 'separator' },
       { label: t(status.key, status.params), enabled: false },
       config.mode === 'local'
@@ -705,6 +813,7 @@ function rebuildMenu() {
 }
 
 app.on('activate', () => showWindow());
+app.on('will-quit', () => globalShortcut.unregisterAll());
 // Keep running in the menu bar when every window is closed.
 app.on('window-all-closed', () => {});
 app.on('before-quit', (e) => {

@@ -258,6 +258,10 @@ export const memories = pgTable(
     embedding: real('embedding').array(),
     /** Which model and words the embedding is of; a new model or a changed note indexes it again. */
     embeddingKey: text('embedding_key'),
+    /** The conversation the bot wrote the note in last; it goes from the note when that does. */
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    /** The page the fact came from, as the bot gave it, so the person can check it. */
+    sourceUrl: sealedText('source_url'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -359,6 +363,24 @@ export const routineRuns = pgTable(
       .on(t.routineId)
       .where(sql`${t.status} in ('running', 'waiting')`),
   ],
+);
+
+/**
+ * Each instruction a routine has had, newest last: written when a routine is made and whenever its
+ * instruction changes, so an earlier one can be compared and brought back. Bringing one back
+ * writes it again as the newest, so the history only grows.
+ */
+export const routineRevisions = pgTable(
+  'routine_revisions',
+  {
+    id: text('id').primaryKey(),
+    routineId: text('routine_id')
+      .notNull()
+      .references(() => routines.id, { onDelete: 'cascade' }),
+    prompt: text('prompt').notNull(),
+    createdAt: created(),
+  },
+  (t) => [index('routine_revisions_routine_idx').on(t.routineId, t.createdAt)],
 );
 
 /** Bot-to-bot requests. A job chain shares `rootId`; `depth` guards against loops. */
@@ -638,6 +660,8 @@ export const memoryChanges = pgTable(
     /** Why nobody was watching: a routine's run or another bot's request, with its name. */
     origin: jsonb('origin').$type<{ kind: 'routine' | 'bot'; name: string }>().notNull(),
     threadId: text('thread_id'),
+    /** The page the bot said the fact came from; kept on the note once accepted. */
+    sourceUrl: sealedText('source_url'),
     createdAt: created(),
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],
@@ -799,4 +823,41 @@ export const ticketComments = pgTable(
     createdAt: created(),
   },
   (t) => [index('ticket_comments_ticket_idx').on(t.ticketId, t.createdAt)],
+);
+
+/**
+ * A bot's tables: records it keeps in rows and columns, which the person can read, correct and
+ * export. A name is unique per bot, so a bot finds its table by the name it gave it.
+ */
+export const botTables = pgTable(
+  'bot_tables',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** The columns in order, each with its type (`TableColumn`). */
+    columns: jsonb('columns')
+      .$type<{ name: string; type: 'text' | 'number' | 'date' | 'bool' | 'url' }[]>()
+      .notNull(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('bot_tables_name_uq').on(t.botId, t.name)],
+);
+
+export const botTableRows = pgTable(
+  'bot_table_rows',
+  {
+    id: text('id').primaryKey(),
+    tableId: text('table_id')
+      .notNull()
+      .references(() => botTables.id, { onDelete: 'cascade' }),
+    /** The row's values by column name; sealed with the conversations when sealing is on. */
+    values: sealedJson('values').$type<Record<string, string | number | boolean | null>>().notNull(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('bot_table_rows_table_idx').on(t.tableId, t.createdAt)],
 );
