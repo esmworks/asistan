@@ -94,14 +94,19 @@ export function takesAddress(schema: Record<string, unknown> | undefined): boole
 const STORED_READS: ReadonlySet<string> = new Set(['ticket_read', 'tickets_list', 'table_rows']);
 
 /**
- * What outside text a tool's result brings into the run, if any: a mail, or a page, an API's or a
- * connected app's answer (`fromOutside`, see `outsideSource`). Tickets and tables keep no record
- * of who wrote each line, and a bot that read outside text may have written one: with nobody
+ * What outside text a tool's result brings into the run, if any: a mail, or a page or an API's
+ * answer (`fromOutside`, see `outsideSource`). A connected app's answer is the person's own
+ * business data (orders, sheets, records), and counting it as a stranger's words held every bot
+ * that looked something up, and every bot it handed work to, to a card for each step whatever its
+ * level. Its answer is still marked as data for the model; only a tool that takes an address,
+ * which can bring back any page, counts as reading the web. Tickets and tables keep no record of
+ * who wrote each line, and a bot that read outside text may have written one: with nobody
  * watching, reading them counts as reading stored outside text. Messages say where they came
  * from, so the tools that read them report it themselves.
  */
 export function outsideRead(tool: AppTool, fromOutside: boolean, present: boolean): OutsideTrigger | null {
   if (tool.name === 'email_inbox' || tool.name === 'email_read') return 'email';
+  if (tool.server) return takesAddress(tool.jsonSchema) ? 'web' : null;
   if (fromOutside) return 'web';
   if (!tool.server && !present && STORED_READS.has(tool.name)) return 'stored';
   return null;
