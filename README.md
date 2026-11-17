@@ -220,6 +220,10 @@ pnpm --filter @yumakbot/mobile start
 `pnpm --filter @yumakbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
 name, icon and network settings.
 
+A server on the internet is reached over HTTPS: an address typed without `http://` or `https://` falls back to plain
+http only for this device, the local network (private addresses, `.local`, single-word names) and a Tailscale tailnet,
+and an `http://` address on the internet is used only after a warning. iOS allows plain http only on the local network.
+
 ## Development
 
 Run the server and the web UI in two terminals:

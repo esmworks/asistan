@@ -26,6 +26,12 @@ export const en: Record<OwnKey, string> = {
   'connect.submit': 'Connect',
   'connect.invalid': 'This is not an address',
   'connect.notYumakBot': 'No Yumak Bot server answered at this address',
+  'connect.httpsOnly':
+    'No Yumak Bot server answered over HTTPS at this address. A server on the internet needs HTTPS; to use plain http anyway, type http:// in front.',
+  'connect.insecureTitle': 'Connect without encryption?',
+  'connect.insecureText':
+    '{host} is on the internet but answers over plain http. Anyone on the way can read your access key, your password and your conversations. Use an https address unless you know why you need this.',
+  'connect.insecureConfirm': 'Connect anyway',
 
   'offline.title': 'Could not reach the server',
   'offline.text':
