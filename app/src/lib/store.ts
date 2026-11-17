@@ -110,6 +110,8 @@ interface UiState {
   computerFloat: boolean;
   /** In-progress assistant text per thread, until the saved message arrives. */
   streams: Record<string, Stream>;
+  /** How much of its turn's streaming text had arrived when each card (by message id) did. */
+  cardCuts: Record<string, number>;
   /** Live turn state per thread from the realtime channel. */
   states: Record<string, TurnState>;
   /** Threads whose answer text arrived within the last moment. */
@@ -145,6 +147,8 @@ interface UiState {
   floatComputer(float: boolean): void;
   appendStream(threadId: string, turnId: string, text: string): void;
   dropStream(threadId: string, turnId?: string): void;
+  /** Notes where cards were asked in their turn's text; a card's first note stays. */
+  markCards(cuts: Record<string, number>): void;
   setState(threadId: string, state: TurnState): void;
   setTool(threadId: string, tool: string | null): void;
   /** Notes that answer text just arrived; it counts as writing until the text pauses. */
@@ -205,6 +209,7 @@ export const useUi = create<UiState>((set, get) => ({
   computerBotId: null,
   computerFloat: saved.computerFloat ?? false,
   streams: {},
+  cardCuts: {},
   states: {},
   writing: {},
   tools: {},
@@ -254,6 +259,7 @@ export const useUi = create<UiState>((set, get) => ({
       delete streams[threadId];
       return { streams };
     }),
+  markCards: (cuts) => set((s) => ({ cardCuts: { ...cuts, ...s.cardCuts } })),
   setTool: (threadId, tool) =>
     set((s) => {
       const { [threadId]: _, ...tools } = s.tools;
@@ -285,7 +291,7 @@ export const useUi = create<UiState>((set, get) => ({
   },
   resetLive: () => {
     for (const id of [...writingTimers.keys()]) stopWriting(id);
-    set({ streams: {}, states: {}, writing: {}, tools: {} });
+    set({ streams: {}, cardCuts: {}, states: {}, writing: {}, tools: {} });
   },
 }));
 

@@ -69,3 +69,8 @@ export function useTypewriter(text: string, key: string | null | undefined, live
 
   return animate ? text.slice(0, shown) : text;
 }
+
+/** Starts the reveal of a turn over, for text that now begins after a card instead of at the top. */
+export function restartTyping(key: string) {
+  progress.delete(key);
+}
