@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { BotEmail, EmailSettings, Routine, RoutineRun, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
-import { htmlToText } from '../src/services/email';
+import { htmlToText, MAX_EMAIL_BYTES } from '../src/services/email';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 /** A plain mail with one attachment, as a relay hands it over. */
@@ -98,6 +98,16 @@ describe('botların e-posta adresi', () => {
     expect(mail.attachments).toHaveLength(1);
     expect(existsSync(mail.attachments[0]!.path)).toBe(true);
     expect(readFileSync(mail.attachments[0]!.path, 'utf8')).toBe('Toplam: 120 TL');
+  });
+
+  // The secret is in a header: a caller without it is turned away before the message is read,
+  // so it cannot make the server hold 25 MB for nothing. A message over the limit shows the order.
+  it('posta anahtarı gövde okunmadan denetlenir', async () => {
+    const { secret } = await setUp();
+    const huge = 'x'.repeat(MAX_EMAIL_BYTES + 1024);
+    expect((await deliver(huge, { secret: 'yanlis' })).statusCode).toBe(401);
+    expect((await deliver(huge, { secret: null })).statusCode).toBe(401);
+    expect((await deliver(huge, { secret })).statusCode).toBe(413);
   });
 
   it('bot adresini bilir; kutusunu okuyabilir ve postadaki metin dış veri olarak gelir', async () => {
