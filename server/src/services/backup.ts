@@ -6,7 +6,7 @@ import {
   type ScryptOptions,
 } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { PassThrough, Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -17,6 +17,7 @@ import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
 import { schema, schemaVersion } from '../db';
 import { HttpError, newId } from '../util';
+import { BOUND_FILE } from './vault';
 
 /**
  * One file that holds everything needed to bring a Yumak Bot back on another computer: the
@@ -24,24 +25,58 @@ import { HttpError, newId } from '../util';
  * and tokens in the database cannot be opened). It is sealed with a password the person chooses,
  * so the file can be kept anywhere.
  *
- * Layout: `YUMAKBK1`, a 16-byte salt, a 12-byte IV, the AES-256-GCM ciphertext, and its 16-byte
- * tag. The key comes from the password with scrypt. Inside, gzip of a run of records: each is a
- * 4-byte length, a JSON header, then `header.size` bytes (a table's rows as JSON, or a file).
+ * Layout: `YUMAKBK2`, scrypt's cost (three bytes: log2 N, r, p), a 16-byte salt, a 12-byte IV,
+ * the AES-256-GCM ciphertext, and its 16-byte tag; the bytes before the ciphertext are bound to it
+ * as associated data. The key comes from the password with scrypt. Inside, gzip of a run of
+ * records: each is a 4-byte length, a JSON header, then `header.size` bytes (a table's rows as
+ * JSON, or a file). Older backups start `YUMAKBK1`, with no cost (it was always N = 2^15, r = 8,
+ * p = 1) and nothing bound; they still restore.
  */
-export const BACKUP_MAGIC = Buffer.from('YUMAKBK1');
+export const BACKUP_MAGIC = Buffer.from('YUMAKBK2');
+const LEGACY_MAGIC = Buffer.from('YUMAKBK1');
+const COST = 3;
 const SALT = 16;
 const IV = 12;
 const TAG = 16;
-const HEAD = BACKUP_MAGIC.length + SALT + IV;
 const FORMAT = 'yumakbot-backup';
 const VERSION = 1;
 export const MIN_BACKUP_PASSWORD = 12;
-/** Strong enough to slow guessing, small enough for a phone-sized server. */
-const SCRYPT: ScryptOptions = { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+
+interface Cost {
+  N: number;
+  r: number;
+  p: number;
+}
+/**
+ * New backups: a backup file may be kept anywhere, so guessing its password is made slow (128 MiB
+ * and a fraction of a second of work per guess), while still fitting a phone-sized server.
+ */
+export const BACKUP_SCRYPT: Cost = { N: 2 ** 17, r: 8, p: 1 };
+/** What backups made before the cost was kept in the file used. */
+const LEGACY_SCRYPT: Cost = { N: 2 ** 15, r: 8, p: 1 };
+/** The most memory a backup's cost may ask for, so a changed file cannot exhaust the server. */
+const MAX_SCRYPT_MEMORY = 1024 * 1024 * 1024;
+/** scrypt needs about 128·N·r bytes; the limit leaves it room. */
+const scryptOptions = (c: Cost): ScryptOptions => ({ ...c, maxmem: 2 * 128 * c.N * c.r });
+
 /** How long a backup waits on the server to be downloaded. */
 const KEEP_MS = 60 * 60 * 1000;
 /** The largest record header; anything bigger is a damaged file. */
 const MAX_HEADER = 64 * 1024;
+/**
+ * The most one table's rows may take: they are read into memory whole to go into the database,
+ * and a JSON text much larger than this cannot be read at all.
+ */
+export const MAX_TABLE_BYTES = 256 * 1024 * 1024;
+/** The largest file a backup may hold. */
+const MAX_FILE_BYTES = 16 * 1024 * 1024 * 1024;
+/**
+ * The most a backup may unpack to, whatever its headers say: gzip can turn a small upload into
+ * far more than the disk holds. It is lowered to the free disk space when that is known.
+ */
+const MAX_UNPACKED_BYTES = 64 * 1024 * 1024 * 1024;
+/** Disk left free when a restore unpacks, so the server and its database can still write. */
+const DISK_RESERVE = 256 * 1024 * 1024;
 
 /**
  * What goes in besides the database, relative to the data folder. Left out on purpose: the
@@ -53,15 +88,37 @@ const FILES = ['vault.key'];
 /** Sign-ins to this server stay with this server; a restore keeps whoever is signed in now. */
 const KEEP_TABLES = new Set(['sessions']);
 
+/** A backup's key, and where its sealed data and tag lie in the file. */
+interface Sealed {
+  key: Buffer;
+  iv: Buffer;
+  /** The first and last byte of the ciphertext. */
+  start: number;
+  end: number;
+  tag: Buffer;
+  /** The head the ciphertext is bound to; none in older backups. */
+  aad: Buffer | null;
+}
+
 type Header =
   | { type: 'manifest'; format: string; version: number; schema: number; createdAt: string; size: 0 }
   | { type: 'table'; name: string; size: number }
   | { type: 'file'; path: string; size: number; mode: number };
 
-const scrypt = (password: string, salt: Buffer) =>
+const scrypt = (password: string, salt: Buffer, cost: Cost) =>
   new Promise<Buffer>((ok, fail) =>
-    scryptCb(password.normalize('NFC'), salt, 32, SCRYPT, (err, key) => (err ? fail(err) : ok(key))),
+    scryptCb(password.normalize('NFC'), salt, 32, scryptOptions(cost), (err, key) =>
+      err ? fail(err) : ok(key),
+    ),
   );
+
+/** The cost a backup's head names, when it is one this server can afford. */
+function readCost(bytes: Buffer): Cost | null {
+  const [logN, r, p] = [bytes[0]!, bytes[1]!, bytes[2]!];
+  if (logN < 10 || logN > 24 || r < 1 || p < 1 || p > 16) return null;
+  const cost = { N: 2 ** logN, r, p };
+  return 128 * cost.N * cost.r <= MAX_SCRYPT_MEMORY ? cost : null;
+}
 
 /** Every table, parents before the tables whose rows point at them. */
 export function tablesInOrder(): PgTable[] {
@@ -122,17 +179,28 @@ async function* filesUnder(root: string, dir: string): AsyncGenerator<string> {
   }
 }
 
-/** Reads exact byte counts from a stream of chunks. */
+/**
+ * Reads exact byte counts from a stream of chunks, and no more than `limit` bytes in all: a
+ * backup's unpacked size is counted as it comes, not taken from what its headers say.
+ */
 class Reader {
   private buf: Buffer = Buffer.alloc(0);
   private done = false;
-  constructor(private it: AsyncIterator<Buffer>) {}
+  private total = 0;
+  constructor(
+    private it: AsyncIterator<Buffer>,
+    private limit = Infinity,
+  ) {}
 
   private async fill(n: number): Promise<boolean> {
     while (this.buf.length < n && !this.done) {
       const r = await this.it.next();
       if (r.done) this.done = true;
-      else this.buf = this.buf.length ? Buffer.concat([this.buf, r.value]) : r.value;
+      else {
+        this.total += r.value.length;
+        if (this.total > this.limit) throw new HttpError(400, 'error.backupTooLarge');
+        this.buf = this.buf.length ? Buffer.concat([this.buf, r.value]) : r.value;
+      }
     }
     return this.buf.length >= n;
   }
@@ -201,11 +269,17 @@ export class BackupService {
     const file = join(this.dir, `${id}.ybk`);
     const salt = randomBytes(SALT);
     const iv = randomBytes(IV);
-    const cipher = createCipheriv('aes-256-gcm', await scrypt(password, salt), iv);
+    const cost = BACKUP_SCRYPT;
+    const head = Buffer.concat([BACKUP_MAGIC, Buffer.from([Math.log2(cost.N), cost.r, cost.p]), salt, iv]);
+    const cipher = createCipheriv('aes-256-gcm', await scrypt(password, salt, cost), iv, {
+      authTagLength: TAG,
+    });
+    // A head changed in the file (a lower cost, another IV) then fails the tag like any other change.
+    cipher.setAAD(head);
     // The head goes first and the tag last, once the cipher has finished.
     const framed = new Transform({
       construct(done) {
-        this.push(Buffer.concat([BACKUP_MAGIC, salt, iv]));
+        this.push(head);
         done();
       },
       transform: (chunk: Buffer, _e, done) => done(null, chunk),
@@ -305,21 +379,21 @@ export class BackupService {
     try {
       const sealed = join(work, 'upload.ybk');
       await pipeline(upload, createWriteStream(sealed, { mode: 0o600 }));
-      const { key, iv, end, tag } = await this.unseal(sealed, password);
+      const opened = await this.unseal(sealed, password);
       // First pass: the tag proves the password and that nothing was changed, before anything is used.
-      await this.decrypt(sealed, key, iv, end, tag, new Writable({ write: (_c, _e, done) => done() }));
+      await this.decrypt(sealed, opened, new Writable({ write: (_c, _e, done) => done() }));
       // Second pass: unpack beside the data.
       const staged = join(work, 'data');
       const tables = new Map<string, string>();
       let files = 0;
       const plain = new PassThrough();
-      const reading = this.decrypt(sealed, key, iv, end, tag, plain);
+      const reading = this.decrypt(sealed, opened, plain);
       // Read below; a failure there must not leave this pass waiting on a reader that stopped.
       reading.catch(() => {});
       const gunzip = createGunzip();
       plain.pipe(gunzip);
       plain.on('error', (err) => gunzip.destroy(err));
-      const reader = new Reader(gunzip[Symbol.asyncIterator]());
+      const reader = new Reader(gunzip[Symbol.asyncIterator](), await this.room(work));
       let manifest = false;
       try {
         for (;;) {
@@ -342,6 +416,11 @@ export class BackupService {
             if (header.schema > schemaVersion()) throw new HttpError(400, 'error.backupNewer');
             manifest = true;
             continue;
+          }
+          const entry = header.size;
+          if (!Number.isSafeInteger(entry) || entry < 0) throw new HttpError(400, 'error.backupDamaged');
+          if (entry > (header.type === 'table' ? MAX_TABLE_BYTES : MAX_FILE_BYTES)) {
+            throw new HttpError(400, 'error.backupTooLarge');
           }
           if (header.type === 'table') {
             const file = join(work, 'tables', `${tables.size}.json`);
@@ -385,6 +464,9 @@ export class BackupService {
         throw err;
       }
       await this.moveInto(staged);
+      // The restored rows may hold secrets saved before they were bound to their rows; the restart
+      // binds them again, under the restored vault key.
+      await rm(join(this.dataDir, BOUND_FILE), { force: true });
       setTimeout(() => this.restart(), 300).unref();
       return { tables: tables.size, files };
     } finally {
@@ -401,30 +483,56 @@ export class BackupService {
     if (busy && busy.n > 0) throw new HttpError(409, 'error.backupBusy');
   }
 
-  private async unseal(file: string, password: string) {
+  /** The most a restore may unpack: the fixed limit, or the free disk space when that is less. */
+  private async room(dir: string): Promise<number> {
+    try {
+      const fs = await statfs(dir);
+      return Math.max(0, Math.min(MAX_UNPACKED_BYTES, fs.bavail * fs.bsize - DISK_RESERVE));
+    } catch {
+      return MAX_UNPACKED_BYTES;
+    }
+  }
+
+  /** The key and where the sealed data lies, from a backup's head and the password. */
+  private async unseal(file: string, password: string): Promise<Sealed> {
     const fd = await open(file, 'r');
     try {
       const { size } = await fd.stat();
-      if (size < HEAD + TAG) throw new HttpError(400, 'error.backupDamaged');
-      const head = Buffer.alloc(HEAD);
-      await fd.read(head, 0, HEAD, 0);
-      if (!head.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC))
-        throw new HttpError(400, 'error.backupDamaged');
+      const magic = Buffer.alloc(BACKUP_MAGIC.length);
+      await fd.read(magic, 0, magic.length, 0);
+      const legacy = magic.equals(LEGACY_MAGIC);
+      if (!legacy && !magic.equals(BACKUP_MAGIC)) throw new HttpError(400, 'error.backupDamaged');
+      const start = magic.length + (legacy ? 0 : COST) + SALT + IV;
+      if (size < start + TAG) throw new HttpError(400, 'error.backupDamaged');
+      const head = Buffer.alloc(start);
+      await fd.read(head, 0, start, 0);
+      const cost = legacy ? LEGACY_SCRYPT : readCost(head.subarray(magic.length, magic.length + COST));
+      if (!cost) throw new HttpError(400, 'error.backupDamaged');
       const tag = Buffer.alloc(TAG);
       await fd.read(tag, 0, TAG, size - TAG);
-      const salt = head.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + SALT);
-      const iv = head.subarray(BACKUP_MAGIC.length + SALT);
-      return { key: await scrypt(password, salt), iv, end: size - TAG - 1, tag };
+      const salt = head.subarray(start - IV - SALT, start - IV);
+      const iv = head.subarray(start - IV);
+      return {
+        key: await scrypt(password, salt, cost),
+        iv,
+        start,
+        end: size - TAG - 1,
+        tag,
+        aad: legacy ? null : head,
+      };
     } finally {
       await fd.close();
     }
   }
 
-  private async decrypt(file: string, key: Buffer, iv: Buffer, end: number, tag: Buffer, to: Writable) {
-    const d = createDecipheriv('aes-256-gcm', key, iv);
+  private async decrypt(file: string, { key, iv, start, end, tag, aad }: Sealed, to: Writable) {
+    const d = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG });
     d.setAuthTag(tag);
+    if (aad) d.setAAD(aad);
     try {
-      await pipeline(createReadStream(file, { start: HEAD, end }), d as Transform, to);
+      // An empty run of data (a damaged file) is read as nothing, not as the whole file.
+      const data = end >= start ? createReadStream(file, { start, end }) : Readable.from([]);
+      await pipeline(data, d as Transform, to);
     } catch (err) {
       // GCM's check fails at the end: a wrong password and a changed file look the same.
       if (err instanceof HttpError) throw err;
@@ -433,21 +541,28 @@ export class BackupService {
     }
   }
 
-  /** Every table's rows, all or nothing. */
+  /**
+   * Every table's rows, all or nothing. One table's rows are in memory at a time: together they can
+   * be far larger than the server's memory.
+   */
   private async replaceRows(files: Map<string, string>) {
     const order = tablesInOrder().filter((t) => !KEEP_TABLES.has(getTableName(t)));
-    const rows = new Map<PgTable, Record<string, unknown>[]>();
-    for (const table of order) {
+    const rowsOf = async (table: PgTable): Promise<Record<string, unknown>[]> => {
       const file = files.get(getTableName(table));
-      rows.set(
-        table,
-        file ? revive(table, JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>[]) : [],
-      );
-    }
+      if (!file) return [];
+      let rows: unknown;
+      try {
+        rows = JSON.parse(await readFile(file, 'utf8'));
+      } catch {
+        throw new HttpError(400, 'error.backupDamaged');
+      }
+      if (!Array.isArray(rows)) throw new HttpError(400, 'error.backupDamaged');
+      return revive(table, rows as Record<string, unknown>[]);
+    };
     await this.ctx.db.transaction(async (tx) => {
       for (const table of [...order].reverse()) await tx.delete(table);
       for (const table of order) {
-        const list = rows.get(table)!;
+        const list = await rowsOf(table);
         for (let i = 0; i < list.length; i += 200) await tx.insert(table).values(list.slice(i, i + 200));
       }
     });

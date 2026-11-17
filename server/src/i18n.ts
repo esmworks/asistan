@@ -203,6 +203,8 @@ const tr = {
   'error.backupDamaged': 'Bu bir Yumak Bot yedeği değil ya da dosya bozuk; hiçbir şey değişmedi',
   'error.backupNewer': 'Bu yedek Yumak Bot’un daha yeni bir sürümünden; önce uygulamayı güncelleyin',
   'error.backupBusy': 'Botlar çalışırken yedek geri yüklenmez; işleri bitince yeniden deneyin',
+  'error.backupTooLarge':
+    'Yedek, bu sunucunun açabileceğinden ya da diskte kalan yerden büyük; hiçbir şey değişmedi',
   'error.routineCheckTool':
     'Rutinin denetimi, bu bota açık bir uygulamanın açık ve yalnız okuyan bir aracı olmalı',
   'error.appCallAsks':
@@ -1200,6 +1202,8 @@ const en: Catalog<ServerKey> = {
   'error.backupDamaged': 'This is not a Yumak Bot backup, or the file is damaged; nothing was changed',
   'error.backupNewer': 'This backup is from a newer Yumak Bot; update the app first',
   'error.backupBusy': 'A backup is not restored while bots are working; try again once they are done',
+  'error.backupTooLarge':
+    'The backup is larger than this server can unpack, or than the disk space left; nothing was changed',
   'error.routineCheckTool':
     "A routine's check must be a tool that only reads, switched on, of an app open to this bot",
   'error.appCallAsks':
