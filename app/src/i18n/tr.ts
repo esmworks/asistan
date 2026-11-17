@@ -966,6 +966,7 @@ export const tr = {
   'general.sendKey': 'Mesajı gönder',
   'general.speechRate': 'Sesli okuma hızı',
   'general.speechRateHint': 'Mesajlar bu hızda okunur. Bu cihazda saklanır.',
+  'general.speechRateReset': 'Sesin kendi hızına dön (1×)',
   'general.sendKeyHint': 'Diğeri satırı kırar. Bu cihazda saklanır.',
   'general.sendKey.enter': 'Enter ile',
   'general.sendKey.mod': '⌘ / Ctrl + Enter ile',

@@ -76,7 +76,15 @@ import {
   useNotify,
   type NotifyLevel,
 } from '@/lib/notify';
-import { SPEECH_RATES, speechSupported, useServerVoice, useSpeech } from '@/lib/speech';
+import {
+  SPEECH_RATE_MAX,
+  SPEECH_RATE_MIN,
+  SPEECH_RATE_STEP,
+  speechSupported,
+  useServerVoice,
+  useSpeech,
+} from '@/lib/speech';
+import { Slider } from '@/components/ui/slider';
 import { useSendKey, type SendKey } from '@/lib/sendKey';
 import { useTheme, type ThemeChoice } from '@/lib/theme';
 import {
@@ -537,18 +545,24 @@ function General() {
         </Row>
         {(serverVoice || speechSupported()) && (
           <Row label={t('general.speechRate')} hint={t('general.speechRateHint')}>
-            <Select value={String(speechRate)} onValueChange={(v) => setSpeechRate(Number(v))}>
-              <SelectTrigger className="w-56 rounded-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SPEECH_RATES.map((r) => (
-                  <SelectItem key={r} value={String(r)}>
-                    {`${r.toLocaleString(INTL_LOCALE[locale])}×`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex w-56 items-center gap-3">
+              <Slider
+                min={SPEECH_RATE_MIN}
+                max={SPEECH_RATE_MAX}
+                step={SPEECH_RATE_STEP}
+                value={[speechRate]}
+                onValueChange={([v]) => setSpeechRate(v ?? 1)}
+                aria-label={t('general.speechRate')}
+              />
+              <button
+                type="button"
+                onClick={() => setSpeechRate(1)}
+                title={t('general.speechRateReset')}
+                className="w-12 shrink-0 text-right text-sm tabular-nums text-muted-foreground hover:text-foreground"
+              >
+                {`${speechRate.toLocaleString(INTL_LOCALE[locale], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}×`}
+              </button>
+            </div>
           </Row>
         )}
       </Card>
