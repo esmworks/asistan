@@ -146,7 +146,11 @@ function inline(
 ): string {
   const kept: string[] = [];
   const keep = (v: string) => `\u0000${kept.push(v) - 1}\u0000`;
+  // The markers are NUL-delimited; text that carried its own NUL could pass for one, so NUL goes
+  // first (it means nothing in a chat message).
   let out = s
+    // eslint-disable-next-line no-control-regex
+    .replace(/\u0000/g, '')
     .replace(/`([^`\n]+)`/g, (_, c: string) => keep(m.code(c)))
     .replace(/!?\[([^\]\n]+)\]\((\S+?)\)/g, (_, label: string, url: string) => keep(m.link(label, url)))
     .replace(/(?<![\w/])(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g, (u: string) => keep(m.text(u)));
@@ -158,11 +162,19 @@ function inline(
     .replace(/(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])/g, (_, x: string) => keep(m.italic(x)))
     .replace(/(?<![_\w])_(?=\S)([^_\n]+?)(?<=\S)_(?![_\w])/g, (_, x: string) => keep(m.italic(x)))
     .replace(/~~(?=\S)([^~]+?)(?<=\S)~~/g, (_, x: string) => keep(m.strike(x)));
-  // A mark can hold others set aside before it (a code span in bold text).
+  // A mark can hold others set aside before it (a code span in bold text). A piece only ever holds
+  // pieces kept before it, so each is filled from lower numbers only and once: whatever the text,
+  // this ends.
   // eslint-disable-next-line no-control-regex
   const hole = /\u0000(\d+)\u0000/g;
-  while (hole.test(out)) out = out.replace(hole, (_, i: string) => kept[Number(i)]!);
-  return out;
+  const filled: (string | undefined)[] = [];
+  const fill = (text: string, below: number): string =>
+    text.replace(hole, (marker: string, n: string) => {
+      const i = Number(n);
+      if (!(i < below)) return marker;
+      return (filled[i] ??= fill(kept[i]!, i));
+    });
+  return fill(out, kept.length);
 }
 
 interface Marks {

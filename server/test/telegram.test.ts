@@ -329,4 +329,16 @@ describe('Telegram biçimi', () => {
     expect(parts.length).toBeGreaterThan(1);
     for (const p of parts) expect(p.html.length).toBeLessThanOrEqual(4096);
   });
+
+  // The pieces set aside while marking are NUL-delimited numbers; text that writes such a marker
+  // itself once made the restoring loop run for ever and froze the whole server.
+  it('metindeki NUL işaretleri sunucuyu kilitlemez', () => {
+    const [m] = telegramMessages('ok [a\u00000\u0000](https://x.y)');
+    expect(m!.html).toBe('ok <a href="https://x.y">a0</a>');
+    const nested = telegramMessages('**`\u00001\u0000` [\u00000\u0000](https://x.y)** \u00002\u0000')[0]!;
+    expect(nested.html).not.toContain('\u0000');
+    expect(nested.html).toContain('<code>1</code>');
+    // A real mark inside another still comes back whole.
+    expect(telegramMessages('**kalın `kod`**')[0]!.html).toBe('<b>kalın <code>kod</code></b>');
+  });
 });

@@ -514,6 +514,19 @@ export class RoutineService {
     return this.get(id);
   }
 
+  /**
+   * Whether a webhook call names a routine that takes calls, with its secret: checked before the
+   * body is read, so a caller without the secret cannot make the server hold megabytes for it.
+   */
+  async webhookOpen(id: string, token: string): Promise<boolean> {
+    const [row] = await this.ctx.db
+      .select({ token: schema.routines.webhookToken, enabled: schema.routines.enabled })
+      .from(schema.routines)
+      .where(eq(schema.routines.id, id))
+      .limit(1);
+    return !!row?.token && row.enabled && sameSecret(row.token, token);
+  }
+
   /** Runs the routine for a webhook call when `token` is its secret; null when it is not. */
   async runFromWebhook(
     id: string,

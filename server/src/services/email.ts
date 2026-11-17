@@ -100,6 +100,12 @@ export class EmailService {
     return stored;
   }
 
+  /** Whether `token` is the relay's secret; checked before a message's body is read, too. */
+  async accepts(token: string | undefined): Promise<boolean> {
+    const secret = await this.secret();
+    return !!secret && !!token && sameSecret(secret, token);
+  }
+
   private async store(secret: string) {
     const value = this.services.vault.seal(secret, SECRET_BINDING);
     await this.ctx.db
@@ -181,8 +187,7 @@ export class EmailService {
     to: string,
     raw: Buffer,
   ): Promise<'saved' | 'dropped' | 'duplicate'> {
-    const secret = await this.secret();
-    if (!secret || !token || !sameSecret(secret, token)) throw new HttpError(401, 'error.emailSecret');
+    if (!(await this.accepts(token))) throw new HttpError(401, 'error.emailSecret');
     const domain = await this.domain();
     const [local = '', host = ''] = to.trim().toLowerCase().split('@');
     // `name+anything@` reaches `name@`, as most mail services do.

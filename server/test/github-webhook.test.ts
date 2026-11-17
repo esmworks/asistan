@@ -80,6 +80,26 @@ describe('GitHub olaylarıyla çalışan rutin', () => {
     expect(prompt).toContain('"number": 7');
   });
 
+  // The secret is in the address: a call without it is turned away before its body is read, so
+  // it cannot make the server hold megabytes for nothing. A body over the limit shows the order.
+  it('adresteki anahtar gövde okunmadan denetlenir', async () => {
+    const { r, token } = await setUp();
+    const huge = JSON.stringify({ x: 'x'.repeat(6 * 1024 * 1024) });
+    const post = (url: string) =>
+      t.app.inject({
+        method: 'POST',
+        url,
+        headers: { host: 'localhost', 'content-type': 'application/json' },
+        payload: huge,
+      });
+    expect((await post(`/api/hooks/routines/${r.id}/yanlis-anahtar`)).statusCode).toBe(404);
+    expect((await post(`/api/hooks/routines/yok/${token}`)).statusCode).toBe(404);
+    expect((await post(`/api/hooks/routines/${r.id}/${token}`)).statusCode).toBe(413);
+    // However the address is spelled, it is the same route and the same check.
+    expect((await post(`/%61pi/hooks/routines/${r.id}/yanlis-anahtar`)).statusCode).toBe(404);
+    expect(await runs(r.id)).toHaveLength(0);
+  });
+
   it('imzasız çağrılar eskisi gibi adresteki anahtarla çalışır', async () => {
     const { r, token } = await setUp();
     const res = await t.app.inject({
