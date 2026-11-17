@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appPolicy, inlineScriptHashes } from '../src/csp';
+import { appPolicy, inlineScriptHashes, STRICT_TRANSPORT_SECURITY } from '../src/csp';
 import { OAUTH_CALLBACK_PATH } from '../src/services/connections';
 import { testServer, type TestServer } from './helpers';
 
@@ -20,6 +20,29 @@ describe('içerik güvenlik politikası', () => {
     expect(policy).toContain("img-src 'self' data: blob:");
     expect(policy).toContain("object-src 'none'");
     expect(policy).not.toContain('https:');
+  });
+
+  describe('Strict-Transport-Security', () => {
+    const health = (t: TestServer) =>
+      t.app.inject({ method: 'GET', url: '/api/health', headers: { host: 'localhost' } });
+
+    it('is sent when the server is reached over HTTPS, so browsers stay on HTTPS', async () => {
+      const t = await testServer({ secureCookies: true });
+      try {
+        expect((await health(t)).headers['strict-transport-security']).toBe(STRICT_TRANSPORT_SECURITY);
+      } finally {
+        await t.dispose();
+      }
+    });
+
+    it('is left out on plain HTTP, where it would mean nothing', async () => {
+      const t = await testServer({});
+      try {
+        expect((await health(t)).headers['strict-transport-security']).toBeUndefined();
+      } finally {
+        await t.dispose();
+      }
+    });
   });
 
   describe('sunucu', () => {

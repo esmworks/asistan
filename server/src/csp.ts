@@ -31,3 +31,10 @@ export function appPolicy(html: string): string {
 /** For the small pages the server writes itself: their own styles and nothing else. */
 export const PLAIN_PAGE_POLICY =
   "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+/**
+ * Sent when the server is reached over HTTPS (secure cookies on): a browser that has seen it once goes
+ * straight to HTTPS afterwards, so a network in the middle cannot hold it on plain HTTP and read the
+ * session cookie. Browsers ignore it on plain HTTP, so the loopback health checks are not affected.
+ */
+export const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
