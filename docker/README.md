@@ -154,6 +154,11 @@ docker compose -f docker/compose.yml --env-file docker/.env exec -it yumakbot sh
 - Bütün yetkiler kapalı (`cap_drop: ALL`), `no-new-privileges`, bellek, işlemci ve süreç sınırı.
 - Veritabanı yalnızca iç ağda; internete çıkamaz ve ana makineye açılmaz.
 - `firewall.sh`: kapsayıcıdan ev/ofis ağına, bulut gizli adreslerine ve IPv6 yerel adreslere çıkış kapalı.
+  Ana makinenin kendisine de (köprünün ağ geçidi, ana makinenin yerel ya da genel adresi) yalnızca ana
+  makinenin açtığı bağlantıların yanıtları gelir: ana makinede `0.0.0.0` üzerinde dinleyen bir servis
+  (Ollama, veritabanı, yönetim paneli) botlara kapalıdır. Kapsayıcılar adları Docker'ın kendi çözücüsüyle
+  (`127.0.0.11`) çözer, bunun için ana makinede açık bir port gerekmez. Bir botun ana makinedeki bir
+  servise gerçekten ulaşması gerekiyorsa o servisi bir Docker ağına koyun; kuralı gevşetmeyin.
 
 ## Kişi başında değilken
 
