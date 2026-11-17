@@ -8,7 +8,7 @@ import {
   type PermissionRule,
   type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -205,6 +205,17 @@ export function allowRuleFor(rules: PermissionRule[], toolName: string, input: R
 export const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
 
 /** The bot's level, held to `cap` when a stricter bot started the turn. */
+/** An input written the same way whatever order its keys came in, to compare two steps. */
+function sameShape(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : v,
+  );
+}
+
 export function cappedMode(mode: PermissionMode, cap: PermissionMode | null | undefined): PermissionMode {
   return cap && STRICTNESS[cap] < STRICTNESS[mode] ? cap : mode;
 }
@@ -651,6 +662,37 @@ export class ApprovalService {
       behavior: 'deny',
       message: r.answer ? t('approval.deniedWith', { answer: r.answer }) : t('approval.denied'),
     };
+  }
+
+  /**
+   * Whether the person refused this very step of this bot (same tool, same input) since they last
+   * wrote anything. Asked again before they say more, the answer would be the same, so the bot is
+   * told so without another card; their next message, anywhere, lets it ask again.
+   */
+  async refusedLately(botId: string, toolName: string, input: Record<string, unknown>): Promise<boolean> {
+    const [last] = await this.ctx.db
+      .select({ at: schema.messages.createdAt })
+      .from(schema.messages)
+      .where(and(eq(schema.messages.role, 'user'), eq(schema.messages.author, 'user')))
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(1);
+    const rows = await this.ctx.db
+      .select({ input: schema.approvals.input })
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.botId, botId),
+          eq(schema.approvals.kind, 'tool'),
+          eq(schema.approvals.toolName, toolName),
+          eq(schema.approvals.status, 'denied'),
+          eq(schema.approvals.decidedBy, 'person'),
+          ...(last ? [gt(schema.approvals.decidedAt, last.at)] : []),
+        ),
+      )
+      .orderBy(desc(schema.approvals.decidedAt))
+      .limit(50);
+    const step = sameShape(input);
+    return rows.some((r) => sameShape(r.input) === step);
   }
 
   /** Ways to ask less for a bot, from the cards the person answered with a button lately. */

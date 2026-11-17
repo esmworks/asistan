@@ -273,6 +273,8 @@ const tr = {
   'turn.interruptedByRestart': 'Sunucu yeniden başladığı için bu tur yarıda kaldı.',
   'turn.stoppedByUser': 'Kullanıcı durdurdu',
   'turn.readOnly': 'Bu bot salt okunur kipte; bu işlem yapılamaz.',
+  'turn.refusedLately':
+    'Kullanıcı tam bu adımı az önce reddetti; yeni bir şey yazana kadar tekrar sorma. Başka bir yol dene ya da durumu ona anlat.',
   'turn.blocked':
     'Kullanıcı bunu engelledi ({rule}); bu işlem hiçbir zaman yapılmaz. Başka bir yol dene ya da yapamadığını söyle.',
   'turn.internetOff': 'Bu botun internet erişimi kapalı; komutlar internete çıkamaz.',
@@ -1331,6 +1333,8 @@ const en: Catalog<ServerKey> = {
   'turn.interruptedByRestart': 'This turn was cut short because the server restarted.',
   'turn.stoppedByUser': 'Stopped by the user',
   'turn.readOnly': 'This bot is in read-only mode; this action is not allowed.',
+  'turn.refusedLately':
+    'The user refused this very step a moment ago; do not ask again until they write something new. Try another way, or tell them where things stand.',
   'turn.blocked':
     'The user blocked this ({rule}); it is never allowed. Try another way, or say you cannot do it.',
   'turn.internetOff': "This bot's internet access is off; commands cannot reach the internet.",

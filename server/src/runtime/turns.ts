@@ -932,6 +932,11 @@ export class TurnManager {
       if (verdict === 'deny') {
         return { behavior: 'deny', message: t('turn.readOnly') };
       }
+      // In work the person asked for, they said no to this very step and have not written since:
+      // another card would only ask them the same thing again. A routine's later run still asks.
+      if ((await rootedInPerson()) && (await approvals.refusedLately(bot.id, ask.toolName, ask.input))) {
+        return { behavior: 'deny', message: t('turn.refusedLately') };
+      }
       // Review mode: a small model may let a clearly safe request through. Never for what an
       // "always ask" rule covers, what only the person may approve, or a step that sends.
       // Why the reviewer left it to the person, when it said; the card shows it.

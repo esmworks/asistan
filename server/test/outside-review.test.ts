@@ -138,3 +138,33 @@ describe('dış metinden sonra seviye ve dışarı ulaşan adımlar', () => {
     expect(reviewPrompt({ ...base, outside: true }).system).toContain('stricter line');
   });
 });
+
+describe('reddedilen adım', () => {
+  let t: TestServer;
+  afterEach(() => t.dispose());
+
+  const STEP = '[izin:Write {"file_path":"rapor.txt"}]';
+
+  it('kişi yeni bir şey yazana kadar aynı adım tekrar sorulmaz', async () => {
+    t = await testServer();
+    const bot = await t.bot();
+    const thread = await main(t, bot.id);
+    await t.send(thread.id, `${STEP} ${STEP} [izin:Write {"file_path":"başka.txt"}]`);
+    const first = await waitFor(async () => (await pending(t))[0]);
+    await t.api('POST', `/api/approvals/${first.id}`, { decision: 'deny' });
+    // The same step again goes without a card; another file is a new step and asks.
+    const second = await waitFor(async () => (await pending(t))[0]);
+    expect(second.input).toEqual({ file_path: 'başka.txt' });
+    await t.api('POST', `/api/approvals/${second.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
+    expect((await t.api<Approval[]>('GET', '/api/approvals')).body).toHaveLength(2);
+    expect((await t.messages(thread.id)).at(-1)!.text).toContain('tam bu adımı az önce reddetti');
+
+    // Their next message lets the bot ask again.
+    await t.send(thread.id, STEP);
+    const again = await waitFor(async () => (await pending(t))[0]);
+    expect(again.input).toEqual({ file_path: 'rapor.txt' });
+    await t.api('POST', `/api/approvals/${again.id}`, { decision: 'allow' });
+    await t.services.turns.idle();
+  });
+});
