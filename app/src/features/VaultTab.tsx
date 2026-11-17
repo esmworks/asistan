@@ -9,6 +9,7 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useBots, useVault } from '@/lib/queries';
+import { SharedPages } from './SharedPages';
 
 /** The password vault: saved sign-ins, listed without their passwords. */
 export function VaultTab() {
@@ -56,6 +57,7 @@ export function VaultTab() {
         )}
       </div>
       <p className="px-1 text-xs text-muted-foreground">{t('vault.note')}</p>
+      <SharedPages />
     </div>
   );
 }

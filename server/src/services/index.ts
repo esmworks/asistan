@@ -11,6 +11,7 @@ import { ConnectionService } from './connections';
 import { TelegramChannels } from '../channels/telegram';
 import { WhatsAppChannel } from '../channels/whatsapp';
 import { Inbox } from './inbox';
+import { PageShareService } from './page-shares';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { PushService } from './push';
@@ -51,6 +52,7 @@ export class Services {
   readonly usage: UsageService;
   readonly botApi: BotApi;
   readonly inbox: Inbox;
+  readonly pageShares: PageShareService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
 
@@ -90,6 +92,7 @@ export class Services {
     this.usage = new UsageService(ctx, this.settings, clock);
     this.botApi = new BotApi(ctx, this);
     this.inbox = new Inbox(ctx, this);
+    this.pageShares = new PageShareService(ctx);
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
   }

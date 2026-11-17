@@ -272,7 +272,8 @@ export const tr = {
   'settings.keywords.connection':
     'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
   'settings.keywords.permissions': 'onaylar, kurallar, izin, sor, her zaman',
-  'settings.keywords.vault': 'şifreler, girişler, iki adımlı kod, totp, gizli',
+  'settings.keywords.vault':
+    'şifreler, girişler, iki adımlı kod, totp, gizli, paylaşılan sayfalar, bağlantılar',
   'settings.keywords.memory': 'notlar, hatırla, unut',
   'settings.keywords.routines': 'zamanlama, cron, webhook, hatırlatma, çalışmalar',
   'settings.keywords.skills': 'beceri, içe aktar, bağlantı, github',
@@ -326,6 +327,21 @@ export const tr = {
   'preview.showSource': 'Kaynağı göster',
   'page.broken': 'Bu sayfada bir şey gösterilemedi. Sohbetleriniz sunucuda güvende.',
   'page.reload': 'Sayfayı yeniden yükle',
+  'page.share': 'Paylaş',
+  'page.shared': 'Paylaşıldı',
+  'page.shareAnyone': 'Bağlantısı olan herkes',
+  'page.shareOffHint':
+    'Bu sayfayı yalnız sen görüyorsun. Yumak Bot kullanmayan birine göndermek için bağlantıyı aç.',
+  'page.shareOnHint':
+    'Bağlantısı olan herkes sayfayı, botun en son yazdığı haliyle ve gösterdiği dosyalarla, oturum açmadan görür. Kapatınca bağlantı çalışmaz olur.',
+  'page.linkCopied': 'Bağlantı kopyalandı',
+  'page.shareLocalOnly':
+    'Bu adres yalnızca bu bilgisayarda çalışır. Başkalarının açabilmesi için sunucuyu onların ulaşabileceği bir yerde çalıştır ve YUMAKBOT_PUBLIC_URL ayarını gir.',
+  'page.pdf': 'PDF',
+  'page.printHint': 'Sayfayı yazdırma penceresiyle açar; orada PDF olarak kaydet’i seç',
+  'page.sharedPages': 'Paylaşılan sayfalar',
+  'page.sharedPagesHint': 'Bu bağlantılardan birine sahip olan herkes sayfayı oturum açmadan açabilir.',
+  'page.shareTurnOff': 'Bağlantıyı kapat',
   'preview.copyImage': 'Resmi kopyala',
   'preview.imageCopied': 'Resim kopyalandı',
   'find.open': 'Sohbette bul',

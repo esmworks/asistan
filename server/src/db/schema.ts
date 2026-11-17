@@ -631,3 +631,23 @@ export const memoryChanges = pgTable(
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],
 );
+
+/**
+ * Pages a bot made that anyone with the link may open without signing in. The token is the whole
+ * secret of the link; deleting the row turns the link off. The page is read fresh on every visit,
+ * so the link shows the file as the bot last wrote it.
+ */
+export const pageShares = pgTable(
+  'page_shares',
+  {
+    token: text('token').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** The page's path in the bot's library, as its card in the conversation holds it. */
+    path: text('path').notNull(),
+    name: text('name').notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('page_shares_page_uq').on(t.botId, t.path)],
+);

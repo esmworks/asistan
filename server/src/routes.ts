@@ -35,6 +35,7 @@ import {
   ProviderKeyInput,
   ProviderSignInStart,
   LOCALES,
+  pickLocale,
   RoutineCreate,
   RoutineUpdate,
   RoomCreate,
@@ -57,14 +58,16 @@ import {
   frameDocument,
   frameHeader,
   PAGE_LIBRARIES,
+  PageShareCreate,
 } from '@yumakbot/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
 import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
+import { translator } from './i18n';
 import { schema } from './db';
 import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
@@ -82,6 +85,8 @@ import { uniqueName, zip } from './zip';
 
 /** Where services start routines by their secret address; needs no access key. */
 export const WEBHOOK_PATH = '/api/hooks/routines';
+/** Where a shared page opens, outside /api so it needs no sign-in. */
+export const SHARE_PATH = '/p';
 /** Longest text a script may hand a routine run. */
 const MAX_PAYLOAD = 50_000;
 /** Most bytes put in one ZIP download; it is built in memory. */
@@ -1226,22 +1231,92 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   // A page a bot made, served to run in the app's sandboxed frame: scripts run, with an opaque
   // origin and a policy that lets it load only the usual libraries and fetch nothing.
-  app.get('/api/bots/:id/library/page', async (req, reply) => {
-    const { path, h } = z
-      .object({ path: z.string().min(1), h: z.coerce.number().int().min(200).max(1200).optional() })
-      .parse(req.query);
-    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path);
+  /**
+   * A bot's page as a document of its own: scripts run sandboxed, with an opaque origin and a
+   * policy that lets it load only the usual libraries and fetch nothing. `print` opens the print
+   * dialog once it has drawn, so the person can save it as a PDF.
+   */
+  const sendPage = async (
+    reply: FastifyReply,
+    botId: string,
+    path: string,
+    o: { framed?: boolean; height?: number; print?: boolean; title?: string },
+  ) => {
+    const { full, st } = await libraryFile(botId, path);
     if (!/\.html?$/i.test(full) || st.size > 2 * 1024 * 1024) throw new HttpError(404, 'error.notFound');
     const csp = frameCsp({ resources: PAGE_LIBRARIES, images: ['https:'] });
     // Its own scripts, styles, pictures and data go inside it: the frame loads nothing from here.
     const page = await bundlePage(full);
     return reply
-      .header('content-security-policy', frameHeader(csp))
+      .header('content-security-policy', frameHeader(csp, { print: o.print }))
       .header('x-content-type-options', 'nosniff')
       .header('referrer-policy', 'no-referrer')
       .header('cache-control', 'no-cache')
       .type('text/html; charset=utf-8')
-      .send(frameDocument(page.html, csp, { reportSize: true, fallbackHeight: h }));
+      .send(
+        frameDocument(page.html, csp, {
+          reportSize: o.framed,
+          fallbackHeight: o.height,
+          print: o.print,
+          title: o.title,
+        }),
+      );
+  };
+  // A page a bot made, served to run in the app's sandboxed frame, or opened on its own to print.
+  app.get('/api/bots/:id/library/page', async (req, reply) => {
+    const { path, h, print } = z
+      .object({
+        path: z.string().min(1),
+        h: z.coerce.number().int().min(200).max(1200).optional(),
+        print: z.enum(['1']).optional(),
+      })
+      .parse(req.query);
+    return sendPage(reply, IdParams.parse(req.params).id, path, {
+      framed: !print,
+      height: h,
+      print: !!print,
+      title: print ? basename(path) : undefined,
+    });
+  });
+
+  // Links that open a page for anyone who has them.
+  app.get('/api/page-shares', () => s.pageShares.list());
+  app.get('/api/bots/:id/library/share', async (req) => {
+    const { path } = z.object({ path: z.string().min(1) }).parse(req.query);
+    return { share: await s.pageShares.find(IdParams.parse(req.params).id, path) };
+  });
+  app.post('/api/bots/:id/library/share', async (req) => {
+    const botId = IdParams.parse(req.params).id;
+    const body = PageShareCreate.parse(req.body);
+    // Only a page in the bot's own folders, and only an HTML page, can be shared.
+    const { full } = await libraryFile(botId, body.path);
+    if (!/\.html?$/i.test(full)) throw new HttpError(400, 'error.shareNotPage');
+    return s.pageShares.share(botId, body.path, body.name);
+  });
+  app.delete('/api/page-shares/:token', async (req) => {
+    const { token } = z.object({ token: z.string().min(1).max(100) }).parse(req.params);
+    await s.pageShares.unshare(token);
+    return { ok: true };
+  });
+  // The shared page itself: outside /api, so it opens without signing in. It runs sandboxed like
+  // in the app, so it cannot reach this server with the visitor's sign-in either.
+  app.get(`${SHARE_PATH}/:token`, async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(100) }).parse(req.params);
+    const { print } = z.object({ print: z.enum(['1']).optional() }).parse(req.query);
+    reply.header('x-robots-tag', 'noindex, nofollow');
+    const share = await s.pageShares.resolve(token);
+    try {
+      if (share) return await sendPage(reply, share.botId, share.path, { print: !!print, title: share.name });
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      // The page was moved or deleted since it was shared: the link says it is gone, like an old link.
+    }
+    const t = translator(pickLocale(req.headers['accept-language'], await s.settings.locale()));
+    return reply
+      .code(404)
+      .header('content-security-policy', PLAIN_PAGE_POLICY)
+      .type('text/html; charset=utf-8')
+      .send(callbackPage(t('share.gone.title'), t('share.gone.title'), t('share.gone.body')));
   });
   app.get('/api/bots/:id/library/file', async (req, reply) => {
     const { path, inline } = z

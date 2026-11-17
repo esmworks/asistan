@@ -778,3 +778,17 @@ export const SearchHit = z.object({
   createdAt: z.string(),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
+
+/** A link that opens a bot's page for anyone who has it, without signing in. */
+export const PageShare = z.object({
+  token: z.string(),
+  botId: Id,
+  path: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+});
+export type PageShare = z.infer<typeof PageShare>;
+export const PageShareCreate = z.object({
+  path: z.string().min(1).max(2000),
+  name: z.string().trim().min(1).max(200),
+});

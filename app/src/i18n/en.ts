@@ -276,7 +276,7 @@ export const en: Catalog<MessageKey> = {
   'settings.keywords.connection':
     'claude, sign in, api key, provider, model, effort, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
   'settings.keywords.permissions': 'approvals, rules, allow, ask, always',
-  'settings.keywords.vault': 'passwords, logins, two-step codes, totp, secrets',
+  'settings.keywords.vault': 'passwords, logins, two-step codes, totp, secrets, shared pages, links',
   'settings.keywords.memory': 'notes, remember, forget',
   'settings.keywords.routines': 'schedule, cron, webhook, reminders, runs',
   'settings.keywords.skills': 'skill, import, link, github',
@@ -330,6 +330,21 @@ export const en: Catalog<MessageKey> = {
   'preview.showSource': 'Show the source',
   'page.broken': 'Something on this page could not be shown. Your conversations are safe on the server.',
   'page.reload': 'Load the page again',
+  'page.share': 'Share',
+  'page.shared': 'Shared',
+  'page.shareAnyone': 'Anyone with the link',
+  'page.shareOffHint':
+    'Only you can see this page. Turn the link on to send it to someone who does not use Yumak Bot.',
+  'page.shareOnHint':
+    'Anyone with the link sees the page as the bot last wrote it, with the files it shows, without signing in. Turn it off and the link stops working.',
+  'page.linkCopied': 'Link copied',
+  'page.shareLocalOnly':
+    'This address only works on this computer. For others to open the link, run the server where they can reach it and set YUMAKBOT_PUBLIC_URL.',
+  'page.pdf': 'PDF',
+  'page.printHint': 'Opens the page with the print dialog; choose Save as PDF there',
+  'page.sharedPages': 'Shared pages',
+  'page.sharedPagesHint': 'Anyone with one of these links can open the page without signing in.',
+  'page.shareTurnOff': 'Turn the link off',
   'preview.copyImage': 'Copy the picture',
   'preview.imageCopied': 'Picture copied',
   'find.open': 'Find in conversation',

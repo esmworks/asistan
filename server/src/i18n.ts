@@ -30,6 +30,10 @@ const tr = {
     'Bağlantı bu bilgisayardaki ya da yerel ağdaki bir adrese gidiyor; buna izin verilmez',
   'error.skillLinkStatus': 'Adres dosyayı vermedi (HTTP {status})',
   'error.skillLinkTooLarge': 'Dosya bir beceri için çok büyük',
+  'error.shareNotPage': 'Yalnızca bir HTML sayfası paylaşılabilir',
+  'share.gone.title': 'Bu sayfa artık paylaşılmıyor',
+  'share.gone.body':
+    'Bağlantı kapatılmış ya da sayfa kaldırılmış. Bağlantıyı gönderen kişiden yenisini isteyebilirsin.',
   'error.projectDirRelative': 'Proje klasörü tam bir yol olmalı (/ ile başlayan)',
   'error.projectDirTooWide':
     'Bu klasör proje klasörü olamaz: kök ya da ev klasörünü içeriyor ve bot içindeki her şeyi okuyup yazabilirdi. Projenin kendi klasörünü seç.',
@@ -824,6 +828,10 @@ const en: Catalog<ServerKey> = {
     'The link goes to an address on this computer or the local network, which is not allowed',
   'error.skillLinkStatus': 'The address did not give the file (HTTP {status})',
   'error.skillLinkTooLarge': 'The file is too large for a skill',
+  'error.shareNotPage': 'Only an HTML page can be shared',
+  'share.gone.title': 'This page is no longer shared',
+  'share.gone.body':
+    'The link was turned off or the page was removed. You can ask whoever sent it for a new one.',
   'error.projectDirRelative': 'The project folder must be a full path (starting with /)',
   'error.projectDirTooWide':
     'This folder cannot be a project folder: it is the root or holds the home folder, and the bot could read and change everything in it. Choose the project’s own folder.',

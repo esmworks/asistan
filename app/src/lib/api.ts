@@ -55,6 +55,7 @@ import type {
   UsageRange,
   UsageReport,
   ProviderSignIn,
+  PageShare,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -405,6 +406,17 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  /** The page opened on its own, with the print dialog, to save it as a PDF. */
+  pagePrintUrl: (botId: string, path: string) =>
+    `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}&print=1`,
+  pageShare: (botId: string, path: string) =>
+    http.get<{ share: PageShare | null }>(
+      `/api/bots/${botId}/library/share?path=${encodeURIComponent(path)}`,
+    ),
+  sharePage: (botId: string, path: string, name: string) =>
+    http.post<PageShare>(`/api/bots/${botId}/library/share`, { path, name }),
+  pageShares: () => http.get<PageShare[]>('/api/page-shares'),
+  unsharePage: (token: string) => http.del<{ ok: true }>(`/api/page-shares/${encodeURIComponent(token)}`),
   /** Several files of a bot's folders as one ZIP download. */
   zipUrl: (botId: string, paths: string[], name?: string) =>
     `/api/bots/${botId}/library/zip?${paths.map((p) => `path=${encodeURIComponent(p)}`).join('&')}${name ? `&name=${encodeURIComponent(name)}` : ''}`,
