@@ -367,9 +367,11 @@ export const tr = {
     '“{name}” API anahtarı silinsin mi? Onu kullanan botlar yeniden istemek zorunda kalır.',
   'seal.title': 'Konuşmaları veritabanında şifrele',
   'seal.hint':
-    'Mesajlar, istemler, hafıza, e-postalar ve görev metinleri şifreli saklanır; veritabanının tek başına bir kopyası (bir döküm, bir Postgres yedeği) bunları göstermez. Anahtar veri klasöründe vault.key ile durur ve yedeklere girer; o olmadan içerik okunamaz. Bu açıkken konuşma araması daha yavaştır.',
+    'Mesajlar, konuşma başlıkları, istemler, hafıza ve geçmişi, kartlar, e-postalar ve görev metinleri şifreli saklanır; veritabanının tek başına bir kopyası (bir döküm, bir Postgres yedeği) bunları göstermez. Anahtar veri klasöründe vault.key ile durur ve yedeklere girer; o olmadan içerik okunamaz. Bu açıkken konuşma araması daha yavaştır.',
   'seal.sealing': 'Kayıtlı içerik şifreleniyor: {count} kaldı',
   'seal.opening': 'Kayıtlı içeriğin şifresi çözülüyor: {count} kaldı',
+  'seal.unreadable':
+    'Kayıtlı {count} değer başka bir anahtarla şifrelenmiş (veritabanı veri klasörü olmadan taşınmış) ve okunamıyor; o anahtar geri gelirse diye dokunulmadan bırakıldı.',
   'teach.open': 'Göstererek öğret',
   'teach.goalPlaceholder': 'İşin sonucu, ör. Bu haftanın raporunu indir',
   'teach.start': 'Kaydı başlat',

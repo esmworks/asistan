@@ -369,9 +369,11 @@ export const en: Catalog<MessageKey> = {
   'apiKeys.confirmDelete': 'Delete the API key “{name}”? Bots that use it will have to ask for it again.',
   'seal.title': 'Encrypt conversations in the database',
   'seal.hint':
-    'Messages, prompts, memory, mail and ticket text are stored encrypted, so a copy of the database alone (a dump, a Postgres backup) does not reveal them. The key stays in the data folder with vault.key and goes into backups; without it the content cannot be read. Searching conversations is slower while this is on.',
+    'Messages, conversation titles, prompts, memory and its history, cards, mail and ticket text are stored encrypted, so a copy of the database alone (a dump, a Postgres backup) does not reveal them. The key stays in the data folder with vault.key and goes into backups; without it the content cannot be read. Searching conversations is slower while this is on.',
   'seal.sealing': 'Encrypting what is already stored: {count} left',
   'seal.opening': 'Decrypting what is stored: {count} left',
+  'seal.unreadable':
+    '{count} stored values were sealed with another key (a database moved without its data folder) and cannot be read; they are left untouched in case that key comes back.',
   'teach.open': 'Teach a task',
   'teach.goalPlaceholder': 'What the task achieves, e.g. Download this week’s report',
   'teach.start': 'Start recording',

@@ -435,9 +435,16 @@ export const api = {
       },
     ),
   contentEncryption: () =>
-    http.get<{ on: boolean; pending: number; converting: boolean }>('/api/content-encryption'),
+    http.get<{ on: boolean; pending: number; unreadable: number; converting: boolean }>(
+      '/api/content-encryption',
+    ),
   setContentEncryption: (on: boolean) =>
-    http.put<{ on: boolean; pending: number; converting: boolean }>('/api/content-encryption', { on }),
+    http.put<{ on: boolean; pending: number; unreadable: number; converting: boolean }>(
+      '/api/content-encryption',
+      {
+        on,
+      },
+    ),
   tickets: () => http.get<Ticket[]>('/api/tickets'),
   createTicket: (input: TicketCreate) => http.post<Ticket>('/api/tickets', input),
   updateTicket: (id: string, patch: TicketUpdate) => http.patch<Ticket>(`/api/tickets/${id}`, patch),

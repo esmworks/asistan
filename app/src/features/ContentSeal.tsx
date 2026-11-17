@@ -28,9 +28,14 @@ export function ContentSeal() {
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{t('seal.title')}</span>
           <span className="block text-xs text-muted-foreground">{t('seal.hint')}</span>
-          {(data.converting || data.pending > 0) && (
+          {data.converting && data.pending - data.unreadable > 0 && (
             <span className="mt-1 block text-xs text-muted-foreground">
-              {t(data.on ? 'seal.sealing' : 'seal.opening', { count: data.pending })}
+              {t(data.on ? 'seal.sealing' : 'seal.opening', { count: data.pending - data.unreadable })}
+            </span>
+          )}
+          {data.unreadable > 0 && (
+            <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+              {t('seal.unreadable', { count: data.unreadable })}
             </span>
           )}
         </span>

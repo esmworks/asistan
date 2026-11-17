@@ -11,7 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { sealedText } from './sealed';
+import { sealedJson, sealedProps, sealedText } from './sealed';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const created = () => ts('created_at').notNull().defaultNow();
@@ -67,7 +67,7 @@ export const threads = pgTable(
     botId: text('bot_id')
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
-    title: text('title').notNull().default(''),
+    title: sealedText('title').notNull().default(''),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
@@ -111,7 +111,7 @@ export const messages = pgTable(
     role: text('role', { enum: ['user', 'assistant', 'system', 'marker', 'approval', 'error'] }).notNull(),
     author: text('author').notNull(),
     text: sealedText('text').notNull().default(''),
-    props: jsonb('props').$type<Record<string, unknown>>().notNull().default({}),
+    props: sealedProps('props').notNull().default({}),
     clientId: text('client_id'),
     turnId: text('turn_id'),
     createdAt: created(),
@@ -218,8 +218,8 @@ export const approvals = pgTable(
     turnId: text('turn_id'),
     kind: text('kind', { enum: ['tool', 'question', 'login'] }).notNull(),
     toolName: text('tool_name').notNull(),
-    summary: text('summary').notNull().default(''),
-    input: jsonb('input').$type<Record<string, unknown>>().notNull().default({}),
+    summary: sealedText('summary').notNull().default(''),
+    input: sealedJson('input').$type<Record<string, unknown>>().notNull().default({}),
     options: jsonb('options').$type<string[]>().notNull().default([]),
     status: text('status', { enum: ['pending', 'allowed', 'denied', 'expired'] }).notNull(),
     answer: text('answer'),
@@ -272,8 +272,8 @@ export const auditLog = pgTable(
     action: text('action').notNull(),
     targetType: text('target_type').notNull(),
     targetId: text('target_id').notNull(),
-    before: jsonb('before'),
-    after: jsonb('after'),
+    before: sealedJson('before'),
+    after: sealedJson('after'),
     createdAt: created(),
   },
   (t) => [index('audit_target_idx').on(t.targetType, t.targetId)],
@@ -767,7 +767,7 @@ export const tickets = pgTable(
     id: text('id').primaryKey(),
     /** Shown as #12; grows by one with each ticket. */
     number: integer('number').notNull(),
-    title: text('title').notNull(),
+    title: sealedText('title').notNull(),
     description: sealedText('description').notNull().default(''),
     status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })
       .notNull()

@@ -634,6 +634,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       clearInterval(sweepTimer);
       clearInterval(retryApps);
       clearInterval(indexMemory);
+      await services.contentSeal.settled();
       services.embeddings.stop();
       await computer?.shutdown();
       stopComputerLink?.();

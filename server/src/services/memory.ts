@@ -8,9 +8,9 @@ import {
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
-import { contentSealed } from '../db/sealed';
+import { matchInServer } from '../db/sealed';
 import { lastActive, MEMORY_PROMPT_CHARS, withinBudget } from '../runtime/prompt';
-import { DOTTED_AND_DOTLESS_I, HttpError, newId, notFound } from '../util';
+import { DOTTED_AND_DOTLESS_I, foldText, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
 import { noteKey } from './secrets';
 import { siteMatches } from './vault';
@@ -20,8 +20,6 @@ import { MIN_SCORE, type EmbeddingService } from './embeddings';
 const WORD_MATCH_BONUS = 0.25;
 /** Notes a search by meaning returns at most. */
 const MEANING_HITS = 20;
-
-const fold = (v: string) => v.replace(/[ıİ]/g, 'i').toLowerCase();
 
 export class MemoryService {
   private embeddings: EmbeddingService | null = null;
@@ -128,9 +126,9 @@ export class MemoryService {
         .limit(5000);
       const scores = await this.embeddings.scores(query, rows);
       if (scores) {
-        const needle = fold(query.trim());
+        const needle = foldText(query.trim());
         const hits = rows
-          .map((r) => ({ r, words: fold(r.content).includes(needle), score: scores.get(r.id) ?? 0 }))
+          .map((r) => ({ r, words: foldText(r.content).includes(needle), score: scores.get(r.id) ?? 0 }))
           .filter((h) => h.words || h.score >= MIN_SCORE)
           .sort(
             (a, b) =>
@@ -143,25 +141,24 @@ export class MemoryService {
     }
     // ı and İ read as i on both sides, as the message search does.
     const q = query && `%${query.replace(/[ıİ]/g, 'i').replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
-    // Sealed notes cannot be matched in the database: they are opened and matched here instead.
-    const sealed = contentSealed();
-    const rows = await this.ctx.db
+    // Sealed notes cannot be matched in the database: every visible note is opened and matched
+    // here instead. A person's notes number in the thousands at most.
+    const inServer = matchInServer();
+    const found = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
-        q && !sealed
+        q && !inServer
           ? and(visible, sql`translate(${schema.memories.content}, ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${q}`)
           : visible,
       )
       .orderBy(asc(schema.memories.createdAt))
-      .limit(q && !sealed ? 50 : sealed ? 5000 : 500)
-      .then((found) =>
-        sealed && query
-          ? found.filter((r) => fold(r.content).includes(fold(query.trim()))).slice(0, 50)
-          : sealed
-            ? found.slice(0, 500)
-            : found,
-      );
+      .limit(inServer ? Number.MAX_SAFE_INTEGER : q ? 50 : 500);
+    const rows = !inServer
+      ? found
+      : query
+        ? found.filter((r) => foldText(r.content).includes(foldText(query.trim()))).slice(0, 50)
+        : found.slice(0, 500);
     if (q) await this.markUsed(rows.map((r) => r.id));
     return rows.map(toMemory);
   }
