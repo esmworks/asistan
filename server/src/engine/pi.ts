@@ -475,6 +475,7 @@ export class PiEngine implements Engine {
         sessionId,
         ...(why.kind === 'limit' && { provider: target.provider }),
         ...(why.transient && { transient: true }),
+        ...(why.cut && { cut: true }),
         costUsd: costUsd || null,
       };
     }

@@ -23,6 +23,8 @@ import {
  *   [uzun-araç:ms]       a shell command that runs this long (stops early on interrupt)
  *   [hata]               fail with an engine error
  *   [meşgul-sonra]       after the directives before it, fail as an overloaded server
+ *   [kesik]              after the directives before it, cut the reply off on the turn's first run
+ *   [kesik-hep]          after the directives before it, cut the reply off on every run
  *   [özet]               report that the conversation was condensed into a summary
  *   [giriş-yok]          fail as if logged out
  *   [sınır]              fail as if the usage limit were spent until 2026-11-16 09:00 UTC
@@ -42,6 +44,8 @@ export class FakeEngine implements Engine {
   private lost = new Set<string>();
   private fresh = new Map<string, number>();
   private totals = new Map<string, number>();
+  /** Turns whose reply `[kesik]` has cut off once already. */
+  private cutTurns = new Set<string>();
   public requests: TurnRequest[] = [];
   public reviews: ReviewRequest[] = [];
   public gates: GateRequest[] = [];
@@ -187,7 +191,7 @@ export class FakeEngine implements Engine {
     const spent = cost ? Number(cost[1]) : 0;
     const parts: string[] = [];
     const directive =
-      /\[(izin|araç|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
+      /\[(izin|araç|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra|kesik|kesik-hep)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
     for (const m of req.prompt.matchAll(directive)) {
       const [, kind, name, json] = m;
       if (req.signal.aborted) break;
@@ -209,6 +213,19 @@ export class FakeEngine implements Engine {
           text: '',
           sessionId,
           resetsAt: new Date('2026-11-16T09:00:00.000Z'),
+        };
+      }
+      if (kind === 'kesik-hep' || (kind === 'kesik' && !this.cutTurns.has(req.turnId))) {
+        this.cutTurns.add(req.turnId);
+        return {
+          ok: false,
+          kind: 'engine',
+          message: 'Stream ended without finish_reason',
+          text: parts.join('\n'),
+          sessionId,
+          costUsd: spent,
+          transient: true,
+          cut: true,
         };
       }
       if (kind === 'meşgul-sonra' && !req.model.includes('/')) {

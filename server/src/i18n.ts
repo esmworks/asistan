@@ -286,6 +286,7 @@ const tr = {
   'turn.contextHandoff':
     'Sohbet modelin bağlamına sığmıyor; son konuşma yeni bir oturuma aktarılıp devam ediliyor.',
   'turn.backupBusy': 'Model şu an yanıt veremiyor; bu iş yedek model {model} ile sürüyor.',
+  'turn.retryCut': 'Yanıt yarıda kesildi; aynı modelle bir kez daha deneniyor.',
   'turn.limitUntil': 'Claude kullanım sınırı doldu; {time} sonra yeniden dene.',
   'turn.limitActed':
     'Bot bu turda bazı adımları zaten attığı için mesajın kendiliğinden yeniden gönderilmeyecek; sınır kalkınca kalanını yaz.',
@@ -313,6 +314,7 @@ const tr = {
   'engine.providerBilling': '{provider} hesabında bakiye ya da ödeme sorunu var',
   'engine.providerLimit': '{provider} hız ya da kota sınırına takıldı; biraz sonra yeniden dene',
   'engine.providerBusy': '{provider} şu an aşırı yüklü ya da kısa süreliğine kapalı',
+  'engine.providerCut': '{provider} yanıtı bitirmeden kesti',
   'engine.providerTooLarge':
     'İstek {provider} için çok büyük; yeni bir sohbet aç ya da daha çok şey alan bir model seç',
   'engine.providerUnreachable': '{provider} sunucusuna ulaşılamadı; adresi ve bağlantıyı kontrol et',
@@ -1327,6 +1329,7 @@ const en: Catalog<ServerKey> = {
   'turn.contextHandoff':
     "The conversation no longer fits the model's context; the recent exchange moves to a new session and the work goes on.",
   'turn.backupBusy': 'The model cannot answer right now; this work goes on with the backup model {model}.',
+  'turn.retryCut': 'The reply was cut off midway; trying the same model once more.',
   'turn.limitUntil': 'The Claude usage limit is used up; try again after {time}.',
   'turn.limitActed':
     'The bot already took some steps in this turn, so your message will not be sent again by itself; once the limit lifts, say what is left.',
@@ -1353,6 +1356,7 @@ const en: Catalog<ServerKey> = {
   'engine.providerBilling': 'The {provider} account has a balance or payment problem',
   'engine.providerLimit': '{provider} hit a rate or quota limit; try again in a while',
   'engine.providerBusy': '{provider} is overloaded or briefly down',
+  'engine.providerCut': '{provider} cut the reply off before it ended',
   'engine.providerTooLarge':
     'The request is too large for {provider}; start a new chat or pick a model that takes more',
   'engine.providerUnreachable':

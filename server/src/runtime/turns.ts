@@ -1083,8 +1083,11 @@ export class TurnManager {
       waiting: () => approvals.waitingOn(turn.id),
       onStall: () => controller.abort(),
     });
+    // What the last run on the bot's own model was asked, for a second try of the same request.
+    let lastPrompt = '';
     /** `backup`: a run on the backup model, which leaves the thread's own session alone. */
     const run = async (prompt: string, backup?: string) => {
+      if (!backup) lastPrompt = prompt;
       const outcome = await (backup ? this.engineFor({ ...bot, engine: 'pi' }) : engine).run({
         turnId: turn.id,
         threadId: thread.id,
@@ -1197,6 +1200,22 @@ export class TurnManager {
         shown = 0;
         spent += outcome.costUsd ?? 0;
         outcome = await run(await settle(await handoff(), false));
+      }
+      if (!outcome.ok && outcome.cut && !acted && !controller.signal.aborted) {
+        // The provider closed the reply before its end. Nothing was changed yet and the engine kept
+        // none of the broken exchange, so the same request goes once more before any backup.
+        await threads.addMessage({
+          threadId: thread.id,
+          role: 'system',
+          author: 'system',
+          text: t('turn.retryCut'),
+          props: { kind: 'retryCut' },
+          turnId: turn.id,
+        });
+        streamed = '';
+        shown = 0;
+        spent += outcome.costUsd ?? 0;
+        outcome = await run(lastPrompt);
       }
       const backup = settings.backupModel;
       // A turn that already changed something is never run again from the start: the backup would
