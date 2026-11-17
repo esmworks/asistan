@@ -52,7 +52,8 @@ export function ruleMatches(pattern: string, toolName: string, input: Record<str
   return globToRegExp(argGlob).test(ruleSubject(toolName, input));
 }
 
-export type Verdict = 'allow' | 'ask' | 'deny';
+/** `block`: a block rule covers the call; it is refused in every mode, without a card. */
+export type Verdict = 'allow' | 'ask' | 'deny' | 'block';
 
 /** An "always ask" rule covers this request: no one but the person may let it through. */
 export function askRuleMatches(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
@@ -64,6 +65,11 @@ export function askRuleFor(rules: PermissionRule[], toolName: string, input: Rec
   return rules.find((r) => r.list === 'ask' && ruleMatches(r.pattern, toolName, input)) ?? null;
 }
 
+/** The block rule that covers this call, if one does. */
+export function blockRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
+  return rules.find((r) => r.list === 'block' && ruleMatches(r.pattern, toolName, input)) ?? null;
+}
+
 export function decide(opts: {
   mode: PermissionMode;
   toolName: string;
@@ -73,6 +79,7 @@ export function decide(opts: {
 }): Verdict {
   const { mode, toolName, input, rules } = opts;
   const isRead = READ_ONLY_TOOLS.has(toolName) || opts.readOnlyTools.has(toolName);
+  if (blockRuleFor(rules, toolName, input)) return 'block';
   if (mode === 'readonly') return isRead ? 'allow' : 'deny';
   if (askRuleMatches(rules, toolName, input)) return 'ask';
   if (mode === 'auto' || isRead) return 'allow';
@@ -306,6 +313,11 @@ export class ApprovalService {
       const t = await serverTranslator(this.ctx);
       await this.addRule({ list: 'allow', pattern: current.toolName, note: t('approval.ruleNote') });
     }
+    // "Never allow": the tool is refused from now on, in every mode, without a card.
+    if (d.remember && d.decision === 'deny' && current.kind === 'tool') {
+      const t = await serverTranslator(this.ctx);
+      await this.addRule({ list: 'block', pattern: current.toolName, note: t('approval.blockNote') });
+    }
     this.waiters.get(id)?.resolve({ status, answer: given ?? answer, ...(login && { login }) });
     this.waiters.delete(id);
     if (remembered) await this.allowWaiting(current.toolName, id);
@@ -394,7 +406,11 @@ export class ApprovalService {
     return rows.map(toRule);
   }
 
-  async addRule(r: { list: 'ask' | 'allow'; pattern: string; note: string }): Promise<PermissionRule> {
+  async addRule(r: {
+    list: 'ask' | 'allow' | 'block';
+    pattern: string;
+    note: string;
+  }): Promise<PermissionRule> {
     const [row] = await this.ctx.db
       .insert(schema.permissionRules)
       .values({ id: newId(), ...r })

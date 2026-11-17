@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
+import { internalHost } from './ai-endpoints';
 
 export const Id = z.string().min(1).max(64);
 
@@ -129,7 +130,7 @@ export const GroupMove = z.object({ beforeId: Id.nullable() });
 export type GroupMove = z.infer<typeof GroupMove>;
 
 /** `api`: messages sent to the bot from a script or another app through its API. */
-export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room']);
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket']);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
 export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);
@@ -317,7 +318,10 @@ export const ApprovalDecision = z.object({
   answer: z.string().max(10_000).optional(),
   /** For cards with several questions: one answer per question, in order. */
   answers: z.array(z.string().max(5_000)).max(6).optional(),
-  /** Add a "Sormadan izin ver" rule for this tool. */
+  /**
+   * With allow: an "always allow" rule for this tool. With deny: a block rule, so the tool is
+   * refused from now on without asking.
+   */
   remember: z.boolean().default(false),
   /** For sign-in cards: what the server types into the site; the bot never sees the password. */
   login: z
@@ -381,7 +385,8 @@ export const VaultLoginUpdate = z.object({
 });
 export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
 
-export const RuleList = z.enum(['ask', 'allow']);
+/** `block`: refused in every mode, without a card; it outranks every other rule. */
+export const RuleList = z.enum(['ask', 'allow', 'block']);
 export const PermissionRule = z.object({
   id: Id,
   list: RuleList,
@@ -778,3 +783,270 @@ export const SearchHit = z.object({
   createdAt: z.string(),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
+
+/** A link that opens a bot's page for anyone who has it, without signing in. */
+export const PageShare = z.object({
+  token: z.string(),
+  botId: Id,
+  path: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+});
+export type PageShare = z.infer<typeof PageShare>;
+export const PageShareCreate = z.object({
+  path: z.string().min(1).max(2000),
+  name: z.string().trim().min(1).max(200),
+});
+
+/**
+ * How a saved API key goes with a request: as a bearer token, in a header of the service's own,
+ * as a query parameter, or as the password of basic authentication.
+ */
+export const ApiAuth = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('bearer') }),
+  z.object({
+    type: z.literal('header'),
+    header: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9-]{1,64}$/, 'validation.headerName'),
+  }),
+  z.object({
+    type: z.literal('query'),
+    param: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_.-]{1,64}$/, 'validation.queryParam'),
+  }),
+  z.object({ type: z.literal('basic'), username: z.string().max(200) }),
+]);
+export type ApiAuth = z.infer<typeof ApiAuth>;
+
+/** A reference name a bot uses for a saved API key: lowercase, digits, - and _. */
+export const ApiCredentialName = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'validation.credentialName');
+
+/**
+ * Where a key may go: an https origin, or plain http to a host on this computer or the private
+ * network (a service next to the server, such as `http://ollama:11434`). Anything after the host is
+ * dropped: the key is good for the whole origin.
+ */
+export const ApiOrigin = z
+  .string()
+  .trim()
+  .transform((v, ctx) => {
+    try {
+      const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`);
+      const internal = internalHost(url.hostname);
+      if (
+        !url.username &&
+        !url.password &&
+        (url.protocol === 'https:' || (url.protocol === 'http:' && internal))
+      )
+        return url.origin;
+    } catch {
+      // Falls through to the message below.
+    }
+    ctx.addIssue({ code: 'custom', message: 'validation.apiOrigin' });
+    return z.NEVER;
+  });
+
+/** A saved API key as the app and the bots see it: never its value. */
+export const ApiCredential = z.object({
+  id: Id,
+  name: z.string(),
+  origin: z.string(),
+  auth: ApiAuth,
+  /** What it is for, in the person's words or the bot's when it asked. */
+  label: z.string(),
+  /** The bots that may use it; null lets every bot. */
+  botIds: z.array(Id).nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type ApiCredential = z.infer<typeof ApiCredential>;
+
+export const ApiCredentialCreate = z.object({
+  name: ApiCredentialName,
+  origin: ApiOrigin,
+  auth: ApiAuth.default({ type: 'bearer' }),
+  label: z.string().trim().max(200).default(''),
+  value: z.string().min(1).max(8000),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type ApiCredentialCreate = z.input<typeof ApiCredentialCreate>;
+
+export const ApiCredentialUpdate = z.object({
+  origin: ApiOrigin.optional(),
+  auth: ApiAuth.optional(),
+  label: z.string().trim().max(200).optional(),
+  /** A new value; left out keeps the saved one. */
+  value: z.string().min(1).max(8000).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type ApiCredentialUpdate = z.input<typeof ApiCredentialUpdate>;
+
+/** A mail that arrived at a bot's address. */
+export const BotEmail = z.object({
+  id: Id,
+  botId: Id,
+  to: z.string(),
+  from: z.string(),
+  fromName: z.string(),
+  subject: z.string(),
+  text: z.string(),
+  /** Saved in the bot's own folder; `path` is where the bot's tools find each one. */
+  attachments: z.array(z.object({ name: z.string(), size: z.number(), path: z.string() })),
+  receivedAt: z.string(),
+  readAt: z.string().nullable(),
+});
+export type BotEmail = z.infer<typeof BotEmail>;
+
+/** The bots' mail: the domain, the relay's secret, and which bot has which address. */
+export const EmailSettings = z.object({
+  domain: z.string(),
+  /** What the relay sends as its bearer token; null until one is made. */
+  secret: z.string().nullable(),
+  addresses: z.array(z.object({ botId: Id, name: z.string(), address: z.string().nullable() })),
+});
+export type EmailSettings = z.infer<typeof EmailSettings>;
+export const EmailClaim = z.object({ name: z.string().trim().min(1).max(64) });
+
+/** What a plugin would add, read before anything is installed. */
+export const PluginPlan = z.object({
+  name: z.string(),
+  version: z.string(),
+  description: z.string(),
+  /** Remote MCP servers; each becomes a connection. */
+  servers: z.array(
+    z.object({
+      name: z.string(),
+      url: z.string(),
+      /** Its entry sends a token the person has to give (an Authorization header). */
+      needsToken: z.boolean(),
+      /** Already connected at this address: left as it is. */
+      exists: z.boolean(),
+    }),
+  ),
+  skills: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      /** A skill of this name is already saved: left as it is. */
+      exists: z.boolean(),
+      warnings: z.array(z.enum(['hidden', 'pipeShell', 'encoded'])),
+    }),
+  ),
+  /** Parts not installed, with why: code that would run here, or a kind not supported. */
+  leftOut: z.array(z.object({ part: z.string(), why: z.enum(['runsCode', 'local', 'unsupported']) })),
+});
+export type PluginPlan = z.infer<typeof PluginPlan>;
+
+export const PluginInstall = z.object({
+  url: z.string().trim().min(1).max(2000),
+  /** Tokens for servers that need one, by server name. */
+  tokens: z.record(z.string(), z.string().max(10_000)).default({}),
+  /** Skill names and server names to leave out. */
+  skip: z.array(z.string().max(200)).max(500).default([]),
+});
+export type PluginInstall = z.input<typeof PluginInstall>;
+export const PluginInstallResult = z.object({ servers: z.number(), skills: z.number() });
+export type PluginInstallResult = z.infer<typeof PluginInstallResult>;
+
+/** One operation of an OpenAPI document, as a bot is shown it. */
+export const ApiOperation = z.object({
+  id: z.string(),
+  method: z.string(),
+  path: z.string(),
+  summary: z.string(),
+  /** Path, query and header parameters: name, where, required, and type. */
+  params: z.array(z.object({ name: z.string(), in: z.string(), required: z.boolean(), type: z.string() })),
+  /** The JSON request body's schema, shortened; empty when it takes none. */
+  body: z.string(),
+});
+export type ApiOperation = z.infer<typeof ApiOperation>;
+
+/** An OpenAPI document bots may call operations of, with an API key saved in the vault. */
+export const ApiSource = z.object({
+  id: Id,
+  name: z.string(),
+  title: z.string(),
+  specUrl: z.string().nullable(),
+  baseUrl: z.string(),
+  /** The saved API key's name the calls go with; null for an API that needs none. */
+  credential: z.string().nullable(),
+  operations: z.number(),
+  botIds: z.array(Id).nullable(),
+  createdAt: z.string(),
+});
+export type ApiSource = z.infer<typeof ApiSource>;
+
+export const ApiSourceCreate = z
+  .object({
+    name: ApiCredentialName,
+    /** Where the document is read from; or `spec`, the document pasted in. */
+    specUrl: z.string().trim().max(2000).optional(),
+    spec: z
+      .string()
+      .max(4 * 1024 * 1024)
+      .optional(),
+    /** Overrides the document's own server address. */
+    baseUrl: z.string().trim().max(2000).optional(),
+    credential: ApiCredentialName.nullable().default(null),
+    botIds: z.array(Id).max(500).nullable().optional(),
+  })
+  .refine((v) => !!v.specUrl || !!v.spec, 'validation.openapiSource');
+export type ApiSourceCreate = z.input<typeof ApiSourceCreate>;
+
+export const TICKET_STATUSES = ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] as const;
+export const TicketStatus = z.enum(TICKET_STATUSES);
+export type TicketStatus = z.infer<typeof TicketStatus>;
+export const TICKET_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
+export const TicketPriority = z.enum(TICKET_PRIORITIES);
+export type TicketPriority = z.infer<typeof TicketPriority>;
+
+export const TicketComment = z.object({
+  id: Id,
+  author: z.string(),
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type TicketComment = z.infer<typeof TicketComment>;
+
+/** A ticket of the board. */
+export const Ticket = z.object({
+  id: Id,
+  number: z.number(),
+  title: z.string(),
+  description: z.string(),
+  status: TicketStatus,
+  priority: TicketPriority,
+  assigneeBotId: Id.nullable(),
+  createdBy: z.string(),
+  threadId: Id.nullable(),
+  comments: z.array(TicketComment),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Ticket = z.infer<typeof Ticket>;
+
+export const TicketCreate = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20_000).default(''),
+  priority: TicketPriority.default('normal'),
+  assigneeBotId: Id.nullable().default(null),
+});
+export type TicketCreate = z.input<typeof TicketCreate>;
+export const TicketUpdate = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(20_000).optional(),
+  status: TicketStatus.optional(),
+  priority: TicketPriority.optional(),
+  assigneeBotId: Id.nullable().optional(),
+});
+export type TicketUpdate = z.input<typeof TicketUpdate>;
+export const TicketCommentCreate = z.object({ text: z.string().trim().min(1).max(20_000) });

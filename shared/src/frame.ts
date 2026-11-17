@@ -45,18 +45,29 @@ function sizeReporter(fallback: number): string {
   return `<script>(()=>{const F=${fallback};const flow=()=>{const r=document.documentElement,b=document.body;if(!b)return r.scrollHeight;const a=[r.style.height,b.style.height,r.style.minHeight,b.style.minHeight];r.style.height=b.style.height='auto';r.style.minHeight=b.style.minHeight='0';const cs=getComputedStyle(b);const h=Math.ceil(b.getBoundingClientRect().height+(parseFloat(cs.marginTop)||0)+(parseFloat(cs.marginBottom)||0));[r.style.height,b.style.height,r.style.minHeight,b.style.minHeight]=a;return h};const layer=()=>{let e=document.elementFromPoint(innerWidth/2,innerHeight/2);while(e&&e!==document.body&&e!==document.documentElement){const q=e.getBoundingClientRect();if(q.width>=innerWidth/2&&q.height>=innerHeight/2)return true;e=e.parentElement}return false};const s=()=>{const f=flow();const h=f<120&&layer()?Math.max(F,f):f;parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:h}},'*')};addEventListener('load',()=>{s();new ResizeObserver(s).observe(document.documentElement)})})()</script>`;
 }
 
-/** The frame's whole policy as a response header: sandboxed, framed only by the app itself. */
-export function frameHeader(csp: string): string {
-  return `sandbox allow-scripts allow-forms; ${csp}; frame-ancestors 'self'`;
+/**
+ * The frame's whole policy as a response header: sandboxed, framed only by the app itself.
+ * `print` lets the page open the print dialog, which a sandbox refuses without allow-modals.
+ */
+export function frameHeader(csp: string, opts: { print?: boolean } = {}): string {
+  return `sandbox allow-scripts allow-forms${opts.print ? ' allow-modals' : ''}; ${csp}; frame-ancestors 'self'`;
 }
+
+/** Opens the print dialog once the page and its libraries have drawn, to save it as a PDF. */
+const PRINTER = `<script>addEventListener('load',()=>setTimeout(()=>print(),600))</script>`;
 
 /** The frame's document: the policy first, then the page (its own doctype dropped for ours). */
 export function frameDocument(
   html: string,
   csp: string,
-  opts: { reportSize?: boolean; fallbackHeight?: number } = {},
+  opts: { reportSize?: boolean; fallbackHeight?: number; print?: boolean; title?: string } = {},
 ): string {
   const body = html.replace(/^\s*<!doctype[^>]*>/i, '');
   const policy = csp.replace(/"/g, '&quot;');
-  return `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${policy}">${opts.reportSize ? sizeReporter(opts.fallbackHeight ?? 520) : ''}${body}`;
+  // A page opened on its own (a shared link) names its tab, unless it names itself.
+  const title =
+    opts.title && !/<title[\s>]/i.test(body)
+      ? `<title>${opts.title.replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'))}</title>`
+      : '';
+  return `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${policy}">${title}${opts.reportSize ? sizeReporter(opts.fallbackHeight ?? 520) : ''}${opts.print ? PRINTER : ''}${body}`;
 }

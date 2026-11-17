@@ -11,8 +11,9 @@ import {
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
+import { matchInServer } from '../db/sealed';
 import type { T } from '../i18n';
-import { DOTTED_AND_DOTLESS_I, isUniqueViolation, newId, notFound, truncate } from '../util';
+import { DOTTED_AND_DOTLESS_I, foldText, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toMessage, toThread } from './mappers';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
@@ -29,6 +30,9 @@ export interface NewMessage {
 
 /** How many messages a conversation opens with, and how many each "load older" adds. */
 export const MESSAGE_PAGE = 500;
+/** Messages read back at a time while a search matches sealed text in the server. */
+const SEARCH_PAGE = 1000;
+
 export class ThreadService {
   constructor(private ctx: Ctx) {}
 
@@ -427,32 +431,50 @@ export class ThreadService {
     // The database folds case for most letters but reads I as i, never as the dotless ı: both
     // sides take ı and İ as i, so "ığdır" finds "Iğdır".
     const pattern = `%${q.replace(/[ıİ]/g, 'i').replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    const rows = await this.ctx.db
-      .select({
-        id: schema.messages.id,
-        threadId: schema.messages.threadId,
-        role: schema.messages.role,
-        author: schema.messages.author,
-        text: schema.messages.text,
-        createdAt: schema.messages.createdAt,
-        botId: schema.threads.botId,
-        title: schema.threads.title,
-        kind: schema.threads.kind,
-      })
-      .from(schema.messages)
-      .innerJoin(schema.threads, eq(schema.threads.id, schema.messages.threadId))
-      .innerJoin(schema.bots, eq(schema.bots.id, schema.threads.botId))
-      .where(
-        and(
-          inArray(schema.messages.role, ['user', 'assistant']),
-          isNull(schema.bots.archivedAt),
-          opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
-          opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
-          sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
-        ),
-      )
-      .orderBy(desc(schema.messages.createdAt))
-      .limit(limit);
+    // Sealed text cannot be matched in the database: it is read back page by page, newest first,
+    // opened and matched here, until enough is found or nothing is left.
+    const inServer = matchInServer();
+    const page = (offset: number, size: number) =>
+      this.ctx.db
+        .select({
+          id: schema.messages.id,
+          threadId: schema.messages.threadId,
+          role: schema.messages.role,
+          author: schema.messages.author,
+          text: schema.messages.text,
+          createdAt: schema.messages.createdAt,
+          botId: schema.threads.botId,
+          title: schema.threads.title,
+          kind: schema.threads.kind,
+        })
+        .from(schema.messages)
+        .innerJoin(schema.threads, eq(schema.threads.id, schema.messages.threadId))
+        .innerJoin(schema.bots, eq(schema.bots.id, schema.threads.botId))
+        .where(
+          and(
+            inArray(schema.messages.role, ['user', 'assistant']),
+            isNull(schema.bots.archivedAt),
+            opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
+            opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
+            inServer
+              ? undefined
+              : sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAt), desc(schema.messages.id))
+        .limit(size)
+        .offset(offset);
+    let rows: Awaited<ReturnType<typeof page>> = [];
+    if (!inServer) rows = await page(0, limit);
+    else {
+      const needle = foldText(q);
+      for (let offset = 0; rows.length < limit; offset += SEARCH_PAGE) {
+        const found = await page(offset, SEARCH_PAGE);
+        rows.push(...found.filter((r) => foldText(r.text).includes(needle)));
+        if (found.length < SEARCH_PAGE) break;
+      }
+      rows = rows.slice(0, limit);
+    }
     return rows.map((r) => ({
       messageId: r.id,
       threadId: r.threadId,

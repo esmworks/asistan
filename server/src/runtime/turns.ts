@@ -21,7 +21,14 @@ import {
   type TurnOutcome,
 } from '../engine/types';
 import { translator, type T } from '../i18n';
-import { askRuleFor, askRuleMatches, decide, READ_ONLY_TOOLS, summarize } from '../services/approvals';
+import {
+  askRuleFor,
+  askRuleMatches,
+  blockRuleFor,
+  decide,
+  READ_ONLY_TOOLS,
+  summarize,
+} from '../services/approvals';
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
@@ -38,7 +45,7 @@ import type { Services } from '../services';
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
 
-const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, bot: 2 };
+const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
 
 /** What Claude Code asks before a sandboxed command reaches a host the sandbox does not list. */
 const SANDBOX_NETWORK = 'SandboxNetworkAccess';
@@ -590,6 +597,8 @@ export class TurnManager {
     const locale = await this.services.settings.locale();
     const t = translator(locale);
     const skills = await this.services.skills.forBot(bot.id);
+    const email = await this.services.email.addressOf(bot.id);
+    const apiSources = await this.services.apiSources.forBot(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
     // The person is in the room while its bots talk, as with their own messages.
@@ -616,6 +625,7 @@ export class TurnManager {
       routines: await this.services.routines.list(bot.isManager ? undefined : bot.id),
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
+      email,
     });
     // The bot's tool selection narrows what it is given; the rest never reaches the model.
     const pickTool = toolPicker(bot.toolSelection);
@@ -627,6 +637,8 @@ export class TurnManager {
         signal: controller.signal,
         t,
         skills,
+        email,
+        apiSources,
         // Claude keeps its plan with its own to-do tool; other engines get this one.
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
       }),
@@ -720,6 +732,9 @@ export class TurnManager {
       if (raw.toolName !== SANDBOX_NETWORK && !pickTool(raw.toolName)) {
         return { behavior: 'deny', message: t('turn.toolOff') };
       }
+      // A block rule refuses the call in every mode, before any other rule or card.
+      const blocked = blockRuleFor(await approvals.rules(), ask.toolName, ask.input);
+      if (blocked) return { behavior: 'deny', message: t('turn.blocked', { rule: blocked.pattern }) };
       // ask_user handles its own card.
       if (ask.toolName === 'mcp__yumakbot__ask_user') return { behavior: 'allow' };
       // A sandboxed command reaching a host: the internet switch decides, never a card. This
@@ -786,6 +801,8 @@ export class TurnManager {
         readOnlyTools: free,
       });
       if (verdict === 'allow') return { behavior: 'allow' };
+      if (verdict === 'block')
+        return { behavior: 'deny', message: t('turn.blocked', { rule: ask.toolName }) };
       if (verdict === 'deny') {
         return { behavior: 'deny', message: t('turn.readOnly') };
       }

@@ -32,17 +32,17 @@ import type { Config } from './config';
 import { appPolicy } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
+import { setContentKey } from './db/sealed';
 import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
 import { FakeEngine } from './engine/fake';
 import { PiEngine } from './engine/pi';
 import type { AccountStatus, Engine, ModelTest } from './engine/types';
 import { registerMcpServer } from './mcp-server';
-import { registerRoutes, WEBHOOK_PATH } from './routes';
+import { EMAIL_INBOUND_PATH, registerRoutes, WEBHOOK_PATH } from './routes';
 import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
 import { BackupService } from './services/backup';
-import { TranscribeService } from './services/transcribe';
 import { probeShellSandbox } from './shell-sandbox';
 import { isServerKey, translator, type T } from './i18n';
 import { serverLocale } from './services/settings';
@@ -85,6 +85,8 @@ const PUBLIC_API = new Set([
   '/api/pair',
   '/api/session',
   OAUTH_CALLBACK_PATH,
+  // A mail relay signs in with the mail secret, checked by the route itself.
+  EMAIL_INBOUND_PATH,
 ]);
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
@@ -177,6 +179,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   });
   const engineFor = (bot: Bot): Engine => opts.engine ?? fake ?? (bot.engine === 'pi' ? pi : claude);
   const services: Services = new Services(ctx, engineFor, opts.clock, () => opts.engine ?? fake ?? claude);
+  // Content sealed at rest opens with a key from the vault key; the switch is the saved setting.
+  setContentKey(services.vault.contentKey());
+  await services.contentSeal.start();
   if (egress) {
     const syncEgress = async () =>
       egress.setEnabled((await services.settings.get('browserViaComputer')) === true);
@@ -286,6 +291,12 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   );
   retryApps.unref();
 
+  // Notes are indexed for search by meaning a little after start, and now and then after that,
+  // so notes written while the embedding service was down catch up.
+  if (!opts.engine && !fake) services.embeddings.soon(15_000);
+  const indexMemory = setInterval(() => services.embeddings.soon(0), 10 * 60_000);
+  indexMemory.unref();
+
   const info = (): ServerInfo => ({
     name: 'yumakbot',
     version: '0.3.0',
@@ -345,7 +356,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   registerMcpServer(app, services);
   registerRoutes(app, {
     services,
-    transcribe: new TranscribeService(services.keys),
+    transcribe: services.transcribe,
     backup: new BackupService(
       ctx,
       opts.restart ?? (() => console.warn('backup restored; start the server again')),
@@ -622,6 +633,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       if (computerCheck) clearInterval(computerCheck);
       clearInterval(sweepTimer);
       clearInterval(retryApps);
+      clearInterval(indexMemory);
+      await services.contentSeal.settled();
+      services.embeddings.stop();
       await computer?.shutdown();
       stopComputerLink?.();
       localSocks?.close();

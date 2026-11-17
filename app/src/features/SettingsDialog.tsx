@@ -12,6 +12,7 @@ import {
 } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AudioLines,
   Brain,
   ChartColumn,
   Check,
@@ -75,7 +76,7 @@ import {
   useNotify,
   type NotifyLevel,
 } from '@/lib/notify';
-import { SPEECH_RATES, speechSupported, useSpeech } from '@/lib/speech';
+import { SPEECH_RATES, speechSupported, useServerVoice, useSpeech } from '@/lib/speech';
 import { useSendKey, type SendKey } from '@/lib/sendKey';
 import { useTheme, type ThemeChoice } from '@/lib/theme';
 import {
@@ -91,6 +92,7 @@ import { settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
 import { ChannelsTab } from './ChannelsTab';
+import { AiServicesTab } from './AiServicesTab';
 import { PendingMemory } from './PendingMemory';
 import { ImportTab } from './ImportTab';
 import { ProfileTab } from './ProfileTab';
@@ -119,6 +121,7 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'permissions', icon: <Shield /> },
   { id: 'vault', icon: <KeyRound /> },
   { id: 'memory', icon: <Brain /> },
+  { id: 'services', icon: <AudioLines /> },
   { id: 'routines', icon: <Clock /> },
   { id: 'skills', icon: <Sparkles /> },
   { id: 'groups', icon: <Folder /> },
@@ -276,6 +279,7 @@ export function SettingsDialog() {
               {current.id === 'permissions' && <Permissions />}
               {current.id === 'vault' && <VaultTab />}
               {current.id === 'memory' && <MemoryTab />}
+              {current.id === 'services' && <AiServicesTab />}
               {current.id === 'routines' && <RoutinesTab />}
               {current.id === 'skills' && <SkillsTab />}
               {current.id === 'groups' && <GroupsTab />}
@@ -434,6 +438,7 @@ function General() {
   const setSendKey = useSendKey((s) => s.set);
   const speechRate = useSpeech((s) => s.rate);
   const setSpeechRate = useSpeech((s) => s.setRate);
+  const serverVoice = useServerVoice();
   const changeLanguage = (language: Locale) => {
     setLocale(language, { unsaved: true });
     save.mutate({ language }, { onSuccess: () => useLocale.setState({ unsaved: false }) });
@@ -530,7 +535,7 @@ function General() {
             </SelectContent>
           </Select>
         </Row>
-        {speechSupported() && (
+        {(serverVoice || speechSupported()) && (
           <Row label={t('general.speechRate')} hint={t('general.speechRateHint')}>
             <Select value={String(speechRate)} onValueChange={(v) => setSpeechRate(Number(v))}>
               <SelectTrigger className="w-56 rounded-full">
@@ -1077,7 +1082,7 @@ function Permissions() {
   const apps = new Map(connections.map((c) => [c.slug, c.name]));
   const qc = useQueryClient();
   const [pattern, setPattern] = useState('');
-  const [list, setList] = useState<'ask' | 'allow'>('ask');
+  const [list, setList] = useState<'ask' | 'allow' | 'block'>('ask');
   const add = useMutation({
     mutationFn: () => api.addRule({ list, pattern }),
     onSuccess: () => {
@@ -1090,7 +1095,7 @@ function Permissions() {
     mutationFn: api.removeRule,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rules'] }),
   });
-  const section = (l: 'ask' | 'allow', title: MessageKey, hint: MessageKey) => (
+  const section = (l: 'ask' | 'allow' | 'block', title: MessageKey, hint: MessageKey) => (
     <Card title={t(title)}>
       <div className="px-4 py-3 text-xs text-muted-foreground">{t(hint)}</div>
       {rules
@@ -1123,13 +1128,14 @@ function Permissions() {
           if (pattern.trim()) add.mutate();
         }}
       >
-        <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow')}>
+        <Select value={list} onValueChange={(v) => setList(v as 'ask' | 'allow' | 'block')}>
           <SelectTrigger className="w-48 rounded-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ask">{t('rules.ask')}</SelectItem>
             <SelectItem value="allow">{t('rules.allow')}</SelectItem>
+            <SelectItem value="block">{t('rules.block')}</SelectItem>
           </SelectContent>
         </Select>
         <Input
@@ -1144,6 +1150,7 @@ function Permissions() {
       </form>
       {section('ask', 'rules.ask', 'rules.askHint')}
       {section('allow', 'rules.allow', 'rules.allowHint')}
+      {section('block', 'rules.block', 'rules.blockHint')}
     </>
   );
 }

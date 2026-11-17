@@ -2,6 +2,7 @@ import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
+import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
@@ -35,6 +36,7 @@ import {
   ProviderKeyInput,
   ProviderSignInStart,
   LOCALES,
+  pickLocale,
   RoutineCreate,
   RoutineUpdate,
   RoomCreate,
@@ -57,14 +59,27 @@ import {
   frameDocument,
   frameHeader,
   PAGE_LIBRARIES,
+  PageShareCreate,
+  ApiCredentialCreate,
+  ApiCredentialUpdate,
+  EmailClaim,
+  AI_KINDS,
+  AiEndpointSet,
+  PluginInstall,
+  ApiSourceCreate,
+  TicketCommentCreate,
+  TicketCreate,
+  TicketUpdate,
+  skillSlug,
 } from '@yumakbot/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
 import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
+import { translator } from './i18n';
 import { schema } from './db';
 import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
@@ -77,13 +92,20 @@ import { HttpError, truncate } from './util';
 import { findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
+import { stepsText } from './browser/teach';
 import { workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
 
 /** Where services start routines by their secret address; needs no access key. */
 export const WEBHOOK_PATH = '/api/hooks/routines';
+/** Where a mail relay hands over messages; it signs in with the mail secret, not the access key. */
+export const EMAIL_INBOUND_PATH = '/api/email/inbound';
+/** Where a shared page opens, outside /api so it needs no sign-in. */
+export const SHARE_PATH = '/p';
 /** Longest text a script may hand a routine run. */
 const MAX_PAYLOAD = 50_000;
+/** The largest webhook body read; GitHub sends up to 25 MB, but what a bot reads is cut far shorter. */
+const WEBHOOK_BODY_MAX = 5 * 1024 * 1024;
 /** Most bytes put in one ZIP download; it is built in memory. */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 import { eq } from 'drizzle-orm';
@@ -508,6 +530,61 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { skills, servers };
   });
+  // Content sealed at rest: the switch, and how far the stored rows are converted.
+  app.get('/api/content-encryption', async () => s.contentSeal.status());
+  app.put('/api/content-encryption', async (req) => {
+    await s.contentSeal.set(z.object({ on: z.boolean() }).parse(req.body).on);
+    return s.contentSeal.status();
+  });
+
+  // Teaching a task by showing it in the bot's browser; the steps come back as a skill draft.
+  app.post('/api/bots/:id/teach', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    if (!d.services.ctx.browser.available) throw new HttpError(409, 'error.teachNoBrowser');
+    await d.services.ctx.browser.startTeaching(bot.id);
+    return { steps: 0 };
+  });
+  app.get('/api/bots/:id/teach', async (req) => ({
+    steps: d.services.ctx.browser.teaching(IdParams.parse(req.params).id),
+  }));
+  app.post('/api/bots/:id/teach/stop', async (req) => {
+    const bot = await s.bots.get(IdParams.parse(req.params).id);
+    const { goal } = z.object({ goal: z.string().trim().max(500).default('') }).parse(req.body ?? {});
+    const steps = d.services.ctx.browser.stopTeaching(bot.id);
+    if (!steps?.length) throw new HttpError(409, 'error.teachNothing');
+    const t = await s.settings.translator();
+    const tr = t as unknown as (key: string, params?: Record<string, string | number>) => string;
+    const description = goal || t('teach.defaultGoal');
+    return {
+      name: skillSlug(goal) || 'taught-task',
+      description,
+      body: [t('teach.intro', { goal: description }), '', stepsText(steps, tr), '', t('teach.outro')].join(
+        '\n',
+      ),
+      steps: steps.length,
+    };
+  });
+
+  // The board: tickets the person and the bots work from.
+  app.get('/api/tickets', async () => s.tickets.list());
+  app.post('/api/tickets', async (req) => s.tickets.create(TicketCreate.parse(req.body)));
+  app.patch('/api/tickets/:id', async (req) =>
+    s.tickets.update(IdParams.parse(req.params).id, TicketUpdate.parse(req.body)),
+  );
+  app.delete('/api/tickets/:id', async (req) => {
+    await s.tickets.remove(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+  app.post('/api/tickets/:id/comments', async (req) =>
+    s.tickets.comment(IdParams.parse(req.params).id, TicketCommentCreate.parse(req.body).text),
+  );
+
+  // Plugins: read first, so the person sees what each would add, then installed as connections
+  // and skills.
+  app.post('/api/plugins/preview', async (req) =>
+    s.plugins.preview(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
+  );
+  app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
   app.get('/api/skills', async () => s.skills.list());
   app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body)));
   // A skill file from a link (a GitHub page of a SKILL.md, or any https address); read here, so
@@ -716,6 +793,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   // A recording from the message box's microphone button, as the browser made it.
   app.addContentTypeParser(/^audio\//, (_req, payload, done) => done(null, payload));
   app.get('/api/transcribe', async () => ({ available: await d.transcribe.available() }));
+  // A reply read aloud by the speech service the settings name; the app plays it.
+  app.get('/api/speech', async () => ({ available: await s.speech.available() }));
+  app.post('/api/speech', async (req, reply) => {
+    const { text } = z.object({ text: z.string().min(1).max(100_000) }).parse(req.body);
+    const { audio, type } = await s.speech.speak(text);
+    return reply.header('cache-control', 'no-store').type(type).send(audio);
+  });
   app.post('/api/transcribe', async (req) => {
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const chunks: Buffer[] = [];
@@ -897,6 +981,48 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Password vault: sign-ins are listed without their passwords.
+  // Model services besides the bots' own: embeddings for memory search, speech in and out.
+  const AiKindParams = z.object({ kind: z.enum(AI_KINDS) });
+  app.get('/api/ai-endpoints', async () => ({
+    ...(await s.ai.all()),
+    memoryIndex: await s.embeddings.status(),
+  }));
+  app.put('/api/ai-endpoints/:kind', async (req) =>
+    s.ai.set(AiKindParams.parse(req.params).kind, AiEndpointSet.parse(req.body)),
+  );
+  app.delete('/api/ai-endpoints/:kind', async (req) => s.ai.clear(AiKindParams.parse(req.params).kind));
+  app.post('/api/ai-endpoints/:kind/test', async (req) => {
+    const { kind } = AiKindParams.parse(req.params);
+    try {
+      if (kind === 'embeddings') return { ok: true, detail: String((await s.embeddings.test()).dimensions) };
+      if (kind === 'stt') return { ok: true, detail: await d.transcribe.test() };
+      return { ok: true, detail: String((await s.speech.test()).bytes) };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // OpenAPI documents whose operations bots may call, with a saved API key.
+  app.get('/api/api-sources', async () => s.apiSources.list());
+  app.post('/api/api-sources', async (req) => s.apiSources.create(ApiSourceCreate.parse(req.body)));
+  app.post('/api/api-sources/:id/refresh', async (req) =>
+    s.apiSources.refresh(IdParams.parse(req.params).id),
+  );
+  app.delete('/api/api-sources/:id', async (req) => {
+    await s.apiSources.remove(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
+
+  // API keys bots call services with; listed without their values.
+  app.get('/api/api-keys', async () => s.apiCredentials.list());
+  app.post('/api/api-keys', async (req) => s.apiCredentials.create(ApiCredentialCreate.parse(req.body)));
+  app.patch('/api/api-keys/:id', async (req) =>
+    s.apiCredentials.update(IdParams.parse(req.params).id, ApiCredentialUpdate.parse(req.body)),
+  );
+  app.delete('/api/api-keys/:id', async (req) => {
+    await s.apiCredentials.remove(IdParams.parse(req.params).id);
+    return { ok: true };
+  });
   app.get('/api/vault', async () => s.vault.list());
   app.post('/api/vault', async (req) => s.vault.save(VaultLoginCreate.parse(req.body)));
   app.patch('/api/vault/:id', async (req) =>
@@ -1059,6 +1185,21 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.delete('/api/routines/:id/webhook', async (req) =>
     s.routines.setWebhook(IdParams.parse(req.params).id, false),
   );
+  // A signed call is checked against the body exactly as it was sent, before it is parsed.
+  app.addHook('preParsing', async (req, _reply, payload) => {
+    if (req.method !== 'POST' || !req.url.startsWith(`${WEBHOOK_PATH}/`)) return payload;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of payload) {
+      size += (chunk as Buffer).length;
+      if (size > WEBHOOK_BODY_MAX)
+        throw new HttpError(413, 'error.payloadTooLarge', { max: WEBHOOK_BODY_MAX });
+      chunks.push(chunk as Buffer);
+    }
+    const raw = Buffer.concat(chunks);
+    (req as { rawBody?: Buffer }).rawBody = raw;
+    return Readable.from([raw]);
+  });
   // A service without the access key starts a routine through its secret address. The request's
   // body, whatever it is, goes to the bot as data.
   app.post(`${WEBHOOK_PATH}/:id/:token`, async (req, reply) => {
@@ -1083,8 +1224,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       header('x-github-delivery') ??
       header('webhook-id') ??
       header('x-webhook-id');
-    const run = await s.routines.runFromWebhook(p.id, p.token, payload.trim() || undefined, delivery);
+    // Code hosts name the kind of event in a header; GitHub also signs the body.
+    const event = header('x-github-event') ?? header('x-gitlab-event') ?? header('x-event-key');
+    const signature = header('x-hub-signature-256');
+    const run = await s.routines.runFromWebhook(p.id, p.token, payload.trim() || undefined, delivery, {
+      event,
+      signature,
+      raw: (req as { rawBody?: Buffer }).rawBody,
+    });
     if (run === false) throw new HttpError(404, 'error.notFound');
+    if (run === 'signature') throw new HttpError(401, 'error.webhookSignature');
+    if (run === 'ping') return reply.code(200).send({ ok: true, runId: null, status: 'ping' });
     if (run === 'filtered' || run === 'duplicate')
       return reply.code(202).send({ ok: true, runId: null, status: run });
     // An earlier run is still going: the sender is asked to deliver this one again in a minute.
@@ -1226,22 +1376,125 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   // A page a bot made, served to run in the app's sandboxed frame: scripts run, with an opaque
   // origin and a policy that lets it load only the usual libraries and fetch nothing.
-  app.get('/api/bots/:id/library/page', async (req, reply) => {
-    const { path, h } = z
-      .object({ path: z.string().min(1), h: z.coerce.number().int().min(200).max(1200).optional() })
-      .parse(req.query);
-    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path);
+  /**
+   * A bot's page as a document of its own: scripts run sandboxed, with an opaque origin and a
+   * policy that lets it load only the usual libraries and fetch nothing. `print` opens the print
+   * dialog once it has drawn, so the person can save it as a PDF.
+   */
+  const sendPage = async (
+    reply: FastifyReply,
+    botId: string,
+    path: string,
+    o: { framed?: boolean; height?: number; print?: boolean; title?: string },
+  ) => {
+    const { full, st } = await libraryFile(botId, path);
     if (!/\.html?$/i.test(full) || st.size > 2 * 1024 * 1024) throw new HttpError(404, 'error.notFound');
     const csp = frameCsp({ resources: PAGE_LIBRARIES, images: ['https:'] });
     // Its own scripts, styles, pictures and data go inside it: the frame loads nothing from here.
     const page = await bundlePage(full);
     return reply
-      .header('content-security-policy', frameHeader(csp))
+      .header('content-security-policy', frameHeader(csp, { print: o.print }))
       .header('x-content-type-options', 'nosniff')
       .header('referrer-policy', 'no-referrer')
       .header('cache-control', 'no-cache')
       .type('text/html; charset=utf-8')
-      .send(frameDocument(page.html, csp, { reportSize: true, fallbackHeight: h }));
+      .send(
+        frameDocument(page.html, csp, {
+          reportSize: o.framed,
+          fallbackHeight: o.height,
+          print: o.print,
+          title: o.title,
+        }),
+      );
+  };
+  // A page a bot made, served to run in the app's sandboxed frame, or opened on its own to print.
+  app.get('/api/bots/:id/library/page', async (req, reply) => {
+    const { path, h, print } = z
+      .object({
+        path: z.string().min(1),
+        h: z.coerce.number().int().min(200).max(1200).optional(),
+        print: z.enum(['1']).optional(),
+      })
+      .parse(req.query);
+    return sendPage(reply, IdParams.parse(req.params).id, path, {
+      framed: !print,
+      height: h,
+      print: !!print,
+      title: print ? basename(path) : undefined,
+    });
+  });
+
+  // Mail for the bots. A relay posts each message here with the secret; the person sets the domain
+  // in the settings and gives bots their addresses.
+  app.addContentTypeParser('message/rfc822', (_req, payload, done) => done(null, payload));
+  app.post(EMAIL_INBOUND_PATH, async (req, reply) => {
+    const { to } = z.object({ to: z.string().min(3).max(400) }).parse(req.query);
+    if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req.body) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_EMAIL_BYTES) {
+        throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_EMAIL_BYTES / 1024 / 1024) });
+      }
+      chunks.push(chunk as Buffer);
+    }
+    const auth = req.headers.authorization;
+    const token = typeof auth === 'string' ? /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() : undefined;
+    // Every message accepted gets 200, kept or not, so the relay neither retries nor bounces it.
+    const status = await s.email.receive(token, to, Buffer.concat(chunks));
+    return reply.code(200).send({ ok: true, status });
+  });
+  app.get('/api/email', () => s.email.settings());
+  app.post('/api/email/secret', () => s.email.renewSecret());
+  app.post('/api/bots/:id/email', async (req) => {
+    if (!(await s.email.domain())) throw new HttpError(409, 'error.emailNoDomain');
+    return s.email.claim(IdParams.parse(req.params).id, EmailClaim.parse(req.body).name);
+  });
+  app.delete('/api/bots/:id/email', async (req) => {
+    await s.email.release(IdParams.parse(req.params).id);
+    return s.email.settings();
+  });
+  app.get('/api/bots/:id/emails', async (req) => s.email.inbox(IdParams.parse(req.params).id, { limit: 50 }));
+
+  // Links that open a page for anyone who has them.
+  app.get('/api/page-shares', () => s.pageShares.list());
+  app.get('/api/bots/:id/library/share', async (req) => {
+    const { path } = z.object({ path: z.string().min(1) }).parse(req.query);
+    return { share: await s.pageShares.find(IdParams.parse(req.params).id, path) };
+  });
+  app.post('/api/bots/:id/library/share', async (req) => {
+    const botId = IdParams.parse(req.params).id;
+    const body = PageShareCreate.parse(req.body);
+    // Only a page in the bot's own folders, and only an HTML page, can be shared.
+    const { full } = await libraryFile(botId, body.path);
+    if (!/\.html?$/i.test(full)) throw new HttpError(400, 'error.shareNotPage');
+    return s.pageShares.share(botId, body.path, body.name);
+  });
+  app.delete('/api/page-shares/:token', async (req) => {
+    const { token } = z.object({ token: z.string().min(1).max(100) }).parse(req.params);
+    await s.pageShares.unshare(token);
+    return { ok: true };
+  });
+  // The shared page itself: outside /api, so it opens without signing in. It runs sandboxed like
+  // in the app, so it cannot reach this server with the visitor's sign-in either.
+  app.get(`${SHARE_PATH}/:token`, async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(100) }).parse(req.params);
+    const { print } = z.object({ print: z.enum(['1']).optional() }).parse(req.query);
+    reply.header('x-robots-tag', 'noindex, nofollow');
+    const share = await s.pageShares.resolve(token);
+    try {
+      if (share) return await sendPage(reply, share.botId, share.path, { print: !!print, title: share.name });
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      // The page was moved or deleted since it was shared: the link says it is gone, like an old link.
+    }
+    const t = translator(pickLocale(req.headers['accept-language'], await s.settings.locale()));
+    return reply
+      .code(404)
+      .header('content-security-policy', PLAIN_PAGE_POLICY)
+      .type('text/html; charset=utf-8')
+      .send(callbackPage(t('share.gone.title'), t('share.gone.title'), t('share.gone.body')));
   });
   app.get('/api/bots/:id/library/file', async (req, reply) => {
     const { path, inline } = z

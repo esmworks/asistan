@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { sendBrowserInput, setBrowserControl, useBrowsers, watchBrowser, type Screen } from '@/lib/browser';
+import { TeachTask } from './TeachTask';
 import {
   clampFloat,
   defaultFloat,
@@ -459,6 +460,8 @@ function ComputerView({ bot }: { bot: Bot }) {
           <Hand /> {control ? t('computer.release') : t('computer.take')}
         </Button>
       </div>
+
+      <TeachTask bot={bot} />
 
       <RemoteScreen screen={screen} state={state} control={control} send={send} />
 

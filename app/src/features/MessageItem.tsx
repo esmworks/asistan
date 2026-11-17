@@ -16,6 +16,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
+  Ban,
+  KanbanSquare,
   Check,
   Circle,
   CircleCheck,
@@ -61,7 +63,7 @@ import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
 import { BotPage } from './BotPage';
 import { McpAppView } from './McpAppView';
-import { speechSupported, toggleSpeech, useSpeech } from '@/lib/speech';
+import { speechSupported, toggleSpeech, useServerVoice, useSpeech } from '@/lib/speech';
 import { useUi } from '@/lib/store';
 import { AppLogo } from './Connections';
 import { useTypewriter } from '@/lib/typewriter';
@@ -104,6 +106,12 @@ export function MessageItem({
       return (
         <div className="group/own flex flex-col items-end gap-1" data-message-id={m.id}>
           {quote && <QuoteLine quote={quote} threadId={m.threadId} />}
+          {m.author.startsWith('ticket:') && (
+            <span className="flex items-center gap-1 px-2 text-xs text-muted-foreground">
+              <KanbanSquare className="size-3" />
+              {t('message.ticketNamed', { number: String(m.props.ticketNumber ?? '') })}
+            </span>
+          )}
           {m.author.startsWith('routine:') && (
             <span className="flex items-center gap-1 px-2 text-xs text-muted-foreground">
               <Clock className="size-3" />
@@ -450,6 +458,7 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
   const reaction = typeof m.props.userReaction === 'string' ? m.props.userReaction : null;
   const locale = useLocale((s) => s.locale);
   const speaking = useSpeech((s) => s.speaking === m.id);
+  const serverVoice = useServerVoice();
   const remove = useDeleteMessage(m);
   const raw = useRawView((s) => s.ids.has(m.id));
   const toggleRaw = useRawView((s) => s.toggle);
@@ -546,10 +555,10 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
             <FileCode />
           </ActionButton>
         )}
-        {m.text && speechSupported() && (
+        {m.text && (serverVoice || speechSupported()) && (
           <ActionButton
             label={speaking ? t('message.stopReading') : t('message.readAloud')}
-            onClick={() => toggleSpeech(m.id, m.text, locale)}
+            onClick={() => toggleSpeech(m.id, m.text, locale, serverVoice)}
           >
             {speaking ? <Square /> : <Volume2 />}
           </ActionButton>
@@ -1230,6 +1239,16 @@ function ApprovalCard({
           onClick={() => decide.mutate({ decision: 'deny' })}
         >
           <X /> {t('approval.deny')}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-full text-muted-foreground"
+          disabled={decide.isPending}
+          title={t('approval.neverHint')}
+          onClick={() => decide.mutate({ decision: 'deny', remember: true })}
+        >
+          <Ban /> {t('approval.never')}
         </Button>
       </div>
     </div>

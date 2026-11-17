@@ -6,6 +6,11 @@ import { BASH_MAX_TIMEOUT_MS, stallLimits, type StallLimits } from './runtime/wa
 export interface Config {
   host: string;
   port: number;
+  /**
+   * Model services set in the server's environment, used while the settings name none: memory
+   * search (`AI_EMBEDDINGS_*`), speech to text (`STT_*`) and text to speech (`TTS_*`).
+   */
+  aiEndpoints: Partial<Record<'embeddings' | 'stt' | 'tts', EnvAiEndpoint>>;
   /** Root for workspaces, the access key file and the embedded database. */
   dataDir: string;
   /** `postgres://...` for a real server; unset means embedded PGlite in `dataDir/db` (or memory in tests). */
@@ -186,6 +191,37 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     telegramApi: (env.YUMAKBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
     telegramPollSeconds: 50,
     channelsEnabled: true,
+    aiEndpoints: aiEndpointsFrom(env),
     ...overrides,
   };
+}
+
+export interface EnvAiEndpoint {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  voice: string;
+}
+
+/** The model services the environment names; one without both an address and a model is left out. */
+export function aiEndpointsFrom(env: NodeJS.ProcessEnv): Config['aiEndpoints'] {
+  const pick = (prefix: string): EnvAiEndpoint | undefined => {
+    const baseUrl = env[`${prefix}_BASE_URL`]?.trim();
+    const model = env[`${prefix}_MODEL`]?.trim();
+    if (!baseUrl || !model) return undefined;
+    return {
+      baseUrl: baseUrl.replace(/\/+$/, ''),
+      model,
+      apiKey: env[`${prefix}_API_KEY`]?.trim() ?? '',
+      voice: env[`${prefix}_VOICE`]?.trim() ?? '',
+    };
+  };
+  const out: Config['aiEndpoints'] = {};
+  const embeddings = pick('AI_EMBEDDINGS');
+  const stt = pick('STT');
+  const tts = pick('TTS');
+  if (embeddings) out.embeddings = embeddings;
+  if (stt) out.stt = stt;
+  if (tts) out.tts = tts;
+  return out;
 }

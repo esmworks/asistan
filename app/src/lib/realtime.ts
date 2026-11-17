@@ -133,6 +133,9 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('telegram');
       inv('whatsapp');
       break;
+    case 'tickets':
+      inv('tickets');
+      break;
     case 'info':
       inv('info');
       inv('providers');

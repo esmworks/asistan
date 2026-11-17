@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sealedJson, sealedProps, sealedText } from './sealed';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const created = () => ts('created_at').notNull().defaultNow();
@@ -66,9 +67,10 @@ export const threads = pgTable(
     botId: text('bot_id')
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
-    title: text('title').notNull().default(''),
+    title: sealedText('title').notNull().default(''),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
-    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room'] })
+    // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
+    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
       .notNull()
       .default('user'),
     /** For bot-to-bot threads: the other bot. */
@@ -108,8 +110,8 @@ export const messages = pgTable(
       .references(() => threads.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['user', 'assistant', 'system', 'marker', 'approval', 'error'] }).notNull(),
     author: text('author').notNull(),
-    text: text('text').notNull().default(''),
-    props: jsonb('props').$type<Record<string, unknown>>().notNull().default({}),
+    text: sealedText('text').notNull().default(''),
+    props: sealedProps('props').notNull().default({}),
     clientId: text('client_id'),
     turnId: text('turn_id'),
     createdAt: created(),
@@ -178,11 +180,12 @@ export const turns = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
-    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot'] }).notNull(),
+    // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
+    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
     status: text('status', {
       enum: ['queued', 'running', 'done', 'error', 'interrupted'],
     }).notNull(),
-    prompt: text('prompt').notNull(),
+    prompt: sealedText('prompt').notNull(),
     jobId: text('job_id'),
     routineRunId: text('routine_run_id'),
     error: text('error'),
@@ -215,8 +218,8 @@ export const approvals = pgTable(
     turnId: text('turn_id'),
     kind: text('kind', { enum: ['tool', 'question', 'login'] }).notNull(),
     toolName: text('tool_name').notNull(),
-    summary: text('summary').notNull().default(''),
-    input: jsonb('input').$type<Record<string, unknown>>().notNull().default({}),
+    summary: sealedText('summary').notNull().default(''),
+    input: sealedJson('input').$type<Record<string, unknown>>().notNull().default({}),
     options: jsonb('options').$type<string[]>().notNull().default([]),
     status: text('status', { enum: ['pending', 'allowed', 'denied', 'expired'] }).notNull(),
     answer: text('answer'),
@@ -229,7 +232,7 @@ export const approvals = pgTable(
 
 export const permissionRules = pgTable('permission_rules', {
   id: text('id').primaryKey(),
-  list: text('list', { enum: ['ask', 'allow'] }).notNull(),
+  list: text('list', { enum: ['ask', 'allow', 'block'] }).notNull(),
   pattern: text('pattern').notNull(),
   note: text('note').notNull().default(''),
   createdAt: created(),
@@ -241,7 +244,7 @@ export const memories = pgTable(
     id: text('id').primaryKey(),
     scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
+    content: sealedText('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
     source: text('source').notNull().default('user'),
@@ -251,6 +254,10 @@ export const memories = pgTable(
      */
     lastUsedAt: ts('last_used_at'),
     useCount: integer('use_count').notNull().default(0),
+    /** The note's meaning as numbers, for search by meaning; null until it is indexed. */
+    embedding: real('embedding').array(),
+    /** Which model and words the embedding is of; a new model or a changed note indexes it again. */
+    embeddingKey: text('embedding_key'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -265,8 +272,8 @@ export const auditLog = pgTable(
     action: text('action').notNull(),
     targetType: text('target_type').notNull(),
     targetId: text('target_id').notNull(),
-    before: jsonb('before'),
-    after: jsonb('after'),
+    before: sealedJson('before'),
+    after: sealedJson('after'),
     createdAt: created(),
   },
   (t) => [index('audit_target_idx').on(t.targetType, t.targetId)],
@@ -318,6 +325,10 @@ export const routines = pgTable('routines', {
   webhookPost: boolean('webhook_post').notNull().default(false),
   /** The model its runs use, on the bot's own engine; empty for the bot's model. */
   model: text('model').notNull().default(''),
+  /** Also runs when mail arrives at the bot's address. */
+  emailTrigger: boolean('email_trigger').notNull().default(false),
+  /** Conditions a mail must meet to start it (as the webhook filter, on from, to, subject, text). */
+  emailFilter: text('email_filter').notNull().default(''),
 });
 
 export const routineRuns = pgTable(
@@ -371,8 +382,8 @@ export const jobs = pgTable(
     toThreadId: text('to_thread_id').notNull(),
     /** Server-side approval record carried with the request, if any. */
     approvalId: text('approval_id'),
-    request: text('request').notNull(),
-    reply: text('reply'),
+    request: sealedText('request').notNull(),
+    reply: sealedText('reply'),
     status: text('status', { enum: ['pending', 'done', 'error', 'stopped'] }).notNull(),
     createdAt: created(),
     finishedAt: ts('finished_at'),
@@ -617,9 +628,9 @@ export const memoryChanges = pgTable(
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
     site: text('site'),
     /** The note's words after the change (for a forget, the words that would go). */
-    content: text('content').notNull(),
+    content: sealedText('content').notNull(),
     /** The note's words before an update. */
-    before: text('before'),
+    before: sealedText('before'),
     /** The bot that asked for it. */
     proposedBy: text('proposed_by')
       .notNull()
@@ -630,4 +641,162 @@ export const memoryChanges = pgTable(
     createdAt: created(),
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],
+);
+
+/**
+ * Pages a bot made that anyone with the link may open without signing in. The token is the whole
+ * secret of the link; deleting the row turns the link off. The page is read fresh on every visit,
+ * so the link shows the file as the bot last wrote it.
+ */
+export const pageShares = pgTable(
+  'page_shares',
+  {
+    token: text('token').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** The page's path in the bot's library, as its card in the conversation holds it. */
+    path: text('path').notNull(),
+    name: text('name').notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('page_shares_page_uq').on(t.botId, t.path)],
+);
+
+/**
+ * API keys the person saved for bots to call a service with. The value is sealed with the vault
+ * key; bots know a key only by its name, and the server adds it to requests for its origin alone.
+ */
+export const apiCredentials = pgTable(
+  'api_credentials',
+  {
+    id: text('id').primaryKey(),
+    /** The reference name bots use, e.g. `github` or `weather_api`. */
+    name: text('name').notNull(),
+    /** The only origin the key is sent to, e.g. `https://api.example.com`. */
+    origin: text('origin').notNull(),
+    /** How the key goes with a request (`ApiAuth`). */
+    auth: jsonb('auth').$type<Record<string, unknown>>().notNull(),
+    label: text('label').notNull().default(''),
+    secret: text('secret').notNull(),
+    /** The bots that may use it; null lets every bot. */
+    botIds: jsonb('bot_ids').$type<string[]>(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    lastUsedAt: ts('last_used_at'),
+  },
+  (t) => [uniqueIndex('api_credentials_name_uq').on(t.name)],
+);
+
+/**
+ * Addresses bots receive mail at, under the domain set in the settings. A name is never given to
+ * another bot, even once its bot is gone: mail meant for the old one must not reach a new one.
+ */
+export const emailAddresses = pgTable('email_addresses', {
+  /** The part before the @, lowercase. */
+  name: text('name').primaryKey(),
+  /** Null once its bot gave it up or was deleted; the name stays taken. */
+  botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+  createdAt: created(),
+});
+
+/** Mail that arrived at a bot's address: its inbox, which the bot reads when it needs to. */
+export const emails = pgTable(
+  'emails',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** The address it came to. */
+    to: text('to').notNull(),
+    from: text('from').notNull(),
+    fromName: text('from_name').notNull().default(''),
+    subject: sealedText('subject').notNull().default(''),
+    /** The mail's text: its plain part, or its HTML part reduced to text. */
+    text: sealedText('text').notNull().default(''),
+    /** The sender's Message-ID; the same mail delivered twice is kept once. */
+    messageId: text('message_id'),
+    /** Attached files, saved in the bot's own folder (`{ name, size, path }`). */
+    attachments: jsonb('attachments')
+      .$type<{ name: string; size: number; path: string }[]>()
+      .notNull()
+      .default([]),
+    receivedAt: created(),
+    readAt: ts('read_at'),
+  },
+  (t) => [
+    index('emails_bot_idx').on(t.botId, t.receivedAt),
+    uniqueIndex('emails_message_uq')
+      .on(t.botId, t.messageId)
+      .where(sql`${t.messageId} is not null`),
+  ],
+);
+
+/**
+ * OpenAPI documents bots may call operations of. The operations are read from the document when
+ * it is added; calls go through the API key named here, to the document's server only.
+ */
+export const apiSources = pgTable(
+  'api_sources',
+  {
+    id: text('id').primaryKey(),
+    /** The reference name bots use, e.g. `weather`. */
+    name: text('name').notNull(),
+    title: text('title').notNull().default(''),
+    specUrl: text('spec_url'),
+    /** Where the operations are called: the document's server, or the person's own address. */
+    baseUrl: text('base_url').notNull(),
+    /** The saved API key's name; null for an API that needs none. */
+    credential: text('credential'),
+    operations: jsonb('operations').$type<Record<string, unknown>[]>().notNull().default([]),
+    botIds: jsonb('bot_ids').$type<string[]>(),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('api_sources_name_uq').on(t.name)],
+);
+
+/**
+ * The board: tickets the person and the bots both work from. A ticket assigned to a bot starts it
+ * on the work in a conversation of its own; what the bot reports comes back as a comment.
+ */
+export const tickets = pgTable(
+  'tickets',
+  {
+    id: text('id').primaryKey(),
+    /** Shown as #12; grows by one with each ticket. */
+    number: integer('number').notNull(),
+    title: sealedText('title').notNull(),
+    description: sealedText('description').notNull().default(''),
+    status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })
+      .notNull()
+      .default('todo'),
+    priority: text('priority', { enum: ['low', 'normal', 'high', 'urgent'] })
+      .notNull()
+      .default('normal'),
+    assigneeBotId: text('assignee_bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    /** `user`, or `bot:<id>` for a ticket a bot made. */
+    createdBy: text('created_by').notNull(),
+    /** The conversation the assignee works on it in; made on its first assignment. */
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('tickets_number_uq').on(t.number), index('tickets_status_idx').on(t.status)],
+);
+
+export const ticketComments = pgTable(
+  'ticket_comments',
+  {
+    id: text('id').primaryKey(),
+    ticketId: text('ticket_id')
+      .notNull()
+      .references(() => tickets.id, { onDelete: 'cascade' }),
+    /** `user` or `bot:<id>`. */
+    author: text('author').notNull(),
+    text: sealedText('text').notNull(),
+    createdAt: created(),
+  },
+  (t) => [index('ticket_comments_ticket_idx').on(t.ticketId, t.createdAt)],
 );

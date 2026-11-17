@@ -14,6 +14,7 @@ import { createGunzip, createGzip } from 'node:zlib';
 import { getTableColumns, getTableName, inArray, is, sql } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
+import { contentSealed, setSealing } from '../db/sealed';
 import { schema, schemaVersion } from '../db';
 import { HttpError, newId } from '../util';
 
@@ -372,7 +373,17 @@ export class BackupService {
       await reading;
       if (!manifest) throw new HttpError(400, 'error.backupDamaged');
       await this.ensureIdle();
-      await this.replaceRows(tables);
+      // The rows go in plain: this process still holds the replaced data folder's key, which the
+      // restored vault.key takes over from at the restart. The restart then seals them with that
+      // key if the restored settings say so.
+      const sealing = contentSealed();
+      setSealing(false);
+      try {
+        await this.replaceRows(tables);
+      } catch (err) {
+        setSealing(sealing);
+        throw err;
+      }
       await this.moveInto(staged);
       setTimeout(() => this.restart(), 300).unref();
       return { tables: tables.size, files };

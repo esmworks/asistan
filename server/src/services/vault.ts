@@ -1,5 +1,6 @@
 import { getDomain } from 'tldts';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { hkdfSync, randomBytes } from 'node:crypto';
+import { openWith, sealWith } from '../crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { VaultLogin, VaultLoginCreate, VaultLoginUpdate } from '@yumakbot/shared';
@@ -81,22 +82,22 @@ export class VaultService {
     return key;
   }
 
+  /**
+   * The key content is sealed with in the database (see db/sealed.ts): derived from the vault key,
+   * so it lives in the data folder and never in the database.
+   */
+  contentKey(): Buffer {
+    return Buffer.from(hkdfSync('sha256', this.cipherKey(), Buffer.alloc(0), 'yumakbot content at rest', 32));
+  }
+
   /** Encrypts a secret with the vault key; also used for the Claude token and API key. */
   seal(plain: string): string {
-    const iv = randomBytes(12);
-    const c = createCipheriv('aes-256-gcm', this.cipherKey(), iv);
-    const data = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
-    return ['v1', iv.toString('base64'), c.getAuthTag().toString('base64'), data.toString('base64')].join(
-      ':',
-    );
+    return `v1:${sealWith(this.cipherKey(), plain)}`;
   }
 
   open(sealed: string): string {
-    const [v, iv, tag, data] = sealed.split(':');
-    if (v !== 'v1' || !iv || !tag || data === undefined) throw new Error('Unknown vault format');
-    const d = createDecipheriv('aes-256-gcm', this.cipherKey(), Buffer.from(iv, 'base64'));
-    d.setAuthTag(Buffer.from(tag, 'base64'));
-    return Buffer.concat([d.update(Buffer.from(data, 'base64')), d.final()]).toString('utf8');
+    if (!sealed.startsWith('v1:')) throw new Error('Unknown vault format');
+    return openWith(this.cipherKey(), sealed.slice(3));
   }
 
   async list(): Promise<VaultLogin[]> {

@@ -11,6 +11,7 @@ import {
   type RoutineUpdate,
   searchCatalog,
   skillSlug,
+  type ApiSource,
   type Bot,
   type Memory,
   type MemoryChange,
@@ -31,6 +32,9 @@ import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
+import { apiTools } from './api';
+import { emailTools } from './email';
+import { ticketTools } from './tickets';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -106,6 +110,17 @@ export type ToolName =
   | 'send_file'
   | 'show_page'
   | 'image_create'
+  | 'api_keys_list'
+  | 'credential_request'
+  | 'api_request'
+  | 'api_operations'
+  | 'api_call'
+  | 'tickets_list'
+  | 'ticket_read'
+  | 'ticket_create'
+  | 'ticket_update'
+  | 'email_inbox'
+  | 'email_read'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -218,6 +233,10 @@ export class ToolFactory {
     signal: AbortSignal;
     t: T;
     skills?: Skill[];
+    /** The bot's mail address; with one, it gets its inbox. */
+    email?: string | null;
+    /** OpenAPI documents the bot may call operations of. */
+    apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
     plan?: (items: PlanItem[]) => Promise<void>;
   }): AppTool[] {
@@ -499,6 +518,9 @@ export class ToolFactory {
           check_args: z.record(z.string(), z.unknown()).optional(),
           /** Also give it a secret address another service can call to start it. */
           webhook: z.boolean().default(false),
+          /** Also run when mail arrives at the bot's address, when the mail meets `email_filter`. */
+          on_email: z.boolean().default(false),
+          email_filter: z.string().max(2000).optional(),
           /** The model its runs use, on the bot's own engine; left out for the bot's own model. */
           model: z.string().trim().max(200).optional(),
         },
@@ -525,6 +547,8 @@ export class ToolFactory {
             webhookFilter: '',
             webhookPost: false,
             model: a.model ?? '',
+            emailTrigger: a.on_email,
+            emailFilter: a.email_filter ?? '',
           });
           const made = t('tool.routineCreated', {
             name: r.name,
@@ -565,6 +589,8 @@ export class ToolFactory {
           check_args: z.record(z.string(), z.unknown()).optional(),
           /** An empty string goes back to the bot's own model. */
           model: z.string().trim().max(200).optional(),
+          on_email: z.boolean().optional(),
+          email_filter: z.string().max(2000).optional(),
         },
         async (a) => {
           const found = await pickRoutine(a.routine, a.bot);
@@ -593,6 +619,8 @@ export class ToolFactory {
             ...(a.watch_url !== undefined && { watchUrl: a.watch_url || null }),
             ...(check !== undefined && { check }),
             ...(a.model !== undefined && { model: a.model }),
+            ...(a.on_email !== undefined && { emailTrigger: a.on_email }),
+            ...(a.email_filter !== undefined && { emailFilter: a.email_filter }),
           };
           if (!Object.keys(patch).length) return t('tool.routineNoChange');
           const rename = patch.name?.toLowerCase();
@@ -981,7 +1009,12 @@ export class ToolFactory {
     // Listed without a saved key too: the bot then tells the person which key to add.
     if (bot.internet) {
       tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
+      tools.push(
+        ...apiTools({ def, services: s, bot, thread, turn, signal, unattended, t, sources: opts.apiSources }),
+      );
     }
+    if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    tools.push(...ticketTools({ def, services: s, bot, turn, t }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
       const askLogin: AskLogin = async (site, host) => {

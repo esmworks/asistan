@@ -63,6 +63,8 @@ const Form = z.object({
   onStartup: z.boolean(),
   webhookFilter: z.string().max(2000),
   webhookPost: z.boolean(),
+  emailTrigger: z.boolean(),
+  emailFilter: z.string().max(2000),
   model: z.string().max(200),
   watchUrl: z
     .string()
@@ -133,6 +135,8 @@ function fromRoutine(r?: Routine): Form {
     watchUrl: r?.watchUrl ?? '',
     webhookFilter: r?.webhookFilter ?? '',
     webhookPost: r?.webhookPost ?? false,
+    emailTrigger: r?.emailTrigger ?? false,
+    emailFilter: r?.emailFilter ?? '',
     model: r?.model ?? '',
   };
 }
@@ -181,6 +185,8 @@ export function RoutineDialog({
         watchUrl: f.watchUrl.trim() || null,
         webhookFilter: f.webhookFilter.trim(),
         webhookPost: f.webhookPost,
+        emailTrigger: f.emailTrigger,
+        emailFilter: f.emailFilter.trim(),
         model: f.model.trim(),
       };
       return routine
@@ -424,6 +430,28 @@ export function RoutineDialog({
               />
               <p className="mt-1 text-xs text-muted-foreground">{t('routine.watchUrlHint')}</p>
             </Field>
+            <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{t('routine.emailTrigger')}</span>
+                <span className="block text-xs text-muted-foreground">{t('routine.emailTriggerHint')}</span>
+              </span>
+              <Switch
+                checked={values.emailTrigger}
+                onCheckedChange={(v) => form.setValue('emailTrigger', v, { shouldDirty: true })}
+              />
+            </label>
+            {values.emailTrigger && (
+              <Field label={t('routine.emailFilter')}>
+                <Textarea
+                  {...form.register('emailFilter')}
+                  rows={2}
+                  placeholder={t('routine.emailFilterPlaceholder')}
+                  className="rounded-xl font-mono text-xs"
+                  spellCheck={false}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.emailFilterHint')}</p>
+              </Field>
+            )}
             {routine && <Check routine={routine} />}
             {routine && <Webhook routine={routine} />}
             {routine?.webhookToken && (
@@ -729,6 +757,29 @@ function Webhook({ routine: given }: { routine: Routine }) {
         </div>
       )}
       {localOnly && <p>{t('routine.webhookLocalOnly')}</p>}
+      {url && routine.webhookToken && (
+        <details className="rounded-xl bg-background px-2 py-1">
+          <summary className="cursor-pointer select-none">{t('routine.github')}</summary>
+          <ol className="mt-1 list-decimal space-y-1 pl-5">
+            <li>{t('routine.githubStep1')}</li>
+            <li>{t('routine.githubStep2')}</li>
+            <li>
+              {t('routine.githubStep3')}{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={async () => {
+                  if (await copyText(routine.webhookToken!)) toast.success(t('routine.githubSecretCopied'));
+                  else toast.error(t('message.copyFailed'));
+                }}
+              >
+                {t('routine.githubCopySecret')}
+              </button>
+            </li>
+            <li>{t('routine.githubStep4')}</li>
+          </ol>
+        </details>
+      )}
     </div>
   );
 }

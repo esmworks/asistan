@@ -1,5 +1,15 @@
 import type { Bot, BotSummary, Group } from '@yumakbot/shared';
-import { Blocks, CalendarCheck, Plus, Search, Settings2, ShieldCheck, X, BellOff } from 'lucide-react';
+import {
+  Blocks,
+  CalendarCheck,
+  KanbanSquare,
+  Plus,
+  Search,
+  Settings2,
+  ShieldCheck,
+  X,
+  BellOff,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
@@ -343,6 +353,13 @@ function SidebarPanel({
           onClick={() => useUi.getState().setTodayOpen(true)}
         >
           <CalendarCheck />
+        </RoundButton>
+        <RoundButton
+          label={t('board.title')}
+          variant="ghost"
+          onClick={() => useUi.getState().setBoardOpen(true)}
+        >
+          <KanbanSquare />
         </RoundButton>
         <RoundButton label={t('apps.open')} variant="ghost" onClick={() => openApps({ botId: null })}>
           <Blocks />

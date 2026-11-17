@@ -1,10 +1,19 @@
-import { join, relative, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { extname, join, relative, resolve } from 'node:path';
 import { quoteExcerpt, titleFrom, type Message, type MessageFile, type ReplyQuote } from '@yumakbot/shared';
 import type { Ctx } from '../context';
 import { attachedFiles, moveIntoThread, promptWithFiles, promptWithReply, stagingDir } from '../uploads';
 import { HttpError, isStopRequest, truncate } from '../util';
 import { workspacePaths } from '../workspace';
+import { MAX_AUDIO_BYTES } from './transcribe';
 import type { Services } from './index';
+
+/** A voice note as the chat apps name it (`voice-<id>.ogg`). */
+const VOICE_NOTE = /^voice-.*\.(ogg|oga|opus|m4a|mp3|wav|webm)$/i;
+const audioType = (name: string) =>
+  ({ '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.webm': 'audio/webm' })[
+    extname(name).toLowerCase()
+  ] ?? 'audio/ogg';
 
 /** How much of the answered message goes into the bot's prompt. */
 const MAX_QUOTED = 2000;
@@ -32,6 +41,24 @@ export class Inbox {
   /** The conversation folder of a bot's thread. */
   threadDir(bot: { id: string; groupId: string | null }, threadId: string) {
     return workspacePaths(this.ctx.config.dataDir, bot.id, threadId, bot.groupId).threadDir;
+  }
+
+  /** What was said in the voice notes among `files`; a note that cannot be written out is left out. */
+  private async heard(dir: string, files: { name: string; size: number }[]): Promise<string[]> {
+    const notes = files.filter((f) => VOICE_NOTE.test(f.name) && f.size <= MAX_AUDIO_BYTES);
+    if (!notes.length || !(await this.services.transcribe.available())) return [];
+    const locale = await this.services.settings.locale();
+    const out: string[] = [];
+    for (const f of notes) {
+      try {
+        const audio = await readFile(join(dir, f.name));
+        const words = await this.services.transcribe.transcribe(audio, audioType(f.name), locale);
+        if (words) out.push(words);
+      } catch (err) {
+        console.warn(`Voice note ${f.name} could not be written out: ${String(err)}`);
+      }
+    }
+    return out;
   }
 
   /** The prompt a person's message becomes: the quoted message first, the attached files after. */
@@ -76,11 +103,18 @@ export class Inbox {
       path: relative(root, join(dir, f.name)),
     }));
     const extra = input.props ?? {};
+    // A voice note from a chat app is written out when a speech service is at hand, so the bot
+    // reads what was said; the recording stays attached.
+    let text = input.text;
+    if (extra.via && files.length) {
+      const heard = await this.heard(dir, files);
+      if (heard.length) text = [text, ...heard.map((h) => `🎤 ${h}`)].filter(Boolean).join('\n\n');
+    }
     const plain = {
       threadId,
       role: 'user' as const,
       author: 'user',
-      text: input.text,
+      text,
       clientId: input.clientId,
     };
     // Sent while the bot is busy: it waits its turn, and until then the person may change it.
@@ -119,8 +153,8 @@ export class Inbox {
     });
     if (!created) return { message, created };
     // A conversation is named after the words its first message opens with.
-    if (!thread.title) await s.threads.rename(threadId, titleFrom(input.text) || files[0]!.name.slice(0, 60));
-    const prompt = await this.prompt(input.text, dir, files, answered);
+    if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60));
+    const prompt = await this.prompt(text, dir, files, answered);
     const turn = await s.turns.enqueue({ threadId, botId: bot.id, source: 'user', prompt });
     await s.threads.updateMessage(message.id, { turnId: turn.id });
     return { message: { ...message, turnId: turn.id }, created };

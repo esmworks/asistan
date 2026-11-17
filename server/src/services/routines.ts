@@ -1,5 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { RoutineUpdate } from '@yumakbot/shared';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { BotEmail, RoutineUpdate } from '@yumakbot/shared';
 import {
   nextRun,
   zonedTime,
@@ -22,6 +22,7 @@ import type { TurnRow } from '../runtime/turns';
 import { cutAt, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
 import { fetchPublicText } from './skill-link';
+import { mailText } from './email';
 import type { Services } from '.';
 
 /** The largest watched page read, and how much of its text goes to the bot. */
@@ -437,7 +438,12 @@ export class RoutineService {
     payload?: string,
     /** The sender's id for this delivery, when it gives one; a delivery sent again runs once. */
     deliveryId?: string,
-  ): Promise<RoutineRun | null | false | 'filtered' | 'duplicate' | 'busy'> {
+    /**
+     * What a code host says about the call: the kind of event (`push`, `pull_request`), and its
+     * signature of the raw body (GitHub's `X-Hub-Signature-256`, keyed with the routine's secret).
+     */
+    via: { event?: string; signature?: string; raw?: Buffer } = {},
+  ): Promise<RoutineRun | null | false | 'filtered' | 'duplicate' | 'busy' | 'ping' | 'signature'> {
     const [row] = await this.ctx.db
       .select({
         token: schema.routines.webhookToken,
@@ -449,8 +455,22 @@ export class RoutineService {
       .where(eq(schema.routines.id, id))
       .limit(1);
     if (!row?.token || !row.enabled || !sameSecret(row.token, token)) return false;
-    // A call the filter turns away starts nothing and costs nothing.
-    if (row.filter.trim() && !passesFilter(row.filter, payload ?? '')) return 'filtered';
+    // A signed call must be signed with the routine's secret, so a changed body is turned away.
+    if (
+      via.signature !== undefined &&
+      !validSignature(via.signature, row.token, via.raw ?? Buffer.from(payload ?? ''))
+    )
+      return 'signature';
+    // GitHub's first call only checks that the address answers.
+    if (via.event === 'ping') return 'ping';
+    // A call the filter turns away starts nothing and costs nothing. The kind of event comes in a
+    // header, so the filter reads it as `event`.
+    if (row.filter.trim() && !passesFilter(row.filter, withEvent(payload ?? '', via.event)))
+      return 'filtered';
+    if (via.event && payload) {
+      const t = await this.services.settings.translator();
+      payload = `${t('routine.webhookEvent', { event: via.event })}\n\n${payload}`;
+    }
     const occurrence = deliveryId?.trim() ? `hook:${deliveryId.trim().slice(0, 200)}` : null;
     if (occurrence) {
       const [seen] = await this.ctx.db
@@ -482,6 +502,45 @@ export class RoutineService {
       // A call that carries nothing is only a "run now", with nothing to judge.
       payload?.trim() ? { trigger: 'webhook', input: payload } : undefined,
     );
+  }
+
+  /**
+   * Starts the bot's routines that run on mail, for a mail that just came to its address and
+   * meets each one's filter. The mail goes to the bot as data after the instruction, like a
+   * webhook call's body; a mail delivered again does not run a routine twice.
+   */
+  async runFromEmail(botId: string, mail: BotEmail): Promise<(RoutineRun | null)[]> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.routines)
+      .where(
+        and(
+          eq(schema.routines.botId, botId),
+          eq(schema.routines.emailTrigger, true),
+          eq(schema.routines.enabled, true),
+        ),
+      );
+    if (!rows.length) return [];
+    const t = await this.services.settings.translator();
+    const fields = JSON.stringify({ from: mail.from, to: mail.to, subject: mail.subject, text: mail.text });
+    const payload = mailText(mail, {
+      from: t('email.from'),
+      to: t('email.to'),
+      subject: t('email.subject'),
+      date: t('email.date'),
+      files: t('email.files'),
+    });
+    const runs: (RoutineRun | null)[] = [];
+    for (const r of rows) {
+      if (r.emailFilter.trim() && !passesFilter(r.emailFilter, fields)) continue;
+      runs.push(
+        await this.fire(toRoutine(r), `mail:${mail.id}`, payload, false, {
+          trigger: 'email',
+          input: payload,
+        }),
+      );
+    }
+    return runs;
   }
 
   /**
@@ -967,6 +1026,27 @@ const MISSED_GRACE_MS = 10 * 60_000;
 const LIMIT_RETRY_DELAY_MS = 2 * 60_000;
 
 /** Compares two secrets in a time that does not tell how much of a guess was right. */
+/** Whether `signature` (`sha256=<hex>`) is the HMAC of `raw` with `secret`. */
+export function validSignature(signature: string, secret: string, raw: Buffer): boolean {
+  const m = /^sha256=([0-9a-f]{64})$/i.exec(signature.trim());
+  if (!m) return false;
+  const want = createHmac('sha256', secret).update(raw).digest();
+  const got = Buffer.from(m[1]!, 'hex');
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+/** A JSON body with the event's kind added as `event`, for the filter; other bodies as they are. */
+function withEvent(body: string, event?: string): string {
+  if (!event) return body;
+  try {
+    const json = JSON.parse(body) as unknown;
+    if (json && typeof json === 'object' && !Array.isArray(json)) return JSON.stringify({ event, ...json });
+  } catch {
+    // Not JSON: only an empty filter passes it.
+  }
+  return JSON.stringify({ event });
+}
+
 function sameSecret(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);

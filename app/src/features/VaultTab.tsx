@@ -9,6 +9,10 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useBots, useVault } from '@/lib/queries';
+import { ApiKeys } from './ApiKeys';
+import { ApiSources } from './ApiSources';
+import { ContentSeal } from './ContentSeal';
+import { SharedPages } from './SharedPages';
 
 /** The password vault: saved sign-ins, listed without their passwords. */
 export function VaultTab() {
@@ -56,6 +60,10 @@ export function VaultTab() {
         )}
       </div>
       <p className="px-1 text-xs text-muted-foreground">{t('vault.note')}</p>
+      <ApiKeys />
+      <ApiSources />
+      <SharedPages />
+      <ContentSeal />
     </div>
   );
 }
@@ -117,7 +125,6 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
   const [password, setPassword] = useState('');
   const [totp, setTotp] = useState('');
   const [clearTotp, setClearTotp] = useState(false);
-  const { data: bots = [] } = useBots();
   // Null: every bot may use it.
   const [botIds, setBotIds] = useState<string[] | null>(login?.botIds ?? null);
   const save = useMutation({
@@ -180,34 +187,7 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
           {t('vault.totpRemove')}
         </label>
       )}
-      <div className="space-y-1 rounded-xl border px-3 py-2">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={botIds === null}
-            onChange={(e) => setBotIds(e.target.checked ? null : [])}
-          />
-          {t('vault.allBots')}
-        </label>
-        {botIds !== null && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
-            {bots.map((b) => (
-              <label key={b.id} className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={botIds.includes(b.id)}
-                  onChange={(e) =>
-                    setBotIds((ids) =>
-                      e.target.checked ? [...(ids ?? []), b.id] : (ids ?? []).filter((id) => id !== b.id),
-                    )
-                  }
-                />
-                {b.name}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+      <BotAccess botIds={botIds} onChange={setBotIds} />
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
           {t('common.cancel')}
@@ -217,5 +197,45 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Which bots may use a saved secret: every bot, or the ones ticked. */
+export function BotAccess({
+  botIds,
+  onChange,
+}: {
+  botIds: string[] | null;
+  onChange(ids: string[] | null): void;
+}) {
+  const t = useT();
+  const { data: bots = [] } = useBots();
+  return (
+    <div className="space-y-1 rounded-xl border px-3 py-2">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={botIds === null}
+          onChange={(e) => onChange(e.target.checked ? null : [])}
+        />
+        {t('vault.allBots')}
+      </label>
+      {botIds !== null && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+          {bots.map((b) => (
+            <label key={b.id} className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={botIds.includes(b.id)}
+                onChange={(e) =>
+                  onChange(e.target.checked ? [...botIds, b.id] : botIds.filter((id) => id !== b.id))
+                }
+              />
+              {b.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

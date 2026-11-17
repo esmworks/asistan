@@ -35,7 +35,10 @@ export type NotFoundKind =
   | 'approval'
   | 'job'
   | 'vault'
-  | 'skill';
+  | 'skill'
+  | 'apiKey'
+  | 'apiSource'
+  | 'ticket';
 export const notFound = (what: NotFoundKind) => new HttpError(404, `error.notFound.${what}`);
 
 /** An error's text in the given language: translated when it is ours, as thrown otherwise. */
@@ -134,3 +137,9 @@ export function isStopRequest(text: string): boolean {
 
 /** ı and İ, which a search reads as i: the database folds I to i, never to the dotless ı. */
 export const DOTTED_AND_DOTLESS_I = String.fromCharCode(0x131, 0x130);
+
+/**
+ * Text as a search compares it in the server: spaces and line breaks closed up, case folded, and
+ * ı and İ read as i, as the database search reads them.
+ */
+export const foldText = (v: string) => v.replace(/\s+/g, ' ').replace(/[ıİ]/g, 'i').toLowerCase();

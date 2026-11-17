@@ -29,6 +29,7 @@ import {
   RotateCcw,
   Trash2,
   Webhook,
+  KanbanSquare,
   X,
   SmilePlus,
 } from 'lucide-react';
@@ -364,6 +365,8 @@ function Header({
   const routineThreads = listed.filter(
     (th) => th.kind === 'routine' && (waiting.has(th.id) || !!th.pinnedAt),
   );
+  // A ticket's work is followed on the board; its conversation is listed only while it needs the person.
+  const ticketThreads = listed.filter((th) => th.kind === 'ticket' && (waiting.has(th.id) || !!th.pinnedAt));
   const apiThreads = listed.filter((th) => th.kind === 'api');
   const refresh = () => qc.invalidateQueries({ queryKey: ['threads', bot.id] });
   const fail = (e: Error) => toast.error(e.message);
@@ -568,6 +571,14 @@ function Header({
               waiting={waiting}
               onPick={selectThread}
               icon={<Clock />}
+            />
+            <ThreadGroup
+              label={t('chat.ticketThreads')}
+              items={ticketThreads}
+              name={name}
+              waiting={waiting}
+              onPick={selectThread}
+              icon={<KanbanSquare />}
             />
             <ThreadGroup
               label={t('chat.apiThreads')}

@@ -55,6 +55,23 @@ import type {
   UsageRange,
   UsageReport,
   ProviderSignIn,
+  PageShare,
+  ApiCredential,
+  ApiCredentialCreate,
+  ApiCredentialUpdate,
+  EmailSettings,
+  AiEndpoint,
+  AiEndpoints,
+  AiEndpointSet,
+  AiKind,
+  PluginInstall,
+  PluginInstallResult,
+  PluginPlan,
+  ApiSource,
+  ApiSourceCreate,
+  Ticket,
+  TicketCreate,
+  TicketUpdate,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -157,6 +174,8 @@ export interface Settings {
   routineGate?: RoutineGateMode;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
+  /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
+  emailDomain?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -373,7 +392,8 @@ export const api = {
   updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
   removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
   rules: () => http.get<PermissionRule[]>('/api/rules'),
-  addRule: (r: { list: 'ask' | 'allow'; pattern: string }) => http.post<PermissionRule>('/api/rules', r),
+  addRule: (r: { list: 'ask' | 'allow' | 'block'; pattern: string }) =>
+    http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),
@@ -405,6 +425,80 @@ export const api = {
   /** A page the bot made, served to run in the app's sandboxed frame. */
   pageUrl: (botId: string, path: string, height?: number) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}${height ? `&h=${height}` : ''}`,
+  teachStatus: (botId: string) => http.get<{ steps: number | null }>(`/api/bots/${botId}/teach`),
+  startTeaching: (botId: string) => http.post<{ steps: number }>(`/api/bots/${botId}/teach`),
+  stopTeaching: (botId: string, goal: string) =>
+    http.post<{ name: string; description: string; body: string; steps: number }>(
+      `/api/bots/${botId}/teach/stop`,
+      {
+        goal,
+      },
+    ),
+  contentEncryption: () =>
+    http.get<{ on: boolean; pending: number; unreadable: number; converting: boolean }>(
+      '/api/content-encryption',
+    ),
+  setContentEncryption: (on: boolean) =>
+    http.put<{ on: boolean; pending: number; unreadable: number; converting: boolean }>(
+      '/api/content-encryption',
+      {
+        on,
+      },
+    ),
+  tickets: () => http.get<Ticket[]>('/api/tickets'),
+  createTicket: (input: TicketCreate) => http.post<Ticket>('/api/tickets', input),
+  updateTicket: (id: string, patch: TicketUpdate) => http.patch<Ticket>(`/api/tickets/${id}`, patch),
+  removeTicket: (id: string) => http.del<{ ok: true }>(`/api/tickets/${id}`),
+  commentTicket: (id: string, text: string) => http.post<Ticket>(`/api/tickets/${id}/comments`, { text }),
+  apiSources: () => http.get<ApiSource[]>('/api/api-sources'),
+  addApiSource: (input: ApiSourceCreate) => http.post<ApiSource>('/api/api-sources', input),
+  refreshApiSource: (id: string) => http.post<ApiSource>(`/api/api-sources/${id}/refresh`),
+  removeApiSource: (id: string) => http.del<{ ok: true }>(`/api/api-sources/${id}`),
+  previewPlugin: (url: string) => http.post<PluginPlan>('/api/plugins/preview', { url }),
+  installPlugin: (input: PluginInstall) => http.post<PluginInstallResult>('/api/plugins/install', input),
+  aiEndpoints: () =>
+    http.get<AiEndpoints & { memoryIndex: { indexed: number; total: number } }>('/api/ai-endpoints'),
+  setAiEndpoint: (kind: AiKind, input: AiEndpointSet) =>
+    http.put<AiEndpoint>(`/api/ai-endpoints/${kind}`, input),
+  clearAiEndpoint: (kind: AiKind) => http.del<AiEndpoint>(`/api/ai-endpoints/${kind}`),
+  testAiEndpoint: (kind: AiKind) =>
+    http.post<{ ok: boolean; detail: string }>(`/api/ai-endpoints/${kind}/test`),
+  /** Whether replies can be read aloud by the server's speech service. */
+  speechStatus: () => http.get<{ available: boolean }>('/api/speech'),
+  /** A reply read aloud, as audio; null when the server could not. */
+  speech: async (text: string): Promise<Blob> => {
+    const res = await fetch('/api/speech', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'accept-language': useLocale.getState().locale },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(data?.error ?? String(res.status));
+    }
+    return res.blob();
+  },
+  emailSettings: () => http.get<EmailSettings>('/api/email'),
+  renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
+  claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),
+  releaseEmail: (botId: string) => http.del<EmailSettings>(`/api/bots/${botId}/email`),
+  apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),
+  addApiKey: (input: ApiCredentialCreate) => http.post<ApiCredential>('/api/api-keys', input),
+  updateApiKey: (id: string, input: ApiCredentialUpdate) =>
+    http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
+  removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
+  /** The page opened on its own, with the print dialog, to save it as a PDF. */
+  pagePrintUrl: (botId: string, path: string) =>
+    `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}&print=1`,
+  pageShare: (botId: string, path: string) =>
+    http.get<{ share: PageShare | null }>(
+      `/api/bots/${botId}/library/share?path=${encodeURIComponent(path)}`,
+    ),
+  sharePage: (botId: string, path: string, name: string) =>
+    http.post<PageShare>(`/api/bots/${botId}/library/share`, { path, name }),
+  pageShares: () => http.get<PageShare[]>('/api/page-shares'),
+  unsharePage: (token: string) => http.del<{ ok: true }>(`/api/page-shares/${encodeURIComponent(token)}`),
   /** Several files of a bot's folders as one ZIP download. */
   zipUrl: (botId: string, paths: string[], name?: string) =>
     `/api/bots/${botId}/library/zip?${paths.map((p) => `path=${encodeURIComponent(p)}`).join('&')}${name ? `&name=${encodeURIComponent(name)}` : ''}`,
