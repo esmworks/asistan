@@ -415,6 +415,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     info,
     checkClaude: () => checkClaude(),
     claude: claudeAuth,
+    dropSockets: (userId) => io.in(personRoom(userId)).disconnectSockets(true),
     testModel,
   });
 

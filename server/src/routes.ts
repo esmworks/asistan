@@ -9,6 +9,8 @@ import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
   AccessRequest,
   AccountSet,
+  PersonCreate,
+  PersonUpdate,
   connectionToolParts,
   describeAction,
   ApprovalDecision,
@@ -147,6 +149,8 @@ interface Deps {
   };
   /** One short request to a provider's model with its stored key. */
   testModel(provider: string, model: string): Promise<ModelTest>;
+  /** Closes a person's live connections, so they come back with what they may do now, or not at all. */
+  dropSockets(userId: string): void;
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
@@ -243,6 +247,85 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       ...(user && { user: { id: user.id, username: user.username, role: user.role } }),
     };
   });
+  // People: everyone sees who is here, to share bots with them; those who look after the server
+  // add, change and remove them. The owner stays as they are, and only the owner handles admins.
+  app.get('/api/people', async (req) => {
+    const all = await d.auth.users.list();
+    return managesServer(me(req).role) ? all : all.filter((p) => !p.disabled);
+  });
+  /** A person the one asking may change: not themselves, not the owner, an admin only by the owner. */
+  const changeable = async (req: FastifyRequest, id: string) => {
+    const who = me(req);
+    if (id === who.userId) throw new HttpError(403, 'error.notYourself');
+    const person = await d.auth.users.person(id);
+    if (!person || person.role === 'owner') throw notFound('person');
+    if (person.role === 'admin' && who.role !== 'owner') throw new HttpError(403, 'error.ownerManagesAdmins');
+    return person;
+  };
+  const checkPassword = (password: string | undefined) => {
+    if (password !== undefined && password.length < MIN_PASSWORD) {
+      throw new HttpError(400, 'error.passwordShort', { min: String(MIN_PASSWORD) });
+    }
+  };
+  /** After a change to a person: what was remembered about them is forgotten. */
+  const peopleChanged = async (userId: string, signOut: boolean) => {
+    await d.auth.forgetPerson(userId, signOut);
+    s.access.forget();
+    d.dropSockets(userId);
+    s.ctx.bus.refresh({ scope: 'people' });
+  };
+  app.post('/api/people', async (req) => {
+    const body = PersonCreate.parse(req.body);
+    checkPassword(body.password);
+    if (body.role === 'admin' && me(req).role !== 'owner')
+      throw new HttpError(403, 'error.ownerManagesAdmins');
+    const made = await d.auth.users.create(body);
+    s.access.forget();
+    s.ctx.bus.refresh({ scope: 'people' });
+    return made;
+  });
+  app.patch('/api/people/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await changeable(req, id);
+    const patch = PersonUpdate.parse(req.body);
+    checkPassword(patch.password);
+    if (patch.role === 'admin' && me(req).role !== 'owner')
+      throw new HttpError(403, 'error.ownerManagesAdmins');
+    const changed = await d.auth.users.change(id, patch);
+    // A new password or a disabled person signs out everywhere; a new role counts at once.
+    await peopleChanged(id, patch.password !== undefined || patch.disabled === true);
+    return changed;
+  });
+  /**
+   * Removes a person. Their conversations go with them, files included; the bots they made pass to
+   * the owner; their notes, apps, sign-ins and chat apps go. What they wrote elsewhere stays,
+   * without their name.
+   */
+  app.delete('/api/people/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await changeable(req, id);
+    // Signed out first, so nothing new of theirs starts while they are removed.
+    await d.auth.users.change(id, { disabled: true });
+    await peopleChanged(id, true);
+    const threads = await s.ctx.db
+      .select({ id: schema.threads.id, botId: schema.threads.botId })
+      .from(schema.threads)
+      .where(eq(schema.threads.userId, id));
+    for (const th of threads) await deleteThread(th.id, th.botId);
+    const channels = await s.ctx.db
+      .select({ kind: schema.channels.kind, botId: schema.channels.botId })
+      .from(schema.channels)
+      .where(eq(schema.channels.userId, id));
+    for (const c of channels) {
+      if (c.kind === 'telegram' && c.botId) await s.telegram.disconnect(c.botId);
+      if (c.kind === 'whatsapp') await s.whatsapp.disconnect();
+    }
+    await s.bots.leftBy(id, OWNER_ID);
+    await d.auth.users.remove(id);
+    await peopleChanged(id, true);
+    return { ok: true };
+  });
+
   app.get('/api/sessions', async (req) => d.auth.listSessions(req.cookies[SESSION_COOKIE], me(req).userId));
   app.delete('/api/sessions/:id', async (req) => {
     const id = z.object({ id: z.string().min(1).max(64) }).parse(req.params).id;

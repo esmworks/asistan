@@ -314,6 +314,17 @@ export class Auth {
     return gone.length;
   }
 
+  /**
+   * Forgets what was remembered about a person's sessions, so a new role counts from their next
+   * request; with `signOut`, ends every session and pairing code of theirs too.
+   */
+  async forgetPerson(userId: string, signOut: boolean) {
+    for (const [id, seen] of this.cache) if (seen.userId === userId) this.cache.delete(id);
+    if (!signOut) return;
+    for (const [h, p] of this.pairing) if (p.userId === userId) this.pairing.delete(h);
+    await this.db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));
+  }
+
   async endSession(token: string | undefined) {
     if (!token) return;
     const id = hashSession(token);

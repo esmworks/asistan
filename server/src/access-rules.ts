@@ -45,6 +45,11 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/account': 'signedIn',
   'POST /api/logout': 'signedIn',
   'GET /api/info': 'signedIn',
+  // People: everyone sees who is here; those who look after the server change them.
+  'GET /api/people': 'signedIn',
+  'POST /api/people': 'admin',
+  'PATCH /api/people/:id': 'admin',
+  'DELETE /api/people/:id': 'admin',
   'POST /api/info/claude-check': 'admin',
   'PUT /api/push/device': 'signedIn',
   'DELETE /api/push/device/:token': 'signedIn',

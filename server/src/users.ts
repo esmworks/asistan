@@ -1,9 +1,9 @@
-import type { Role } from '@yumakbot/shared';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import type { PersonInfo, Role } from '@yumakbot/shared';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from './account';
 import { schema, type Db } from './db';
 import type { PasswordHash } from './db/schema';
-import { HttpError } from './util';
+import { HttpError, newId } from './util';
 
 /** The owner's fixed id: whoever installed this server, and whom the access key signs in as. */
 export const OWNER_ID = 'owner';
@@ -28,6 +28,15 @@ const userOf = (r: Row): User => ({
   username: r.username,
   role: r.role,
   disabledAt: r.disabledAt,
+});
+
+const personOf = (r: Row): PersonInfo => ({
+  id: r.id,
+  username: r.username,
+  displayName: r.displayName,
+  role: r.role,
+  disabled: !!r.disabledAt,
+  createdAt: r.createdAt.toISOString(),
 });
 
 /**
@@ -93,6 +102,68 @@ export class Users {
     const owner = await this.get(OWNER_ID);
     if (!owner) throw new Error('users: the owner is missing');
     return owner;
+  }
+
+  /** Everyone on the server, the owner first, then by when they came. */
+  async list(): Promise<PersonInfo[]> {
+    const rows = await this.db.select().from(schema.users).orderBy(asc(schema.users.createdAt));
+    return rows.map(personOf).sort((a, b) => Number(b.role === 'owner') - Number(a.role === 'owner'));
+  }
+
+  async person(id: string): Promise<PersonInfo | null> {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+    return row ? personOf(row) : null;
+  }
+
+  /** A new person who signs in with their own username and password. */
+  async create(input: {
+    username: string;
+    password: string;
+    displayName?: string;
+    role: 'admin' | 'member';
+  }): Promise<PersonInfo> {
+    const key = usernameKey(input.username);
+    const [taken] = await this.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.usernameKey, key))
+      .limit(1);
+    if (taken) throw new HttpError(409, 'error.usernameTaken');
+    const [row] = await this.db
+      .insert(schema.users)
+      .values({
+        id: newId(),
+        username: input.username.trim(),
+        usernameKey: key,
+        displayName: input.displayName?.trim() || null,
+        role: input.role,
+        password: await hashPassword(input.password),
+      })
+      .returning();
+    return personOf(row!);
+  }
+
+  /** Changes a person other than the owner: name, role, whether they may sign in, password. */
+  async change(
+    id: string,
+    patch: { displayName?: string | null; role?: 'admin' | 'member'; disabled?: boolean; password?: string },
+  ): Promise<PersonInfo> {
+    const [row] = await this.db
+      .update(schema.users)
+      .set({
+        ...(patch.displayName !== undefined && { displayName: patch.displayName?.trim() || null }),
+        ...(patch.role && { role: patch.role }),
+        ...(patch.disabled !== undefined && { disabledAt: patch.disabled ? new Date() : null }),
+        ...(patch.password !== undefined && { password: await hashPassword(patch.password) }),
+      })
+      .where(and(eq(schema.users.id, id), ne(schema.users.role, 'owner')))
+      .returning();
+    if (!row) throw new HttpError(404, 'error.notFound.person');
+    return personOf(row);
+  }
+
+  async remove(id: string) {
+    await this.db.delete(schema.users).where(and(eq(schema.users.id, id), ne(schema.users.role, 'owner')));
   }
 
   /** Whether anyone can sign in with a username and password yet, rather than only the access key. */

@@ -19,7 +19,8 @@ export type RefreshScope =
   | { scope: 'tickets' }
   | { scope: 'tables'; botId: string }
   | { scope: 'actions'; botId: string }
-  | { scope: 'info' };
+  | { scope: 'info' }
+  | { scope: 'people' };
 
 export interface HelloEvent {
   bootId: string;

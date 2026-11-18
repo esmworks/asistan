@@ -621,6 +621,35 @@ export type Role = z.infer<typeof Role>;
 export const SessionUser = z.object({ id: z.string(), username: z.string().nullable(), role: Role });
 export type SessionUser = z.infer<typeof SessionUser>;
 
+/** A person on the server, as the people list shows them. */
+export const PersonInfo = z.object({
+  id: z.string(),
+  username: z.string().nullable(),
+  displayName: z.string().nullable(),
+  role: Role,
+  /** No longer able to sign in; their conversations and notes are kept. */
+  disabled: z.boolean(),
+  createdAt: z.string(),
+});
+export type PersonInfo = z.infer<typeof PersonInfo>;
+/** The roles a person can be given; there is only ever one owner. */
+export const GivenRole = z.enum(['admin', 'member']);
+export const PersonCreate = z.object({
+  username: z.string().trim().min(1).max(100),
+  password: z.string().min(1).max(200),
+  displayName: z.string().trim().max(100).optional(),
+  role: GivenRole.default('member'),
+});
+export type PersonCreate = z.input<typeof PersonCreate>;
+export const PersonUpdate = z.object({
+  displayName: z.string().trim().max(100).nullable().optional(),
+  role: GivenRole.optional(),
+  disabled: z.boolean().optional(),
+  /** A new password, for someone who forgot theirs; their devices are signed out. */
+  password: z.string().min(1).max(200).optional(),
+});
+export type PersonUpdate = z.input<typeof PersonUpdate>;
+
 export const AccessRequest = z.object({ key: z.string().min(1).max(500) });
 export const LoginRequest = z.object({
   username: z.string().trim().min(1).max(100),

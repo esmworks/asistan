@@ -168,6 +168,28 @@ export class BotService {
     return toBot(row!);
   }
 
+  /** A person leaves: the bots they made pass to `heir`, and no bot is shared with them any more. */
+  async leftBy(userId: string, heir: string) {
+    const rows = await this.ctx.db
+      .select({ id: schema.bots.id, access: schema.bots.access, ownerUserId: schema.bots.ownerUserId })
+      .from(schema.bots);
+    for (const r of rows) {
+      const shared = userId in r.access.people;
+      if (!shared && r.ownerUserId !== userId) continue;
+      const people = Object.fromEntries(
+        Object.entries(r.access.people).filter(([p]) => p !== userId && p !== heir),
+      );
+      await this.ctx.db
+        .update(schema.bots)
+        .set({
+          access: { everyone: r.access.everyone, people },
+          ...(r.ownerUserId === userId && { ownerUserId: heir }),
+        })
+        .where(eq(schema.bots.id, r.id));
+    }
+    this.ctx.bus.refresh({ scope: 'bots' });
+  }
+
   async move(id: string, to: BotMove): Promise<Bot> {
     const bot = await this.get(id);
     if (!to.pinned && to.groupId) await this.getGroup(to.groupId);

@@ -564,12 +564,12 @@ export const users = pgTable(
     role: text('role', { enum: ['owner', 'admin', 'member'] }).notNull(),
     password: jsonb('password').$type<PasswordHash>(),
     createdAt: created(),
-    /** Set when the person may no longer sign in; their sessions stop working. */
     /**
      * What the person told about themselves, which the bots read when they work for them (name,
      * how to address them, about me), and whether they went through the first-run questions.
      */
     profile: jsonb('profile').$type<Record<string, unknown>>().notNull().default({}),
+    /** Set when the person may no longer sign in; their sessions stop working. */
     disabledAt: ts('disabled_at'),
   },
   (t) => [
