@@ -861,19 +861,6 @@ export const tr = {
     'Son {total} kartın {allowed} tanesine izin verdin. Açıkça güvenli olanları bir inceleyici geçirsin, gerisini sana sorsun mu?',
   'suggest.reviewOn': 'Otomatik incelemeyi aç',
   'suggest.notNow': 'Şimdi değil',
-  'steps.title': 'İzin verilen adımlar',
-  'steps.none':
-    'Henüz bir şey yok. Bir şeyi değiştiren her adım, izin aldığında neyin izin verdiğiyle burada görünür.',
-  'steps.showAll': 'Tümünü göster',
-  'steps.allTitle': '{name} için izin verilen adımlar',
-  'steps.allHint':
-    'Bir şeyi değiştiren adımlar, izin aldıkları anda: en yenisi üstte, 90 gün saklanır. Adımın sonra başarıyla yapılıp yapılmadığı kendi sohbetinde görünür. Okumalar listelenmez.',
-  'steps.downloadCsv': 'CSV indir',
-  'steps.byCard': 'Sen izin verdin',
-  'steps.byRule': 'Kural: {rule}',
-  'steps.byLevel': 'Onay düzeyiyle',
-  'steps.byReview': 'İnceleyici izin verdi',
-  'steps.outside': 'dışarıdan gelen metinle başladı',
   'bot.instructionsUrl': 'Talimat belgesi',
   'bot.instructionsUrlHint':
     'Talimatları başka yerde düzenlenen, herkese açık bir belgede tut: bir GitHub dosyası ya da herkesin metin olarak okuyabildiği, yönlendirme yapmayan bir adres. Oturum açmayı isteyen sayfalar (Notion, Google Docs, gizli depolar) okunamaz. Günde bir kez okunur; bir değişiklik ancak sen kabul edince bota ulaşır.',
