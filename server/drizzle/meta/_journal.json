@@ -477,6 +477,20 @@
       "when": 1795024872765,
       "tag": "0067_channel_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795032001702,
+      "tag": "0068_memory_places_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795033128523,
+      "tag": "0069_memory_reviews",
+      "breakpoints": true
     }
   ]
 }
