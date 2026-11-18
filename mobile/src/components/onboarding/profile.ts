@@ -1,4 +1,4 @@
-import { PROFILE_HELP, type AvatarShape, type ProfileHelp } from '@yumakbot/shared';
+import { BRAND_COLOR, PROFILE_HELP, type AvatarShape, type ProfileHelp } from '@yumakbot/shared';
 import type { T } from '@/i18n';
 
 /** Roles offered for "What do you do?"; the chosen labels become the occupation text. */
@@ -19,9 +19,9 @@ export type Role = (typeof ROLES)[number];
 export type StarterId = 'general' | ProfileHelp;
 
 const LOOK: Record<StarterId, { shape: AvatarShape; color: string }> = {
-  general: { shape: 'blob', color: '#4f6bed' },
+  general: { shape: 'blob', color: BRAND_COLOR },
   research: { shape: 'diamond', color: '#0891b2' },
-  writing: { shape: 'pebble', color: '#22a55a' },
+  writing: { shape: 'pebble', color: '#4f6bed' },
   documents: { shape: 'square', color: '#0d9488' },
   web: { shape: 'cloud', color: '#7c5cff' },
   planning: { shape: 'capsule', color: '#f97316' },

@@ -12,6 +12,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   DesktopAction,
   DesktopExec,
+  DesktopGit,
   DesktopId,
   DesktopStart,
   type ComputerErrorCode,
@@ -29,6 +30,7 @@ import {
   socksReplyFor,
   SOCKS_REPLY,
 } from '@yumakbot/shared/egress';
+import { createGitRelay } from './git-relay';
 import { allocateDisplay, bearerToken, CdpDecoder, checkToken, encodeCdp } from './lib';
 import { bwrapArgs, checkSessionPath, collectBinds, type SandboxOptions } from './sandbox';
 
@@ -40,6 +42,8 @@ if (TOKEN.length < 32) {
 const PORT = Number(process.env.YUMAKBOT_COMPUTER_PORT ?? 4320);
 /** The desktops' browsers go through a proxy on this loopback port (they share its network). */
 const SOCKS_PORT = Number(process.env.YUMAKBOT_COMPUTER_SOCKS_PORT ?? 4321);
+/** Git in the desktops reaches GitHub through a relay on this loopback port (see git-relay.ts). */
+const GIT_PORT = Number(process.env.YUMAKBOT_COMPUTER_GIT_PORT ?? 4322);
 const STATE = process.env.YUMAKBOT_COMPUTER_STATE ?? '/run/computer';
 const MAX_DESKTOPS = Number(process.env.YUMAKBOT_COMPUTER_MAX ?? 3);
 const WORKSPACES_ROOT = (process.env.YUMAKBOT_WORKSPACES_ROOT ?? '/data/workspaces').replace(/\/+$/, '');
@@ -62,6 +66,13 @@ interface Session {
   bridges: Set<() => void>;
   cdpOpen: boolean;
   exited: Promise<void>;
+  /**
+   * The session's part of every git relay address. The desktops share this container's network, so
+   * the relay tells them apart by it.
+   */
+  relayKey: string;
+  /** The GitHub key the server gave for this bot; held here only, never in the session. */
+  gitToken: string | null;
 }
 
 const sessions = new Map<string, Session>();
@@ -162,7 +173,17 @@ async function startSession(id: string, start: DesktopStart): Promise<DesktopSta
   const ctlDir = join(STATE, id);
   let release!: () => void;
   const exited = new Promise<void>((r) => (release = r));
-  const placeholder = { id, display, ctlDir, exited, bridges: new Set(), cdpOpen: false } as Session;
+  const relayKey = randomBytes(32).toString('hex');
+  const placeholder = {
+    id,
+    display,
+    ctlDir,
+    exited,
+    bridges: new Set(),
+    cdpOpen: false,
+    relayKey,
+    gitToken: null,
+  } as Session;
   sessions.set(id, placeholder);
   try {
     rmSync(ctlDir, { recursive: true, force: true });
@@ -182,6 +203,7 @@ async function startSession(id: string, start: DesktopStart): Promise<DesktopSta
       helperScript: HELPER_SCRIPT,
       sessionScript: SESSION_SCRIPT,
       ...(socksReady && { proxy: `socks5://127.0.0.1:${SOCKS_PORT}` }),
+      ...(gitReady && { gitRelay: `http://127.0.0.1:${GIT_PORT}/${relayKey}/` }),
     };
     collectBinds(opts.start); // throws early on nonsense input before spawning
     // The sandbox gets only what bwrapArgs sets: the controller's environment (and token) stays here.
@@ -323,6 +345,20 @@ function parse<T>(
   return r.data;
 }
 
+/**
+ * A command's output names GitHub as git saw it, at the session's relay address; the bot gets
+ * GitHub's own address back, and the relay key stays out of its notes and messages.
+ */
+function withoutRelay(s: Session, json: unknown): unknown {
+  if (!json || typeof json !== 'object' || typeof (json as { output?: unknown }).output !== 'string')
+    return json;
+  const o = json as { output: string };
+  return {
+    ...o,
+    output: o.output.replaceAll(`http://127.0.0.1:${GIT_PORT}/${s.relayKey}/`, 'https://github.com/'),
+  };
+}
+
 /** Sends the helper's answer on, or turns a helper failure into a 502. */
 async function forward(
   res: ServerResponse,
@@ -333,7 +369,7 @@ async function forward(
 ): Promise<void> {
   try {
     const r = await helperCall(s, 'POST', path, body, timeoutMs);
-    send(res, r.status, r.json);
+    send(res, r.status, withoutRelay(s, r.json));
   } catch (e) {
     throw new HttpError(502, 'failed', e instanceof Error ? e.message : 'helper unreachable');
   }
@@ -374,6 +410,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     case 'jobs-status': {
       const q = parse(DesktopJobQuery, body);
       return forward(res, running(id.data), '/jobs/status', q, q.waitMs + 15_000);
+    }
+    case 'git': {
+      // Kept for the session that is starting or running now; the next start is given it again.
+      const s = sessions.get(id.data);
+      if (!s) throw new HttpError(409, 'notRunning', 'desktop is not running');
+      s.gitToken = parse(DesktopGit, body).token;
+      return send(res, 200, {});
     }
     case 'screenshot':
       return forward(res, running(id.data), '/screenshot', {});
@@ -551,6 +594,23 @@ socks.listen(SOCKS_PORT, '127.0.0.1', () => {
   log(`browser proxy on 127.0.0.1:${SOCKS_PORT}`);
 });
 
+// ---- git ---------------------------------------------------------------------------------------
+
+let gitReady = false;
+const gitRelay = createServer(
+  createGitRelay({
+    tokenFor: (key) => {
+      for (const s of sessions.values()) if (s.relayKey === key) return s.gitToken;
+      return undefined;
+    },
+  }),
+);
+gitRelay.on('error', (e) => log(`git relay: ${e.message}`));
+gitRelay.listen(GIT_PORT, '127.0.0.1', () => {
+  gitReady = true;
+  log(`git relay on 127.0.0.1:${GIT_PORT}`);
+});
+
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (!checkToken(url.searchParams.get('token'), TOKEN)) {
@@ -575,6 +635,7 @@ function shutdown(): void {
   for (const s of sessions.values()) killSession(s);
   server.close();
   socks.close();
+  gitRelay.close();
   setTimeout(() => process.exit(0), 1500).unref();
 }
 process.on('SIGTERM', shutdown);

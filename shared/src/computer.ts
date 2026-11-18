@@ -43,6 +43,20 @@ export const DesktopStatus = z.object({
 });
 export type DesktopStatus = z.infer<typeof DesktopStatus>;
 
+/**
+ * The GitHub key git on the desktop is to use, or none. The computer service keeps it outside the
+ * session and adds it to git's requests to GitHub itself, so nothing in the session shows it.
+ */
+export const DesktopGit = z.object({
+  token: z
+    .string()
+    .min(1)
+    .max(1000)
+    .regex(/^[\x21-\x7e]+$/)
+    .nullable(),
+});
+export type DesktopGit = z.infer<typeof DesktopGit>;
+
 export const DesktopExec = z.object({
   command: z.string().min(1).max(100_000),
   cwd: z.string().startsWith('/').max(500),

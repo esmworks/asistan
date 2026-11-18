@@ -1,7 +1,7 @@
 import {
   currentPlanWindows,
   planHeadline,
-  planLeftPercent,
+  planUsedPercent,
   planTone,
   type PlanWindow,
 } from '@yumakbot/shared';
@@ -16,10 +16,11 @@ import { useMinuteClock } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 
 /**
- * The share left as an arc on a faint track, starting at twelve o'clock. The arc is measured in
- * hundredths of the circle, so the percentage is its length as it is.
+ * The share used as an arc on a faint track, starting at twelve o'clock, filling up as the plan is
+ * used, as Claude's own apps draw it. The arc is measured in hundredths of the circle, so the
+ * percentage is its length as it is.
  */
-function LeftRing({ left }: { left: number }) {
+function UsedRing({ used }: { used: number }) {
   return (
     <svg aria-hidden viewBox="0 0 20 20" className="size-[18px] shrink-0 -rotate-90">
       <circle
@@ -31,7 +32,7 @@ function LeftRing({ left }: { left: number }) {
         strokeWidth="2.5"
         strokeOpacity="0.25"
       />
-      {left > 0 && (
+      {used > 0 && (
         <circle
           cx="10"
           cy="10"
@@ -41,7 +42,7 @@ function LeftRing({ left }: { left: number }) {
           strokeWidth="2.5"
           strokeLinecap="round"
           pathLength={100}
-          strokeDasharray={`${left} 100`}
+          strokeDasharray={`${used} 100`}
         />
       )}
     </svg>
@@ -49,7 +50,7 @@ function LeftRing({ left }: { left: number }) {
 }
 
 /**
- * How much of the Claude plan is left, beside a Claude bot's chat: a ring and the share left of
+ * How much of the Claude plan is used, beside a Claude bot's chat: a ring and the share used of
  * the fuller of the five-hour and weekly windows, and every window with its reset on a click.
  * Nothing shows until a Claude turn has heard the plan's usage (an API key never does).
  */
@@ -61,9 +62,9 @@ export function PlanMeter() {
   if (!plan) return null;
   const head = planHeadline(plan.windows, now);
   if (!head) return null;
-  const left = planLeftPercent(head);
+  const used = planUsedPercent(head);
   const tone = planTone(head, now);
-  const label = t('planMeter.label', { percent: left, window: planLabel(head, t) });
+  const label = t('planMeter.label', { percent: used, window: planLabel(head, t) });
   const windows = currentPlanWindows(plan.windows, now).filter((w) => w.used !== null);
   return (
     <Popover>
@@ -76,9 +77,9 @@ export function PlanMeter() {
               aria-label={label}
               data-plan-meter={tone}
             >
-              <LeftRing left={left} />
+              <UsedRing used={used} />
               <span className="text-sm font-medium @max-2xl/chathead:hidden">
-                {t('planMeter.left', { percent: left })}
+                {t('planMeter.used', { percent: used })}
               </span>
             </Button>
           </PopoverTrigger>
@@ -103,7 +104,7 @@ export function PlanMeter() {
 function PlanRow({ w, now }: { w: PlanWindow; now: number }) {
   const t = useT();
   const f = useFormat();
-  const left = planLeftPercent(w);
+  const used = planUsedPercent(w);
   const tone = planTone(w, now);
   return (
     <div className="space-y-1.5" data-plan-row={w.kind}>
@@ -111,7 +112,7 @@ function PlanRow({ w, now }: { w: PlanWindow; now: number }) {
         <span className="text-muted-foreground">{planLabel(w, t)}</span>
         <span className="tabular-nums">
           <span className={cn('font-medium', tone !== 'fine' && PLAN_TONE_TEXT[tone])}>
-            {left === 0 ? t('planMeter.none') : t('planMeter.left', { percent: left })}
+            {used === 100 ? t('planMeter.none') : t('planMeter.used', { percent: used })}
           </span>
           {w.resetsAt && (
             <span className="text-muted-foreground">
@@ -122,7 +123,11 @@ function PlanRow({ w, now }: { w: PlanWindow; now: number }) {
         </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden>
-        <div className={cn('h-full rounded-full', PLAN_TONE_BAR[tone])} style={{ width: `${100 - left}%` }} />
+        <div
+          className={cn('h-full rounded-full', PLAN_TONE_BAR[tone])}
+          style={{ width: `${used}%` }}
+          data-plan-bar
+        />
       </div>
     </div>
   );

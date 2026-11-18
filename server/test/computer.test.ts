@@ -151,6 +151,7 @@ class FakeComputer {
     }
     if (this.status.get(id) !== 'running') return send(409, { error: 'not running', code: 'notRunning' });
     this.calls.push({ id, op, body });
+    if (op === 'git') return send(200, {});
     if (op === 'screenshot') return send(200, { png: PNG, width: 1280, height: 800 });
     if (op === 'action') return send(200, { ok: true });
     if (op === 'exec') {
@@ -253,6 +254,54 @@ describe('botun bilgisayarı', () => {
     expect(reply).toContain('çalıştı: ls -la');
     const exec = fake.calls.find((c) => c.op === 'exec')!;
     expect(exec.body.cwd).toBe(join(t.dataDir, 'workspaces', 'bots', bot.id, 'threads', thread.id));
+  });
+
+  it('github.com anahtarını yalnız izinli botun masaüstüne verir, değişince yeniden verir', async () => {
+    const bot = await t.bot({ name: 'Yazılımcı' });
+    const other = await t.bot({ name: 'Diğer' });
+    const gits = (id: string) =>
+      fake.calls.filter((c) => c.id === id && c.op === 'git').map((c) => c.body.token);
+    const look = (id: string) => t.services.ctx.computer!.use(id, (c) => c.screenshot(id));
+
+    await look(bot.id);
+    expect(gits(bot.id)).toEqual([null]);
+
+    // A key for another address is not git's; one for github.com is, for the bots it is open to.
+    await t.services.apiCredentials.create({
+      name: 'github_api',
+      origin: 'https://api.github.com',
+      auth: { type: 'bearer' },
+      value: 'github_pat_api_0123456789',
+    });
+    await look(bot.id);
+    expect(gits(bot.id)).toEqual([null]);
+    const key = await t.services.apiCredentials.create({
+      name: 'github_git',
+      origin: 'github.com',
+      auth: { type: 'bearer' },
+      value: 'github_pat_git_0123456789',
+      botIds: [bot.id],
+    });
+    // A running desktop gets it right away, before any step of the bot.
+    await waitFor(async () => gits(bot.id).length === 2);
+    await look(bot.id);
+    expect(gits(bot.id)).toEqual([null, 'github_pat_git_0123456789']);
+    await look(other.id);
+    expect(gits(other.id)).toEqual([null]);
+
+    // Moved to the other bot: both running desktops are told.
+    await t.services.apiCredentials.update(key.id, { botIds: [other.id] });
+    await waitFor(async () => gits(bot.id).length === 3 && gits(other.id).length === 2);
+    await look(bot.id);
+    await look(other.id);
+    expect(gits(bot.id)).toEqual([null, 'github_pat_git_0123456789', null]);
+    expect(gits(other.id)).toEqual([null, 'github_pat_git_0123456789']);
+
+    // A bot with the internet off keeps git off GitHub, even with a key open to every bot.
+    const offline = await t.bot({ name: 'Çevrimdışı', internet: false });
+    await t.services.apiCredentials.update(key.id, { botIds: null });
+    await look(offline.id);
+    expect(gits(offline.id)).toEqual([null]);
   });
 
   it('uzun komutu arka planda başlatır; bitene kadar masaüstü uyumaz, durumu sonra sorulur', async () => {

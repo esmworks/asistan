@@ -1,14 +1,14 @@
 import {
   currentPlanWindows,
   planHeadline,
-  planLeftPercent,
+  planUsedPercent,
   planPace,
   planTone,
   type PlanWindow,
   type UsageReport,
 } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eventWindow, planWindows } from '../src/engine/claude';
+import { eventWindow, eventWindows, planWindows } from '../src/engine/claude';
 import { testServer, type TestServer } from './helpers';
 
 describe('Claude planının kullanım pencereleri', () => {
@@ -41,6 +41,38 @@ describe('Claude planının kullanım pencereleri', () => {
     expect(eventWindow({})).toBeNull();
   });
 
+  it('her sınır olayındaki 5 saatlik ve haftalık pencereleri okur, belirteçle bağlı hesapta da', () => {
+    // An ordinary event of an account far from its limits: the event's own window says no use.
+    const windows = eventWindows({
+      status: 'allowed',
+      unifiedWindows: {
+        five_hour: { utilization: 0.37, resetsAt: 1_800_000_000, status: 'allowed' },
+        seven_day: { utilization: 0.12, resetsAt: 1_800_400_000 },
+        seven_day_overage_included: { utilization: 0.5, resetsAt: 1_800_400_000 },
+      },
+    } as Parameters<typeof eventWindows>[0]);
+    expect(windows).toEqual([
+      { kind: 'five_hour', used: 0.37, resetsAt: new Date(1_800_000_000_000).toISOString() },
+      { kind: 'seven_day', used: 0.12, resetsAt: new Date(1_800_400_000_000).toISOString() },
+    ]);
+  });
+
+  it('olayın kendi penceresini de katar, kullanımı bilinmeyeni ve bozuk biçimi almaz', () => {
+    expect(
+      eventWindows({
+        rateLimitType: 'seven_day_opus',
+        utilization: 0.91,
+        resetsAt: 1_800_000_000,
+        unifiedWindows: { five_hour: { utilization: 0.2, resetsAt: 1_800_000_000 }, seven_day: 'x' },
+      } as Parameters<typeof eventWindows>[0]).map((w) => [w.kind, w.used]),
+    ).toEqual([
+      ['five_hour', 0.2],
+      ['seven_day_opus', 0.91],
+    ]);
+    expect(eventWindows({ rateLimitType: 'five_hour' })).toEqual([]);
+    expect(eventWindows({ unifiedWindows: null } as Parameters<typeof eventWindows>[0])).toEqual([]);
+  });
+
   it('çizgi pencerenin geçen kısmını gösterir', () => {
     const now = Date.parse('2026-11-18T00:00:00.000Z');
     // Five hours long, resets in one hour: four fifths have passed.
@@ -67,9 +99,9 @@ describe('Claude planının kullanım pencereleri', () => {
       'model:Fable',
     ]);
     expect(planHeadline([{ kind: 'five_hour', used: null, resetsAt: null }], now)).toBeNull();
-    expect(planLeftPercent({ used: 0.424 })).toBe(58);
-    expect(planLeftPercent({ used: 1 })).toBe(0);
-    expect(planLeftPercent({ used: null })).toBe(100);
+    expect(planUsedPercent({ used: 0.424 })).toBe(42);
+    expect(planUsedPercent({ used: 1 })).toBe(100);
+    expect(planUsedPercent({ used: null })).toBe(0);
   });
 
   it('rengi doluluğa ve pencerenin geçen kısmına göre verir; pencerenin başındaki az kullanım uyarı sayılmaz', () => {

@@ -20,7 +20,7 @@
     "android": {
       "package": "com.esmworks.yumakbot",
       "adaptiveIcon": {
-        "backgroundColor": "#4F6BED",
+        "backgroundColor": "#1F4330",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

@@ -21,6 +21,7 @@ import { startSandboxProxy } from './sandbox-proxy';
 import {
   APP_SERVER,
   planItems,
+  replyOf,
   resultImages,
   resultText,
   type AccountStatus,
@@ -28,6 +29,7 @@ import {
   type Engine,
   type GateRequest,
   type GateVerdict,
+  type ModelStep,
   type ReviewRequest,
   type ReviewVerdict,
   type Sandbox,
@@ -159,10 +161,48 @@ export function eventWindow(info: { rateLimitType?: string; utilization?: number
   const at = resetTime(info.resetsAt);
   return {
     kind: info.rateLimitType,
-    used: typeof info.utilization === 'number' ? Math.min(1, Math.max(0, info.utilization)) : null,
+    used:
+      typeof info.utilization === 'number' && Number.isFinite(info.utilization)
+        ? Math.min(1, Math.max(0, info.utilization))
+        : null,
     resetsAt: at ? at.toISOString() : null,
   } satisfies PlanWindow;
 }
+
+/**
+ * The plan's windows a rate-limit event of the CLI tells, those with a known use. The event's own
+ * window says its use only near a limit; `unifiedWindows` carries the five-hour and weekly windows
+ * on every event, read from the headers of the API's answer, so a subscription token that may not
+ * ask for the usage itself still shows how much is left.
+ */
+export function eventWindows(info: {
+  rateLimitType?: string;
+  utilization?: number;
+  resetsAt?: number;
+}): PlanWindow[] {
+  const byKind = new Map<string, PlanWindow>();
+  const unified = (info as { unifiedWindows?: unknown }).unifiedWindows;
+  if (unified && typeof unified === 'object') {
+    const u = unified as Record<string, unknown>;
+    for (const kind of PLAN_KINDS) {
+      const v = u[kind];
+      if (!v || typeof v !== 'object') continue;
+      const o = v as { utilization?: unknown; resetsAt?: unknown };
+      const w = eventWindow({
+        rateLimitType: kind,
+        utilization: typeof o.utilization === 'number' ? o.utilization : undefined,
+        resetsAt: typeof o.resetsAt === 'number' ? o.resetsAt : undefined,
+      });
+      if (w) byKind.set(kind, w);
+    }
+  }
+  const own = eventWindow(info);
+  if (own && own.used !== null) byKind.set(own.kind, own);
+  return [...byKind.values()].filter((w) => w.used !== null);
+}
+
+/** What was last kept from the events, so the same windows are not written after every call. */
+let lastEventPlan = '';
 
 /**
  * Environment for the Claude Code process, built from scratch: nothing from the server's own
@@ -516,6 +556,8 @@ export class ClaudeEngine implements Engine {
     input.push(withContext(req));
 
     let text = '';
+    // The model's answers so far, one per API message: the CLI sends each block of one apart.
+    const steps: (ModelStep & { id: string })[] = [];
     let sessionId: string | null = req.sessionId;
     // The session's running cost: a resumed session goes on from the total its transcript kept.
     let total: number | null = null;
@@ -534,8 +576,12 @@ export class ClaudeEngine implements Engine {
         req.onActivity?.();
         if (m.type === 'rate_limit_event') {
           const info = m.rate_limit_info;
-          const w = eventWindow(info);
-          if (w && w.used !== null) req.onPlanUsage?.([w]);
+          const windows = eventWindows(info);
+          const seen = JSON.stringify(windows);
+          if (windows.length && seen !== lastEventPlan && req.onPlanUsage) {
+            lastEventPlan = seen;
+            req.onPlanUsage(windows);
+          }
           if (info.status === 'rejected') limited = { resetsAt: resetTime(info.resetsAt) };
           else if (info.status === 'allowed_warning') {
             req.onLimitNear?.({ used: info.utilization ?? null, resetsAt: resetTime(info.resetsAt) });
@@ -617,6 +663,11 @@ export class ClaudeEngine implements Engine {
           // Keep the text of the last assistant message; earlier ones were interim steps.
           const parts = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : []));
           if (parts.length) text = parts.join('');
+          const id = m.message.id;
+          let step = steps.at(-1);
+          if (!step || step.id !== id) steps.push((step = { id, text: '', tools: [] }));
+          step.text += parts.join('');
+          for (const c of m.message.content) if (c.type === 'tool_use') step.tools.push(c.name);
         } else if (m.type === 'result') {
           finished = true;
           total = m.total_cost_usd ?? null;
@@ -650,6 +701,11 @@ export class ClaudeEngine implements Engine {
       req.signal.removeEventListener('abort', onAbort);
       input.close();
       proxy?.close();
+    }
+    // A reply the last message only closes keeps what was written with its quick replies.
+    if (steps.length > 1 && !steps.at(-1)!.tools.length) {
+      const reply = replyOf(steps);
+      if (reply !== steps.at(-1)!.text) text = reply;
     }
     const costUsd = runCost(total, req.sessionId ? req.sessionCostUsd : null);
     const sessionCostUsd = total;

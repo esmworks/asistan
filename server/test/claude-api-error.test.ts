@@ -83,6 +83,37 @@ describe('Claude API hatası', () => {
     expect(await run()).toMatchObject({ ok: true, text: 'tamam' });
   });
 
+  it('hızlı cevaplarla birlikte yazılan yanıt, aramadan sonraki kısa satırla kaybolmaz', async () => {
+    // The CLI sends each block of one API message apart, under the same message id.
+    const block = (id: string, block: object) => ({ type: 'assistant', message: { id, content: [block] } });
+    const done = (id: string) => ({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+    });
+    const close = 'Hangisini istersen başlatırım.';
+    frames.current = [
+      block('m1', { type: 'text', text: 'Bakıyorum.' }),
+      block('m1', { type: 'tool_use', id: 'u1', name: 'Bash', input: {} }),
+      done('u1'),
+      block('m2', { type: 'text', text: 'Uzun rapor.' }),
+      block('m2', { type: 'tool_use', id: 'u2', name: 'mcp__yumakbot__quick_replies', input: {} }),
+      done('u2'),
+      block('m3', { type: 'text', text: close }),
+      { type: 'result', subtype: 'success', is_error: false, result: close },
+    ];
+    expect(await run()).toMatchObject({ ok: true, text: `Uzun rapor.\n\n${close}` });
+
+    // Text before a working tool stays an interim step.
+    frames.current = [
+      block('m1', { type: 'text', text: 'Bakıyorum.' }),
+      block('m1', { type: 'tool_use', id: 'u1', name: 'Bash', input: {} }),
+      done('u1'),
+      block('m2', { type: 'text', text: 'Sonuç.' }),
+      { type: 'result', subtype: 'success', is_error: false, result: 'Sonuç.' },
+    ];
+    expect(await run()).toMatchObject({ ok: true, text: 'Sonuç.' });
+  });
+
   it('adım sınırında boş hata listesi yerine sınırı söyler', async () => {
     frames.current = [{ type: 'result', subtype: 'error_max_turns', errors: [], total_cost_usd: 0.8 }];
     const out = await run();

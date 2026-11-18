@@ -57,6 +57,33 @@ export interface AppTool {
 
 export const APP_SERVER = 'yumakbot';
 
+/** Tools that only add something under the reply; what is written with them is the reply. */
+const REPLY_TOOLS = new Set(['quick_replies']);
+const isReplyTool = (name: string) => REPLY_TOOLS.has(name.replace(`mcp__${APP_SERVER}__`, ''));
+
+/** One answer of the model in a run: its text and the tools it called. */
+export interface ModelStep {
+  text: string;
+  tools: string[];
+}
+
+/**
+ * The reply of a run: its last step, and before it the steps that called only reply tools. A model
+ * often writes its answer together with quick_replies and closes with a short line after the call;
+ * that line alone would lose the answer. Text before any other tool stays an interim step.
+ */
+export function replyOf(steps: ModelStep[]): string {
+  const last = steps.at(-1);
+  if (!last) return '';
+  const before: string[] = [];
+  for (let i = steps.length - 2; i >= 0; i--) {
+    const step = steps[i]!;
+    if (!step.tools.length || !step.tools.every(isReplyTool)) break;
+    before.unshift(step.text.trim());
+  }
+  return before.some(Boolean) ? [...before, last.text.trim()].filter(Boolean).join('\n\n') : last.text;
+}
+
 /** The name permission rules and cards use for a tool. */
 export const toolPermName = (t: Pick<AppTool, 'name' | 'server'>) =>
   `mcp__${t.server ?? APP_SERVER}__${t.name}`;
