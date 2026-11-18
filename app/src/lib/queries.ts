@@ -43,6 +43,14 @@ export const useApprovals = () => useQuery({ queryKey: ['approvals'], queryFn: a
 export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: api.rules });
 export const useVault = () => useQuery({ queryKey: ['vault'], queryFn: api.vault });
 export const useConnections = () => useQuery({ queryKey: ['connections'], queryFn: api.connections });
+/** Who a mail connection sends as; it changes rarely, so it is read again only now and then. */
+export const useMailSender = (connectionId: string | undefined) =>
+  useQuery({
+    queryKey: ['connection-sender', connectionId],
+    queryFn: () => api.connectionSender(connectionId!),
+    enabled: !!connectionId,
+    staleTime: 10 * 60_000,
+  });
 export const useMemory = () => useQuery({ queryKey: ['memory'], queryFn: api.memory });
 // Under `memory`, so a change to any note brings the list up to date.
 export const useStaleMemory = () => useQuery({ queryKey: ['memory', 'stale'], queryFn: api.staleMemory });

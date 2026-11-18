@@ -258,6 +258,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/connections/:id': 'self',
   'PATCH /api/connections/:id': 'self',
   'DELETE /api/connections/:id': 'self',
+  'GET /api/connections/:id/sender': 'self',
   'POST /api/connections/:id/refresh': 'self',
   'POST /api/connections/:id/signin': 'self',
   'POST /api/connections/:id/signout': 'self',

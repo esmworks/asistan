@@ -93,6 +93,11 @@ export interface PublicFetchOptions {
   /** Tests pass a stand-in for the name lookup. */
   resolve?: Resolve;
   timeoutMs?: number;
+  /**
+   * How many redirects to follow, each to an https address checked like the first. None by
+   * default: a skill link names the file itself.
+   */
+  redirects?: number;
 }
 
 /** The text an https address serves, refusing private addresses, redirects and files over `max`. */
@@ -101,6 +106,11 @@ export async function fetchPublicText(
   max = SKILL_LINK_MAX,
   o: PublicFetchOptions = {},
 ): Promise<string> {
+  return (await fetchPublicBytes(url, max, o)).toString('utf8');
+}
+
+/** What an https address serves, refusing private addresses and bodies over `max`. */
+export async function fetchPublicBytes(url: URL, max: number, o: PublicFetchOptions = {}): Promise<Buffer> {
   if (url.protocol !== 'https:') throw new HttpError(400, 'error.skillLinkHttps');
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (!host || host === 'localhost' || host.endsWith('.localhost') || (isIP(host) && privateAddress(host))) {
@@ -119,10 +129,12 @@ export async function fetchPublicText(
     );
   });
   const status = res.statusCode ?? 0;
-  // A redirect could lead anywhere, a private address too: it is refused, not followed.
   if (status >= 300 && status < 400) {
     res.destroy();
-    throw unreachable();
+    // Followed only when asked, and the next address goes through every check again.
+    const next = res.headers.location;
+    if (!o.redirects || !next) throw unreachable();
+    return fetchPublicBytes(new URL(next, url), max, { ...o, redirects: o.redirects - 1 });
   }
   if (status < 200 || status >= 300) {
     res.destroy();
@@ -133,7 +145,7 @@ export async function fetchPublicText(
     throw new HttpError(413, 'error.skillLinkTooLarge');
   }
   try {
-    return (await readCapped(res, max)).toString('utf8');
+    return await readCapped(res, max);
   } catch (err) {
     if (err instanceof BodyTooLarge) throw new HttpError(413, 'error.skillLinkTooLarge');
     throw unreachable();
