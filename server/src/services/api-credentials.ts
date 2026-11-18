@@ -14,6 +14,9 @@ import type { VaultService } from './vault';
 
 type Row = typeof schema.apiCredentials.$inferSelect;
 
+/** The origin of a key that git on a bot's desktop uses for GitHub. */
+export const GITHUB_ORIGIN = 'https://github.com';
+
 /**
  * What a key is bound to when sealed: its row and the origin it is sent to. A key moved to another
  * row, or left in a row whose origin was changed in the database, no longer opens, so it is never
@@ -153,6 +156,7 @@ export class ApiCredentialService {
       })
       .returning();
     this.ctx.bus.refresh({ scope: 'info' });
+    this.keysChanged();
     return toCredential(row!);
   }
 
@@ -197,6 +201,7 @@ export class ApiCredentialService {
       .where(eq(schema.apiCredentials.id, id))
       .returning();
     this.ctx.bus.refresh({ scope: 'info' });
+    this.keysChanged();
     return toCredential(row!);
   }
 
@@ -204,6 +209,7 @@ export class ApiCredentialService {
     await this.row(id);
     await this.ctx.db.delete(schema.apiCredentials).where(eq(schema.apiCredentials.id, id));
     this.ctx.bus.refresh({ scope: 'info' });
+    this.keysChanged();
   }
 
   /**
@@ -224,6 +230,29 @@ export class ApiCredentialService {
       .set({ lastUsedAt: new Date() })
       .where(eq(schema.apiCredentials.id, row.id));
     return result;
+  }
+
+  /** The desktops' git keeps up with a key that was added, changed or removed, without waiting. */
+  private keysChanged() {
+    void this.ctx.computer?.refreshGit();
+  }
+
+  /**
+   * The key git on the bot's desktop uses for GitHub: one saved for `https://github.com` that the
+   * bot may use (the first by name when there are several). Only the computer service's relay gets
+   * it, and sends it to GitHub alone, the origin it was saved for.
+   */
+  async gitToken(botId: string): Promise<string | null> {
+    await this.ready();
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.apiCredentials)
+      .where(eq(schema.apiCredentials.origin, GITHUB_ORIGIN))
+      .orderBy(asc(schema.apiCredentials.name));
+    const row = rows.find((r) => !r.botIds || r.botIds.includes(botId));
+    if (!row) return null;
+    const value = this.vault.open(row.secret, keyBinding(row.id, row.origin));
+    return value && /^[\x21-\x7e]{1,1000}$/.test(value) ? value : null;
   }
 
   /** A call to `origin` with no key, for an API the person added that needs none. */

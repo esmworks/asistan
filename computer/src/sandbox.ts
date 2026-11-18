@@ -17,6 +17,8 @@ export interface SandboxOptions {
   sessionScript: string;
   /** The proxy the session's browser goes through (`socks5://…`); none when unset. */
   proxy?: string;
+  /** This session's address on the git relay (`http://127.0.0.1:…/<key>/`); none when unset. */
+  gitRelay?: string;
 }
 
 const isInside = (child: string, parent: string) => child === parent || child.startsWith(`${parent}/`);
@@ -48,6 +50,24 @@ export function collectBinds(start: DesktopStart): Bind[] {
     .sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path));
 }
 
+/**
+ * Git settings that send GitHub through the relay (see git-relay.ts), in every way a repository is
+ * named: https, scp-like ssh and ssh URLs. Given as `GIT_CONFIG_*` so they hold for every git the
+ * session starts (commands, the terminal) without a file the bot could edit. Git never prompts:
+ * a session has nobody at its terminal to answer, so a missing key ends the command instead.
+ */
+export function gitEnv(relay: string | undefined): Record<string, string> {
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' };
+  if (!relay) return env;
+  const from = ['https://github.com/', 'git@github.com:', 'ssh://git@github.com/'];
+  env.GIT_CONFIG_COUNT = String(from.length);
+  from.forEach((f, i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = `url.${relay}.insteadOf`;
+    env[`GIT_CONFIG_VALUE_${i}`] = f;
+  });
+  return env;
+}
+
 /** The environment of everything in the session. Nothing else from the controller leaks in. */
 export function sessionEnv(o: SandboxOptions): Record<string, string> {
   const { home, workdir, locale } = o.start;
@@ -74,6 +94,10 @@ export function sessionEnv(o: SandboxOptions): Record<string, string> {
     YUMAKBOT_NODE: o.node,
     YUMAKBOT_HELPER: o.helperScript,
     ...(o.proxy && o.start.internet ? { YUMAKBOT_PROXY: o.proxy } : {}),
+    // pnpm and yarn come through corepack, which would otherwise stop to ask before its first download.
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
+    // Without internet the session has its own network, where the relay cannot be reached.
+    ...gitEnv(o.start.internet ? o.gitRelay : undefined),
   };
 }
 

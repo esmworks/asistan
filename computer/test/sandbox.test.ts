@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { DesktopStart } from '@yumakbot/shared';
-import { bwrapArgs, checkSessionPath, collectBinds, sessionEnv, type SandboxOptions } from '../src/sandbox';
+import {
+  bwrapArgs,
+  checkSessionPath,
+  collectBinds,
+  gitEnv,
+  sessionEnv,
+  type SandboxOptions,
+} from '../src/sandbox';
 
 const W = '/data/workspaces';
 const start = (over: Partial<DesktopStart> = {}): DesktopStart => ({
@@ -161,5 +168,26 @@ describe('checkSessionPath', () => {
     ]) {
       expect(checkSessionPath(p, W)).toBeNull();
     }
+  });
+});
+
+describe('gitEnv', () => {
+  const relay = `http://127.0.0.1:4322/${'a'.repeat(64)}/`;
+  it('sends every form of a GitHub address through the relay, only with internet', () => {
+    const env = sessionEnv({ ...opts(start()), gitRelay: relay });
+    expect(env.GIT_CONFIG_COUNT).toBe('3');
+    const pairs = [0, 1, 2].map((i) => [env[`GIT_CONFIG_KEY_${i}`], env[`GIT_CONFIG_VALUE_${i}`]]);
+    expect(pairs).toEqual([
+      [`url.${relay}.insteadOf`, 'https://github.com/'],
+      [`url.${relay}.insteadOf`, 'git@github.com:'],
+      [`url.${relay}.insteadOf`, 'ssh://git@github.com/'],
+    ]);
+    expect(env.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(env.COREPACK_ENABLE_DOWNLOAD_PROMPT).toBe('0');
+
+    const offline = sessionEnv({ ...opts(start({ internet: false })), gitRelay: relay });
+    expect(offline.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(offline.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(gitEnv(undefined)).toEqual({ GIT_TERMINAL_PROMPT: '0' });
   });
 });
