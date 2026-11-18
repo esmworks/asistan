@@ -82,6 +82,26 @@ describe('kişileri yönetmek', () => {
     expect((await login('sifreli', 'yeni-sifre-1')).statusCode).toBe(200);
   });
 
+  it('devre dışı kişi adına hiçbir iş çalışmaz: rutini, sohbet uygulaması, bot-bot isteği', async () => {
+    const p = await t.person('pasif');
+    const bot = await t.bot({ name: 'Pasifin botu' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'none', people: { pasif: 'chat' } });
+    const thread = (await p.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    await t.api('PATCH', `/api/people/${p.id}`, { disabled: true });
+    const before = t.engine.requests.length;
+    // As a chat app or a routine would start it: in their conversation, for them.
+    const turn = await t.services.turns.enqueue({
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'routine',
+      prompt: 'rapor yaz',
+    });
+    await t.services.turns.idle();
+    expect(t.engine.requests.length).toBe(before);
+    const [row] = await t.services.ctx.db.select().from(schema.turns).where(eq(schema.turns.id, turn.id));
+    expect(row!.status).toBe('error');
+  });
+
   it('silinen kişinin sohbetleri ve notları gider; yaptığı botlar sahibe geçer', async () => {
     const p = await t.person('ayrilan');
     const sharedBot = await t.bot({ name: 'Ortak' });

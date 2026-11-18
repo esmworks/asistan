@@ -37,7 +37,14 @@ describe('her kişinin kendisine ait olanlar', () => {
     );
     expect((await ayse.api<Record<string, unknown>>('GET', '/api/settings')).body.userName).toBe('Ayşe');
     expect((await t.api<Record<string, unknown>>('GET', '/api/settings')).body.userName).toBe('Erhan');
-    expect((await mert.api<Record<string, unknown>>('GET', '/api/settings')).body.userName ?? '').toBe('');
+    // Until they say their name, they are called by their username.
+    expect((await mert.api<Record<string, unknown>>('GET', '/api/settings')).body.userName).toBe('mert');
+    // The owner's own words about themselves are not anyone else's.
+    await t.api('PATCH', '/api/settings', { focus: 'work', occupation: 'Mühendis', aboutMe: 'Kedim var' });
+    const theirs = (await mert.api<Record<string, unknown>>('GET', '/api/settings')).body;
+    expect(theirs.focus).toBeUndefined();
+    expect(theirs.occupation ?? '').toBe('');
+    expect(theirs.aboutMe ?? '').toBe('');
     // What every bot uses is the server's, not one member's.
     expect((await ayse.api('PATCH', '/api/settings', { effort: 'low' })).status).toBe(403);
 
@@ -49,6 +56,8 @@ describe('her kişinin kendisine ait olanlar', () => {
     const prompt = t.engine.requests.filter((r) => r.botId === bot.id).at(-1)!.systemPrompt;
     expect(prompt).toContain('Ayşe');
     expect(prompt).not.toContain('Erhan');
+    expect(prompt).not.toContain('Mühendis');
+    expect(prompt).not.toContain('Kedim var');
   });
 
   it('kişinin hakkındaki notları yalnızca kendisi ve onun için çalışan bot görür', async () => {
@@ -127,6 +136,12 @@ describe('her kişinin kendisine ait olanlar', () => {
         })
       ).status,
     ).toBe(403);
+    // The server calls the address itself: a member may not point it at itself or its network.
+    for (const url of ['http://127.0.0.1:9/mcp', 'http://localhost:9/mcp', 'http://10.0.0.5/mcp']) {
+      expect((await ayse.api('POST', '/api/connections', { name: 'İç', url, auth: 'none' })).status).toBe(
+        400,
+      );
+    }
     const team = await admin.api<Connection>('POST', '/api/connections', {
       name: 'Takım',
       url: 'https://team.example.invalid/mcp',

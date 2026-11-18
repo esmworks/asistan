@@ -1,7 +1,7 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
-import { seesHistory, type MemoryReach } from './services/memory';
+import type { MemoryReach } from './services/memory';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
@@ -104,7 +104,7 @@ import { schema } from './db';
 import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
-import { fetchSkillFile } from './services/skill-link';
+import { fetchSkillFile, privateHost } from './services/skill-link';
 import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
@@ -1337,6 +1337,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (!managesServer(me(req).role)) throw new HttpError(403, 'error.adminOnly');
     return null;
   };
+  /**
+   * The server calls a connection's address itself: only those who look after it may point one
+   * at this machine or the private network it sits in.
+   */
+  const checkConnectionUrl = async (req: FastifyRequest, url: string | undefined) => {
+    if (!url || managesServer(me(req).role)) return;
+    if (await privateHost(new URL(url).hostname)) throw new HttpError(400, 'error.connectionPrivate');
+  };
   /** Whose a new connection or sign-in is: the team's when asked for, otherwise the person's. */
   const ownerOrSelf = (req: FastifyRequest, team: boolean | undefined): string | null => {
     const given = ownerFor(req, team);
@@ -1350,6 +1358,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/connections/redirect-url', async (req) => ({ url: redirectUrl(req) }));
   app.post('/api/connections', async (req) => {
     const body = ConnectionCreate.parse(req.body);
+    await checkConnectionUrl(req, body.url);
     const owner = ownerOrSelf(req, body.team);
     if (owner) await checkOwnBots(req, body.botIds);
     return s.connections.create(body, owner);
@@ -1359,6 +1368,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const { id } = IdParams.parse(req.params);
     await connectionFor(req, id, true);
     const { team, ...patch } = ConnectionUpdate.parse(req.body);
+    await checkConnectionUrl(req, patch.url);
     const owner = ownerFor(req, team);
     const changed = await s.connections.update(id, patch);
     return owner === undefined ? changed : s.connections.setOwner(id, owner);
@@ -1582,8 +1592,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   // What happened to the notes the person reaches now.
   app.get('/api/memory-history', async (req) => {
-    const reach = await memoryReach(req);
-    return (await s.memory.history()).filter((h) => seesHistory(reach, h.owner));
+    return s.memory.history(100, await memoryReach(req));
   });
   // Memory changes waiting for a person: a bot asked while nobody watched, or someone who may only
   // talk with the bot asked for a change to its notes.

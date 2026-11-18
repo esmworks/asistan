@@ -159,7 +159,22 @@ export class SettingsService {
    */
   async all(userId?: string): Promise<Settings> {
     const server = await this.server();
-    return userId ? { ...server, ...(await this.profile(userId)) } : server;
+    if (!userId) return server;
+    // The owner's own, kept with the server's for what runs for nobody in particular, are not
+    // another person's: only the language stands in until they choose their own.
+    const base: Record<string, unknown> = { ...server };
+    for (const key of PERSONAL_SETTINGS) if (key !== 'language') delete base[key];
+    const own = await this.profile(userId);
+    if (!own.userName && userId !== OWNER_ID) {
+      // Until they say their name, they are called what they are called here.
+      const [row] = await this.ctx.db
+        .select({ displayName: schema.users.displayName, username: schema.users.username })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+      own.userName = (row?.displayName || row?.username || '').slice(0, 80);
+    }
+    return Settings.parse({ ...base, ...own });
   }
 
   private async server(): Promise<Settings> {

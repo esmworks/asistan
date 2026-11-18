@@ -20,6 +20,10 @@ describe('kim neyi görür', () => {
   });
   afterAll(() => t.dispose());
 
+  /** The server's address; it listens once for every socket test. */
+  let address: Promise<string> | undefined;
+  const listening = () => (address ??= t.listen());
+
   const send = (p: Person, threadId: string, text: string) =>
     p.api('POST', `/api/threads/${threadId}/messages`, {
       clientId: `c-${Math.random().toString(36).slice(2, 12)}`,
@@ -194,7 +198,7 @@ describe('kim neyi görür', () => {
     await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
     const mine = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
     const theirs = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
-    const url = await t.listen();
+    const url = await listening();
     const socket = connect(url, {
       transports: ['websocket'],
       reconnection: false,
@@ -213,6 +217,42 @@ describe('kim neyi görür', () => {
       while (!got.length && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
       await new Promise((r) => setTimeout(r, 100));
       expect(got.map((e) => e.text)).toEqual(['ayşenin yazısı']);
+    } finally {
+      socket.close();
+    }
+  });
+
+  it('sohbet ve bot yenilemeleri yalnızca onları görenlere gider', async () => {
+    const shared = await t.bot({ name: 'Yenilenen' });
+    await t.api('PUT', `/api/bots/${shared.id}/access`, { everyone: 'chat', people: {} });
+    const hidden = await t.bot({ name: 'Görünmeyen' });
+    const mine = (await ayse.api<Thread>('GET', `/api/bots/${shared.id}/main-thread`)).body;
+    const theirs = (await t.api<Thread>('GET', `/api/bots/${shared.id}/main-thread`)).body;
+    const url = await listening();
+    const socket = connect(url, {
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { cookie: ayse.cookie, origin: url },
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        socket.on('hello', resolve);
+        socket.on('connect_error', reject);
+      });
+      const got: string[] = [];
+      socket.on('refresh', (e: { scope: string; threadId?: string; botId?: string }) =>
+        got.push(`${e.scope}:${e.threadId ?? e.botId ?? ''}`),
+      );
+      const bus = t.services.ctx.bus;
+      bus.refresh({ scope: 'thread', threadId: theirs.id, botId: shared.id });
+      bus.refresh({ scope: 'threads', botId: hidden.id });
+      bus.refresh({ scope: 'actions', botId: hidden.id });
+      bus.refresh({ scope: 'thread', threadId: mine.id, botId: shared.id });
+      bus.refresh({ scope: 'threads', botId: shared.id });
+      const until = Date.now() + 3000;
+      while (got.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 150));
+      expect(got.sort()).toEqual([`thread:${mine.id}`, `threads:${shared.id}`].sort());
     } finally {
       socket.close();
     }

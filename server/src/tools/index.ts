@@ -44,7 +44,8 @@ import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 import { OWNER_ID } from '../users';
-import { atLeast } from '../services/access';
+import { atLeast, managesServer } from '../services/access';
+import { privateHost } from '../services/skill-link';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
 
@@ -621,6 +622,12 @@ export class ToolFactory {
           if (!(await mayChange())) return t('tool.changeNotAllowed');
           const input = ConnectionCreate.safeParse({ name, url, auth: 'none' });
           if (!input.success) return t('tool.appBadUrl', { url });
+          // Only those who look after the server point the server at itself or its network.
+          if (
+            !managesServer((await s.access.viewerOf(person)).role) &&
+            (await privateHost(new URL(input.data.url).hostname))
+          )
+            return t('error.connectionPrivate');
           const known = (await s.connections.list(person)).find((c) => c.url === input.data.url);
           if (known) return t('tool.appKnown', { name: known.name });
           // The person's own, open to this bot only; they can open it to others in the apps window.

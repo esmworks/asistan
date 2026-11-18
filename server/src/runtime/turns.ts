@@ -655,6 +655,16 @@ export class TurnManager {
     });
     // Whom the turn works for: their profile and notes go in, and the bots it may ask are theirs.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
+    // nor a request a bot passed on for them.
+    const [who] = await this.ctx.db
+      .select({ disabledAt: schema.users.disabledAt })
+      .from(schema.users)
+      .where(eq(schema.users.id, person))
+      .limit(1);
+    if (!who || who.disabledAt) {
+      throw new Error((await this.services.settings.translator())('turn.personDisabled'));
+    }
     const reached = new Set(
       await this.services.access.botIds(await this.services.access.viewerOf(person), 'chat'),
     );
@@ -662,7 +672,8 @@ export class TurnManager {
     const peers = allBots.filter((b) => bots.canMessage(bot, b) && reached.has(b.id));
     const settings = await this.services.settings.all(person);
     const timezone = settings.timezone;
-    const locale = await this.services.settings.locale();
+    // The person's own language; the server's until they choose one.
+    const locale = settings.language ?? (await this.services.settings.locale());
     const t = translator(locale);
     const skills = await this.services.skills.forBot(bot.id);
     const email = await this.services.email.addressOf(bot.id);

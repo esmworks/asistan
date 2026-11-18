@@ -41,13 +41,6 @@ const reachable = (reach: MemoryReach) =>
 const noteOwner = (m: { scope: string; botId: string | null; userId?: string | null }) =>
   m.scope === 'user' ? `user:${m.userId ?? OWNER_ID}` : `bot:${m.botId}`;
 
-/** Whether a history line is about a note `reach` reaches: their own, or of a bot they may change. */
-export const seesHistory = (reach: MemoryReach, owner: string | null) =>
-  owner === `user:${reach.userId}` ||
-  (!!owner?.startsWith('bot:') && reach.botIds.includes(owner.slice(4))) ||
-  // Lines kept before people came in were the owner's.
-  (owner === null && reach.userId === OWNER_ID);
-
 /** Whether a waiting change is one `reach` decides on. */
 export const decides = (reach: MemoryReach, c: Pick<MemoryChange, 'scope' | 'botId' | 'userId'>) =>
   c.scope === 'user' ? (c.userId ?? OWNER_ID) === reach.userId : !!c.botId && reach.botIds.includes(c.botId);
@@ -417,11 +410,23 @@ export class MemoryService {
     return { count: rows.length };
   }
 
-  async history(limit = 100) {
+  /** What happened to notes; with `reach`, only to the notes that person reaches (see `seesHistory`). */
+  async history(limit = 100, reach?: MemoryReach) {
+    const owners = reach && [`user:${reach.userId}`, ...reach.botIds.map((id) => `bot:${id}`)];
     return this.ctx.db
       .select()
       .from(schema.auditLog)
-      .where(eq(schema.auditLog.targetType, 'memory'))
+      .where(
+        and(
+          eq(schema.auditLog.targetType, 'memory'),
+          reach &&
+            or(
+              inArray(schema.auditLog.owner, owners!),
+              // Lines kept before people came in were the owner's.
+              reach.userId === OWNER_ID ? isNull(schema.auditLog.owner) : undefined,
+            ),
+        ),
+      )
       .orderBy(asc(schema.auditLog.createdAt))
       .limit(limit);
   }

@@ -72,6 +72,8 @@ const tr = {
   'error.notFound.ticket': 'Görev bulunamadı',
   'error.notFound.table': 'Tablo bulunamadı',
   'error.notFound.tableRow': 'Satır bulunamadı',
+  'error.connectionPrivate':
+    'Bu bilgisayardaki ya da iç ağdaki bir adrese bağlantıyı yalnızca sunucuyu yönetenler kurabilir',
   'error.notFound.person': 'Kişi bulunamadı',
   'error.ownerManagesAdmins': 'Yöneticileri yalnızca sunucunun sahibi ekleyip değiştirebilir',
   'error.notYourself': 'Kendi hesabınızı buradan değiştiremezsiniz; Hesap bölümünü kullanın',
@@ -250,6 +252,7 @@ const tr = {
   'turn.toolOff': 'Bu araç bu botta kapalı (botun ayarları → Araçlar).',
   'turn.safetyFloor':
     'Bu komut hiçbir izinle çalıştırılmaz: bir diski ya da bütün ev klasörünü silebilir, bilgisayarı kapatabilir. Daha dar bir hedefle (belirli bir klasör ya da dosya) yeniden dene.',
+  'turn.personDisabled': 'Bu iş, artık giriş yapamayan bir kişi adına çalışacaktı; başlatılmadı.',
   'turn.spendLimit':
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
@@ -1148,6 +1151,8 @@ const en: Catalog<ServerKey> = {
   'error.notFound.ticket': 'Ticket not found',
   'error.notFound.table': 'Table not found',
   'error.notFound.tableRow': 'Row not found',
+  'error.connectionPrivate':
+    'Only those who look after the server can connect an address on this computer or its private network',
   'error.notFound.person': 'Person not found',
   'error.ownerManagesAdmins': 'Only the owner of this server can add or change admins',
   'error.notYourself': 'You cannot change your own account here; use the Account section',
@@ -1324,6 +1329,7 @@ const en: Catalog<ServerKey> = {
   'turn.toolOff': "This tool is off for this bot (the bot's settings → Tools).",
   'turn.safetyFloor':
     'This command is never run, whatever is allowed: it could wipe a disk or a whole home folder, or stop the machine. Try again with a narrower target (a particular folder or file).',
+  'turn.personDisabled': 'This work would run for someone who may no longer sign in; it was not started.',
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
