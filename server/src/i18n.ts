@@ -491,8 +491,13 @@ const tr = {
   'prompt.routineModel': 'model: {model}',
   'prompt.noRoutines': 'Sana tanımlı bir rutin yok.',
   'prompt.handoff':
-    'Bu sohbetin önceki oturumu artık yok; konuşmanın son kısmı aşağıda, yalnızca bağlam için. Ondan sonraki mesaja cevap ver.\n\n<önceki-konuşma>\n{history}\n</önceki-konuşma>\n\n{prompt}',
+    'Bu sohbetin önceki oturumu artık yok; konuşmanın son kısmı aşağıda, yalnızca bağlam için.{recall} Ondan sonraki mesaja cevap ver.\n\n<önceki-konuşma>\n{history}\n</önceki-konuşma>\n\n{prompt}',
+  'prompt.handoffRecall':
+    'Köşeli parantezdeki kimlikle bir mesajın tamamını ve çevresini message_read ile oku; daha eskisi için conversations_search ile ara.',
+  'prompt.handoffSummary':
+    'Bundan önceki kısmın özeti:\n\n<önceki-konuşmanın-özeti>\n{summary}\n</önceki-konuşmanın-özeti>',
   'prompt.handoffPerson': 'Kullanıcı',
+  'prompt.handoffCut': '(kısaltıldı; tamamı için message_read ile {id})',
   'prompt.handoffBot': 'Bot',
   'prompt.appsDown':
     'Şu bağlı uygulamalar şu an kullanılamıyor, araçları bu turda yok: {apps}. Onlarla yapılacak bir iş istenirse bunu kullanıcıya söyle.',
@@ -550,6 +555,8 @@ const tr = {
     '- Kullanıcı adına bir şey göndereceksen (e-posta, mesaj, paylaşım) önce taslağı göster ve onayını al; rutinin talimatı göndermeni açıkça istiyorsa gönder. Bir ödemeden önce ürünü, fiyatı ve toplamı söyleyip onay iste.',
   'prompt.ruleMemory':
     '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil. Notun başındaki tarih en son ne zaman yazıldığıdır; çelişen iki nottan yenisine güven. Şifre, anahtar ya da kod gibi gizli değerleri hafızaya yazma.',
+  'prompt.ruleRecall':
+    '- Uzun bir sohbetin önceki kısmı sana yalnızca özet olarak gelebilir ya da hiç gelmeyebilir. Daha önce konuşulan bir şeyin tam ifadesi, bir sayı, bir kimlik ya da verilmiş bir karar gerekirse tahmin etme: `conversations_search` ile ara, `message_read` ile oku.',
   'prompt.ruleTryFirst':
     '- Bir işi yapamayacağını söylemeden önce elindekileri dene: bağlı uygulamalar, tarayıcı, becerilerin ve işi bilen başka bir bot. Bir site oturum açmanı istiyorsa durma; oturum açma adımını kullan ya da kullanıcıdan tarayıcıda açmasını iste. Hiçbiri olmazsa ne denediğini ve kullanıcının işi açmak için ne yapabileceğini söyle.',
   'prompt.ruleFiles':
@@ -1043,6 +1050,15 @@ const tr = {
   'files.tooLarge': 'Dosya çok büyük',
   'files.emptyFile': '(boş dosya)',
   'engine.imageDropped': '(daha eski bir görüntü; yer açmak için çıkarıldı)',
+  'engine.resultCut':
+    '(Sonuç çok uzundu: {total} karakterin ilk {shown} karakteri yukarıda. Gerisi lazımsa daha dar iste: bir satır aralığı, bir arama ya da daha az kayıt.)',
+  'engine.resultLeftOut':
+    '(Bu turdaki eski bir araç sonucu; yer açmak için çıkarıldı. Yeniden gerekirse aracı tekrar çağır.)',
+  'engine.summary':
+    'Bu sohbetin önceki kısmı yer açmak için aşağıda özetlendi; yalnızca bağlam için.\n\n<önceki-konuşmanın-özeti>\n{summary}\n</önceki-konuşmanın-özeti>',
+  'engine.historyLeftOut': 'Bu sohbetin önceki kısmının bir bölümü yer açmak için çıkarıldı; özette yok.',
+  'engine.recall':
+    'Önceki kısımdan tam ifade, sayı, kimlik ya da verilmiş bir karar gerekirse tahmin etme: conversations_search ile ara, message_read ile oku.',
   'files.image': '{path} görüntüsü aşağıda.',
   'files.imageUnseen': 'Bu bir görüntü dosyası; kullanılan model görüntü göremiyor.',
   'files.written': 'Yazıldı: {path}',
@@ -1613,8 +1629,13 @@ const en: Catalog<ServerKey> = {
   'prompt.routineModel': 'model: {model}',
   'prompt.noRoutines': 'You have no routines.',
   'prompt.handoff':
-    "This conversation's earlier session is gone; its latest part is below, for context only. Answer the message after it.\n\n<earlier-conversation>\n{history}\n</earlier-conversation>\n\n{prompt}",
+    "This conversation's earlier session is gone; its latest part is below, for context only.{recall} Answer the message after it.\n\n<earlier-conversation>\n{history}\n</earlier-conversation>\n\n{prompt}",
+  'prompt.handoffRecall':
+    'Read a whole message and the talk around it with message_read, by the id in brackets; for anything older, search with conversations_search.',
+  'prompt.handoffSummary':
+    'A summary of what came before:\n\n<earlier-conversation-summary>\n{summary}\n</earlier-conversation-summary>',
   'prompt.handoffPerson': 'User',
+  'prompt.handoffCut': '(shortened; read it whole with message_read, {id})',
   'prompt.handoffBot': 'Bot',
   'prompt.appsDown':
     'These connected apps cannot be used right now, and their tools are not in this turn: {apps}. If asked for work that needs them, tell the person.',
@@ -1672,6 +1693,8 @@ const en: Catalog<ServerKey> = {
     "- Before you send something for the user (an email, a message, a post), show the draft and get their approval; send right away only when a routine's instruction says to. Before a payment, read back the item, price and total and ask to confirm.",
   'prompt.ruleMemory':
     "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`. The date before a note is when it was last written; of two notes that disagree, trust the newer. Never write secrets such as passwords, keys or codes to memory.",
+  'prompt.ruleRecall':
+    '- The earlier part of a long conversation may reach you only as a summary, or not at all. When you need the exact wording of something said before, a number, an id or a decision already made, do not guess: find it with `conversations_search` and read it with `message_read`.',
   'prompt.ruleTryFirst':
     '- Before you say you cannot do a task, try what you have: connected apps, the browser, your skills, and another bot that knows the work. When a site wants you signed in, do not stop; use the sign-in step or ask the user to sign in in the browser. If nothing works, say what you tried and what the user can do to unblock it.',
   'prompt.ruleFiles':
@@ -2162,6 +2185,16 @@ const en: Catalog<ServerKey> = {
   'files.tooLarge': 'The file is too large',
   'files.emptyFile': '(empty file)',
   'engine.imageDropped': '(an older picture, left out to save room)',
+  'engine.resultCut':
+    '(The result was too long: the first {shown} of {total} characters are above. If you need the rest, ask for less: a range of lines, a search, or fewer records.)',
+  'engine.resultLeftOut':
+    '(An earlier tool result of this turn, left out to save room. Call the tool again if you need it.)',
+  'engine.summary':
+    'The earlier part of this conversation is summarised below to save room, for context only.\n\n<earlier-conversation-summary>\n{summary}\n</earlier-conversation-summary>',
+  'engine.historyLeftOut':
+    'Some of the earlier part of this conversation was left out to save room and is in no summary.',
+  'engine.recall':
+    'When you need exact wording, a number, an id or a decision from the earlier part, do not guess: find it with conversations_search and read it with message_read.',
   'files.image': 'The picture {path} is below.',
   'files.imageUnseen': 'This is a picture; the model in use cannot see pictures.',
   'files.written': 'Written: {path}',

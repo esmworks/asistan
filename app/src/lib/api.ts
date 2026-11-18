@@ -182,6 +182,8 @@ export interface Settings {
   piModel?: string;
   /** `provider/model` that carries a turn once the usage limit is spent; empty waits instead. */
   backupModel?: string;
+  /** Tokens at which a Claude bot folds the conversation into a summary; 0 leaves it to Claude. Missing on older servers. */
+  claudeCompactWindow?: number;
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;

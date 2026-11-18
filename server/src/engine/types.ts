@@ -90,6 +90,11 @@ export interface TurnRequest {
   model: string;
   /** How hard the model thinks; unset leaves it to the model. API-key models use it when they reason. */
   effort?: Effort;
+  /**
+   * For Claude: the conversation size, in tokens, at which the session folds into a summary; 0
+   * leaves it to the CLI. Unset takes the app's own default.
+   */
+  compactWindow?: number;
   prompt: string;
   /**
    * What changes on every turn, such as the time now, sent before the prompt. It stays out of the
@@ -226,6 +231,13 @@ export type TurnOutcome = (
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */
       stepLimit?: boolean;
+      /**
+       * The conversation no longer fits the model's context window, as the engine itself tells: a
+       * new session may carry on with the recent exchange.
+       */
+      contextFull?: boolean;
+      /** With `contextFull`: the summary of the conversation's older part, for the session that carries on. */
+      summary?: string;
     }
 ) & { sessionCostUsd?: number | null };
 

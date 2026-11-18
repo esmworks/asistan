@@ -159,6 +159,19 @@ export class FakeEngine implements Engine {
         costUsd: 0,
       };
     }
+    // The same, in a wording only the engine itself recognises as an overflow.
+    if (req.prompt.includes('[bağlam-bayrak]') && req.sessionId) {
+      return {
+        ok: false,
+        kind: 'engine',
+        message: 'Range of input length should be [1, 30720]',
+        text: '',
+        sessionId,
+        costUsd: 0,
+        contextFull: true,
+        summary: 'ÖZET: devredilen konuşma',
+      };
+    }
     // The limit, only the first time this text is sent; it reset a moment ago.
     if (
       req.prompt.includes('[sınır-bir-kez]') &&

@@ -50,6 +50,15 @@ describe('botun araç seçimi', () => {
     await t.send(thread.id, 'y');
     await t.services.turns.idle();
     expect(t.engine.requests.at(-1)!.tools.some((x) => x.name === 'send_file')).toBe(false);
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('conversations_search');
+
+    // Without the tool to look earlier talk up, the prompt does not point to it.
+    await t.api('PATCH', `/api/bots/${bot.id}`, {
+      toolSelection: { only: false, allow: [], exclude: ['mcp__yumakbot__conversations_search'] },
+    });
+    await t.send(thread.id, 'z');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).not.toContain('conversations_search');
     expect((await t.api('PATCH', `/api/bots/${bot.id}`, { toolSelection: { allow: ['a*b'] } })).status).toBe(
       400,
     );

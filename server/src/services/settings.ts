@@ -62,6 +62,12 @@ export const Settings = z.object({
         .regex(/^[a-z0-9._-]+\/\S+$/i),
     ])
     .default(''),
+  /**
+   * The conversation size, in tokens, at which a Claude bot folds the older part into a summary; 0
+   * leaves it to Claude for each model, which for a model of a million-token window is near the
+   * million. Smaller folds sooner: turns stay quick and cheap, and fewer details stay word for word.
+   */
+  claudeCompactWindow: z.union([z.literal(0), z.number().int().min(100_000).max(1_000_000)]).default(200_000),
   timezone: z.string().refine(isValidTimeZone).default('Europe/Istanbul'),
   /**
    * The most the bots may spend in a calendar month, in US dollars, as the engines report it; 0 for

@@ -75,6 +75,11 @@ const WEB_READS = ['WebSearch', 'WebFetch', SANDBOX_NETWORK];
 export const CONTEXT_FULL =
   /context[ _](length|window)|maximum context|too many tokens|exceeds? the (model'?s? )?(context|maximum)|n_ctx|prompt is too long|\b413\b|(request|payload|entity) too large/i;
 
+/** Whether a failed run says the conversation no longer fits the model. */
+function contextFull(outcome: { message: string; contextFull?: boolean }): boolean {
+  return !!outcome.contextFull || CONTEXT_FULL.test(outcome.message);
+}
+
 /** Where a conversation keeps the pages of the MCP app views shown in it. */
 export const APP_DIR = '.apps';
 
@@ -751,6 +756,10 @@ export class TurnManager {
       reads = x;
       await persist().catch((err) => console.warn('outside mark', err));
     };
+    // The bot's tool selection narrows what it is given; the rest never reaches the model.
+    const pickTool = toolPicker(bot.toolSelection);
+    // Whether it can look earlier talk up, which the prompts point it to.
+    const recall = pickTool(toolPermName({ name: 'conversations_search' }));
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -775,9 +784,8 @@ export class TurnManager {
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
+      recall,
     });
-    // The bot's tool selection narrows what it is given; the rest never reaches the model.
-    const pickTool = toolPicker(bot.toolSelection);
     const allTools = [
       ...this.services.tools.forTurn({
         bot,
@@ -1087,7 +1095,7 @@ export class TurnManager {
     const roomPrompt = (fresh: boolean) =>
       this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t, note });
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
-    const handoff = async () => {
+    const handoff = async (summary?: string) => {
       if (inRoom) return roomPrompt(true);
       const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
         (m) => new Date(m.createdAt) <= turn.createdAt,
@@ -1097,6 +1105,8 @@ export class TurnManager {
       return handoffPrompt({
         messages,
         prompt: asked,
+        ...(summary && { summary }),
+        recall,
         names: new Map([
           ...(settings.userName ? [['user', settings.userName] as const] : []),
           ...allBots.map((b) => [`bot:${b.id}`, b.name] as const),
@@ -1250,6 +1260,7 @@ export class TurnManager {
         ...(!backup && (bot.effort || (bot.engine === 'claude' && settings.effort))
           ? { effort: (bot.effort || settings.effort) as Effort }
           : {}),
+        compactWindow: settings.claudeCompactWindow,
         prompt,
         context: [nowLine(new Date(), timezone, locale), appsDown].filter(Boolean).join('\n'),
         sessionId: backup ? null : session,
@@ -1369,7 +1380,7 @@ export class TurnManager {
         outcome = await run(await settle(await handoff(), false));
         if (!outcome.ok && outcome.kind === 'lostSession') outcome = { ...outcome, kind: 'engine' };
       }
-      if (!outcome.ok && outcome.kind === 'engine' && session && CONTEXT_FULL.test(outcome.message)) {
+      if (!outcome.ok && outcome.kind === 'engine' && session && contextFull(outcome)) {
         // The conversation no longer fits the model: a new session carries on, once, with the recent
         // exchange, instead of every later message failing the same way.
         await threads.addMessage({
@@ -1385,7 +1396,8 @@ export class TurnManager {
         streamed = '';
         shown = 0;
         spent += outcome.costUsd ?? 0;
-        outcome = await run(await settle(await handoff(), false));
+        // What the old session had folded into a summary goes along, or it would be lost with it.
+        outcome = await run(await settle(await handoff(outcome.summary), false));
       }
       if (!outcome.ok && outcome.cut && !acted && !controller.signal.aborted) {
         // The provider closed the reply before its end. Nothing was changed yet and the engine kept
@@ -1579,7 +1591,7 @@ export class TurnManager {
               ? t('turn.stopped')
               : outcome.kind === 'stalled'
                 ? outcome.message
-                : CONTEXT_FULL.test(outcome.message)
+                : contextFull(outcome)
                   ? t('turn.contextFull', { message: readableError(outcome.message) })
                   : t('turn.error', { message: readableError(outcome.message) });
       const { message: note } = await threads.addMessage({

@@ -290,7 +290,7 @@ export const en: Catalog<MessageKey> = {
   'settings.keywords.general':
     'theme, dark, light, language, zoom, notifications, sound, send key, enter, time zone, sidebar, compact, chat width, open at login, reading aloud, speech',
   'settings.keywords.connection':
-    'claude, sign in, api key, provider, model, effort, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
+    'claude, sign in, api key, provider, model, effort, summary, context, compaction, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
   'settings.keywords.permissions': 'approvals, rules, allow, ask, always, block, never, deny',
   'settings.keywords.vault':
     'passwords, logins, two-step codes, totp, secrets, api keys, tokens, shared pages, links',
@@ -1663,6 +1663,13 @@ export const en: Catalog<MessageKey> = {
   'model.moveKeeps':
     "Their conversations stay; each bot picks up from the recent conversation at its next message. When a bot moves between Claude and another provider, a routine of it that names its own model loses that choice and uses the bot's model.",
   'model.moved': { one: '1 bot moved.', other: '{count} bots moved.' },
+  'model.compact': 'Conversation summary size',
+  'model.compactHint':
+    "Once a Claude bot's conversation reaches this size, its older part is summarised. Smaller keeps answers quick and cheap; larger keeps more details word for word, but every message costs more.",
+  'model.compactThousand': '{count}k tokens',
+  'model.compactMillion': '{count} million tokens',
+  'model.compactAuto': "Claude's own size",
+  'model.compactRecommended': '{size} (recommended)',
   'model.backup': 'Backup model',
   'model.backupHint':
     'When the usage limit is used up, the work goes on with this model instead of waiting; it gets the recent conversation.',

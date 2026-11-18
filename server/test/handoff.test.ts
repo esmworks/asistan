@@ -22,6 +22,66 @@ describe('geçmişi yeni oturuma devretme', () => {
     ).toBe('merhaba');
   });
 
+  it('bota daha eskisini nasıl bulacağını söyler', () => {
+    const out = handoffPrompt({
+      messages: [msg('user', 'soru'), msg('assistant', 'cevap'), msg('user', 'yeni')],
+      prompt: 'yeni',
+      names,
+      locale: 'tr',
+    });
+    expect(out).toContain('conversations_search');
+    expect(out).toContain('message_read');
+  });
+
+  it('her satıra mesajın kimliğini koyar; kısaltılan mesajın tamamının nasıl okunacağını söyler', () => {
+    const out = handoffPrompt({
+      messages: [
+        { id: 'm-1', ...msg('user', 'soru') },
+        { id: 'm-2', ...msg('assistant', 'x'.repeat(HANDOFF_MESSAGE_CHARS + 50)) },
+        { id: 'm-3', ...msg('user', 'yeni') },
+      ],
+      prompt: 'yeni',
+      names,
+      locale: 'tr',
+    });
+    expect(out).toContain('Kullanıcı [m-1]: soru');
+    expect(out).toContain('Kahya [m-2]: ');
+    expect(out).toContain('message_read ile m-2');
+    expect(out).not.toContain('[m-3]');
+  });
+
+  it('eski oturumun özetini son mesajlardan önce devreder', () => {
+    const out = handoffPrompt({
+      messages: [msg('user', 'soru'), msg('assistant', '<yanıt-1>'), msg('user', 'yeni')],
+      prompt: 'yeni',
+      summary: 'ÖZET: fatura no 42',
+      names,
+      locale: 'tr',
+    });
+    expect(out).toContain('ÖZET: fatura no 42');
+    expect(out.indexOf('ÖZET')).toBeLessThan(out.indexOf('<yanıt-1>'));
+    // A bot that cannot look earlier talk up is not pointed to it.
+    const plain = handoffPrompt({
+      messages: [{ id: 'm-9', ...msg('user', 'soru') }, msg('assistant', '<yanıt-1>'), msg('user', 'yeni')],
+      prompt: 'yeni',
+      recall: false,
+      names,
+      locale: 'tr',
+    });
+    expect(plain).not.toContain('message_read');
+    expect(plain).not.toContain('m-9');
+    // A summary alone still goes along.
+    expect(
+      handoffPrompt({
+        messages: [msg('user', 'yeni')],
+        prompt: 'yeni',
+        summary: 'ÖZET',
+        names,
+        locale: 'tr',
+      }),
+    ).toContain('ÖZET');
+  });
+
   it('kartları, hataları ve cevapsız son mesajları almaz', () => {
     const out = handoffPrompt({
       messages: [

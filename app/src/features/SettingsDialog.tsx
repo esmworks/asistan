@@ -913,8 +913,48 @@ function ModelCard({ onAddProvider }: { onAddProvider(): void }) {
           />
         )}
       </div>
+      {!folded && settings.claudeCompactWindow !== undefined && <CompactWindow />}
       {settings.backupModel !== undefined && <BackupModel onAddProvider={onAddProvider} />}
     </Card>
+  );
+}
+
+/** Sizes offered, in tokens; 0 leaves it to Claude. The server starts at the recommended one. */
+const COMPACT_CHOICES = [100_000, 150_000, 200_000, 300_000, 400_000, 600_000, 800_000, 1_000_000, 0];
+const COMPACT_RECOMMENDED = 200_000;
+
+/** How big a Claude bot's conversation grows before its older part is folded into a summary. */
+function CompactWindow() {
+  const t = useT();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const value = settings?.claudeCompactWindow ?? COMPACT_RECOMMENDED;
+  // A size another client saved stays listed, so the box never shows empty.
+  const choices = COMPACT_CHOICES.includes(value) ? COMPACT_CHOICES : [...COMPACT_CHOICES, value];
+  const label = (n: number) => {
+    const size =
+      n === 0
+        ? t('model.compactAuto')
+        : n >= 1_000_000
+          ? t('model.compactMillion', { count: n / 1_000_000 })
+          : t('model.compactThousand', { count: n / 1_000 });
+    return n === COMPACT_RECOMMENDED ? t('model.compactRecommended', { size }) : size;
+  };
+  return (
+    <Row label={t('model.compact')} hint={t('model.compactHint')}>
+      <Select value={String(value)} onValueChange={(v) => save.mutate({ claudeCompactWindow: Number(v) })}>
+        <SelectTrigger className="w-56 rounded-full" aria-label={t('model.compact')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {choices.map((n) => (
+            <SelectItem key={n} value={String(n)}>
+              {label(n)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Row>
   );
 }
 

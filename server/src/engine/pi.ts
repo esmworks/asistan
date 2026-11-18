@@ -5,11 +5,34 @@ import { Agent, type AgentMessage, type AgentTool, type StreamFn } from '@earend
 import type { AssistantMessage, Model, ModelAuth } from '@earendil-works/pi-ai';
 import { completeSimple, getModel, streamSimple } from '@earendil-works/pi-ai/compat';
 import { clampThinkingLevel } from '@earendil-works/pi-ai/models';
+import { estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate';
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow';
 import type { Locale } from '@yumakbot/shared';
 import { z } from 'zod';
 import { translator, type T } from '../i18n';
 import { failureStreak } from './failures';
 import { fitResult } from './fit-image';
+import {
+  capText,
+  COMPACT_AT,
+  contextBudget,
+  cutPoint,
+  elideResults,
+  excerptSummary,
+  introTokens,
+  KEEP_AFTER_COMPACT,
+  NO_FOLD,
+  resultChars,
+  SUMMARY_SYSTEM,
+  SUMMARY_TOKENS,
+  CHARS_PER_TOKEN,
+  summaryRequest,
+  tokensOf,
+  transcriptChunks,
+  withoutPictures,
+  withSummary,
+  type Fold,
+} from './pi-context';
 import { fileTools, PathError, type FileTool } from './pi-files';
 import {
   providerTrouble,
@@ -48,7 +71,10 @@ export interface PiEngineOptions {
 const SESSION_ID = /^[0-9a-f-]{36}$/;
 /** Model calls per user turn, as for Claude bots; stops a looping bot from spending the key. */
 export const MAX_STEPS = 50;
-/** Messages sent to the model; older ones stay on disk but are left out of the request. */
+/**
+ * Messages sent to a model that names no context window; older ones stay on disk but are left out
+ * of the request. A model with a window gets what fits it (see `pi-context`).
+ */
 export const MAX_CONTEXT_MESSAGES = 160;
 /** A key test that takes longer than this counts as failed. */
 const TEST_TIMEOUT = 30_000;
@@ -220,21 +246,98 @@ export class PiEngine implements Engine {
     return join(this.opts.sessionsDir, `${id}.json`);
   }
 
-  private async load(id: string): Promise<AgentMessage[]> {
+  /** A session's history and what of it is folded into a summary; files from before folding have none. */
+  private async load(id: string): Promise<{ messages: AgentMessage[]; fold: Fold }> {
     try {
-      const data = JSON.parse(await readFile(this.sessionFile(id), 'utf8')) as { messages?: AgentMessage[] };
-      return Array.isArray(data.messages) ? withoutSystem(data.messages) : [];
+      const data = JSON.parse(await readFile(this.sessionFile(id), 'utf8')) as {
+        messages?: AgentMessage[];
+        summary?: unknown;
+        folded?: unknown;
+        lost?: unknown;
+      };
+      const messages = Array.isArray(data.messages) ? withoutSystem(data.messages) : [];
+      const folded =
+        typeof data.folded === 'number' ? Math.min(Math.max(0, data.folded), messages.length) : 0;
+      return {
+        messages,
+        fold: {
+          summary: typeof data.summary === 'string' && data.summary ? data.summary : null,
+          folded,
+          ...(data.lost === true && { lost: true }),
+        },
+      };
     } catch {
-      return [];
+      return { messages: [], fold: NO_FOLD };
     }
   }
 
-  private async save(id: string, messages: AgentMessage[]) {
+  private async save(id: string, messages: AgentMessage[], fold: Fold) {
     await mkdir(this.opts.sessionsDir, { recursive: true, mode: 0o700 });
     const file = this.sessionFile(id);
     const tmp = `${file}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify({ version: 1, messages: withoutSystem(messages) }), { mode: 0o600 });
+    const kept = withoutSystem(messages);
+    const folded = Math.min(fold.folded, kept.length);
+    await writeFile(
+      tmp,
+      JSON.stringify({
+        version: 2,
+        messages: withoutPictures(kept, folded),
+        summary: fold.summary,
+        folded,
+        ...(fold.lost && { lost: true }),
+      }),
+      { mode: 0o600 },
+    );
     await rename(tmp, file);
+  }
+
+  /**
+   * The summary that replaces `messages` (and `previous`, the one before), written by the bot's own
+   * model in steps the window can take. Null when it could not be written: the turn goes on without.
+   * `partial` when the oldest messages were too many to go into it.
+   */
+  private async summarize(
+    model: Model<string>,
+    apiKey: string,
+    sessionId: string,
+    previous: string | null,
+    messages: AgentMessage[],
+    signal: AbortSignal | undefined,
+  ): Promise<{ summary: string | null; costUsd: number; partial?: boolean }> {
+    const window = model.contextWindow || 32_000;
+    // Each step's input stays well inside the window, with room for the summary it builds on.
+    const chunkChars = Math.max(8_000, Math.floor(window * 0.5 * CHARS_PER_TOKEN) - (previous?.length ?? 0));
+    let summary = previous;
+    let costUsd = 0;
+    const { chunks, dropped } = transcriptChunks(messages, chunkChars);
+    try {
+      for (const chunk of chunks) {
+        if (signal?.aborted) return { summary: null, costUsd };
+        const reply = await (this.opts.complete ?? completeSimple)(
+          model,
+          {
+            systemPrompt: SUMMARY_SYSTEM,
+            messages: [{ role: 'user', content: summaryRequest(summary, chunk), timestamp: Date.now() }],
+          },
+          {
+            apiKey,
+            maxTokens: Math.min(model.maxTokens || SUMMARY_TOKENS, SUMMARY_TOKENS),
+            sessionId,
+            ...(signal && { signal }),
+          },
+        );
+        costUsd += reply.usage?.cost?.total ?? 0;
+        const text = textOf(reply).trim();
+        if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || !text) {
+          return { summary: null, costUsd };
+        }
+        summary = text;
+      }
+      return { summary, costUsd, ...(dropped && { partial: true }) };
+    } catch (err) {
+      console.warn(`pi: could not summarise the conversation: ${(err as Error).message}`);
+      return { summary: null, costUsd };
+    }
   }
 
   /** The key for a provider's requests, and the model with the address and headers its sign-in gives. */
@@ -308,7 +411,9 @@ export class PiEngine implements Engine {
 
     const resumed = req.sessionId && SESSION_ID.test(req.sessionId) ? req.sessionId : null;
     const sessionId = resumed ?? randomUUID();
-    const history = resumed ? await this.load(resumed) : [];
+    const saved = resumed ? await this.load(resumed) : { messages: [], fold: NO_FOLD };
+    const history = saved.messages;
+    let fold = saved.fold;
     if (!resumed) req.onSession(sessionId);
 
     // A local model built without tool use refuses any request that lists tools: it only talks.
@@ -320,9 +425,15 @@ export class PiEngine implements Engine {
         );
     const byName = new Map<string, { perm: string; file?: FileTool; app?: AppTool }>();
     const tools: AgentTool[] = [];
+    // Set once the tool list is known; read when a tool's result comes back.
+    let maxResult = resultChars(null);
+    const cap = (text: string) =>
+      capText(text, maxResult, (shown, total) => t('engine.resultCut', { shown, total }));
     for (const f of files) {
       byName.set(f.name, { perm: f.permissionName, file: f });
-      tools.push(this.agentTool(t, f.name, f.description, f.input, (args, signal) => f.run(args, signal)));
+      tools.push(
+        this.agentTool(t, cap, f.name, f.description, f.input, (args, signal) => f.run(args, signal)),
+      );
     }
     // Providers refuse a request listing more than MAX_TOOLS tools. The bot's own tools go first;
     // connected apps follow whole, smallest first, so a small app is never cut for a big one. What
@@ -349,21 +460,35 @@ export class PiEngine implements Engine {
       const name = nameOf(tool);
       byName.set(name, { perm: toolPermName(tool), app: tool });
       tools.push(
-        this.agentTool(t, name, tool.description, tool.input, (args) => tool.handler(args), tool.jsonSchema),
+        this.agentTool(
+          t,
+          cap,
+          name,
+          tool.description,
+          tool.input,
+          (args) => tool.handler(args),
+          tool.jsonSchema,
+        ),
       );
     }
     const unlisted = new Map(left.map((x) => [nameOf(x), x]));
     if (left.length) {
       byName.set(FIND_TOOL, { perm: FIND_TOOL });
       tools.push(
-        this.agentTool(t, FIND_TOOL, t('engine.findTool'), { query: z.string().min(1).max(200) }, async (a) =>
-          findTools(left, String(a.query), nameOf, t('engine.findToolNone')),
+        this.agentTool(
+          t,
+          cap,
+          FIND_TOOL,
+          t('engine.findTool'),
+          { query: z.string().min(1).max(200) },
+          async (a) => findTools(left, String(a.query), nameOf, t('engine.findToolNone')),
         ),
       );
       byName.set(USE_TOOL, { perm: USE_TOOL });
       tools.push(
         this.agentTool(
           t,
+          cap,
           USE_TOOL,
           t('engine.useTool'),
           { name: z.string().min(1).max(200), arguments: z.record(z.string(), z.unknown()).default({}) },
@@ -392,11 +517,85 @@ export class PiEngine implements Engine {
       };
     }
 
+    const systemPrompt = left.length
+      ? `${req.systemPrompt}\n\n${t('engine.toolsSearch', { count: left.length, apps: [...new Set(left.map((x) => x.server))].join(', ') })}`
+      : req.systemPrompt;
+    // The conversation's room: the window less the reply and what goes with every request. Taken
+    // from the model of this run, since a session may go on with a model of a smaller window.
+    const budget = contextBudget(
+      model,
+      estimateTextTokens(
+        systemPrompt +
+          JSON.stringify(
+            tools.map((x) => ({ name: x.name, description: x.description, parameters: x.parameters })),
+          ),
+      ),
+    );
+    maxResult = resultChars(budget);
+    // A part left out without a summary stays so: the bot is told to look it up when it can.
+    const recall = offered.some((x) => !x.server && x.name === 'conversations_search');
+    const intro = (f: Fold) => {
+      const parts = [
+        f.summary && t('engine.summary', { summary: f.summary }),
+        f.lost && t('engine.historyLeftOut'),
+      ].filter(Boolean);
+      if (parts.length && recall) parts.push(t('engine.recall'));
+      return parts.join('\n\n') || null;
+    };
+    /**
+     * The fold a turn that ends without its reply keeps: the latest one with a real summary, not one
+     * that stood in for a summary that failed, which a later turn may yet write.
+     */
+    let good = saved.fold;
+    let costUsd = 0;
+    /**
+     * What one request carries. Past the room's limit the older part is folded into a summary,
+     * once: later requests and turns reuse it until the recent part outgrows the room again.
+     */
+    const fitted = async (messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> => {
+      const system = messages.filter((m) => m.role === 'system');
+      if (!budget) return dropOldImages(trimHistory(messages), t('engine.imageDropped'));
+      const rest = withoutSystem(messages);
+      // Measured as sent: pictures past the latest few go as a note, so they take no room.
+      const light = dropOldImages(rest, t('engine.imageDropped'));
+      if (tokensOf(light.slice(fold.folded)) + introTokens(intro(fold)) > budget * COMPACT_AT) {
+        const cut = cutPoint(light, fold.folded, budget * KEEP_AFTER_COMPACT);
+        if (cut > fold.folded) {
+          const made = await this.summarize(
+            model,
+            apiKey,
+            sessionId,
+            fold.summary,
+            rest.slice(fold.folded, cut),
+            signal ?? req.signal,
+          );
+          costUsd += made.costUsd;
+          // Without a summary the older part is still left out, since a request that does not fit
+          // fails; its newest messages stay word for word in place of the summary.
+          fold = made.summary
+            ? { summary: made.summary, folded: cut, ...((fold.lost || made.partial) && { lost: true }) }
+            : {
+                summary: excerptSummary(fold.summary, rest.slice(fold.folded, cut)) || null,
+                folded: cut,
+                lost: true,
+              };
+          if (made.summary) {
+            good = fold;
+            req.onCompacted?.();
+          }
+        }
+      }
+      const shown = elideResults(
+        withSummary(light.slice(fold.folded), intro(fold)),
+        budget,
+        t('engine.resultLeftOut'),
+      );
+      return [...system, ...shown];
+    };
+
     const agent = new Agent({
       initialState: {
-        systemPrompt: left.length
-          ? `${req.systemPrompt}\n\n${t('engine.toolsSearch', { count: left.length, apps: [...new Set(left.map((x) => x.server))].join(', ') })}`
-          : req.systemPrompt,
+        systemPrompt,
         model,
         tools,
         messages: history,
@@ -407,7 +606,7 @@ export class PiEngine implements Engine {
       getApiKey: (provider) => (provider === target.provider ? apiKey : undefined),
       sessionId,
       toolExecution: 'sequential',
-      transformContext: async (messages) => dropOldImages(trimHistory(messages), t('engine.imageDropped')),
+      transformContext: fitted,
       beforeToolCall: async ({ toolCall, args }) => {
         // Looking tools up only reads the list.
         if (toolCall.name === FIND_TOOL) return undefined;
@@ -436,7 +635,6 @@ export class PiEngine implements Engine {
       },
     });
 
-    let costUsd = 0;
     let steps = 0;
     let capped = false;
     agent.subscribe((event) => {
@@ -488,8 +686,19 @@ export class PiEngine implements Engine {
 
     const messages = agent.state.messages;
     const last = [...messages].reverse().find((m): m is AssistantMessage => m.role === 'assistant');
+    const failed =
+      last?.stopReason === 'error' && messages.indexOf(last) >= history.length ? last : undefined;
     const text = replyText(messages);
+    /**
+     * Saves the history as it was before this turn: a broken exchange would poison the next turn.
+     * A summary made on the way stays when it covers only that history, so it is not paid for again.
+     */
+    const keepHistory = async (always: boolean) => {
+      const keep = good.folded <= history.length ? good : saved.fold;
+      if (always || keep !== saved.fold) await this.save(sessionId, history, keep);
+    };
     if (capped) {
+      await keepHistory(false);
       return {
         ok: false,
         kind: 'engine',
@@ -501,13 +710,13 @@ export class PiEngine implements Engine {
       };
     }
     if (req.signal.aborted || last?.stopReason === 'aborted') {
+      await keepHistory(false);
       return fail('interrupted', t('engine.stopped'), text, sessionId, costUsd);
     }
     const error =
       thrown ?? (last?.stopReason === 'error' ? (last.errorMessage ?? t('engine.modelError')) : null);
     if (error || !last) {
-      // The history keeps only complete exchanges; a broken one would poison the next turn.
-      if (!resumed) await this.save(sessionId, history);
+      await keepHistory(!resumed);
       if (!error) return fail('engine', t('engine.noResponse'), text, sessionId, costUsd);
       const why = providerTrouble(error, target.provider, t);
       return {
@@ -519,15 +728,21 @@ export class PiEngine implements Engine {
         ...(why.kind === 'limit' && { provider: target.provider }),
         ...(why.transient && { transient: true }),
         ...(why.cut && { cut: true }),
+        // Only this run's own failed reply tells: an earlier one, or a reply that went through, does not.
+        // With the summary of what came before, which the new session that carries on is handed.
+        ...(failed &&
+          isContextOverflow(failed) && { contextFull: true, ...(fold.summary && { summary: fold.summary }) }),
         costUsd: costUsd || null,
       };
     }
-    await this.save(sessionId, messages);
+    await this.save(sessionId, messages, fold);
     return { ok: true, text, sessionId, costUsd: costUsd || null };
   }
 
   private agentTool(
     t: T,
+    /** Cuts a result's text to what the conversation's room allows. */
+    cap: (text: string) => string,
     name: string,
     description: string,
     input: z.ZodRawShape,
@@ -554,7 +769,7 @@ export class PiEngine implements Engine {
           const r = await fitResult(await run(parsed.data, signal ?? new AbortController().signal));
           return {
             content: [
-              { type: 'text', text: resultText(r) },
+              { type: 'text', text: cap(resultText(r)) },
               ...resultImages(r).map((i) => ({ type: 'image' as const, data: i.data, mimeType: i.mimeType })),
             ],
             details: undefined,
