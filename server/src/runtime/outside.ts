@@ -65,6 +65,18 @@ export function reachesOut(toolName: string, input: Record<string, unknown>, too
   return takesAddress(tool.jsonSchema);
 }
 
+/**
+ * Whether a step only looks something up on the web: a search, a page, the bot's browser. After
+ * outside text it still goes to the review, which is told the text was read and holds anything
+ * that sends data out; a card for every page a routine whose job is browsing opens buried the
+ * cards that matter. A command or an API call, which can send anything anywhere, stays with the
+ * person.
+ */
+export function browses(toolName: string, tool?: AppTool): boolean {
+  if (toolName === 'WebSearch' || toolName === 'WebFetch') return true;
+  return !!tool && !tool.server && tool.name.startsWith('browser_');
+}
+
 /** Words in an input's name that make it a place to send to: a page, a host, a hook. */
 const ADDRESS_WORDS = new Set([
   'url',
