@@ -52,6 +52,20 @@ const LOST_SESSION = /No conversation found with session ID/i;
  */
 const CLI_SETTINGS = { disableClaudeAiConnectors: true, cleanupPeriodDays: 3650 } as const;
 
+/**
+ * The conversation size at which the CLI folds a session into a summary, when the person set none.
+ * Left to the CLI, a model with a million-token window folds only near the million: every turn
+ * before then sends the whole conversation, slow and costly, and the first fold makes the person
+ * wait a minute. A model whose window is this size folds as it would anyway; the CLI never takes a
+ * size past the model's own window.
+ */
+export const AUTO_COMPACT_WINDOW = 200_000;
+
+/** A run's CLI settings with the size it folds at; 0 leaves the size to the CLI. */
+export function withCompactWindow<S extends object>(settings: S, window = AUTO_COMPACT_WINDOW) {
+  return window > 0 ? { ...settings, autoCompactWindow: window } : settings;
+}
+
 export { BASH_MAX_TIMEOUT_MS };
 
 /** How long a stopped turn's CLI gets to answer the interrupt before it is closed. */
@@ -374,9 +388,11 @@ export class ClaudeEngine implements Engine {
       req.sandbox.internet && req.shell !== 'computer'
         ? await startSandboxProxy({ onReach: (host) => req.onReach?.(host) })
         : null;
+    const sandboxed = sandboxOptions(req.sandbox, hidden, proxy);
     const options: Options = {
       ...base,
-      ...sandboxOptions(req.sandbox, hidden, proxy),
+      ...sandboxed,
+      settings: withCompactWindow(sandboxed.settings as Record<string, unknown>, req.compactWindow),
       ...(req.model ? { model: req.model } : {}),
       ...(req.effort ? { effort: req.effort } : {}),
       ...(req.sessionId ? { resume: req.sessionId } : {}),

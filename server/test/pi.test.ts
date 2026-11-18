@@ -37,6 +37,16 @@ import {
   replyText,
   trimHistory,
 } from '../src/engine/pi';
+import {
+  capText,
+  cutPoint,
+  elideResults,
+  EXCERPT_CHARS,
+  excerptSummary,
+  SUMMARY_SYSTEM,
+  transcriptChunks,
+  withSummary,
+} from '../src/engine/pi-context';
 import { translator } from '../src/i18n';
 import { CONTEXT_FULL } from '../src/runtime/turns';
 import { endpointUrl, keySafeAt, unlistedModel } from '../src/services/keys';
@@ -705,6 +715,447 @@ describe('Pi motoru', () => {
     ]);
     const out = await engine().run(req);
     expect(out).toMatchObject({ ok: false, kind: 'interrupted' });
+  });
+
+  describe('bağlam', () => {
+    /** A model of a small window, and summaries written by `complete`. */
+    const small = (complete?: typeof completeSimple, window = 20_000) =>
+      new PiEngine({
+        sessionsDir: join(dir, 'sessions'),
+        apiKey: async (p) => keys[p] ?? null,
+        resolveModel: (p, id) =>
+          p === 'deneme' ? { ...faux.getModel(id)!, contextWindow: window, maxTokens: 1_000 } : undefined,
+        ...(complete && { complete }),
+      });
+    /** A session saved before summaries existed, with `n` long exchanges. */
+    const oldSession = (n: number) => {
+      const id = '11111111-2222-3333-4444-555555555555';
+      const messages = [];
+      for (let i = 0; i < n; i++) {
+        messages.push({ role: 'user', content: `<eski-${i}> ${'x'.repeat(3_000)}`, timestamp: 1_000 + i });
+        messages.push(fauxAssistantMessage(`<cevap-${i}> ${'y'.repeat(3_000)}`));
+      }
+      mkdirSync(join(dir, 'sessions'), { recursive: true });
+      writeFileSync(join(dir, 'sessions', `${id}.json`), JSON.stringify({ version: 1, messages }));
+      return id;
+    };
+    /** The first message of the conversation; the system prompt goes before it. */
+    const firstText = (ctx: { messages: { role: string; content: unknown }[] }) =>
+      JSON.stringify(ctx.messages.find((m) => m.role !== 'system')!.content);
+    const allText = (ctx: { messages: unknown[] }) => JSON.stringify(ctx.messages);
+    /** The tool a bot looks up earlier talk with. */
+    const recallTool: AppTool = {
+      name: 'conversations_search',
+      description: 'Geçmiş sohbetlerde ara.',
+      input: { query: z.string() },
+      readOnly: true,
+      internal: true,
+      handler: async () => 'yok',
+    };
+
+    it('pencereye sığmayan eski kısmı bir kez özetler; sonraki tur özeti yeniden yazmaz', async () => {
+      const id = oldSession(20);
+      const asked: string[] = [];
+      const complete = (async (_m, ctx) => {
+        asked.push(String(ctx.messages[0]!.content));
+        const reply = fauxAssistantMessage('ÖZET: ilk iş konuşuldu');
+        return { ...reply, usage: { ...reply.usage, cost: { ...reply.usage.cost, total: 0.01 } } };
+      }) as typeof completeSimple;
+      const seen: { messages: unknown[] }[] = [];
+      faux.setResponses([
+        (ctx) => {
+          seen.push(ctx as never);
+          return fauxAssistantMessage('tamam');
+        },
+      ]);
+      let compacted = 0;
+      const out = await small(complete).run(
+        request({ sessionId: id, prompt: 'devam', tools: [recallTool], onCompacted: () => compacted++ }).req,
+      );
+      expect(out).toMatchObject({ ok: true, text: 'tamam' });
+      // What the summaries cost counts toward the turn.
+      expect(out.costUsd).toBeGreaterThanOrEqual(0.01 * asked.length);
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked[0]).toContain('<eski-0>');
+      expect(compacted).toBe(1);
+      expect(firstText(seen[0] as never)).toContain('ÖZET');
+      expect(firstText(seen[0] as never)).toContain('conversations_search');
+      expect(allText(seen[0] as never)).not.toContain('<eski-0> ');
+      expect(allText(seen[0] as never)).toContain('<eski-19>');
+      const saved = JSON.parse(readFileSync(join(dir, 'sessions', `${id}.json`), 'utf8'));
+      expect(saved).toMatchObject({ version: 2, summary: expect.stringContaining('ÖZET') });
+      expect(saved.folded).toBeGreaterThan(0);
+      // The whole history stays on disk.
+      expect(saved.messages).toHaveLength(42);
+      expect(saved.messages[saved.folded].role).toBe('user');
+
+      const calls = asked.length;
+      faux.setResponses([
+        (ctx) => {
+          seen.push(ctx as never);
+          return fauxAssistantMessage('yine tamam');
+        },
+      ]);
+      const again = await small(complete).run(request({ sessionId: id, prompt: 'sonra' }).req);
+      expect(again).toMatchObject({ ok: true, text: 'yine tamam' });
+      expect(asked).toHaveLength(calls);
+      expect(firstText(seen[1] as never)).toContain('ÖZET');
+    });
+
+    it('özeti botun kendi modeline özetleme talimatıyla yazdırır', async () => {
+      const id = oldSession(20);
+      let summaries = 0;
+      let answered = '';
+      const reply = (ctx: { systemPrompt?: string; messages: { role: string; content: unknown }[] }) => {
+        // The provider gets the system prompt as the conversation's first, system message.
+        if (ctx.messages[0]?.role === 'system' && ctx.messages[0].content === SUMMARY_SYSTEM) {
+          summaries++;
+          return fauxAssistantMessage(`MODEL-ÖZETİ ${summaries}`);
+        }
+        answered = firstText(ctx);
+        return fauxAssistantMessage('tamam');
+      };
+      faux.setResponses(Array.from({ length: 8 }, () => reply as never));
+      const out = await small().run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out).toMatchObject({ ok: true, text: 'tamam' });
+      expect(summaries).toBeGreaterThan(0);
+      // Each step builds on the summary before it; the last one is what the bot sees.
+      expect(answered).toContain(`MODEL-ÖZETİ ${summaries}`);
+    });
+
+    it('tek uzun turda eski araç sonuçlarını çıkarır, sonuncusunu bırakır ve cevap verir', async () => {
+      for (let i = 0; i < 6; i++)
+        writeFileSync(join(cwd, `d${i}.txt`), `<dosya-${i}>\n${'veri satırı\n'.repeat(1_100)}`);
+      const asked: number[] = [];
+      const complete = (async () => {
+        asked.push(1);
+        return fauxAssistantMessage('özet');
+      }) as typeof completeSimple;
+      let sent = '';
+      faux.setResponses([
+        ...Array.from({ length: 6 }, (_, i) =>
+          fauxAssistantMessage([fauxToolCall('read_file', { path: `d${i}.txt` })], { stopReason: 'toolUse' }),
+        ),
+        (ctx) => {
+          sent = allText(ctx as never);
+          return fauxAssistantMessage('hepsini okudum');
+        },
+      ]);
+      const out = await small(complete).run(request({ prompt: 'hepsini oku' }).req);
+      expect(out).toMatchObject({ ok: true, text: 'hepsini okudum' });
+      // One user message: nothing to fold at, so no summary is asked for.
+      expect(asked).toHaveLength(0);
+      expect(sent).not.toContain('<dosya-0>');
+      expect(sent).toContain('<dosya-5>');
+      expect(sent).toContain('eski bir araç sonucu');
+    });
+
+    it('çok sayıda ekran görüntüsü, gönderilmeyenler sayılmadığı için özetlemeye yol açmaz', async () => {
+      const id = '22222222-3333-4444-5555-666666666666';
+      const pixel =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const messages: unknown[] = [];
+      for (let i = 0; i < 20; i++) {
+        const call = fauxAssistantMessage([fauxToolCall('ekran', {})], { stopReason: 'toolUse' });
+        const callId = (call.content[0] as { id: string }).id;
+        messages.push({ role: 'user', content: `bak ${i}`, timestamp: i });
+        messages.push(call);
+        messages.push({
+          role: 'toolResult',
+          toolCallId: callId,
+          toolName: 'ekran',
+          content: [{ type: 'image', data: pixel, mimeType: 'image/png' }],
+          isError: false,
+          timestamp: i,
+        });
+        messages.push(fauxAssistantMessage(`gördüm ${i}`));
+      }
+      mkdirSync(join(dir, 'sessions'), { recursive: true });
+      writeFileSync(join(dir, 'sessions', `${id}.json`), JSON.stringify({ version: 1, messages }));
+      const asked: number[] = [];
+      const complete = (async () => {
+        asked.push(1);
+        return fauxAssistantMessage('özet');
+      }) as typeof completeSimple;
+      let sent = '';
+      faux.setResponses([
+        (ctx) => {
+          sent = allText(ctx as never);
+          return fauxAssistantMessage('tamam');
+        },
+      ]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out.ok).toBe(true);
+      expect(asked).toHaveLength(0);
+      expect(sent).toContain('bak 0');
+      expect(sent).toContain('daha eski bir görüntü');
+    });
+
+    it('önceki turun yanıtı yeni modelin penceresini aşsa da başka bir hatayı taşma saymaz', async () => {
+      const id = '33333333-4444-5555-6666-777777777777';
+      const old = fauxAssistantMessage('eski cevap');
+      const big = { ...old, usage: { ...old.usage, input: 50_000, totalTokens: 50_000 } };
+      mkdirSync(join(dir, 'sessions'), { recursive: true });
+      writeFileSync(
+        join(dir, 'sessions', `${id}.json`),
+        JSON.stringify({ version: 1, messages: [{ role: 'user', content: 'eski', timestamp: 1 }, big] }),
+      );
+      const broken = new PiEngine({
+        sessionsDir: join(dir, 'sessions'),
+        apiKey: async (p) => keys[p] ?? null,
+        resolveModel: (p, id2) =>
+          p === 'deneme' ? { ...faux.getModel(id2)!, contextWindow: 20_000, maxTokens: 1_000 } : undefined,
+        streamFn: (() => {
+          throw new Error('socket hang up');
+        }) as StreamFn,
+      });
+      const out = await broken.run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out.ok).toBe(false);
+      expect(!out.ok && out.contextFull).toBeFalsy();
+    });
+
+    it('özet yazılamazsa tur yine cevap verir; en yeni eski mesajlar kelimesi kelimesine kalır', async () => {
+      const id = oldSession(20);
+      const complete = (async () => {
+        throw new Error('özetleyici düştü');
+      }) as typeof completeSimple;
+      let sent = '';
+      faux.setResponses([
+        (ctx) => {
+          sent = firstText(ctx as never);
+          return fauxAssistantMessage('cevap');
+        },
+      ]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out).toMatchObject({ ok: true, text: 'cevap' });
+      expect(sent).toContain('özette yok');
+      // Without the tools to look it up, the bot is not told to use them.
+      expect(sent).not.toContain('conversations_search');
+      expect(sent).not.toContain('<eski-0> ');
+      const saved = JSON.parse(readFileSync(join(dir, 'sessions', `${id}.json`), 'utf8'));
+      expect(saved).toMatchObject({ version: 2, lost: true });
+      // The newest folded messages stand in for the summary, word for word.
+      const lastFolded = saved.messages[saved.folded - 1].content[0].text.slice(0, 12);
+      expect(lastFolded).toMatch(/^<cevap-\d+>/);
+      expect(saved.summary).toContain(lastFolded);
+      expect(saved.summary).toContain('No summary could be written');
+      expect(sent).toContain(lastFolded);
+    });
+
+    it('özet yazılamayıp tur da düşerse kayıtlı oturum eski hâlinde kalır; özet sonra yazılır', async () => {
+      const id = oldSession(20);
+      const file = join(dir, 'sessions', `${id}.json`);
+      const before = readFileSync(file, 'utf8');
+      const complete = (async () => {
+        throw new Error('429 çok fazla istek');
+      }) as typeof completeSimple;
+      faux.setResponses([fauxAssistantMessage([fauxText('')], { stopReason: 'error', errorMessage: '503' })]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out.ok).toBe(false);
+      // The excerpt that stood in for the summary is not kept: the next turn may write the summary.
+      expect(readFileSync(file, 'utf8')).toBe(before);
+    });
+
+    it('durdurulan tur, yolda yazılan özeti saklar; sonraki tur yeniden ödemez', async () => {
+      const id = oldSession(20);
+      const { req, ctrl } = request({ sessionId: id, prompt: 'devam' });
+      let calls = 0;
+      const complete = (async () => {
+        calls++;
+        return fauxAssistantMessage('ÖZET: saklanan');
+      }) as typeof completeSimple;
+      faux.setResponses([
+        () => {
+          ctrl.abort();
+          return fauxAssistantMessage([fauxText('')], { stopReason: 'aborted' });
+        },
+      ]);
+      const out = await small(complete).run(req);
+      expect(out).toMatchObject({ ok: false, kind: 'interrupted' });
+      const saved = JSON.parse(readFileSync(join(dir, 'sessions', `${id}.json`), 'utf8'));
+      expect(saved).toMatchObject({ version: 2, summary: 'ÖZET: saklanan' });
+      // Only the history from before the stopped turn.
+      expect(saved.messages).toHaveLength(40);
+      const made = calls;
+      faux.setResponses([fauxAssistantMessage('tamam')]);
+      const again = await small(complete).run(request({ sessionId: id, prompt: 'sonra' }).req);
+      expect(again.ok).toBe(true);
+      expect(calls).toBe(made);
+    });
+
+    it('bağlam yine taşarsa özet yeni oturuma geçsin diye sonuçla döner', async () => {
+      const id = oldSession(20);
+      const complete = (async () => fauxAssistantMessage('ÖZET: devredilen')) as typeof completeSimple;
+      faux.setResponses([
+        fauxAssistantMessage([fauxText('')], {
+          stopReason: 'error',
+          errorMessage: 'Range of input length should be [1, 30720]',
+        }),
+      ]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out).toMatchObject({ ok: false, contextFull: true, summary: 'ÖZET: devredilen' });
+    });
+
+    it('özete sığmayan en eski kısmı kayıp sayar ve bota söyler', () => {
+      const msgs = Array.from({ length: 12 }, (_, i) => ({
+        role: 'user' as const,
+        content: `${i} ${'z'.repeat(5_000)}`,
+        timestamp: i,
+      }));
+      const { chunks, dropped } = transcriptChunks(msgs, 6_000);
+      expect(chunks).toHaveLength(4);
+      expect(dropped).toBe(true);
+      expect(chunks.join('')).toContain('11 ');
+      expect(transcriptChunks(msgs.slice(0, 2), 6_000).dropped).toBe(false);
+    });
+
+    it('özete sığmayan en eski kısım kayıp sayılır ve bota söylenir', async () => {
+      const id = oldSession(60);
+      const complete = (async () => fauxAssistantMessage('ÖZET: son kısım')) as typeof completeSimple;
+      let sent = '';
+      faux.setResponses([
+        (ctx) => {
+          sent = firstText(ctx as never);
+          return fauxAssistantMessage('tamam');
+        },
+      ]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out.ok).toBe(true);
+      expect(sent).toContain('ÖZET: son kısım');
+      expect(sent).toContain('özette yok');
+      const saved = JSON.parse(readFileSync(join(dir, 'sessions', `${id}.json`), 'utf8'));
+      expect(saved).toMatchObject({ summary: 'ÖZET: son kısım', lost: true });
+    });
+
+    it('pencereye sığan eski oturumu olduğu gibi okur, özet istemez', async () => {
+      const id = oldSession(2);
+      const complete = (async () => {
+        throw new Error('çağrılmamalı');
+      }) as typeof completeSimple;
+      let sent = '';
+      faux.setResponses([
+        (ctx) => {
+          sent = allText(ctx as never);
+          return fauxAssistantMessage('tamam');
+        },
+      ]);
+      const out = await small(complete).run(request({ sessionId: id, prompt: 'devam' }).req);
+      expect(out.ok).toBe(true);
+      expect(sent).toContain('<eski-0>');
+      expect(sent).not.toContain('conversations_search');
+    });
+
+    it('çok uzun araç sonucunu pencereye göre keser ve daha dar istemesini söyler', async () => {
+      writeFileSync(join(cwd, 'buyuk.txt'), 'satır\n'.repeat(40_000));
+      let result = '';
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('read_file', { path: 'buyuk.txt' })], { stopReason: 'toolUse' }),
+        (ctx) => {
+          const r = ctx.messages.findLast((m) => m.role === 'toolResult') as { content: { text?: string }[] };
+          result = r.content.map((c) => c.text ?? '').join('');
+          return fauxAssistantMessage('okudum');
+        },
+      ]);
+      const out = await small().run(request({ prompt: 'oku' }).req);
+      expect(out).toMatchObject({ ok: true, text: 'okudum' });
+      expect(result.length).toBeLessThan(20_000);
+      expect(result).toContain('Sonuç çok uzundu');
+    });
+
+    it('sağlayıcının bağlam taşması sözünü, kendi ifadesi ne olursa olsun bildirir', async () => {
+      faux.setResponses([
+        fauxAssistantMessage([fauxText('')], {
+          stopReason: 'error',
+          errorMessage: 'Range of input length should be [1, 30720]',
+        }),
+      ]);
+      const out = await engine().run(request().req);
+      expect(out).toMatchObject({ ok: false, kind: 'engine', contextFull: true });
+      expect(CONTEXT_FULL.test(!out.ok ? out.message : '')).toBe(false);
+    });
+
+    it('özeti hep bir kullanıcı mesajında keser; araç sonucunu çağrısından ayırmaz', () => {
+      const u = (s: string) => ({ role: 'user', content: s, timestamp: 0 }) as never;
+      const call = { role: 'assistant', content: [{ type: 'toolCall', name: 'x', arguments: {} }] } as never;
+      const res = (s: string) =>
+        ({ role: 'toolResult', toolName: 'x', content: [{ type: 'text', text: s }] }) as never;
+      const big = 'z'.repeat(3_500);
+      const msgs = [
+        u(big),
+        call,
+        res(big),
+        u(big),
+        call,
+        res(big),
+        res(big),
+        call,
+        res(big),
+        u('son'),
+        call,
+        res('r'),
+      ];
+      for (const keep of [10, 500, 1_500, 2_500, 4_000]) {
+        const cut = cutPoint(msgs, 0, keep);
+        expect((msgs as { role: string }[])[cut]!.role).toBe('user');
+      }
+      // Already folded up to the last user message: nowhere further to fold.
+      expect(cutPoint(msgs, 9, 10)).toBe(9);
+    });
+
+    it('uzun turda eski araç sonuçlarını çıkarır, sonuncusunu bırakır', () => {
+      const res = (s: string) =>
+        ({ role: 'toolResult', toolName: 'x', content: [{ type: 'text', text: s }] }) as never;
+      const msgs = [res('a'.repeat(7_000)), res('b'.repeat(7_000)), res('c'.repeat(7_000))];
+      const out = elideResults(msgs, 3_000, 'çıkarıldı') as { content: { text: string }[] }[];
+      expect(out[0]!.content[0]!.text).toBe('çıkarıldı');
+      expect(out[2]!.content[0]!.text).toHaveLength(7_000);
+      expect(elideResults(msgs, 100_000, 'x')).toBe(msgs);
+    });
+
+    it('alıntı yedeği sınırlı kalır, en yenileri tutar ve önceki özeti korur', () => {
+      const msgs = Array.from({ length: 30 }, (_, i) => ({
+        role: 'user',
+        content: `<m-${i}> ${'q'.repeat(2_000)}`,
+        timestamp: 0,
+      })) as never[];
+      const out = excerptSummary('ÖNCEKİ', msgs);
+      expect(out.startsWith('ÖNCEKİ')).toBe(true);
+      expect(out).toContain('<m-29>');
+      expect(out).not.toContain('<m-0>');
+      expect(out.length).toBeLessThan(EXCERPT_CHARS + 500);
+      // Failures in a row do not pile up.
+      let s = '';
+      for (let i = 0; i < 10; i++) s = excerptSummary(s, msgs);
+      expect(s.length).toBeLessThan(20_000);
+      expect(excerptSummary(null, [])).toBe('');
+    });
+
+    it('özeti ilk kullanıcı mesajının başına koyar; metni de parçalı içeriği de bozmaz', () => {
+      const a = withSummary([{ role: 'user', content: 'soru', timestamp: 1 }], 'ÖZET') as never as {
+        content: { text: string }[];
+      }[];
+      expect(a[0]!.content.map((c) => c.text)).toEqual(['ÖZET', 'soru']);
+      const b = withSummary(
+        [{ role: 'user', content: [{ type: 'text', text: 'parça' }], timestamp: 1 }],
+        'ÖZET',
+      );
+      expect(JSON.stringify(b)).toBe(
+        JSON.stringify([
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'ÖZET' },
+              { type: 'text', text: 'parça' },
+            ],
+            timestamp: 1,
+          },
+        ]),
+      );
+      expect(capText('kısa', 10, () => 'not')).toBe('kısa');
+      expect(capText('x'.repeat(20), 10, (shown, total) => `${shown}/${total}`)).toBe(
+        `${'x'.repeat(10)}\n\n10/20`,
+      );
+    });
   });
 });
 

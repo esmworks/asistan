@@ -19,6 +19,8 @@ const TOKENS: RegExp[] = [
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
   // Google API keys.
   /\bAIza[0-9A-Za-z_-]{35}/g,
+  // Discord bot tokens: the bot's id in base64, a time stamp and a signature.
+  /\b[MNO][A-Za-z0-9_-]{23,27}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,40}\b/g,
   // Stripe secret and restricted keys.
   /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/g,
   // JSON web tokens.

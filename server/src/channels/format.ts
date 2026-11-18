@@ -324,3 +324,30 @@ export function slackMessages(md: string): string[] {
 
 /** Text written into Slack as it is, with nothing in it read as a mention or a link. */
 export const slackPlain = (s: string) => esc(s);
+
+/**
+ * Discord's own Markdown, without tables, which it does not show. Who a post may notify is set
+ * on the post itself (only the people it names), so the text needs no escaping for that.
+ */
+const DISCORD: Marks = {
+  inline: (s) =>
+    inline(s, {
+      text: (x) => x,
+      code: (c) => `\`${c}\``,
+      link: (label, url) => (/^https?:\/\/\S+$/.test(url) && label !== url ? `[${label}](<${url}>)` : url),
+      bold: (x) => `**${x}**`,
+      italic: (x) => `*${x}*`,
+      strike: (x) => `~~${x}~~`,
+    }),
+  bold: (s) => `**${s}**`,
+  code: (lang, body) => `\`\`\`${lang}\n${body}\n\`\`\``,
+  quote: (lines) => lines.map((l) => `> ${l}`).join('\n'),
+};
+
+/** Discord posts for a reply, each under its 2,000-character limit with room for the marks. */
+export function discordMessages(md: string): string[] {
+  return chunks(md, 1800)
+    .map((parts) => render(parts, DISCORD))
+    .filter((m) => m.trim())
+    .flatMap((m) => (m.length > 2000 ? (m.match(/[\s\S]{1,2000}/g) ?? []) : [m]));
+}

@@ -272,7 +272,7 @@ export const tr = {
     'Oturum açtığınızda Yumak Bot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
   'sidebarMenu.markGroupRead': 'Gruptakileri okundu işaretle',
   'chat.apiThreads': 'API üzerinden',
-  'chat.teamThreads': 'Ekip (Slack)',
+  'chat.teamThreads': 'Ekip (Slack, Discord)',
   'chat.ticketThreads': 'Pano işleri',
   'activity.watch': 'İzle',
   'shortcuts.newThread': 'Bu botla yeni sohbet',
@@ -286,7 +286,7 @@ export const tr = {
   'settings.keywords.general':
     'tema, koyu, açık, dil, yakınlaştırma, bildirim, ses, gönderme tuşu, enter, saat dilimi, kenar çubuğu, sıkışık, sohbet genişliği, girişte aç, sesli okuma',
   'settings.keywords.connection':
-    'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
+    'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, özetleme, bağlam, sıkıştırma, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
   'settings.keywords.permissions': 'onaylar, kurallar, izin, sor, her zaman, engelle, asla, yasakla',
   'settings.keywords.vault':
     'şifreler, girişler, iki adımlı kod, totp, gizli, paylaşılan sayfalar, bağlantılar',
@@ -1660,6 +1660,13 @@ export const tr = {
   'model.moveKeeps':
     'Konuşmaları silinmez; her bot bir sonraki mesajda son konuşmayı okuyarak devam eder. Claude ile başka bir sağlayıcı arasında geçen botun rutinlerine ayrı model seçilmişse o seçim kalkar; rutin botun modelini kullanır.',
   'model.moved': '{count} bot geçirildi.',
+  'model.compact': 'Sohbeti özetleme sınırı',
+  'model.compactHint':
+    'Claude botlarda sohbet bu boyuta gelince eski kısmı özetlenir. Küçük tutmak cevapları hızlı ve ucuz tutar; büyük tutmak daha çok ayrıntıyı aynen hatırlatır, ama her mesaj daha pahalı olur.',
+  'model.compactThousand': '{count} bin token',
+  'model.compactMillion': '{count} milyon token',
+  'model.compactAuto': "Claude'un kendi değeri",
+  'model.compactRecommended': '{size} (önerilen)',
   'model.backup': 'Yedek model',
   'model.backupHint':
     'Kullanım sınırı dolunca iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır.',
@@ -1817,6 +1824,36 @@ export const tr = {
   'channels.telegram': 'Telegram',
   'channels.telegramHint':
     'Her bot kendi Telegram botuyla bağlanır; bunu botun ayarlarında, Telegram bölümünde yaparsınız.',
+  'discord.title': 'Discord',
+  'discord.on': 'Bağlı',
+  'discord.off': 'Bağlı değil',
+  'discord.error': 'Discord bağlantısı çalışmıyor: {error}',
+  'discord.noMessageContent':
+    'Discord bota her mesajın metnini vermiyor; bot yalnızca kendisini etiketleyen mesajları okur, öncesinde yazılanları göremez. Geliştirici portalında Bot altında Message Content Intent’i aç.',
+  'discord.about':
+    'Botu eklediğin Discord sunucusundaki herkes onu bir kanalda etiketleyebilir. Her etiket, botla konuşabilen herkesin burada gördüğü bir ekip konuşması açar; botun mesajına verilen cevap aynı konuşmada sürer.',
+  'discord.guests':
+    'Discord’daki kişilerin burada hesabı yok. İstekleri yalnızca ekibin paylaştıklarını kullanır ve botla yalnızca konuşabilir. Ekibin uygulamalarını, postasını, tablolarını ya da web’i okumak ve bir şeyi değiştiren her adım bir kartı bekler. Kartı burada botu değiştirebilenler cevaplar; rolleri seçilmiş bir sunucuda isteği yazan üye de Discord’da düğmelerine basabilir. Böyle bir konuşmaya burada yazılanlar adınla Discord kanalına gönderilir.',
+  'discord.step1': 'Geliştirici portalında bir uygulama ve onun botunu oluştur:',
+  'discord.step1Link': 'discord.com/developers',
+  'discord.step2':
+    'Bot bölümünde Message Content Intent’i aç, sonra Reset Token’a bas ve anahtarı aşağıya yapıştır.',
+  'discord.step3': 'Bağlandıktan sonra burada çıkan bağlantıyla botu Discord sunucuna ekle.',
+  'discord.token': 'Bot anahtarı',
+  'discord.bot': 'Cevap veren bot',
+  'discord.botHint': 'Biriyle paylaşılmış olmalı; kimseyle paylaşılmamış bot Discord’da cevap vermez.',
+  'discord.noBot': 'Hiçbiri; bot henüz cevap vermez',
+  'discord.servers': 'Discord sunucuları',
+  'discord.invite': 'Botu bir Discord sunucusuna ekle',
+  'discord.noServers': 'Bot henüz hiçbir Discord sunucusunda değil.',
+  'discord.everyone':
+    'Bu sunucudaki herkes botu kullanabilir. Yalnızca belirli rollerin üyelerine izin vermek için rolleri aç.',
+  'discord.rolesOnly': 'Botu yalnızca açık rollerin üyeleri kullanabilir.',
+  'discord.connect': 'Bağla',
+  'discord.connected': 'Discord bağlandı',
+  'discord.disconnect': 'Bağlantıyı kes',
+  'discord.disconnectConfirm':
+    'Discord bağlantısı kesilsin mi? Bot oradan biri çıkarana kadar sunucularında kalır ve cevap vermeyi bırakır.',
   'slack.title': 'Slack',
   'slack.appName': 'Yumak Bot',
   'slack.off': 'Bağlı değil',

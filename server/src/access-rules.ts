@@ -290,6 +290,10 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/slack/me': 'self',
   'POST /api/slack/me/code': 'self',
   'DELETE /api/slack/me': 'self',
+  'GET /api/discord': 'admin',
+  'PUT /api/discord': 'admin',
+  'PATCH /api/discord': 'admin',
+  'DELETE /api/discord': 'admin',
   'GET /api/email': 'admin',
   'POST /api/email/secret': 'admin',
 };

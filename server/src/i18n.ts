@@ -245,6 +245,12 @@ const tr = {
   'error.slackRefused': 'Slack anahtarı kabul etmedi ({reason})',
   'error.slackUnreachable': "Slack'e ulaşılamadı",
   'error.slackNotConnected': 'Slack bağlı değil',
+  'error.discordToken':
+    'Bu bir Discord bot anahtarına benzemiyor; geliştirici portalında Bot > Reset Token ile al.',
+  'error.discordRefused': 'Discord anahtarı kabul etmedi ({reason})',
+  'error.discordUnreachable': "Discord'a ulaşılamadı",
+  'error.discordNotConnected': 'Discord bağlı değil',
+  'error.discordServer': 'Bot bu Discord sunucusunda değil',
   'slack.linkFirst':
     "Seni henüz tanımıyorum. Yumak Bot'ta Ayarlar → Slack'ten bir bağlantı kodu al ve bana doğrudan mesajla `link KOD` yaz.",
   'slack.badCode': "Bu kod geçersiz ya da süresi dolmuş; Yumak Bot'tan yenisini al.",
@@ -256,6 +262,17 @@ const tr = {
   'slack.talkingTo': 'Artık {bot} ile konuşuyorsun.',
   'slack.cardNotYours': 'Bu kartı yalnızca soran kişi ya da botu değiştirebilenler yanıtlayabilir.',
   'slack.answered': '✓ {result} ({name})',
+  'discord.dmOnly': 'Benimle konuşmak için bir sunucunun kanalında beni etiketle.',
+  'discord.working': 'Üzerinde çalışıyorum…',
+  'discord.stop': 'Durdur',
+  'discord.stopped': 'Durduruldu.',
+  'discord.notYours': 'Bunu yalnızca isteği yazan kişi yapabilir.',
+  'discord.busyYou': 'Bekleyen iki isteğin var; bu istek alınmadı. Onlar bitince yeniden yaz.',
+  'discord.busyAll': 'Şu an çok fazla istek bekliyor; biraz sonra yeniden dene.',
+  'discord.noBot': 'Burada henüz cevap veren bir bot yok.',
+  'discord.botPrivate': '{bot} kimseyle paylaşılmamış; Discord’da cevap veremez.',
+  'discord.answered': '{result} ({name})',
+  'discord.cardInApp': 'Bu adımı Yumak Bot uygulamasında botu değiştirebilen biri onaylar.',
   'error.cannotMessage': '{from}, {to} adlı bota yazamaz (kendisi ya da arşivlenmiş bir bot)',
   'error.chainTooDeep': 'Zincir çok derin ({depth}); döngü olabilir, iş gönderilmedi',
   'error.chainBudget': 'Bu iş zincirinin bütçesi doldu; daha fazla bot mesajı gönderilemez',
@@ -491,8 +508,13 @@ const tr = {
   'prompt.routineModel': 'model: {model}',
   'prompt.noRoutines': 'Sana tanımlı bir rutin yok.',
   'prompt.handoff':
-    'Bu sohbetin önceki oturumu artık yok; konuşmanın son kısmı aşağıda, yalnızca bağlam için. Ondan sonraki mesaja cevap ver.\n\n<önceki-konuşma>\n{history}\n</önceki-konuşma>\n\n{prompt}',
+    'Bu sohbetin önceki oturumu artık yok; konuşmanın son kısmı aşağıda, yalnızca bağlam için.{recall} Ondan sonraki mesaja cevap ver.\n\n<önceki-konuşma>\n{history}\n</önceki-konuşma>\n\n{prompt}',
+  'prompt.handoffRecall':
+    'Köşeli parantezdeki kimlikle bir mesajın tamamını ve çevresini message_read ile oku; daha eskisi için conversations_search ile ara.',
+  'prompt.handoffSummary':
+    'Bundan önceki kısmın özeti:\n\n<önceki-konuşmanın-özeti>\n{summary}\n</önceki-konuşmanın-özeti>',
   'prompt.handoffPerson': 'Kullanıcı',
+  'prompt.handoffCut': '(kısaltıldı; tamamı için message_read ile {id})',
   'prompt.handoffBot': 'Bot',
   'prompt.appsDown':
     'Şu bağlı uygulamalar şu an kullanılamıyor, araçları bu turda yok: {apps}. Onlarla yapılacak bir iş istenirse bunu kullanıcıya söyle.',
@@ -550,6 +572,8 @@ const tr = {
     '- Kullanıcı adına bir şey göndereceksen (e-posta, mesaj, paylaşım) önce taslağı göster ve onayını al; rutinin talimatı göndermeni açıkça istiyorsa gönder. Bir ödemeden önce ürünü, fiyatı ve toplamı söyleyip onay iste.',
   'prompt.ruleMemory':
     '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil. Notun başındaki tarih en son ne zaman yazıldığıdır; çelişen iki nottan yenisine güven. Şifre, anahtar ya da kod gibi gizli değerleri hafızaya yazma.',
+  'prompt.ruleRecall':
+    '- Uzun bir sohbetin önceki kısmı sana yalnızca özet olarak gelebilir ya da hiç gelmeyebilir. Daha önce konuşulan bir şeyin tam ifadesi, bir sayı, bir kimlik ya da verilmiş bir karar gerekirse tahmin etme: `conversations_search` ile ara, `message_read` ile oku.',
   'prompt.ruleTryFirst':
     '- Bir işi yapamayacağını söylemeden önce elindekileri dene: bağlı uygulamalar, tarayıcı, becerilerin ve işi bilen başka bir bot. Bir site oturum açmanı istiyorsa durma; oturum açma adımını kullan ya da kullanıcıdan tarayıcıda açmasını iste. Hiçbiri olmazsa ne denediğini ve kullanıcının işi açmak için ne yapabileceğini söyle.',
   'prompt.ruleFiles':
@@ -721,6 +745,10 @@ const tr = {
     'Tarayıcının ekran görüntüsünü al. Taslak yetmediğinde (görsel düzen, resimler, grafikler) kullan. ref ile tek bir öğeyi çeker. Kullanıcı görüntüyü isterse save_as ile kaydet ve send_file ile gönder.',
   'tool.browser_wait':
     'Bir metnin görünmesini (text), bir metnin kaybolmasını (gone, ör. "Yükleniyor") ya da adresin değişmesini (url) bekle; hiçbiri verilmezse birkaç saniye bekle. Sonra taslağı döndürür.',
+  'tool.browser_network':
+    'Bir sekmenin açıldığından beri yaptığı istekleri listele: yöntem, durum kodu, tür, süre ve adres. Sayfa beklendiği gibi çalışmadığında (veri gelmiyor, düğme bir şey yapmıyor, form hata veriyor) nedenini bulmak için kullan. failed: true yalnızca başarısız olanları ya da 400 ve üstü kodla dönenleri, filter adresinde o metni geçenleri gösterir. İsteklerin gövdesi ve başlıkları tutulmaz; gizli bilgi taşıyabilecek adres parametreleri gizlenir.',
+  'tool.browser_console':
+    'Bir sekmede sayfanın betiklerinin konsola yazdıklarını ve yakalanmamış hatalarını listele. Sayfa beklendiği gibi çalışmadığında kullan. errors: true yalnızca hataları ve uyarıları gösterir.',
   'tool.quick_replies':
     'Yanıtının altına kullanıcının tek dokunuşla seçebileceği kısa cevaplar koy (en çok 6, her biri birkaç sözcük); seçilen metin kullanıcının sonraki mesajı olarak gelir. Sorunu yine yanıtında yaz. Beklemen gereken bir karar için değil, kolaylık için kullan; cevabı mutlaka gerekiyorsa ask_user kullan.',
   'tool.quickRepliesShown': 'Hızlı cevaplar yanıtının altında gösterilecek.',
@@ -964,6 +992,17 @@ const tr = {
   'browser.screenshot': 'Ekran görüntüsü: {url}',
   'browser.screenshotSaved': 'Dosya olarak da kaydedildi: {path} (send_file ile gönderebilirsin)',
   'browser.textNotFound': '"{text}" sayfada görünmedi.',
+  'browser.logTab': 'Sekme: {url}',
+  'browser.logOlder': '(Daha eski {count} kayıt gösterilmedi.)',
+  'browser.logDropped': '(Kayıt dolduğu için en eski {count} kayıt tutulmadı.)',
+  'browser.logCleared': 'Kayıt temizlendi; bundan sonrakiler yeniden tutulacak.',
+  'browser.netNone':
+    'Bu sekmede uyan istek kaydı yok. Kayıt sekme açılınca başlar; sayfanın yüklenişini görmek için browser_history ile yenile.',
+  'browser.netFailed': 'başarısız ({error})',
+  'browser.netRefused': 'reddedildi (bu bilgisayar ya da yerel ağ)',
+  'browser.netWaiting': 'bekliyor',
+  'browser.consoleNone': 'Bu sekmede uyan konsol kaydı yok.',
+  'browser.consoleUncaught': 'yakalanmamış hata',
   'browser.loginNoField': 'username_ref ya da password_ref ver.',
   'browser.loginChoose': 'Kasada bu site için birden çok hesap var: {accounts}. account ile birini seç.',
   'browser.loginMoved': 'Sayfa artık {host}; giriş bilgileri yalnızca {site} sitesine yazılır.',
@@ -1052,6 +1091,15 @@ const tr = {
   'files.tooLarge': 'Dosya çok büyük',
   'files.emptyFile': '(boş dosya)',
   'engine.imageDropped': '(daha eski bir görüntü; yer açmak için çıkarıldı)',
+  'engine.resultCut':
+    '(Sonuç çok uzundu: {total} karakterin ilk {shown} karakteri yukarıda. Gerisi lazımsa daha dar iste: bir satır aralığı, bir arama ya da daha az kayıt.)',
+  'engine.resultLeftOut':
+    '(Bu turdaki eski bir araç sonucu; yer açmak için çıkarıldı. Yeniden gerekirse aracı tekrar çağır.)',
+  'engine.summary':
+    'Bu sohbetin önceki kısmı yer açmak için aşağıda özetlendi; yalnızca bağlam için.\n\n<önceki-konuşmanın-özeti>\n{summary}\n</önceki-konuşmanın-özeti>',
+  'engine.historyLeftOut': 'Bu sohbetin önceki kısmının bir bölümü yer açmak için çıkarıldı; özette yok.',
+  'engine.recall':
+    'Önceki kısımdan tam ifade, sayı, kimlik ya da verilmiş bir karar gerekirse tahmin etme: conversations_search ile ara, message_read ile oku.',
   'files.image': '{path} görüntüsü aşağıda.',
   'files.imageUnseen': 'Bu bir görüntü dosyası; kullanılan model görüntü göremiyor.',
   'files.written': 'Yazıldı: {path}',
@@ -1379,6 +1427,12 @@ const en: Catalog<ServerKey> = {
   'error.slackRefused': 'Slack did not accept the token ({reason})',
   'error.slackUnreachable': 'Could not reach Slack',
   'error.slackNotConnected': 'Slack is not connected',
+  'error.discordToken':
+    'This does not look like a Discord bot token; get one under Bot > Reset Token in the developer portal.',
+  'error.discordRefused': 'Discord did not accept the token ({reason})',
+  'error.discordUnreachable': 'Could not reach Discord',
+  'error.discordNotConnected': 'Discord is not connected',
+  'error.discordServer': 'The bot is not in that Discord server',
   'slack.linkFirst':
     "I don't know you yet. Get a link code in Yumak Bot under Settings → Slack and send me `link CODE` in a direct message.",
   'slack.badCode': 'That code is wrong or has run out; get a new one in Yumak Bot.',
@@ -1392,6 +1446,17 @@ const en: Catalog<ServerKey> = {
   'slack.talkingTo': "You're talking to {bot} now.",
   'slack.cardNotYours': 'Only the person who asked, or someone who may change the bot, can answer this card.',
   'slack.answered': '✓ {result} ({name})',
+  'discord.dmOnly': 'To talk with me, mention me in a channel of a server.',
+  'discord.working': 'Working on it…',
+  'discord.stop': 'Stop',
+  'discord.stopped': 'Stopped.',
+  'discord.notYours': 'Only the person who wrote the request can do this.',
+  'discord.busyYou': 'You have two requests waiting; this one was not taken. Write again once they are done.',
+  'discord.busyAll': 'Too many requests are waiting now; try again in a little while.',
+  'discord.noBot': 'No bot answers here yet.',
+  'discord.botPrivate': '{bot} is not shared with anyone, so it does not answer in Discord.',
+  'discord.answered': '{result} ({name})',
+  'discord.cardInApp': 'Someone who may change the bot approves this step in the Yumak Bot app.',
   'error.cannotMessage': '{from} cannot write to {to} (it is itself or an archived bot)',
   'error.chainTooDeep': 'Chain too deep ({depth}); it may be a loop, the job was not sent',
   'error.chainBudget': "This job chain's budget is used up; no more bot messages can be sent",
@@ -1622,8 +1687,13 @@ const en: Catalog<ServerKey> = {
   'prompt.routineModel': 'model: {model}',
   'prompt.noRoutines': 'You have no routines.',
   'prompt.handoff':
-    "This conversation's earlier session is gone; its latest part is below, for context only. Answer the message after it.\n\n<earlier-conversation>\n{history}\n</earlier-conversation>\n\n{prompt}",
+    "This conversation's earlier session is gone; its latest part is below, for context only.{recall} Answer the message after it.\n\n<earlier-conversation>\n{history}\n</earlier-conversation>\n\n{prompt}",
+  'prompt.handoffRecall':
+    'Read a whole message and the talk around it with message_read, by the id in brackets; for anything older, search with conversations_search.',
+  'prompt.handoffSummary':
+    'A summary of what came before:\n\n<earlier-conversation-summary>\n{summary}\n</earlier-conversation-summary>',
   'prompt.handoffPerson': 'User',
+  'prompt.handoffCut': '(shortened; read it whole with message_read, {id})',
   'prompt.handoffBot': 'Bot',
   'prompt.appsDown':
     'These connected apps cannot be used right now, and their tools are not in this turn: {apps}. If asked for work that needs them, tell the person.',
@@ -1681,6 +1751,8 @@ const en: Catalog<ServerKey> = {
     "- Before you send something for the user (an email, a message, a post), show the draft and get their approval; send right away only when a routine's instruction says to. Before a payment, read back the item, price and total and ask to confirm.",
   'prompt.ruleMemory':
     "- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don't know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`. The date before a note is when it was last written; of two notes that disagree, trust the newer. Never write secrets such as passwords, keys or codes to memory.",
+  'prompt.ruleRecall':
+    '- The earlier part of a long conversation may reach you only as a summary, or not at all. When you need the exact wording of something said before, a number, an id or a decision already made, do not guess: find it with `conversations_search` and read it with `message_read`.',
   'prompt.ruleTryFirst':
     '- Before you say you cannot do a task, try what you have: connected apps, the browser, your skills, and another bot that knows the work. When a site wants you signed in, do not stop; use the sign-in step or ask the user to sign in in the browser. If nothing works, say what you tried and what the user can do to unblock it.',
   'prompt.ruleFiles':
@@ -1852,6 +1924,10 @@ const en: Catalog<ServerKey> = {
     'Take a screenshot of the browser. Use it when the outline is not enough (visual layout, images, charts). With ref it pictures one element. When the user wants the picture, keep it with save_as and send it with send_file.',
   'tool.browser_wait':
     'Wait for a text to show (text), for a text to go away (gone, e.g. "Loading") or for the address to change (url); with none of them, wait a few seconds. Then returns the outline.',
+  'tool.browser_network':
+    'List the requests a tab made since it opened: method, status, type, time and address. Use it to find out why a page does not work as it should (data does not load, a button does nothing, a form fails). failed: true shows only those that failed or came back with a status of 400 or more; filter shows only those whose address contains the text. Request bodies and headers are not kept; address parameters that may carry a secret are hidden.',
+  'tool.browser_console':
+    "List what the page's scripts wrote to the console in a tab, and the errors they did not catch. Use it when a page does not work as it should. errors: true shows only errors and warnings.",
   'tool.quick_replies':
     "Put short answers under your reply that the user can pick with one tap (at most 6, a few words each); the picked text arrives as the user's next message. Still write the question in your reply. It is a convenience, not a wait: when you need the answer, use ask_user.",
   'tool.quickRepliesShown': 'The quick replies will show under your reply.',
@@ -2094,6 +2170,17 @@ const en: Catalog<ServerKey> = {
   'browser.screenshot': 'Screenshot: {url}',
   'browser.screenshotSaved': 'Also saved as a file: {path} (you can send it with send_file)',
   'browser.textNotFound': '"{text}" did not appear on the page.',
+  'browser.logTab': 'Tab: {url}',
+  'browser.logOlder': '(Earlier records not shown: {count}.)',
+  'browser.logDropped': '(The record was full; the oldest were not kept: {count}.)',
+  'browser.logCleared': 'The record was cleared; what comes next is kept afresh.',
+  'browser.netNone':
+    'No matching requests recorded on this tab. Recording starts when the tab opens; reload with browser_history to see the page load.',
+  'browser.netFailed': 'failed ({error})',
+  'browser.netRefused': 'refused (this computer or the local network)',
+  'browser.netWaiting': 'waiting',
+  'browser.consoleNone': 'No matching console messages recorded on this tab.',
+  'browser.consoleUncaught': 'uncaught error',
   'browser.loginNoField': 'Give username_ref or password_ref.',
   'browser.loginChoose': 'The vault has several accounts for this site: {accounts}. Pick one with account.',
   'browser.loginMoved': 'The page is now {host}; sign-in details are only typed into {site}.',
@@ -2181,6 +2268,16 @@ const en: Catalog<ServerKey> = {
   'files.tooLarge': 'The file is too large',
   'files.emptyFile': '(empty file)',
   'engine.imageDropped': '(an older picture, left out to save room)',
+  'engine.resultCut':
+    '(The result was too long: the first {shown} of {total} characters are above. If you need the rest, ask for less: a range of lines, a search, or fewer records.)',
+  'engine.resultLeftOut':
+    '(An earlier tool result of this turn, left out to save room. Call the tool again if you need it.)',
+  'engine.summary':
+    'The earlier part of this conversation is summarised below to save room, for context only.\n\n<earlier-conversation-summary>\n{summary}\n</earlier-conversation-summary>',
+  'engine.historyLeftOut':
+    'Some of the earlier part of this conversation was left out to save room and is in no summary.',
+  'engine.recall':
+    'When you need exact wording, a number, an id or a decision from the earlier part, do not guess: find it with conversations_search and read it with message_read.',
   'files.image': 'The picture {path} is below.',
   'files.imageUnseen': 'This is a picture; the model in use cannot see pictures.',
   'files.written': 'Written: {path}',

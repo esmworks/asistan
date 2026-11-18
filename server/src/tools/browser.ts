@@ -13,6 +13,16 @@ import {
   type BrowserManager,
   type PageDownload,
 } from '../browser/manager';
+import {
+  formatMessages,
+  formatRequests,
+  MASK,
+  requestFailed,
+  safeUrl,
+  type PageLog,
+  SHOWN_MESSAGES,
+  SHOWN_REQUESTS,
+} from '../browser/logs';
 import { browserErrorText } from '../browser/text';
 import { waitOutWall, type WallState } from '../browser/wall';
 import type { AppTool, ToolResult } from '../engine/types';
@@ -131,8 +141,6 @@ const UPLOAD_TYPES: Record<string, string> = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
-/** Shown instead of a password anywhere in what the bot reads. */
-const MASK = '••••••';
 /** Shorter values are not masked in free text: they would hide ordinary letters and words. */
 const MIN_MASKED = 4;
 
@@ -836,6 +844,36 @@ export function browserTools(opts: {
     const note = t(wall === 'blocked' ? 'browser.wallBlocked' : 'browser.wallCheck');
     return typeof out === 'string' ? `${note}\n\n${out}` : { ...out, text: `${note}\n\n${out.text}` };
   };
+  const logTab = z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe('tab number from browser_tabs; leave out for the active tab');
+  const forget = z.boolean().default(false).describe('forget what was recorded so far, after reading it');
+  /**
+   * Reads one tab's record of requests or console messages. Never starts a browser: with none open
+   * there is nothing recorded.
+   */
+  const readLog = (tab: number | undefined, read: (page: Page, log: PageLog) => string) => {
+    if (!browser.pages(bot.id)) return Promise.resolve<ToolResult>(t('browser.noTabs'));
+    return step(async (active) => {
+      const page = tab ? browser.pages(bot.id)?.pages[tab - 1] : active;
+      const log = page ? browser.log(bot.id, page) : null;
+      if (!page || !log) return t('browser.noSuchTab');
+      return `${t('browser.logTab', { url: safeUrl(page.url()) })}\n${read(page, log)}`;
+    });
+  };
+  /** The lines of a log reply after its entries: what was left out, and whether it was forgotten. */
+  const logNotes = (older: number, dropped: number, cleared: boolean) =>
+    [
+      ...(older > 0 ? [t('browser.logOlder', { count: older })] : []),
+      ...(dropped > 0 ? [t('browser.logDropped', { count: dropped })] : []),
+      ...(cleared ? [t('browser.logCleared')] : []),
+    ]
+      .map((line) => `\n${line}`)
+      .join('');
 
   /**
    * Opens an address in a tab. An address that is a file starts a download instead of a page
@@ -1402,6 +1440,53 @@ export function browserTools(opts: {
       'internal',
       // A drop may save a new order or move a card to another list: the bot says when it sends.
       gate('browser_drag', async () => false),
+    ),
+    // Why a page does not work as it should: a request that failed or came back with an error.
+    def(
+      'browser_network',
+      {
+        tab: logTab,
+        filter: z.string().max(200).optional().describe('only requests whose address contains this'),
+        failed: z
+          .boolean()
+          .default(false)
+          .describe('only requests that failed or got a status of 400 or more'),
+        clear: forget,
+      },
+      async ({ tab, filter, failed, clear }) =>
+        readLog(tab, (_page, log) => {
+          const needle = filter?.toLowerCase();
+          const matching = log.requests.filter(
+            (e) => (!failed || requestFailed(e)) && (!needle || e.url.toLowerCase().includes(needle)),
+          );
+          const shown = matching.slice(-SHOWN_REQUESTS);
+          const dropped = log.droppedRequests;
+          if (clear) log.clearRequests();
+          const body = shown.length ? formatRequests(shown, t) : t('browser.netNone');
+          return body + logNotes(matching.length - shown.length, dropped, clear);
+        }),
+      'internal',
+    ),
+    // What the page's scripts logged, and the errors they did not catch.
+    def(
+      'browser_console',
+      {
+        tab: logTab,
+        errors: z.boolean().default(false).describe('only errors and warnings'),
+        clear: forget,
+      },
+      async ({ tab, errors, clear }) =>
+        readLog(tab, (_page, log) => {
+          const matching = log.messages.filter(
+            (e) => !errors || e.level === 'error' || e.level === 'warning',
+          );
+          const shown = matching.slice(-SHOWN_MESSAGES);
+          const dropped = log.droppedMessages;
+          if (clear) log.clearMessages();
+          const body = shown.length ? formatMessages(shown, t) : t('browser.consoleNone');
+          return body + logNotes(matching.length - shown.length, dropped, clear);
+        }),
+      'internal',
     ),
   ];
 }

@@ -30,7 +30,7 @@ import { attended, type TurnRow } from '../runtime/turns';
 import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
-import { errorText, newId, truncate } from '../util';
+import { errorText, newId, notFound, truncate } from '../util';
 import { browserTools, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { pageImageTool, sendFileTool, showPageTool } from './files';
@@ -104,6 +104,12 @@ const TEAM_OFF = new Set<string>([
   'bot_status',
   'bot_stop',
 ]);
+
+/**
+ * Tools a turn asked by someone with no account here does without: each starts work that later
+ * goes on for the person the turn acts for, with all they may do.
+ */
+const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save']);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -197,6 +203,8 @@ export type ToolName =
   | 'browser_screenshot'
   | 'browser_wait'
   | 'browser_drag'
+  | 'browser_network'
+  | 'browser_console'
   | 'memory_search'
   | 'conversations_search'
   | 'message_read'
@@ -321,20 +329,30 @@ export class ToolFactory {
     // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins.
     const team = thread.kind === 'team';
     const own = team ? null : person;
+    // Asked by someone with no account here (a Discord member): the turn acts for the person it
+    // works for, but may do no more with the bots than talk with them.
+    const guest = turn.guest;
     /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
-    const reachBot = async (ref: string, wanted: 'chat' | 'edit') =>
-      s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+    const reachBot = async (ref: string, wanted: 'chat' | 'edit') => {
+      if (guest && wanted === 'edit') throw notFound('bot');
+      return s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+    };
     let levelHere: Promise<BotLevel> | undefined;
     /** What the person may do with this bot. */
     const personLevel = () =>
-      (levelHere ??= s.access.viewerOf(person).then((v) => s.access.level(v, bot.id)));
+      (levelHere ??= s.access
+        .viewerOf(person)
+        .then((v) => s.access.level(v, bot.id))
+        .then((level) => (guest && atLeast(level, 'edit') ? 'chat' : level)));
     const mayChange = async () => atLeast(await personLevel(), 'edit');
     /** This bot's conversations the person sees: theirs, and its own work when they may change it. */
     const seenHere = async () =>
       (await mayChange()) ? s.access.seenFrom(person) : eq(schema.threads.userId, person);
     /** The bots the person reaches at `wanted`. */
     const reachable = async (wanted: 'chat' | 'edit') =>
-      new Set(await s.access.botIds(await s.access.viewerOf(person), wanted));
+      guest && wanted === 'edit'
+        ? new Set<string>()
+        : new Set(await s.access.botIds(await s.access.viewerOf(person), wanted));
     // Only the person's own message or emoji has them there; a room member another bot named is not.
     const fromUser = attended(turn.source);
     // Nobody may be watching a routine's or another bot's turn: its cards close unanswered in time.
@@ -402,7 +420,7 @@ export class ToolFactory {
     const mayChangeNotesOf = async (botId: string) =>
       botId === bot.id
         ? mayChange()
-        : atLeast(await s.access.level(await s.access.viewerOf(person), botId), 'edit');
+        : !guest && atLeast(await s.access.level(await s.access.viewerOf(person), botId), 'edit');
     /**
      * How a memory change goes: made now, or waiting for the person. A turn nobody watches, or one
      * that read outside text, only proposes it: what it read may be behind it. The memory every
@@ -1337,7 +1355,7 @@ export class ToolFactory {
       }
     }
     // With memory off the bot can neither read nor write it.
-    const kept = team ? tools.filter((x) => !TEAM_OFF.has(x.name)) : tools;
+    const kept = tools.filter((x) => !(team && TEAM_OFF.has(x.name)) && !(guest && GUEST_OFF.has(x.name)));
     return bot.memory ? kept : kept.filter((x) => !MEMORY_TOOLS.has(x.name));
   }
 

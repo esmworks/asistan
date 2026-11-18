@@ -75,6 +75,11 @@ const WEB_READS = ['WebSearch', 'WebFetch', SANDBOX_NETWORK];
 export const CONTEXT_FULL =
   /context[ _](length|window)|maximum context|too many tokens|exceeds? the (model'?s? )?(context|maximum)|n_ctx|prompt is too long|\b413\b|(request|payload|entity) too large/i;
 
+/** Whether a failed run says the conversation no longer fits the model. */
+function contextFull(outcome: { message: string; contextFull?: boolean }): boolean {
+  return !!outcome.contextFull || CONTEXT_FULL.test(outcome.message);
+}
+
 /** Where a conversation keeps the pages of the MCP app views shown in it. */
 export const APP_DIR = '.apps';
 
@@ -155,6 +160,15 @@ function keepToolResult(threadDir: string) {
     return file;
   };
 }
+
+/** The reads a turn asked by someone with no account here makes without a card. */
+const GUEST_READS: ReadonlySet<string> = new Set([
+  'skill_read',
+  'memory_search',
+  'bots_list',
+  'models_list',
+  'bot_profile',
+]);
 
 export class TurnManager {
   private running = new Map<string, Running>();
@@ -306,6 +320,8 @@ export class TurnManager {
     modeCap?: Bot['permissionMode'] | null;
     /** The person the turn works for; left out, it is worked out from what started it. */
     userId?: string | null;
+    /** Asked by someone with no account here; see the `guest` column. */
+    guest?: boolean;
   }): Promise<TurnRow> {
     const userId =
       t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null, t.threadId, t.botId);
@@ -323,6 +339,7 @@ export class TurnManager {
         outside: t.outside ?? null,
         modeCap: t.modeCap ?? null,
         userId,
+        guest: t.guest ?? false,
       })
       .returning();
     this.emitState(t.threadId, t.botId);
@@ -397,6 +414,9 @@ export class TurnManager {
     const prompt = [turn.prompt, ...later.map((t) => t.prompt)].join('\n\n');
     // One of them carrying someone else's words (a forward) makes the whole turn carry them.
     const outside = turn.outside ?? later.find((t) => t.outside)?.outside ?? null;
+    // So does one asked by someone with no account here: the whole turn is theirs as much.
+    const guest = turn.guest || later.some((t) => t.guest);
+    const modeCap = guest ? cappedMode('ask', turn.modeCap) : turn.modeCap;
     const ids = later.map((t) => t.id);
     await this.ctx.db
       .update(schema.messages)
@@ -405,10 +425,10 @@ export class TurnManager {
     await this.ctx.db.delete(schema.turns).where(inArray(schema.turns.id, ids));
     const [merged] = await this.ctx.db
       .update(schema.turns)
-      .set({ prompt, outside })
+      .set({ prompt, outside, guest, modeCap })
       .where(eq(schema.turns.id, turn.id))
       .returning();
-    return merged ?? { ...turn, prompt, outside };
+    return merged ?? { ...turn, prompt, outside, guest, modeCap };
   }
 
   /** Gives a turn that has not started a new prompt; false once it has. */
@@ -608,6 +628,8 @@ export class TurnManager {
       .where(and(eq(schema.turns.id, turnId), eq(schema.turns.status, 'queued')))
       .limit(1);
     if (!queued || !this.running.has(entry.turn.id)) return false;
+    // Words of someone with no account here do not join a turn that may do more than theirs.
+    if (queued.guest && !entry.turn.guest) return false;
     if (!entry.steers.some((s) => s.turnId === turnId)) {
       entry.steers.push({ turnId, messageId, prompt: queued.prompt, outside: queued.outside });
     }
@@ -751,6 +773,10 @@ export class TurnManager {
       reads = x;
       await persist().catch((err) => console.warn('outside mark', err));
     };
+    // The bot's tool selection narrows what it is given; the rest never reaches the model.
+    const pickTool = toolPicker(bot.toolSelection);
+    // Whether it can look earlier talk up, which the prompts point it to.
+    const recall = pickTool(toolPermName({ name: 'conversations_search' }));
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -775,9 +801,8 @@ export class TurnManager {
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
+      recall,
     });
-    // The bot's tool selection narrows what it is given; the rest never reaches the model.
-    const pickTool = toolPicker(bot.toolSelection);
     const allTools = [
       ...this.services.tools.forTurn({
         bot,
@@ -863,9 +888,17 @@ export class TurnManager {
       });
     // Internal app tools, and connection tools marked read, run without a card; `ask` rules can
     // still require one.
-    const readOnlyTools = new Set(tools.filter((t) => t.internal || t.readOnly).map(toolPermName));
+    // Someone with no account here reads freely only the bot's own skills and notes: the team's
+    // apps, mail, tables and the web each wait for a card, since the answer goes back to them.
+    const readOnlyTools = new Set(
+      tools
+        .filter((t) =>
+          turn.guest ? !t.server && (t.internal || GUEST_READS.has(t.name)) : t.internal || t.readOnly,
+        )
+        .map(toolPermName),
+    );
     // With the internet on, searching and reading pages are reads like opening one in the browser.
-    if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
+    if (bot.internet && !turn.guest) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
     const down = await this.services.connections.unavailableFor(bot.id, own);
@@ -961,7 +994,8 @@ export class TurnManager {
       );
       // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
       // the card says what started the run. In the person's own request they count as always.
-      const locked = !!outside() && !(await askedBy());
+      // Someone with no account here asked: the rules the person set do not count for them.
+      const locked = (!!outside() && !(await askedBy())) || turn.guest;
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -1087,7 +1121,7 @@ export class TurnManager {
     const roomPrompt = (fresh: boolean) =>
       this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t, note });
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
-    const handoff = async () => {
+    const handoff = async (summary?: string) => {
       if (inRoom) return roomPrompt(true);
       const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
         (m) => new Date(m.createdAt) <= turn.createdAt,
@@ -1097,6 +1131,8 @@ export class TurnManager {
       return handoffPrompt({
         messages,
         prompt: asked,
+        ...(summary && { summary }),
+        recall,
         names: new Map([
           ...(settings.userName ? [['user', settings.userName] as const] : []),
           ...allBots.map((b) => [`bot:${b.id}`, b.name] as const),
@@ -1250,6 +1286,7 @@ export class TurnManager {
         ...(!backup && (bot.effort || (bot.engine === 'claude' && settings.effort))
           ? { effort: (bot.effort || settings.effort) as Effort }
           : {}),
+        compactWindow: settings.claudeCompactWindow,
         prompt,
         context: [nowLine(new Date(), timezone, locale), appsDown].filter(Boolean).join('\n'),
         sessionId: backup ? null : session,
@@ -1369,7 +1406,7 @@ export class TurnManager {
         outcome = await run(await settle(await handoff(), false));
         if (!outcome.ok && outcome.kind === 'lostSession') outcome = { ...outcome, kind: 'engine' };
       }
-      if (!outcome.ok && outcome.kind === 'engine' && session && CONTEXT_FULL.test(outcome.message)) {
+      if (!outcome.ok && outcome.kind === 'engine' && session && contextFull(outcome)) {
         // The conversation no longer fits the model: a new session carries on, once, with the recent
         // exchange, instead of every later message failing the same way.
         await threads.addMessage({
@@ -1385,7 +1422,8 @@ export class TurnManager {
         streamed = '';
         shown = 0;
         spent += outcome.costUsd ?? 0;
-        outcome = await run(await settle(await handoff(), false));
+        // What the old session had folded into a summary goes along, or it would be lost with it.
+        outcome = await run(await settle(await handoff(outcome.summary), false));
       }
       if (!outcome.ok && outcome.cut && !acted && !controller.signal.aborted) {
         // The provider closed the reply before its end. Nothing was changed yet and the engine kept
@@ -1579,7 +1617,7 @@ export class TurnManager {
               ? t('turn.stopped')
               : outcome.kind === 'stalled'
                 ? outcome.message
-                : CONTEXT_FULL.test(outcome.message)
+                : contextFull(outcome)
                   ? t('turn.contextFull', { message: readableError(outcome.message) })
                   : t('turn.error', { message: readableError(outcome.message) });
       const { message: note } = await threads.addMessage({

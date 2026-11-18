@@ -76,6 +76,8 @@ export function buildSystemPrompt(opts: {
   email?: string | null;
   /** A team conversation: several people, and no one's own data. */
   team?: boolean;
+  /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
+  recall?: boolean;
 }): string {
   const { bot, paths, memory, peers } = opts;
   const t = translator(opts.locale);
@@ -174,6 +176,7 @@ export function buildSystemPrompt(opts: {
     t('prompt.ruleApproval'),
     t('prompt.ruleAsk'),
     t('prompt.ruleMemory'),
+    ...(opts.recall === false ? [] : [t('prompt.ruleRecall')]),
     t('prompt.ruleTryFirst'),
     t('prompt.rulePersist'),
     t('prompt.ruleFacts'),
@@ -216,17 +219,24 @@ export function postedText(
  */
 export function handoffPrompt(opts: {
   messages: readonly {
+    /** The message's id, which the bot reads the whole message by (`message_read`). */
+    id?: string;
     role: string;
     author: string;
     text: string;
     props?: { kind?: unknown; posted?: unknown; routineName?: unknown };
   }[];
   prompt: string;
+  /** The summary of the talk before these messages, which the session that held it had written. */
+  summary?: string;
+  /** The bot can look earlier talk up (`conversations_search`, `message_read`); unset counts as yes. */
+  recall?: boolean;
   /** Display names by author (`user`, `bot:<id>`, …); unknown authors fall back by role. */
   names: ReadonlyMap<string, string>;
   locale: Locale;
 }): string {
   const t = translator(opts.locale);
+  const recall = opts.recall !== false;
   // A conversation the person started fresh hands over nothing from before that point.
   const reset = opts.messages.findLastIndex((m) => m.props?.kind === 'contextReset');
   const talk = opts.messages
@@ -236,17 +246,28 @@ export function handoffPrompt(opts: {
   const lines: string[] = [];
   let size = 0;
   for (const m of talk.slice(-HANDOFF_MESSAGES).reverse()) {
-    const text = m.text.length > HANDOFF_MESSAGE_CHARS ? `${cutAt(m.text, HANDOFF_MESSAGE_CHARS)}…` : m.text;
+    // Each line carries its message's id: a message cut here, or the talk around it, is read whole
+    // with message_read instead of guessed.
+    const ref = recall && m.id ? ` [${m.id}]` : '';
+    const text =
+      m.text.length > HANDOFF_MESSAGE_CHARS
+        ? `${cutAt(m.text, HANDOFF_MESSAGE_CHARS)}…${ref ? ` ${t('prompt.handoffCut', { id: m.id! })}` : ''}`
+        : m.text;
     const who =
       opts.names.get(m.author) ?? (m.role === 'user' ? t('prompt.handoffPerson') : t('prompt.handoffBot'));
     // A webhook post sits under the bot's name but is not its words: anyone with the address wrote it.
-    const line = m.props?.posted ? postedText(m, t) : `${who}: ${text}`;
+    const line = m.props?.posted ? `${ref.trim()} ${postedText(m, t)}`.trim() : `${who}${ref}: ${text}`;
     if (size + line.length > HANDOFF_CHARS) break;
     lines.unshift(line);
     size += line.length;
   }
+  if (opts.summary) lines.unshift(t('prompt.handoffSummary', { summary: opts.summary }));
   if (!lines.length) return opts.prompt;
-  return t('prompt.handoff', { history: lines.join('\n\n'), prompt: opts.prompt });
+  return t('prompt.handoff', {
+    history: lines.join('\n\n'),
+    prompt: opts.prompt,
+    recall: recall ? ` ${t('prompt.handoffRecall')}` : '',
+  });
 }
 
 /** How much memory text goes into a prompt; about 6,000 tokens. */

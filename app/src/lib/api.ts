@@ -5,6 +5,9 @@ import type {
   RowValues,
   TableRow,
   TelegramStatus,
+  DiscordConnect,
+  DiscordStatus,
+  DiscordUpdate,
   SlackConnect,
   SlackLink,
   SlackStatus,
@@ -182,6 +185,8 @@ export interface Settings {
   piModel?: string;
   /** `provider/model` that carries a turn once the usage limit is spent; empty waits instead. */
   backupModel?: string;
+  /** Tokens at which a Claude bot folds the conversation into a summary; 0 leaves it to Claude. Missing on older servers. */
+  claudeCompactWindow?: number;
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;
@@ -247,6 +252,10 @@ export const api = {
   slackLink: () => http.get<SlackLink>('/api/slack/me'),
   slackCode: () => http.post<SlackLink>('/api/slack/me/code', {}),
   slackUnlink: () => http.del<SlackLink>('/api/slack/me'),
+  discord: () => http.get<DiscordStatus>('/api/discord'),
+  connectDiscord: (b: DiscordConnect) => http.put<DiscordStatus>('/api/discord', b),
+  updateDiscord: (b: DiscordUpdate) => http.patch<DiscordStatus>('/api/discord', b),
+  disconnectDiscord: () => http.del<{ ok: true }>('/api/discord'),
   settings: () => http.get<Settings>('/api/settings'),
   updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
   people: () => http.get<PersonInfo[]>('/api/people'),

@@ -11,6 +11,7 @@ import { BotImportService } from './bot-import';
 import { BotService } from './bots';
 import { ClaudeAuthService } from './claude-auth';
 import { ConnectionService } from './connections';
+import { DiscordChannel } from '../channels/discord';
 import { SlackChannel } from '../channels/slack';
 import { TelegramChannels } from '../channels/telegram';
 import { WhatsAppChannel } from '../channels/whatsapp';
@@ -85,6 +86,7 @@ export class Services {
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
+  readonly discord: DiscordChannel;
 
   constructor(
     readonly ctx: Ctx,
@@ -142,5 +144,6 @@ export class Services {
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
     this.slack = new SlackChannel(ctx, this, this.vault);
+    this.discord = new DiscordChannel(ctx, this, this.vault);
   }
 }

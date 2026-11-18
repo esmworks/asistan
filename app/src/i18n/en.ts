@@ -276,7 +276,7 @@ export const en: Catalog<MessageKey> = {
     'Yumak Bot opens in the menu bar when you log in, so routines run without opening it by hand.',
   'sidebarMenu.markGroupRead': 'Mark the group as read',
   'chat.apiThreads': 'Through the API',
-  'chat.teamThreads': 'Team (Slack)',
+  'chat.teamThreads': 'Team (Slack, Discord)',
   'chat.ticketThreads': 'Board work',
   'activity.watch': 'Watch',
   'shortcuts.newThread': 'New conversation with this bot',
@@ -290,7 +290,7 @@ export const en: Catalog<MessageKey> = {
   'settings.keywords.general':
     'theme, dark, light, language, zoom, notifications, sound, send key, enter, time zone, sidebar, compact, chat width, open at login, reading aloud, speech',
   'settings.keywords.connection':
-    'claude, sign in, api key, provider, model, effort, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
+    'claude, sign in, api key, provider, model, effort, summary, context, compaction, server, address, devices, sessions, sign out, sandbox, browser, iphone, phone, notifications, apple, apns',
   'settings.keywords.permissions': 'approvals, rules, allow, ask, always, block, never, deny',
   'settings.keywords.vault':
     'passwords, logins, two-step codes, totp, secrets, api keys, tokens, shared pages, links',
@@ -1663,6 +1663,13 @@ export const en: Catalog<MessageKey> = {
   'model.moveKeeps':
     "Their conversations stay; each bot picks up from the recent conversation at its next message. When a bot moves between Claude and another provider, a routine of it that names its own model loses that choice and uses the bot's model.",
   'model.moved': { one: '1 bot moved.', other: '{count} bots moved.' },
+  'model.compact': 'Conversation summary size',
+  'model.compactHint':
+    "Once a Claude bot's conversation reaches this size, its older part is summarised. Smaller keeps answers quick and cheap; larger keeps more details word for word, but every message costs more.",
+  'model.compactThousand': '{count}k tokens',
+  'model.compactMillion': '{count} million tokens',
+  'model.compactAuto': "Claude's own size",
+  'model.compactRecommended': '{size} (recommended)',
   'model.backup': 'Backup model',
   'model.backupHint':
     'When the usage limit is used up, the work goes on with this model instead of waiting; it gets the recent conversation.',
@@ -1820,6 +1827,35 @@ export const en: Catalog<MessageKey> = {
   'channels.telegram': 'Telegram',
   'channels.telegramHint':
     "Each bot connects with its own Telegram bot; you set that up in the bot's settings, under Telegram.",
+  'discord.title': 'Discord',
+  'discord.on': 'Connected',
+  'discord.off': 'Not connected',
+  'discord.error': 'The Discord connection is not working: {error}',
+  'discord.noMessageContent':
+    'Discord does not give the bot the text of every message, so it reads only messages that mention it and not what came before them. Turn on Message Content Intent under Bot in the developer portal.',
+  'discord.about':
+    'Anyone in a Discord server you add the bot to can mention it in a channel. Each mention starts a team conversation that everyone who may talk with the bot sees here; a reply to its post goes on with it.',
+  'discord.guests':
+    'People in Discord have no account here. Their requests use only what the team shares and can only talk with the bot. Reading the team’s apps, mail, tables or the web, and every step that changes something, waits for a card. Those who may change the bot answer it here; in a server with chosen roles, the member who asked can also press its buttons in Discord. What people write here in such a conversation is posted to the Discord channel with their name.',
+  'discord.step1': 'Create an application and its bot in the developer portal:',
+  'discord.step1Link': 'discord.com/developers',
+  'discord.step2':
+    'Under Bot, turn on Message Content Intent, then press Reset Token and paste the token below.',
+  'discord.step3': 'Once connected, add the bot to your Discord server with the link shown here.',
+  'discord.token': 'Bot token',
+  'discord.bot': 'Bot that answers',
+  'discord.botHint': 'It must be shared with someone; a bot shared with nobody does not answer in Discord.',
+  'discord.noBot': 'None; the bot does not answer yet',
+  'discord.servers': 'Discord servers',
+  'discord.invite': 'Add the bot to a Discord server',
+  'discord.noServers': 'The bot is in no Discord server yet.',
+  'discord.everyone': 'Everyone in this server can use the bot. Turn on roles to allow only their members.',
+  'discord.rolesOnly': 'Only members of the roles turned on can use the bot.',
+  'discord.connect': 'Connect',
+  'discord.connected': 'Discord connected',
+  'discord.disconnect': 'Disconnect',
+  'discord.disconnectConfirm':
+    'Disconnect Discord? The bot stays in its servers until someone there removes it, and stops answering.',
   'slack.title': 'Slack',
   'slack.appName': 'Yumak Bot',
   'slack.off': 'Not connected',
