@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BotCreate, BotUpdate } from './schemas';
-import { describeSchedule, nextRun, occurrenceKey, RoutineUpdate, Schedule, zonedTime } from './schedule';
+import {
+  cronTooOften,
+  describeSchedule,
+  nextRun,
+  occurrenceKey,
+  RoutineUpdate,
+  Schedule,
+  zonedTime,
+} from './schedule';
 
 const at = (iso: string) => new Date(iso);
 const next = (s: Schedule, tz: string, after: string, last?: string) =>
@@ -93,6 +101,15 @@ describe('nextRun', () => {
     const first = next(s, 'America/New_York', '2026-11-01T04:00:00Z');
     expect(first).toBe('2026-11-01T05:30:00.000Z');
     expect(next(s, 'America/New_York', first!, first!)).toBe('2026-11-02T06:30:00.000Z');
+  });
+
+  it('beş dakikadan sık çalışan cron ifadesi fark edilir', () => {
+    expect(cronTooOften('* * * * *')).toBe(true);
+    expect(cronTooOften('*/2 9 * * *')).toBe(true);
+    expect(cronTooOften('0,3 * * * *')).toBe(true);
+    expect(cronTooOften('*/5 * * * *')).toBe(false);
+    expect(cronTooOften('0 9 * * 1-5')).toBe(false);
+    expect(cronTooOften('0,30 8-17 * * *')).toBe(false);
   });
 
   it('anahtar dakikaya yuvarlanır', () => {
