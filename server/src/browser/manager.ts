@@ -1,10 +1,19 @@
 import { addTyping, DESCRIBE, MAX_STEPS, type Target, type TeachStep } from './teach';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { lookup } from 'node:dns/promises';
-import { mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, rmSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
+import { basename, extname, join } from 'node:path';
 import type { BrowserInput, BrowserState } from '@yumakbot/shared';
-import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from 'playwright-core';
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type CDPSession,
+  type Download,
+  type Page,
+} from 'playwright-core';
 import { privateAddress } from '../services/skill-link';
 
 /** The size of every bot's browser window, in CSS pixels. */
@@ -21,7 +30,60 @@ export const SCREEN =
 
 const SHORTCUT_MODIFIERS = new Set(['Control', 'Meta', 'Alt']);
 
-export type BrowserErrorCode = 'unavailable' | 'userControl' | 'full' | 'launch' | 'badUrl' | 'busy' | 'hung';
+export type BrowserErrorCode =
+  | 'unavailable'
+  | 'userControl'
+  | 'full'
+  | 'launch'
+  | 'badUrl'
+  | 'busy'
+  | 'hung'
+  | 'staleRef'
+  | 'covered'
+  | 'tabs';
+
+/**
+ * Most tabs a bot's browser keeps open. A site that opens more (pop-up after pop-up) has them
+ * closed; a sign-in pop-up or two fit well within.
+ */
+export const MAX_TABS = 10;
+/** Largest file a download keeps; a larger one is deleted once it is in. */
+export const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
+/** Downloads running at once in one bot's browser; one more is cancelled. */
+const MAX_DOWNLOADS = 4;
+/** A download still running after this long is cancelled: an endless stream, a stalled server. */
+const DOWNLOAD_MS = 10 * 60_000;
+
+/** A file a page downloaded, kept for the bot to move into its folder, or why it was not kept. */
+export interface PageDownload {
+  name: string;
+  /** Where the file waits, until the bot's next step moves it. */
+  path?: string;
+  size?: number;
+  error?: 'tooBig' | 'failed' | 'tooMany' | 'slow';
+}
+
+/**
+ * A file name a site suggested, made safe to keep: no folders, no characters file systems refuse,
+ * no leading dot that would hide it, not too long.
+ */
+export function safeFileName(suggested: string): string {
+  const base = [...basename(suggested.replace(/\\/g, '/'))]
+    .map((c) => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 || '<>:"|?*'.includes(c) ? '_' : c))
+    .join('')
+    .replace(/^[.\s]+/, '')
+    .trim();
+  if (!base) return 'download';
+  // The conversation folder is where the bot works: a site must not drop in a file an agent reads
+  // as its own instructions.
+  const named = INSTRUCTION_FILES.test(base) ? `download-${base}` : base;
+  if (named.length <= 120) return named;
+  const ext = extname(named).slice(0, 16);
+  return named.slice(0, 120 - ext.length) + ext;
+}
+
+/** Names coding agents read from their working folder as instructions. */
+const INSTRUCTION_FILES = /^(claude|claude\.local|agents|gemini)\.md$/i;
 
 export class BrowserError extends Error {
   constructor(
@@ -95,6 +157,14 @@ interface Live {
   refused: Set<string>;
   /** Addresses of tabs the bot was on that the site closed itself, since the bot last heard. */
   closedBySite: string[];
+  /** Tabs the site tried to open over the limit, which were closed, since the bot last heard. */
+  refusedTabs: number;
+  /** Downloads done or refused since the bot last heard. */
+  downloads: PageDownload[];
+  /** Downloads still coming in: name, and the number each was started as. */
+  saving: Map<Promise<void>, { name: string; seq: number }>;
+  /** Downloads started so far, refused ones too. */
+  started: number;
   /** Tabs the bot or this server is closing, which the site did not close. */
   closing: WeakSet<Page>;
   /**
@@ -310,6 +380,104 @@ export class BrowserManager {
     return out;
   }
 
+  /** Tabs that stay open: not the ones being closed. */
+  private openTabs(live: Live): Page[] {
+    return live.context.pages().filter((p) => !live.closing.has(p));
+  }
+
+  /** How many tabs the site tried to open over the limit since the bot last heard; heard once. */
+  takeRefusedTabs(botId: string): number {
+    const l = this.live.get(botId);
+    if (!l) return 0;
+    const n = l.refusedTabs;
+    l.refusedTabs = 0;
+    return n;
+  }
+
+  /**
+   * Saves what a page downloads, in the background: a large file must not hold the bot's step, nor
+   * count against the time a step may take.
+   */
+  private keepDownload(live: Live, download: Download) {
+    const name = safeFileName(download.suggestedFilename());
+    const seq = ++live.started;
+    if (live.saving.size >= MAX_DOWNLOADS) {
+      void download.cancel().catch(() => {});
+      live.downloads.push({ name, error: 'tooMany' });
+      return;
+    }
+    const job = (async () => {
+      // Inside the profile folder, so it goes when the bot does; the browser leaves it alone.
+      const dir = join(this.opts.profileDir(live.botId), 'bot-downloads');
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const file = join(dir, `${randomUUID()}-${name}`);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const slow = new Promise<'slow'>((r) => {
+        timer = setTimeout(() => r('slow'), DOWNLOAD_MS);
+      });
+      const saved = download.saveAs(file).then(
+        () => 'ok' as const,
+        () => 'failed' as const,
+      );
+      const result = await Promise.race([saved, slow]);
+      clearTimeout(timer);
+      if (result !== 'ok') {
+        if (result === 'slow') await download.cancel().catch(() => {});
+        rmSync(file, { force: true });
+        live.downloads.push({ name, error: result });
+        return;
+      }
+      const size = statSync(file).size;
+      if (size > MAX_DOWNLOAD_BYTES) {
+        rmSync(file, { force: true });
+        live.downloads.push({ name, error: 'tooBig' });
+        return;
+      }
+      live.downloads.push({ name, path: file, size });
+    })()
+      .catch(() => {
+        live.downloads.push({ name, error: 'failed' });
+      })
+      .finally(() => live.saving.delete(job));
+    live.saving.set(job, { name, seq });
+  }
+
+  /** How many downloads the bot's browser has started; the mark `downloadsSettled` waits from. */
+  downloadMark(botId: string): number {
+    return this.live.get(botId)?.started ?? 0;
+  }
+
+  /**
+   * Waits up to `ms` for the downloads started after `since` (those the step itself set off; an
+   * older long one does not slow every later step); the names of all still running after. Runs
+   * outside the bot's step, so a slow file holds no other step of the browser.
+   */
+  async downloadsSettled(botId: string, ms: number, since = 0): Promise<string[]> {
+    const l = this.live.get(botId);
+    if (!l?.saving.size) return [];
+    const mine = [...l.saving].filter(([, d]) => d.seq > since).map(([job]) => job);
+    if (mine.length) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.allSettled(mine),
+        new Promise<void>((r) => {
+          timer = setTimeout(r, ms);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
+    return [...l.saving.values()].map((d) => d.name);
+  }
+
+  /** Downloads done or refused since the bot last heard; heard once. */
+  takeDownloads(botId: string): PageDownload[] {
+    const l = this.live.get(botId);
+    if (!l) return [];
+    const out = l.downloads;
+    l.downloads = [];
+    return out;
+  }
+
   /** Tabs the bot was on that the site closed itself, since the bot last heard; heard once. */
   takeClosedTabs(botId: string): string[] {
     const l = this.live.get(botId);
@@ -369,6 +537,7 @@ export class BrowserManager {
 
   async newPage(botId: string): Promise<Page> {
     const l = await this.get(botId);
+    if (this.openTabs(l).length >= MAX_TABS) throw new BrowserError('tabs', String(MAX_TABS));
     const page = await l.context.newPage();
     this.activate(l, page);
     return page;
@@ -679,6 +848,8 @@ export class BrowserManager {
     }
     const dir = this.opts.profileDir(botId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // Files a closed browser downloaded that no step took: the bot never heard of them.
+    rmSync(join(dir, 'bot-downloads'), { recursive: true, force: true });
     const headless = this.opts.headless ?? true;
     const userAgent = headless ? await this.windowedUserAgent() : undefined;
     try {
@@ -690,7 +861,9 @@ export class BrowserManager {
         viewport: VIEWPORT,
         screen: { width: SCREEN.width, height: SCREEN.height },
         deviceScaleFactor: SCREEN.scale,
-        acceptDownloads: false,
+        // A download goes to a folder of the bot's own first; its next step moves it to the
+        // conversation's folder (see keepDownload).
+        acceptDownloads: true,
         // A service worker's own requests pass neither the request filter nor its notes to the bot,
         // and it keeps running after the page is gone.
         serviceWorkers: 'block',
@@ -763,12 +936,23 @@ export class BrowserManager {
       nextAnswer: null,
       refused: new Set(),
       closedBySite: [],
+      refusedTabs: 0,
+      downloads: [],
+      saving: new Map(),
+      started: 0,
       closing: new WeakSet(),
       speed: new WeakMap(),
     };
     await this.guardNetwork(live, context);
     for (const p of context.pages()) this.track(live, p);
     context.on('page', (p) => {
+      // On the person's desktop the browser is theirs too: their own tabs are never closed.
+      if (!live.remote && !live.userControl && this.openTabs(live).length > MAX_TABS) {
+        live.closing.add(p);
+        live.refusedTabs++;
+        void p.close().catch(() => {});
+        return;
+      }
       this.track(live, p);
       // Links that open a new tab: follow them, as a person would.
       this.activate(live, p);
@@ -802,6 +986,7 @@ export class BrowserManager {
       if (live.dialogs.length > 5) live.dialogs.shift();
       void (accepted ? dialog.accept(answer?.text) : dialog.dismiss()).catch(() => {});
     });
+    page.on('download', (download) => this.keepDownload(live, download));
     page.on('framenavigated', (frame) => {
       if (frame !== page.mainFrame() || live.page !== page) return;
       this.emitState(live);
@@ -821,11 +1006,12 @@ export class BrowserManager {
     page.on('crash', () => {
       const url = page.url();
       console.warn(`browser page crashed: ${url}`);
+      // Counted out of the open tabs first, so the fresh one is not refused at the limit.
+      live.closing.add(page);
       void (async () => {
         const fresh = await live.context.newPage();
         if (/^https?:/i.test(url)) await fresh.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
         this.activate(live, fresh);
-        live.closing.add(page);
         await page.close().catch(() => {});
       })().catch(() => {});
     });
@@ -923,7 +1109,7 @@ export class BrowserManager {
     if (this.live.size < this.opts.max) return;
     const idle = [...this.live.values()]
       // Someone watching does not keep it: a view left open would hold the browser for good.
-      .filter((l) => !l.busy && !l.userControl)
+      .filter((l) => !l.busy && !l.userControl && !l.saving.size)
       .sort((a, b) => a.lastUsed - b.lastUsed);
     if (!idle[0]) throw new BrowserError('full');
     await this.close(idle[0].botId);
@@ -934,8 +1120,9 @@ export class BrowserManager {
     this.sweep = setInterval(() => {
       const now = Date.now();
       for (const l of this.live.values()) {
-        // A view left open does not keep an idle browser; a person holding control does.
-        if (l.busy || l.userControl) continue;
+        // A view left open does not keep an idle browser; a person holding control does, and so
+        // does a download still coming in.
+        if (l.busy || l.userControl || l.saving.size) continue;
         if (now - l.lastUsed > this.opts.idleMs) void this.close(l.botId);
       }
     }, 60_000);

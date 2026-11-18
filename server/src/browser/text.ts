@@ -21,5 +21,11 @@ export function browserErrorText(err: unknown, t: T): string {
       return t('browser.launchFailed', { message: err.message });
     case 'hung':
       return t('browser.hung', { seconds: err.message });
+    case 'staleRef':
+      return t('browser.staleRef', { ref: err.message });
+    case 'covered':
+      return t('browser.covered', { cover: err.message });
+    case 'tabs':
+      return t('browser.tooManyTabs', { max: err.message });
   }
 }

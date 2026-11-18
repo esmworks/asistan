@@ -131,6 +131,7 @@ function phraseFor(name: string, input: Record<string, unknown>): Phrase {
       };
     }
     case 'browser_click':
+    case 'browser_drag':
     case 'browser_type':
     case 'browser_press':
     case 'browser_dialog': {
