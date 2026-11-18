@@ -13,7 +13,7 @@ describe('otomatik inceleme', () => {
   let t: TestServer;
   afterEach(() => t.dispose());
 
-  it('güvenli bulunan isteği kartsız geçirir ve sohbette nedenini gösterir', async () => {
+  it('güvenli bulunan isteği kartsız ve sohbete satır yazmadan geçirir', async () => {
     t = await testServer();
     const bot = await t.bot({ permissionMode: 'review' });
     const thread = await main(t, bot.id);
@@ -21,15 +21,12 @@ describe('otomatik inceleme', () => {
     await t.services.turns.idle();
     const msgs = await t.messages(thread.id);
     expect(msgs.at(-1)!.text).toContain('Write: izin verildi');
-    const note = msgs.find((m) => m.role === 'system' && m.props.review === true);
-    expect(note?.text).toContain('Otomatik inceleme izin verdi');
-    expect(note?.text).toContain('Sahte inceleme: güvenli görünüyor.');
+    expect(msgs.some((m) => m.role === 'system')).toBe(false);
     expect((await t.api<Approval[]>('GET', '/api/approvals')).body).toHaveLength(0);
     const [req] = t.engine.reviews;
     expect(req).toMatchObject({ toolName: 'Write', bot: { name: bot.name }, locale: 'tr' });
     // The reviewer reads the person's message as they wrote it, and must quote it.
     expect(req!.words).toEqual(['[izin:Write {"file_path":"güvenli.txt"}]']);
-    expect(note?.props.quote).toBe('[izin:Write {"file_path":"güvenli.txt"}]');
   });
 
   it('kişinin yazmadığı bir alıntıyla gelen izni kabul etmez', async () => {

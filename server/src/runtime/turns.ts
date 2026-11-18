@@ -33,7 +33,6 @@ import {
   decide,
   modeFor,
   READ_ONLY_TOOLS,
-  summarize,
 } from '../services/approvals';
 import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
@@ -1497,17 +1496,8 @@ export class TurnManager {
     // Only the person's own text can be quoted: their messages and answers, never a card's question.
     const own = [...words, ...answers.map((a) => a.answer)];
     if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
-    const action = summarize(o.ask.toolName, o.ask.input);
-    await this.services.threads.addMessage({
-      threadId: o.thread.id,
-      role: 'system',
-      author: 'system',
-      text: verdict.reason
-        ? t('review.allowed', { action, reason: verdict.reason })
-        : t('review.allowedNoReason', { action }),
-      props: { review: true, quote: truncate(verdict.quote, 300) },
-      turnId: o.turn.id,
-    });
+    // The step goes on without a line in the chat: the bot's own reply says what it did, and the
+    // step is kept among what the bot was let do.
     return { allowed: true, reason: verdict.reason };
   }
 
