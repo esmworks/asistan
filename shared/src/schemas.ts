@@ -3,6 +3,12 @@ import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
 import { internalHost } from './ai-endpoints';
 
+/**
+ * The app's own green, a darker shade of its icon's so white text on it reads well: the accent of the
+ * app's screens and the colour a new bot starts with.
+ */
+export const BRAND_COLOR = '#2b8152';
+
 export const Id = z.string().min(1).max(64);
 
 export const EngineKind = z.enum(['claude', 'pi']);
@@ -145,7 +151,7 @@ export const BotCreate = z.object({
   color: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
-    .default('#4f6bed'),
+    .default(BRAND_COLOR),
   avatar: Avatar.default('shape:blob'),
   permissionMode: PermissionMode.default('review'),
   internet: z.boolean().default(true),
