@@ -305,6 +305,24 @@ Betiğin yazdırdığı `YUMAKBOT_APPARMOR=…` satırını panelde uygulamanın
 Environment) ekleyip yeniden yayınlayın. Profil `/etc/apparmor.d/` altında durduğu için yeni yayınlar onu
 silmez.
 
+Alan adını `yumakbot` servisine değil, `gateway` servisine bağlayın. Ortam değişkenlerine
+`COMPOSE_PROFILES=gateway` ekleyin, Domains'te servis olarak `gateway`, port olarak `4319` seçin ve yeniden
+yayınlayın. Panel, alan adının bağlı olduğu servisi kendi ağına (Dokploy'da `dokploy-network`) ve projenin
+`default` ağına ekler. O ağ paneldeki bütün uygulamaları (panelin kendi veritabanı dahil) birbirine bağlar ve
+internete kendi yolundan çıkar. Alan adı sunucuya bağlıyken sunucu kapsayıcısı bu ağlarda durur: internete
+`egress` köprüsünden değil oradan çıkar, güvenlik duvarının dışında kalır ve öteki uygulamalara ulaşır.
+`gateway` yalnızca isteği sunucuya ileten küçük bir Caddy'dir (`Caddyfile.gateway`); sunucuya yalnızca `edge`
+ağından ulaşır ve panelin ağına giren yalnızca o olur. HTTPS'i panel sağlar; `Host`, `X-Forwarded-Proto` ve
+`X-Forwarded-For` başlıkları sunucuya olduğu gibi geçer.
+
+Daha önce alan adını `yumakbot`'a bağladıysanız Domains'te servisi `gateway` yapıp yeniden yayınlayın; panel
+eklediği ağları sunucudan o zaman kaldırır. Kontrol için sunucu kapsayıcısının ağlarında `dokploy-network`
+görünmemelidir:
+
+```bash
+docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' <uygulama>-yumakbot-1
+```
+
 Yayın `networks have same bridge name` hatasıyla durursa bu sunucuda `yumakbot0` köprüsünü kullanan başka
 bir ağ vardır: çoğunlukla aynı sunucudaki önceki bir kurulumdan ya da panelde silinip yeniden açılmış bir
 uygulamadan kalmıştır. Panel her uygulamaya kendi proje adını verdiği için ağ adları farklıdır, ama köprü
@@ -317,7 +335,8 @@ docker network ls -q | xargs docker network inspect -f '{{.Name}} {{index .Optio
 Ağ eski bir kurulumdan kaldıysa ve kapsayıcısı yoksa (son sayı 0) `docker network rm <ad>` ile silip yeniden
 yayınlayın. İki kurulumu aynı sunucuda birlikte çalıştırmak istiyorsanız ikincisine panelde
 `YUMAKBOT_BRIDGE=yumakbot1` gibi başka bir ad verin (en çok 15 karakter). Öteki kurulum `127.0.0.1:4319`'u
-tuttuğu için `YUMAKBOT_PORT=4329` gibi başka bir port da verin; panelde alan adının hedef portu `4319` kalır.
+tuttuğu için `YUMAKBOT_PORT=4329` gibi başka bir port da verin. Bu yalnızca ana makinedeki portu değiştirir;
+panelde alan adının hedef portu yine `4319` kalır, çünkü panel servise kapsayıcının kendi portundan bağlanır.
 
 Panel güvenlik duvarını kurmaz. Yayından sonra her kurulum için, kendi köprüsüyle, bir kez:
 
@@ -352,13 +371,6 @@ sudo systemctl enable --now yumakbot-firewall-<uygulama>.service
 
 Uygulamayı panelden silerseniz servisini de kaldırın (`systemctl disable --now …` ve dosyayı silin); yoksa
 açılışta betiği bulamaz ve başarısız görünür.
-
-Panelde bir alan adı bağlanınca Dokploy `yumakbot` servisini kendi `dokploy-network` ağına ve projenin
-`default` ağına da ekler. Sunucu kapsayıcısı internete artık bu ağlardan çıkar, `egress` köprüsünden değil;
-bu yüzden güvenlik duvarı burada yalnızca `computer` kapsayıcısını (botların masaüstlerini) korur. Sunucu
-kapsayıcısı ayrıca `dokploy-network` üzerinden paneldeki öteki uygulamalara (Dokploy'un kendi veritabanı
-dahil) ulaşabilir. Botların komutları buna rağmen kapalı kalır: internet açık bir botun komutları sunucunun
-kendi vekilinden geçer ve o vekil yalnızca genel adreslere bağlanır.
 
 ## Botların bilgisayarı
 

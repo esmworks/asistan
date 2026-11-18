@@ -43,7 +43,14 @@ services:
     ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
     volumes:
       - data:/data
-    networks: [internal, egress, computer, edge]
+    networks:
+      internal: {}
+      egress: {}
+      computer: {}
+      # The gateway's name for the server. A panel puts every service it routes to on one network it
+      # shares with all its apps, where `yumakbot` can be another installation's server; this name
+      # exists only on this installation's `edge`.
+      edge: { aliases: [yumakbot-edge] }
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
@@ -122,6 +129,33 @@ services:
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     mem_limit: 256m
+
+  # Optional: the service a hosting panel such as Dokploy routes the domain to, with
+  # COMPOSE_PROFILES=gateway; see "Dokploy ve benzeri paneller" in docker/README.md. A panel puts the
+  # service its domain points at on its own network, shared with every other app it runs and with a
+  # way out of its own. Pointed at the server, that took the server around the egress firewall and
+  # next to the panel's databases; pointed here, only this proxy is there, and it reaches the server
+  # on `edge` alone.
+  gateway:
+    # Pinned like the images above; the same Caddy as compose.vps.yml.
+    image: caddy:${CADDY_VERSION:-2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0}
+    profiles: [gateway]
+    restart: unless-stopped
+    depends_on:
+      yumakbot: { condition: service_healthy }
+    volumes:
+      - ./Caddyfile.gateway:/etc/caddy/Caddyfile:ro
+    networks: [edge]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      # Caddy's data and config folders; it keeps nothing it needs across restarts here.
+      - /data:size=16m
+      - /config:size=16m
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    pids_limit: 128
 
   # Optional: reach the server from the devices on your tailnet at https://<name>.<tailnet>.ts.net,
   # with no port open on this host. Started only with `--profile tailscale`; see "Uzaktan erişim"

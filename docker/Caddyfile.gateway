@@ -1,0 +1,20 @@
+# The gateway service in compose.yml: plain HTTP on port 4319 between a hosting panel's proxy
+# (Traefik in Dokploy), which ends HTTPS, and the server, which it reaches on the `edge` network only.
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		# The panel's proxy is on a private address. Trusted, so Caddy keeps the X-Forwarded-Proto it
+		# sends (the server builds sign-in callback addresses from it) instead of writing its own http.
+		trusted_proxies static private_ranges
+	}
+}
+
+:4319 {
+	reverse_proxy yumakbot-edge:4319 {
+		# The server reads the last X-Forwarded-For entry, the address the panel's proxy saw, when the
+		# request carries YUMAKBOT_PROXY_SECRET. Passed on as it came, without this hop appended.
+		header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+	}
+}
