@@ -137,6 +137,8 @@ function refresh(qc: QueryClient, e: RefreshScope) {
     case 'channels':
       inv('telegram');
       inv('whatsapp');
+      inv('slack');
+      inv('slack-link');
       break;
     case 'tickets':
       inv('tickets');

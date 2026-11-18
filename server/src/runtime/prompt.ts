@@ -74,6 +74,8 @@ export function buildSystemPrompt(opts: {
   room?: { title: string; user: string; members: Bot[] };
   /** The bot's own mail address, when it has one. */
   email?: string | null;
+  /** A team conversation: several people, and no one's own data. */
+  team?: boolean;
 }): string {
   const { bot, paths, memory, peers } = opts;
   const t = translator(opts.locale);
@@ -88,6 +90,7 @@ export function buildSystemPrompt(opts: {
       lines.push(`- ${m.name}${m.description ? `: ${listed(m.description)}` : ''}`);
     lines.push(t('prompt.roomHow', { silent: SILENT_REPLY }));
   }
+  if (opts.team) lines.push('', t('prompt.team'));
 
   // The time itself comes with each message (see `nowLine`): here it would change the prompt on
   // every turn and void the model's cache of the whole conversation.

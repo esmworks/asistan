@@ -660,6 +660,9 @@ export class TurnManager {
     });
     // Whom the turn works for: their profile and notes go in, and the bots it may ask are theirs.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    // A team conversation (a Slack channel's) works for who asked, with their level and cards, but
+    // uses only what the team shares: no one's profile, own notes, apps or sign-ins.
+    const own = thread.kind === 'team' ? null : person;
     // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
     // nor a request a bot passed on for them.
     const [who] = await this.ctx.db
@@ -674,8 +677,9 @@ export class TurnManager {
       await this.services.access.botIds(await this.services.access.viewerOf(person), 'chat'),
     );
     const allBots = await bots.list();
-    const peers = allBots.filter((b) => bots.canMessage(bot, b) && reached.has(b.id));
-    const settings = await this.services.settings.all(person);
+    // A team conversation hands no work to other bots: theirs would be done for the person.
+    const peers = own ? allBots.filter((b) => bots.canMessage(bot, b) && reached.has(b.id)) : [];
+    const settings = own ? await this.services.settings.all(own) : await this.services.settings.team();
     const timezone = settings.timezone;
     // The person's own language; the server's until they choose one.
     const locale = settings.language ?? (await this.services.settings.locale());
@@ -753,7 +757,7 @@ export class TurnManager {
       paths,
       cwd: sandbox.cwd,
       // A bot with memory off sees none, not even the person's shared notes.
-      memory: bot.memory ? await memory.visibleTo(bot.id, person) : { user: [], bot: [] },
+      memory: bot.memory ? await memory.visibleTo(bot.id, own) : { user: [], bot: [] },
       profile: {
         name: settings.userName,
         addressAs: settings.addressAs,
@@ -766,7 +770,8 @@ export class TurnManager {
       locale,
       browser: this.ctx.browser.available && bot.internet,
       onUserComputer: this.ctx.config.onUserComputer,
-      routines: await this.services.routines.list(bot.isManager ? undefined : bot.id),
+      routines: own ? await this.services.routines.list(bot.isManager ? undefined : bot.id) : [],
+      team: !own,
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
@@ -791,7 +796,7 @@ export class TurnManager {
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
-        person,
+        own,
         t,
         controller.signal,
         async (form, connection) => {
@@ -863,7 +868,7 @@ export class TurnManager {
     if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
-    const down = await this.services.connections.unavailableFor(bot.id, person);
+    const down = await this.services.connections.unavailableFor(bot.id, own);
     const appsDown = down.length
       ? t('prompt.appsDown', {
           apps: down.map((c) => `${c.name} (${t(`prompt.appDown.${c.status}`)})`).join(', '),

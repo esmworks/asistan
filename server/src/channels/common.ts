@@ -7,7 +7,7 @@ import type { Services } from '../services';
 import { truncate } from '../util';
 
 /** A chat app a message can come from; kept on the person's message as `via`. */
-export type Via = 'telegram' | 'whatsapp';
+export type Via = 'telegram' | 'whatsapp' | 'slack';
 
 /** One choice under a card; `data` is what comes back when it is pressed or typed. */
 export interface CardButton {

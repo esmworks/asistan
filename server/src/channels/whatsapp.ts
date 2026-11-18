@@ -888,7 +888,7 @@ export class WhatsAppChannel {
     const settings = target.row.settings as Settings;
     if (settings.notices === false) return;
     // Only of the person's own conversations, or the bot's own work they may change.
-    if (!(await this.services.access.threadAudience(e.threadId)).includes(target.row.userId)) return;
+    if (!(await this.services.access.noticeAudience(e.threadId)).includes(target.row.userId)) return;
     // Its cards come as cards there, or the person is in the app with it.
     if (settings.threadId === e.threadId) return;
     const t = await this.services.settings.translator();

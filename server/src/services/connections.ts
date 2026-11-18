@@ -100,9 +100,14 @@ export function exposedNames(slug: string, names: string[]): Map<string, string>
   return out;
 }
 
-/** The connections a person's work may use: the team's and their own. */
-const usable = (userId: string) =>
-  or(isNull(schema.connections.userId), eq(schema.connections.userId, userId))!;
+/**
+ * The connections a person's work may use: the team's and their own. With null (a team
+ * conversation), only the team's.
+ */
+const usable = (userId: string | null) =>
+  userId
+    ? or(isNull(schema.connections.userId), eq(schema.connections.userId, userId))!
+    : isNull(schema.connections.userId);
 
 /** How long a revocation request may take; the sign-in is already gone here either way. */
 const REVOKE_MS = 5_000;
@@ -279,11 +284,12 @@ export class ConnectionService {
   }
 
   /** Every connection; with `userId`, the team's and that person's own. */
-  async list(userId?: string): Promise<Connection[]> {
+  /** Every connection; with a person, those they may use; with null, the team's alone. */
+  async list(userId?: string | null): Promise<Connection[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.connections)
-      .where(userId ? usable(userId) : undefined)
+      .where(userId === undefined ? undefined : usable(userId))
       .orderBy(asc(schema.connections.createdAt));
     const bots = await this.botIdsOf(rows.map((r) => r.id));
     return rows.map((r) => this.view(r, bots.get(r.id) ?? []));
@@ -870,7 +876,7 @@ export class ConnectionService {
    * The tool a routine's check may call for a bot: of a connected app open to the bot, switched on,
    * and one that only reads. Null when it is not such a tool.
    */
-  async checkTool(botId: string, connectionId: string, name: string, userId: string) {
+  async checkTool(botId: string, connectionId: string, name: string, userId: string | null) {
     const [row] = await this.ctx.db
       .select()
       .from(schema.connections)
@@ -895,7 +901,7 @@ export class ConnectionService {
   async checkFromName(
     botId: string,
     exposed: string,
-    userId: string,
+    userId: string | null,
   ): Promise<{ connectionId: string; tool: string } | null> {
     // Claude sees an app's tool as `mcp__<app>__<tool>`; other engines see the tool's name alone.
     const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(exposed);
@@ -926,7 +932,7 @@ export class ConnectionService {
   async callCheck(
     botId: string,
     check: { connectionId: string; tool: string; args: Record<string, unknown> },
-    userId: string,
+    userId: string | null,
   ) {
     const found = await this.checkTool(botId, check.connectionId, check.tool, userId);
     if (!found) throw new HttpError(400, 'error.routineCheckTool');
@@ -945,7 +951,7 @@ export class ConnectionService {
   /** The connections open to a bot that are not usable now, with why: their tools are left out. */
   async unavailableFor(
     botId: string,
-    userId: string,
+    userId: string | null,
   ): Promise<{ name: string; status: 'signed-out' | 'error' }[]> {
     const chosen = this.ctx.db
       .select({ id: schema.botConnections.connectionId })
@@ -988,8 +994,8 @@ export class ConnectionService {
   /** `elicit` answers a server that asks the person something during a call. */
   async toolsFor(
     botId: string,
-    /** The person the bot works for: the team's connections and their own. */
-    userId: string,
+    /** The person the bot works for: the team's connections and their own; null for the team's alone. */
+    userId: string | null,
     t: T,
     signal: AbortSignal,
     elicit?: TurnElicit,

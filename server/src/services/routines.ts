@@ -203,7 +203,7 @@ export class RoutineService {
   /** A new routine; its runs work for `userId`, or for the bot's owner when null. */
   async create(input: RoutineCreate, userId: string | null = null): Promise<Routine> {
     await this.services.bots.get(input.botId);
-    if (input.check) await this.checkCheck(input.botId, input.check, userId);
+    if (input.check) await this.checkCheck(input.botId, input.check, userId, !!input.slackChannel);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
     // The routine and the first line of its history are written together, or neither is.
@@ -249,7 +249,8 @@ export class RoutineService {
     const person = by && shapes ? by : was;
     // The check runs for the routine's person: a new one, or the old one for its new person.
     const check = patch.check !== undefined ? patch.check : person !== was ? current.check : null;
-    if (check) await this.checkCheck(current.botId, check, person);
+    const slackChannel = patch.slackChannel !== undefined ? patch.slackChannel : current.slackChannel;
+    if (check) await this.checkCheck(current.botId, check, person, !!slackChannel);
     // A changed instruction goes into the history in the same write: a failed save leaves none.
     const row = await this.ctx.db.transaction(async (tx) => {
       const [saved] = await tx
@@ -325,9 +326,10 @@ export class RoutineService {
    * A check must be a tool the bot itself may call without asking: of an app open to it, switched
    * on, and one that only reads. It runs with no one watching, so it may never change anything.
    */
-  private async checkCheck(botId: string, check: RoutineCheck, userId: string | null) {
-    // The check runs for the routine's person: only the team's apps and theirs.
-    const person = userId ?? (await this.services.access.botOwner(botId));
+  private async checkCheck(botId: string, check: RoutineCheck, userId: string | null, team = false) {
+    // The check runs for the routine's person: only the team's apps and theirs; for a routine
+    // reporting to Slack, the team's alone.
+    const person = team ? null : (userId ?? (await this.services.access.botOwner(botId)));
     const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool, person);
     if (!tool) throw new HttpError(400, 'error.routineCheckTool');
   }
@@ -432,7 +434,14 @@ export class RoutineService {
           }
           if (r.check) {
             const check = r.check as RoutineCheck;
-            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash, r.createdByUserId);
+            const changed = await this.checkChanged(
+              r.id,
+              r.botId,
+              check,
+              r.checkHash,
+              r.createdByUserId,
+              !!r.slackChannel,
+            );
             if (changed) {
               news.push(
                 t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }),
@@ -510,10 +519,11 @@ export class RoutineService {
     check: RoutineCheck,
     before: string | null,
     userId: string | null = null,
+    team = false,
   ): Promise<{ app: string; text: string } | null> {
     let app: string, text: string;
     try {
-      const person = userId ?? (await this.services.access.botOwner(botId));
+      const person = team ? null : (userId ?? (await this.services.access.botOwner(botId)));
       ({ app, text } = await this.services.connections.callCheck(botId, check, person));
     } catch (err) {
       console.warn(`Check of routine ${routineId} could not be called: ${String(err)}`);
@@ -700,6 +710,7 @@ export class RoutineService {
       props,
     });
     if (thread.kind === 'routine') await this.report(bot.id, thread, text, props);
+    if (routine.slackChannel) await this.services.slack.report(routine.slackChannel, routine.name, text);
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRun(run);
   }
@@ -718,6 +729,25 @@ export class RoutineService {
    * made while the routine ran in the main conversation does not make that one its own.
    */
   private async threadFor(routine: Routine, botId: string) {
+    // One reporting to a Slack channel runs as a team conversation, which uses only what the team
+    // shares; a routine moved there starts a conversation of its own, not one that read its
+    // person's own data.
+    if (routine.slackChannel) {
+      const [last] = await this.ctx.db
+        .select({ threadId: schema.routineRuns.threadId })
+        .from(schema.routineRuns)
+        .innerJoin(schema.threads, eq(schema.threads.id, schema.routineRuns.threadId))
+        .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.threads.kind, 'team')))
+        .orderBy(desc(schema.routineRuns.startedAt))
+        .limit(1);
+      if (last?.threadId) return this.services.threads.row(last.threadId);
+      const made = await this.services.threads.create(botId, {
+        kind: 'team',
+        userId: null,
+        title: routine.name,
+      });
+      return this.services.threads.row(made.id);
+    }
     // Its runs bring in its person's profile, notes and apps: they happen where only they look.
     const person = await this.personOf(routine);
     if (routine.inMain) {
@@ -974,7 +1004,7 @@ export class RoutineService {
     if (!enforce) await start();
     let verdict: GateVerdict | null = null;
     try {
-      const report = await this.lastReport(routine.id, run.id);
+      const report = await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel));
       verdict = await engine.gate!({
         routine: { name: routine.name, prompt: routine.prompt },
         trigger: check.trigger,
@@ -1034,7 +1064,11 @@ export class RoutineService {
     payload: string | undefined,
     t: T,
   ) {
-    const report = routine.carryReport ? await this.lastReport(routine.id, run.id) : null;
+    // A run that reports to a Slack channel works with team data only, so it carries on only a
+    // report written that way, not one from before it was moved there.
+    const report = routine.carryReport
+      ? await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel))
+      : null;
     // A report written from outside text carries it on: this run reads it too.
     const outside = run.trigger ?? report?.outside ?? null;
     if (outside && !run.trigger) {
@@ -1078,6 +1112,7 @@ export class RoutineService {
   async lastReport(
     routineId: string,
     except?: string,
+    teamOnly = false,
   ): Promise<{ text: string; at: string; outside: OutsideTrigger | null } | null> {
     const [row] = await this.ctx.db
       .select({
@@ -1088,12 +1123,14 @@ export class RoutineService {
       .from(schema.routineRuns)
       .innerJoin(schema.turns, eq(schema.turns.routineRunId, schema.routineRuns.id))
       .innerJoin(schema.messages, eq(schema.messages.turnId, schema.turns.id))
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.turns.threadId))
       .where(
         and(
           eq(schema.routineRuns.routineId, routineId),
           eq(schema.routineRuns.status, 'done'),
           eq(schema.messages.role, 'assistant'),
           except ? ne(schema.routineRuns.id, except) : undefined,
+          teamOnly ? eq(schema.threads.kind, 'team') : undefined,
         ),
       )
       .orderBy(desc(schema.routineRuns.startedAt), desc(schema.messages.createdAt))
@@ -1171,6 +1208,7 @@ export class RoutineService {
         routineName: schema.routines.name,
         routineId: schema.routineRuns.routineId,
         outside: schema.routineRuns.trigger,
+        slackChannel: schema.routines.slackChannel,
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
@@ -1189,6 +1227,18 @@ export class RoutineService {
         // Written from outside text: a turn that is handed the report reads that text too.
         ...(run.outside ? { outside: run.outside } : {}),
       });
+    }
+    // A routine reporting to Slack posts what its run wrote in the team conversation there.
+    if (
+      run?.slackChannel &&
+      thread?.kind === 'team' &&
+      outcome.ok &&
+      outcome.text.trim() &&
+      !isSilentReply(outcome.text)
+    ) {
+      await this.services.slack
+        .report(run.slackChannel, run.routineName, outcome.text)
+        .catch((err: unknown) => console.warn('slack report', err));
     }
     await this.ctx.db
       .update(schema.routineRuns)

@@ -150,6 +150,7 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   missed: r.missed,
   carryReport: r.carryReport,
   inMain: r.inMain,
+  slackChannel: r.slackChannel,
   onStartup: r.onStartup,
   watchUrl: r.watchUrl,
   check: (r.check as RoutineCheck | null) ?? null,

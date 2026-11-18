@@ -683,7 +683,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   bus.on('delta', (e) => void toThread(e.threadId).then((to) => to.emit('delta', e)));
   bus.on('turn', (e) => void toThread(e.threadId).then((to) => to.emit('turn', e)));
   bus.on('notice', (e) => {
-    void services.access.threadAudience(e.threadId).then((users) => {
+    void services.access.noticeAudience(e.threadId).then((users) => {
       toPeople(users).emit('notice', e);
       return services.push.notice(e, users);
     });
@@ -699,6 +699,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   if (config.channelsEnabled) {
     await services.telegram.start();
     await services.whatsapp.start();
+    await services.slack.start();
   }
 
   return {
@@ -719,6 +720,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.routines.stop();
       await services.telegram.stop();
       await services.whatsapp.stop();
+      await services.slack.stop();
       await services.reactions.stop();
       services.push.stop();
       services.subscriptions.stop();
