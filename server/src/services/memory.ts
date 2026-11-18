@@ -5,11 +5,11 @@ import {
   type MemoryChange,
   type MemoryScope,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { matchInServer } from '../db/sealed';
-import { lastActive, MEMORY_PROMPT_CHARS, withinBudget } from '../runtime/prompt';
+import { lastActive, MEMORY_PROMPT_CHARS, PINNED_MEMORY_CHARS, withinBudget } from '../runtime/prompt';
 import { DOTTED_AND_DOTLESS_I, foldText, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
 import { noteKey } from './secrets';
@@ -22,10 +22,22 @@ const WORD_MATCH_BONUS = 0.25;
 /** Notes a search by meaning returns at most. */
 const MEANING_HITS = 20;
 
-/** What one person reaches of the memory: their own notes, and the bots they may change. */
+/** Room notes one place keeps at most, so a busy channel cannot fill every prompt that reaches it. */
+export const ROOM_NOTES_PER_PLACE = 50;
+
+/**
+ * What one person reaches of the memory: their own notes, the bots they may change, and the
+ * places (see `placeOf`) whose notes they may see and delete.
+ */
 export interface MemoryReach {
   userId: string;
   botIds: string[];
+  places: string[];
+  /**
+   * Whether the person looks after the server, and so reaches every chat app channel's history too,
+   * the history of channels whose notes are all gone included.
+   */
+  managesServer?: boolean;
 }
 
 /** The SQL condition for the notes of `reach`. */
@@ -35,15 +47,92 @@ const reachable = (reach: MemoryReach) =>
     reach.botIds.length
       ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, reach.botIds))
       : sql`false`,
+    reach.places.length
+      ? and(eq(schema.memories.scope, 'room'), inArray(schema.memories.place, reach.places))
+      : sql`false`,
   )!;
 
-/** Whose a note is, as its history lines keep it: a person's own, or a bot's. */
-const noteOwner = (m: { scope: string; botId: string | null; userId?: string | null }) =>
-  m.scope === 'user' ? `user:${m.userId ?? OWNER_ID}` : `bot:${m.botId}`;
+/**
+ * Whose a note is, as its history lines keep it: a person's own, a bot's, or a place's. The line
+ * keeps it, so a deleted note's history still goes only to those it was for.
+ */
+const noteOwner = (m: {
+  scope: string;
+  botId: string | null;
+  userId?: string | null;
+  place?: string | null;
+}) =>
+  m.scope === 'user'
+    ? `user:${m.userId ?? OWNER_ID}`
+    : m.scope === 'room'
+      ? `room:${m.place}`
+      : `bot:${m.botId}`;
 
 /** Whether a waiting change is one `reach` decides on. */
-export const decides = (reach: MemoryReach, c: Pick<MemoryChange, 'scope' | 'botId' | 'userId'>) =>
-  c.scope === 'user' ? (c.userId ?? OWNER_ID) === reach.userId : !!c.botId && reach.botIds.includes(c.botId);
+export const decides = (
+  reach: MemoryReach,
+  c: Pick<MemoryChange, 'scope' | 'botId' | 'userId'> & { place?: string | null },
+) =>
+  c.scope === 'user'
+    ? (c.userId ?? OWNER_ID) === reach.userId
+    : c.scope === 'room'
+      ? !!c.place && reach.places.includes(c.place)
+      : !!c.botId && reach.botIds.includes(c.botId);
+
+/**
+ * Where a conversation is, for the notes about a place: a Slack or Discord channel (every thread
+ * of the channel is in the same place), or a room. Null for the rest (a person's own chat, a
+ * routine, a bot talking to a bot): they are in no place, so no place's notes reach them.
+ */
+export async function placeOf(
+  ctx: Pick<Ctx, 'db'>,
+  thread: { id: string; kind: string },
+): Promise<string | null> {
+  if (thread.kind === 'room') return `room:${thread.id}`;
+  if (thread.kind !== 'team') return null;
+  const [slack] = await ctx.db
+    .select({ channel: schema.slackThreads.channel })
+    .from(schema.slackThreads)
+    .where(eq(schema.slackThreads.threadId, thread.id))
+    .limit(1);
+  if (slack) return `slack:${slack.channel}`;
+  const [discord] = await ctx.db
+    .select({ channel: schema.discordThreads.channel })
+    .from(schema.discordThreads)
+    .where(eq(schema.discordThreads.threadId, thread.id))
+    .limit(1);
+  return discord ? `discord:${discord.channel}` : null;
+}
+
+/** The notes of one place; none for null (a conversation that is in no place). */
+const placeNotes = (place: string | null) =>
+  place ? and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)) : sql`false`;
+
+/**
+ * A memory change a turn made straight away (the person was there and nothing outside was read),
+ * kept until the turn ends so it can be taken back if the turn is stopped or fails.
+ */
+export interface AppliedChange {
+  action: 'write' | 'update' | 'forget';
+  /** The note written, changed or deleted. */
+  memoryId: string;
+  /** For an update, the words before it. */
+  before: string | null;
+  /** The words after the change; for a forget, the words that went. */
+  content: string;
+  scope: MemoryScope;
+  botId: string | null;
+  userId: string | null;
+  place: string | null;
+  site: string | null;
+  sourceUrl: string | null;
+  /** What a deleted note was written by and in, to write it back as it was. */
+  noteSource: string;
+  proposedBy: string;
+  threadId: string | null;
+  /** The person the work was for. */
+  person: string;
+}
 
 /** One person's notes; none for null (a team conversation, which reads no one's own notes). */
 const userNotes = (userId: string | null) =>
@@ -51,6 +140,11 @@ const userNotes = (userId: string | null) =>
 
 export class MemoryService {
   private embeddings: EmbeddingService | null = null;
+  /**
+   * What each running turn changed straight away, by turn. In this process only: a restart in the
+   * middle of a turn loses the record, and its notes then stay as they were saved.
+   */
+  private applied = new Map<string, AppliedChange[]>();
 
   constructor(private ctx: Ctx) {}
 
@@ -76,15 +170,24 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** The notes a bot has about the site of `host`: its own, and those of the person it works for. */
-  async forSite(botId: string, host: string, userId: string | null): Promise<Memory[]> {
+  /** The notes a bot has about the site of `host`: its own, those of the person it works for, and the place's. */
+  async forSite(
+    botId: string,
+    host: string,
+    userId: string | null,
+    place: string | null = null,
+  ): Promise<Memory[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
         and(
           isNotNull(schema.memories.site),
-          or(userNotes(userId), and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId))),
+          or(
+            userNotes(userId),
+            and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
+            placeNotes(place),
+          ),
         ),
       )
       .orderBy(asc(schema.memories.createdAt));
@@ -119,8 +222,15 @@ export class MemoryService {
     return staleNotes(notes, bots, now);
   }
 
-  /** What a bot sees working for `userId`: its own memories and that person's notes about themselves. */
-  async visibleTo(botId: string, userId: string | null): Promise<{ user: Memory[]; bot: Memory[] }> {
+  /**
+   * What a bot sees working for `userId` in `place`: its own memories, that person's notes about
+   * themselves, and the place's notes (none outside a place).
+   */
+  async visibleTo(
+    botId: string,
+    userId: string | null,
+    place: string | null = null,
+  ): Promise<{ user: Memory[]; bot: Memory[]; room: Memory[] }> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -128,24 +238,39 @@ export class MemoryService {
         and(
           // Notes about a site come with that site, not with every turn.
           isNull(schema.memories.site),
-          or(userNotes(userId), and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId))),
+          or(
+            userNotes(userId),
+            and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
+            placeNotes(place),
+          ),
         ),
       )
       .orderBy(asc(schema.memories.createdAt));
     const all = rows.map(toMemory);
-    return { user: all.filter((m) => m.scope === 'user'), bot: all.filter((m) => m.scope === 'bot') };
+    return {
+      user: all.filter((m) => m.scope === 'user'),
+      bot: all.filter((m) => m.scope === 'bot'),
+      room: all.filter((m) => m.scope === 'room'),
+    };
   }
 
   /**
    * Notes whose text holds `query`, or every one of them when there is no query: the own notes of
-   * the bots in `botIds` and, unless `shared` is false, the shared user memory. A search with a
+   * the bots in `botIds` and, unless `shared` is false, the shared user memory and the notes of
+   * `place`, the place the asking conversation is in (a place's notes show nowhere else). A search with a
    * query counts as using the notes it finds; listing them all does not, as it picks none out.
    */
-  async search(botIds: string[], userId: string | null, query?: string, shared = true): Promise<Memory[]> {
+  async search(
+    botIds: string[],
+    userId: string | null,
+    query?: string,
+    shared = true,
+    place: string | null = null,
+  ): Promise<Memory[]> {
     const own = botIds.length
       ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds))
       : sql`false`;
-    const visible = shared ? or(userNotes(userId), own) : own;
+    const visible = shared ? or(userNotes(userId), own, placeNotes(place)) : own;
     if (query?.trim() && this.embeddings && (await this.embeddings.available())) {
       const rows = await this.ctx.db
         .select()
@@ -192,19 +317,25 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** Whether the note is `userId`'s own about themselves or the own note of one of `botIds`. */
-  canEdit(m: Memory, botIds: Iterable<string>, userId: string) {
+  /**
+   * Whether the note is `userId`'s own about themselves, the own note of one of `botIds`, or a
+   * note of one of `places`.
+   */
+  canEdit(m: Memory, botIds: Iterable<string>, userId: string, places: Iterable<string> = []) {
+    if (m.scope === 'room') return !!m.place && new Set(places).has(m.place);
     return m.scope === 'user' ? m.userId === userId : !!m.botId && new Set(botIds).has(m.botId);
   }
 
   /**
-   * A note already saved with the same words (see `noteKey`), in the same place: the shared memory
-   * or one bot's own notes, about the same site or none. Writing it again would only repeat it.
+   * A note already saved with the same words (see `noteKey`), in the same place: the shared memory,
+   * one bot's own notes or one place's, about the same site or none. Writing it again would only
+   * repeat it.
    */
   async findSame(input: {
     scope: MemoryScope;
     botId: string | null;
     userId: string | null;
+    place?: string | null;
     content: string;
     site?: string | null;
   }) {
@@ -218,6 +349,7 @@ export class MemoryService {
             ? eq(schema.memories.botId, input.botId)
             : isNull(schema.memories.botId),
           input.scope === 'user' && input.userId ? eq(schema.memories.userId, input.userId) : undefined,
+          input.scope === 'room' ? eq(schema.memories.place, input.place ?? '') : undefined,
           input.site ? eq(schema.memories.site, input.site) : isNull(schema.memories.site),
         ),
       );
@@ -238,6 +370,7 @@ export class MemoryService {
         c.memoryId === input.memoryId &&
         c.scope === input.scope &&
         c.botId === input.botId &&
+        (c.place ?? null) === (input.place ?? null) &&
         (c.userId ?? null) === (input.userId ?? null) &&
         c.site === input.site &&
         noteKey(c.content) === noteKey(input.content),
@@ -281,6 +414,7 @@ export class MemoryService {
         scope: row.scope,
         botId: row.botId,
         userId: row.scope === 'user' ? (row.userId ?? OWNER_ID) : null,
+        place: row.place,
         content: words,
         site: row.site,
       };
@@ -315,14 +449,23 @@ export class MemoryService {
     botId: string | null;
     /** Whose note about themselves it is; the owner's when not said. */
     userId?: string | null;
+    /** For a room note, the place it is about. */
+    place?: string | null;
     content: string;
     source: string;
+    /** Who wrote it, for the history, when that is not `source` (a person's id, for a note by hand). */
+    actor?: string;
     site?: string | null;
     /** The conversation the bot wrote it in, and the page the fact came from. */
     threadId?: string | null;
     sourceUrl?: string | null;
   }): Promise<Memory> {
     if (input.scope === 'bot' && !input.botId) throw new HttpError(400, 'error.memoryNeedsBot');
+    if (input.scope === 'room') {
+      if (!input.place) throw new HttpError(400, 'error.memoryNeedsPlace');
+      if ((await this.roomCount(input.place)) >= ROOM_NOTES_PER_PLACE)
+        throw new HttpError(400, 'error.memoryRoomFull', { max: ROOM_NOTES_PER_PLACE });
+    }
     const [row] = await this.ctx.db
       .insert(schema.memories)
       .values({
@@ -330,6 +473,7 @@ export class MemoryService {
         scope: input.scope,
         botId: input.scope === 'bot' ? input.botId : null,
         userId: input.scope === 'user' ? (input.userId ?? OWNER_ID) : null,
+        place: input.scope === 'room' ? input.place : null,
         content: input.content,
         site: input.site ?? null,
         source: input.source,
@@ -337,35 +481,128 @@ export class MemoryService {
         sourceUrl: input.sourceUrl ?? null,
       })
       .returning();
-    await this.log(row!.id, 'create', null, row!.content, input.source, noteOwner(row!));
+    await this.log(row!.id, 'create', null, row!.content, input.actor ?? input.source, noteOwner(row!));
     this.ctx.bus.refresh({ scope: 'memory' });
     this.embeddings?.soon();
     return toMemory(row!);
   }
 
-  /** A bot's change also says where it learned the new words; the person's own edit leaves that as it was. */
+  /**
+   * The places whose notes a person reaches: the rooms that are theirs and, for those who manage
+   * the server, every chat app channel that has notes or changes waiting. (The history of a channel
+   * whose notes are all gone is reached through `MemoryReach.managesServer`, not looked up here:
+   * this runs on every request, and the history is far longer than the notes.)
+   */
+  async placesFor(userId: string, managesServer: boolean): Promise<string[]> {
+    const rooms = await this.ctx.db
+      .select({ id: schema.threads.id })
+      .from(schema.threads)
+      .where(and(eq(schema.threads.kind, 'room'), eq(schema.threads.userId, userId)));
+    const places = new Set(rooms.map((r) => `room:${r.id}`));
+    if (managesServer) {
+      const apps = (col: typeof schema.memories.place | typeof schema.memoryChanges.place) =>
+        or(like(col, 'slack:%'), like(col, 'discord:%'))!;
+      const [notes, waiting] = await Promise.all([
+        this.ctx.db
+          .selectDistinct({ p: schema.memories.place })
+          .from(schema.memories)
+          .where(apps(schema.memories.place)),
+        this.ctx.db
+          .selectDistinct({ p: schema.memoryChanges.place })
+          .from(schema.memoryChanges)
+          .where(apps(schema.memoryChanges.place)),
+      ]);
+      for (const r of [...notes, ...waiting]) if (r.p) places.add(r.p);
+    }
+    return [...places];
+  }
+
+  /** How many notes a place keeps. */
+  async roomCount(place: string): Promise<number> {
+    const [row] = await this.ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.memories)
+      .where(placeNotes(place));
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Refuses a pin that would put more pinned text in the prompt than `PINNED_MEMORY_CHARS` allows.
+   * The count is per owner (one person's, one bot's, one place's pinned notes), as each of them
+   * goes into the prompt as a group; `words` is what the note would hold.
+   */
+  private async checkPinned(note: Memory, words: string) {
+    const owner =
+      note.scope === 'user'
+        ? and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, note.userId ?? OWNER_ID))
+        : note.scope === 'room'
+          ? placeNotes(note.place ?? null)
+          : and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, note.botId ?? ''));
+    const rows = await this.ctx.db
+      .select({ id: schema.memories.id, content: schema.memories.content })
+      .from(schema.memories)
+      .where(and(owner, eq(schema.memories.pinned, true), isNull(schema.memories.site)));
+    // Three characters a note: the bullet and the date the prompt adds.
+    const used =
+      rows.filter((r) => r.id !== note.id).reduce((n, r) => n + r.content.length + 3, 0) + words.length + 3;
+    if (used > PINNED_MEMORY_CHARS)
+      throw new HttpError(400, 'error.memoryPinnedFull', { max: PINNED_MEMORY_CHARS });
+  }
+
+  /**
+   * Changes a note's words, whether it is pinned, or both. A bot's change also says where it
+   * learned the new words; the person's own edit leaves that as it was. With `expectedUpdatedAt`,
+   * the change is refused when the note was changed since that version, so a screen that was left
+   * open cannot write over newer words. Pinning is the person's own act and not a change of the
+   * words: it adds a line to the history without text and leaves `updatedAt` as it was.
+   */
   async update(
     id: string,
-    patch: { content: string; threadId?: string | null; sourceUrl?: string | null },
+    patch: {
+      content?: string;
+      pinned?: boolean;
+      threadId?: string | null;
+      sourceUrl?: string | null;
+      expectedUpdatedAt?: string;
+    },
     actor: string,
   ): Promise<Memory> {
     const before = await this.get(id);
+    if (
+      patch.expectedUpdatedAt &&
+      new Date(patch.expectedUpdatedAt).getTime() !== new Date(before.updatedAt).getTime()
+    ) {
+      throw new HttpError(409, 'error.memoryChanged');
+    }
+    const { expectedUpdatedAt: _seen, content, pinned, ...source } = patch;
+    const nowPinned = pinned ?? !!before.pinned;
+    if (
+      nowPinned &&
+      !before.site &&
+      (pinned === true || (content !== undefined && content !== before.content))
+    ) {
+      await this.checkPinned(before, content ?? before.content);
+    }
     const [row] = await this.ctx.db
       .update(schema.memories)
-      .set({ ...patch, updatedAt: new Date() })
+      .set({
+        ...(content !== undefined && { content, ...source, updatedAt: new Date() }),
+        ...(pinned !== undefined && { pinned }),
+      })
       .where(eq(schema.memories.id, id))
       .returning();
-    await this.log(id, 'update', before.content, row!.content, actor, noteOwner(before));
+    const owner = noteOwner(before);
+    if (content !== undefined) await this.log(id, 'update', before.content, row!.content, actor, owner);
+    if (pinned !== undefined && pinned !== !!before.pinned)
+      await this.log(id, pinned ? 'pin' : 'unpin', null, null, actor, owner);
     this.ctx.bus.refresh({ scope: 'memory' });
-    this.embeddings?.soon();
+    if (content !== undefined) this.embeddings?.soon();
     return toMemory(row!);
   }
 
   async remove(id: string, actor: string) {
-    const before = await this.get(id);
-    await this.ctx.db.delete(schema.memories).where(eq(schema.memories.id, id));
-    await this.log(id, 'delete', before.content, null, actor, noteOwner(before));
-    this.ctx.bus.refresh({ scope: 'memory' });
+    await this.get(id);
+    await this.removeWhere(eq(schema.memories.id, id), actor);
   }
 
   /**
@@ -383,10 +620,44 @@ export class MemoryService {
     return this.removeWhere(inArray(schema.memories.id, ids), actor);
   }
 
+  /**
+   * Everything a place kept, gone with the place (a room deleted): its notes, the changes waiting
+   * for them and their history. Nobody could reach them any more, so none of their words stay.
+   */
+  async removePlace(place: string): Promise<void> {
+    await this.ctx.db.transaction(async (tx) => {
+      await tx
+        .delete(schema.memories)
+        .where(and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)));
+      await tx.delete(schema.memoryChanges).where(eq(schema.memoryChanges.place, place));
+      await tx
+        .delete(schema.auditLog)
+        .where(and(eq(schema.auditLog.targetType, 'memory'), eq(schema.auditLog.owner, `room:${place}`)));
+    });
+    this.ctx.bus.refresh({ scope: 'memory' });
+  }
+
+  /**
+   * Deletes the notes `where` picks. A deleted note really is forgotten: its line in the history
+   * says who deleted it and when, but holds no words, and every earlier line of the note loses
+   * its words too (the lines stay, so the history still shows that the note existed).
+   */
   private async removeWhere(where: SQL, actor: string): Promise<{ count: number }> {
     const rows = await this.ctx.db.transaction(async (tx) => {
       const gone = await tx.delete(schema.memories).where(where).returning();
       if (gone.length) {
+        await tx
+          .update(schema.auditLog)
+          .set({ before: null, after: null })
+          .where(
+            and(
+              eq(schema.auditLog.targetType, 'memory'),
+              inArray(
+                schema.auditLog.targetId,
+                gone.map((m) => m.id),
+              ),
+            ),
+          );
         await tx.insert(schema.auditLog).values(
           gone.map((m) => ({
             id: newId(),
@@ -394,7 +665,7 @@ export class MemoryService {
             action: 'delete',
             targetType: 'memory',
             targetId: m.id,
-            before: m.content,
+            before: null,
             after: null,
             owner: noteOwner(m),
           })),
@@ -406,12 +677,91 @@ export class MemoryService {
     return { count: rows.length };
   }
 
+  /** Keeps what a turn changed straight away, until it ends (see `settleTurn`). */
+  recordApplied(turnId: string, change: AppliedChange) {
+    const list = this.applied.get(turnId) ?? [];
+    list.push(change);
+    this.applied.set(turnId, list);
+  }
+
+  /**
+   * Called when a turn ends. A turn that completed keeps what it changed. One the person stopped,
+   * or that failed, may have written from a half-finished thought: its changes are taken back,
+   * the last first, and each waits for the person to accept or reject (`origin.kind` `stopped`),
+   * so nothing is lost and nothing stays as if the person had agreed to it.
+   */
+  async settleTurn(turnId: string, ok: boolean): Promise<void> {
+    const done = this.applied.get(turnId);
+    this.applied.delete(turnId);
+    if (ok || !done?.length) return;
+    for (const change of done.reverse()) {
+      try {
+        await this.takeBack(change);
+      } catch (err) {
+        console.warn('memory take-back', err);
+      }
+    }
+  }
+
+  private async takeBack(c: AppliedChange) {
+    const actor = `bot:${c.proposedBy}`;
+    const [bot] = await this.ctx.db
+      .select({ name: schema.bots.name })
+      .from(schema.bots)
+      .where(eq(schema.bots.id, c.proposedBy))
+      .limit(1);
+    const found = await this.get(c.memoryId).catch(() => null);
+    let memoryId: string | null = c.memoryId;
+    if (c.action === 'write') {
+      // A note the person changed or pinned while the turn ran is theirs now: it stays as it is.
+      if (found && (found.content !== c.content || found.pinned)) return;
+      if (found) await this.remove(c.memoryId, actor);
+      memoryId = null;
+    } else if (c.action === 'update') {
+      // Words someone else wrote in the meantime are not overwritten.
+      if (found && found.content === c.content && c.before !== null)
+        await this.update(c.memoryId, { content: c.before }, actor);
+    } else if (!found) {
+      const back = await this.create({
+        scope: c.scope,
+        botId: c.botId,
+        userId: c.userId,
+        place: c.place,
+        content: c.content,
+        source: c.noteSource,
+        site: c.site,
+        threadId: c.threadId,
+        sourceUrl: c.sourceUrl,
+      });
+      memoryId = back.id;
+    }
+    await this.propose({
+      action: c.action,
+      memoryId,
+      scope: c.scope,
+      botId: c.botId,
+      place: c.place,
+      site: c.site,
+      content: c.content,
+      before: c.before,
+      proposedBy: c.proposedBy,
+      origin: { kind: 'stopped', name: bot?.name ?? '' },
+      userId: c.person,
+      threadId: c.threadId,
+      sourceUrl: c.sourceUrl,
+    });
+  }
+
   /**
    * The latest `limit` things that happened to notes, oldest first; with `reach`, only to the
    * notes that person reaches.
    */
   async history(limit = 100, reach?: MemoryReach) {
-    const owners = reach && [`user:${reach.userId}`, ...reach.botIds.map((id) => `bot:${id}`)];
+    const owners = reach && [
+      `user:${reach.userId}`,
+      ...reach.botIds.map((id) => `bot:${id}`),
+      ...reach.places.map((p) => `room:${p}`),
+    ];
     const rows = await this.ctx.db
       .select()
       .from(schema.auditLog)
@@ -423,6 +773,8 @@ export class MemoryService {
               inArray(schema.auditLog.owner, owners!),
               // Lines kept before people came in were the owner's.
               reach.userId === OWNER_ID ? isNull(schema.auditLog.owner) : undefined,
+              reach.managesServer ? like(schema.auditLog.owner, 'room:slack:%') : undefined,
+              reach.managesServer ? like(schema.auditLog.owner, 'room:discord:%') : undefined,
             ),
         ),
       )
@@ -456,7 +808,8 @@ export class MemoryService {
  * The notes no bot uses any more: none of them goes into the prompt of a bot that would see it,
  * nobody wrote or changed one in `STALE_MEMORY_DAYS` days, and no bot looked one up in that time. A note in some prompt is
  * never on the list, however old: the bot reads it on every turn, and whether that helps cannot be
- * told from here. Site notes never go into a prompt, so for them only the time counts.
+ * told from here. A pinned note is never on it either: the person asked for it to stay. Site
+ * notes never go into a prompt, so for them only the time counts.
  */
 export function staleNotes(
   notes: Memory[],
@@ -465,12 +818,19 @@ export function staleNotes(
   budget = MEMORY_PROMPT_CHARS,
 ): Memory[] {
   const cutoff = new Date(now.getTime() - STALE_MEMORY_DAYS * 86_400_000).toISOString();
-  const old = notes.filter((m) => lastActive(m) < cutoff);
+  const old = notes.filter((m) => !m.pinned && lastActive(m) < cutoff);
   if (!old.length) return [];
   const inPrompt = new Set<string>();
   // Each person's notes about themselves go into the prompts of bots working for them.
   const about = notes.filter((m) => m.scope === 'user' && !m.site);
   const people = [...new Set(about.map((m) => m.userId ?? null))];
+  // A place's notes go into the prompt of every bot that talks there, for whoever it works for
+  // (a team conversation, which has no person's notes, included).
+  const places = new Map<string, Memory[]>();
+  for (const m of notes) {
+    if (m.scope !== 'room' || m.site || !m.place) continue;
+    places.set(m.place, [...(places.get(m.place) ?? []), m]);
+  }
   for (const b of bots) {
     if (!b.memory) continue;
     const own = notes.filter((m) => m.scope === 'bot' && m.botId === b.id && !m.site);
@@ -478,7 +838,13 @@ export function staleNotes(
       const shared = about.filter((m) => (m.userId ?? null) === person);
       const fit = withinBudget(shared, own, budget);
       for (const m of [...fit.user, ...fit.bot]) inPrompt.add(m.id);
+      for (const room of places.values()) {
+        const withRoom = withinBudget(shared, own, budget, room);
+        for (const m of withRoom.room) inPrompt.add(m.id);
+      }
     }
+    for (const room of places.values())
+      for (const m of withinBudget([], own, budget, room).room) inPrompt.add(m.id);
   }
   return old.filter((m) => !inPrompt.has(m.id)).sort((a, b) => lastActive(a).localeCompare(lastActive(b)));
 }

@@ -732,6 +732,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       services.push.stop();
       services.subscriptions.stop();
       await services.turns.shutdown();
+      await services.memoryReview.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);
       clearInterval(sweepTimer);

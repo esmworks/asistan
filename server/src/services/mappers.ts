@@ -130,6 +130,8 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   useCount: r.useCount,
   threadId: r.threadId,
   sourceUrl: r.sourceUrl,
+  place: r.place,
+  pinned: r.pinned,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -180,6 +182,7 @@ export function toMemoryChange(r: typeof schema.memoryChanges.$inferSelect): Mem
     memoryId: r.memoryId,
     scope: r.scope,
     botId: r.botId,
+    place: r.place,
     site: r.site,
     content: r.content,
     before: r.before,
