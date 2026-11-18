@@ -5,6 +5,9 @@ import { patchOf } from './patch';
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'validation.time');
 
+/** The shortest time between two runs of a routine, as `interval` allows it. */
+export const MIN_RUN_GAP_MINUTES = 5;
+
 export const Schedule = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hourly'), minute: z.number().int().min(0).max(59) }),
   z.object({ type: z.literal('daily'), time }),
@@ -22,7 +25,7 @@ export const Schedule = z.discriminatedUnion('type', [
       minutes: z
         .number()
         .int()
-        .min(5)
+        .min(MIN_RUN_GAP_MINUTES)
         .max(7 * 24 * 60),
       /** Only on these weekdays (0 = Sunday); every day when left out. */
       days: z.array(z.number().int().min(0).max(6)).min(1).optional(),
@@ -379,6 +382,23 @@ function nextCron(expr: string, tz: string, after: Date, lastRun?: Date | null):
     t += MINUTE;
   }
   return null;
+}
+
+/**
+ * Whether a cron expression runs closer together than routines may (`* * * * *`, `*\/2 9 * * *`).
+ * Its next runs are worked out from a fixed day in UTC, enough of them to see a whole busy hour.
+ */
+export function cronTooOften(expr: string): boolean {
+  let at = new Date(Date.UTC(2026, 0, 5));
+  let last: Date | null = null;
+  for (let i = 0; i < 70; i++) {
+    const next = nextCron(expr, 'UTC', at, last);
+    if (!next) return false;
+    if (last && next.getTime() - last.getTime() < MIN_RUN_GAP_MINUTES * MINUTE) return true;
+    last = next;
+    at = next;
+  }
+  return false;
 }
 
 type IntervalSchedule = Extract<Schedule, { type: 'interval' }>;

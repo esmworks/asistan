@@ -1,6 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/shared';
 import {
+  cronTooOften,
+  MIN_RUN_GAP_MINUTES,
   nextRun,
   zonedTime,
   occurrenceKey,
@@ -35,7 +37,7 @@ import { isSilentReply, SILENT_REPLY } from '../engine/types';
 import { schema } from '../db';
 import type { Engine, GateRequest, GateVerdict, TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
-import { cutAt, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
+import { cutAt, errorText, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
 import { fetchPublicText } from './skill-link';
 import { mailText } from './email';
@@ -88,6 +90,8 @@ const REPORT_MAX = 4000;
 
 /** A write that is part of a larger one, so they succeed or fail together. */
 type Tx = Parameters<Parameters<Ctx['db']['transaction']>[0]>[0];
+type RoutineRow = typeof schema.routines.$inferSelect;
+type RunRow = typeof schema.routineRuns.$inferSelect;
 
 /** The report inside markers it cannot close itself, so it stays read as data. */
 export function fence(report: string): string {
@@ -101,6 +105,11 @@ export class RoutineService {
   /** Runs whose pre-check is under way; their turn starts when it answers. */
   private checking = new Set<Promise<void>>();
   private stopChecks = new AbortController();
+  /** Routines reading their page or app before a run, by id; a later pass leaves them be. */
+  private watching = new Map<string, Promise<void>>();
+  /** Reads that may run at once, and those waiting for one of them to end. */
+  private readSlots = MAX_READS;
+  private readWaiting: (() => void)[] = [];
 
   constructor(
     private ctx: Ctx,
@@ -115,8 +124,8 @@ export class RoutineService {
     if (this.stopChecks.signal.aborted) this.stopChecks = new AbortController();
     if (!this.ctx.config.routinesEnabled || this.timer) return;
     void this.runStartup();
-    void this.tick();
-    this.timer = setInterval(() => void this.tick(), this.ctx.config.routineTickMs);
+    void this.pass();
+    this.timer = setInterval(() => void this.pass(), this.ctx.config.routineTickMs);
     this.timer.unref();
   }
 
@@ -130,9 +139,10 @@ export class RoutineService {
     await this.settled();
   }
 
-  /** Waits for the pre-checks under way and the turns they start to be queued. */
+  /** Waits for the page and app reads and the pre-checks under way, and the turns they start to be queued. */
   async settled() {
-    while (this.checking.size) await Promise.all([...this.checking]);
+    while (this.watching.size || this.checking.size)
+      await Promise.all([...this.watching.values(), ...this.checking]);
   }
 
   /**
@@ -203,6 +213,13 @@ export class RoutineService {
   /** A new routine; its runs work for `userId`, or for the bot's owner when null. */
   async create(input: RoutineCreate, userId: string | null = null): Promise<Routine> {
     await this.services.bots.get(input.botId);
+    this.checkOften(input.schedule);
+    const [{ made } = { made: 0 }] = await this.ctx.db
+      .select({ made: count() })
+      .from(schema.routines)
+      .where(eq(schema.routines.botId, input.botId));
+    if (made >= MAX_ROUTINES_PER_BOT)
+      throw new HttpError(400, 'error.routineLimit', { max: MAX_ROUTINES_PER_BOT });
     if (input.check) await this.checkCheck(input.botId, input.check, userId, !!input.slackChannel);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
@@ -244,6 +261,8 @@ export class RoutineService {
     const enabled = patch.enabled ?? current.enabled;
     const last = current.lastRunAt ? new Date(current.lastRunAt) : null;
     if (patch.schedule) this.checkOnce(schedule, timezone, this.clock());
+    // Also when one is turned on: an imported routine comes paused, its schedule never checked.
+    if (patch.schedule || (enabled && !current.enabled)) this.checkOften(schedule);
     const was = await this.personOf(current);
     const shapes = Object.keys(patch).some((k) => k !== 'enabled');
     const person = by && shapes ? by : was;
@@ -261,6 +280,8 @@ export class RoutineService {
           // A new check starts from its own first answer, not from what the old one returned.
           ...(patch.check !== undefined && { checkHash: null }),
           nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null,
+          // A retry waiting is dropped with the slot it stood in front of.
+          resumeAt: null,
         })
         .where(eq(schema.routines.id, id))
         .returning();
@@ -341,6 +362,16 @@ export class RoutineService {
     }
   }
 
+  /**
+   * A cron schedule may not run closer together than an interval may: one set to every minute
+   * would start the bot, and spend on it, all day long.
+   */
+  private checkOften(s: Schedule) {
+    if (s.type === 'cron' && cronTooOften(s.expr)) {
+      throw new HttpError(400, 'validation.cronTooOften', { minutes: MIN_RUN_GAP_MINUTES });
+    }
+  }
+
   async remove(id: string) {
     // Work the routine queued and nobody started goes with it; a run under way finishes.
     const queued = await this.ctx.db
@@ -382,8 +413,21 @@ export class RoutineService {
     );
   }
 
-  /** Fire every due routine once. Safe to call concurrently and repeatedly. */
+  /**
+   * Fire every due routine once, and wait for the pages and apps read for it. Safe to call
+   * concurrently and repeatedly.
+   */
   async tick() {
+    await this.pass();
+    while (this.watching.size) await Promise.all([...this.watching.values()]);
+  }
+
+  /**
+   * One pass over the due routines. A routine that reads a page or an app first does that on the
+   * side, a few at a time: a slow one (an app may take minutes to answer) holds up neither the
+   * other routines nor the next pass.
+   */
+  private async pass() {
     if (this.ticking || this.stopped) return;
     this.ticking = this.runDue().finally(() => {
       this.ticking = null;
@@ -392,9 +436,11 @@ export class RoutineService {
   }
 
   private async runDue() {
+    const now = this.clock();
+    let due: RoutineRow[];
+    let t: T;
     try {
-      const now = this.clock();
-      const due = await this.ctx.db
+      due = await this.ctx.db
         .select()
         .from(schema.routines)
         .where(
@@ -404,75 +450,147 @@ export class RoutineService {
             lte(schema.routines.nextRunAt, now),
           ),
         );
-      const t = await this.services.settings.translator();
-      // The routine as it is now: one paused, edited or deleted during this tick (a watched page
-      // takes a while to read) is not run from the copy read at its start.
-      const current = async (r: (typeof due)[number]) => {
-        const [row] = await this.ctx.db.select().from(schema.routines).where(eq(schema.routines.id, r.id));
-        return row?.enabled && row.nextRunAt?.getTime() === r.nextRunAt!.getTime() ? row : null;
-      };
-      for (const listed of due) {
-        const r = await current(listed);
-        if (!r) continue;
-        const schedule = r.schedule as Schedule;
-        const late = now.getTime() - r.nextRunAt!.getTime() > MISSED_GRACE_MS;
-        if (late && r.missed === 'skip') {
-          await this.record(toRoutine(r), occurrenceKey(r.nextRunAt!), 'skipped', t('routine.missedSkipped'));
-        } else if (r.watchUrl || r.check) {
-          // A watched page and an app's check are read with no AI; the bot runs only when one of
-          // them changed, and gets what is new.
-          const news: string[] = [];
-          // What the pre-check reads: what changed on the page (or, without its earlier text, the
-          // page as it is now) and the app's new answer.
-          const changes: string[] = [];
-          if (r.watchUrl) {
-            const changed = await this.pageChanged(r.id, r.watchUrl, r.watchHash, r.watchText);
-            if (changed !== null) {
-              news.push(t('routine.watchChanged', { url: r.watchUrl, text: changed.excerpt }));
-              changes.push(`Page ${r.watchUrl}:\n${changed.diff ?? changed.excerpt}`);
-            }
-          }
-          if (r.check) {
-            const check = r.check as RoutineCheck;
-            const changed = await this.checkChanged(
-              r.id,
-              r.botId,
-              check,
-              r.checkHash,
-              r.createdByUserId,
-              !!r.slackChannel,
-            );
-            if (changed) {
-              news.push(
-                t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }),
-              );
-              changes.push(`App ${changed.app}, tool ${check.tool}, new answer:\n${changed.text}`);
-            }
-          }
-          const still = news.length ? await current(r) : null;
-          if (still)
-            await this.fire(toRoutine(still), occurrenceKey(r.nextRunAt!), news.join('\n\n'), false, {
-              trigger: 'watch',
-              input: changes.join('\n\n'),
-            });
-        } else {
-          await this.fire(toRoutine(r), occurrenceKey(r.nextRunAt!));
-        }
-        // A one-time routine stays as a paused record after its run.
-        await this.ctx.db
-          .update(schema.routines)
-          .set(
-            schedule.type === 'once'
-              ? { nextRunAt: null, enabled: false }
-              : { nextRunAt: nextRun(schedule, r.timezone, now, r.nextRunAt) },
-          )
-          // A schedule the person changed meanwhile keeps the next run they set.
-          .where(and(eq(schema.routines.id, r.id), eq(schema.routines.nextRunAt, r.nextRunAt!)));
-      }
-      if (due.length) this.ctx.bus.refresh({ scope: 'routines' });
+      t = await this.services.settings.translator();
     } catch (err) {
       console.error('routine tick', err);
+      return;
     }
+    for (const r of due) {
+      // One still reading from an earlier pass is not started a second time.
+      if (this.watching.has(r.id)) continue;
+      if (r.watchUrl || r.check) {
+        const read = this.readSlot()
+          .then(async () => {
+            try {
+              if (!this.stopped) await this.runOne(r, now, t);
+            } finally {
+              this.freeReadSlot();
+            }
+            this.ctx.bus.refresh({ scope: 'routines' });
+          })
+          .catch((err) => console.error(`Routine ${r.id} could not run`, err))
+          .finally(() => this.watching.delete(r.id));
+        this.watching.set(r.id, read);
+      } else {
+        await this.runOne(r, now, t);
+      }
+    }
+    if (due.length) this.ctx.bus.refresh({ scope: 'routines' });
+  }
+
+  private async readSlot() {
+    if (this.readSlots > 0) {
+      this.readSlots--;
+      return;
+    }
+    await new Promise<void>((resolve) => this.readWaiting.push(resolve));
+  }
+
+  private freeReadSlot() {
+    const next = this.readWaiting.shift();
+    if (next) next();
+    else this.readSlots++;
+  }
+
+  /**
+   * Runs one due routine and moves it on to its next slot. What goes wrong with it is recorded as
+   * its failed run and leaves the other routines alone; the slot passes either way, so a fault that
+   * lasts is not tried again on every pass.
+   */
+  private async runOne(listed: RoutineRow, now: Date, t: T) {
+    // The routine as it is now: one paused, edited or deleted meanwhile (a watched page takes a
+    // while to read) is not run from the copy read at the start of the pass.
+    const current = async (r: RoutineRow) => {
+      const [row] = await this.ctx.db.select().from(schema.routines).where(eq(schema.routines.id, r.id));
+      return row?.enabled && row.nextRunAt?.getTime() === r.nextRunAt!.getTime() ? row : null;
+    };
+    let r: RoutineRow | null;
+    try {
+      r = await current(listed);
+    } catch (err) {
+      console.error(`Routine ${listed.id} could not be read`, err);
+      return;
+    }
+    if (!r) return;
+    const routine = r;
+    const occurrence = occurrenceKey(routine.nextRunAt!);
+    try {
+      const late = now.getTime() - routine.nextRunAt!.getTime() > MISSED_GRACE_MS;
+      if (late && routine.missed === 'skip') {
+        await this.record(toRoutine(routine), occurrence, 'skipped', t('routine.missedSkipped'));
+      } else if (routine.watchUrl || routine.check) {
+        // A watched page and an app's check are read with no AI; the bot runs only when one of
+        // them changed, and gets what is new.
+        const news: string[] = [];
+        // What the pre-check reads: what changed on the page (or, without its earlier text, the
+        // page as it is now) and the app's new answer.
+        const changes: string[] = [];
+        if (routine.watchUrl) {
+          const changed = await this.pageChanged(
+            routine.id,
+            routine.watchUrl,
+            routine.watchHash,
+            routine.watchText,
+          );
+          if (changed !== null) {
+            news.push(t('routine.watchChanged', { url: routine.watchUrl, text: changed.excerpt }));
+            changes.push(`Page ${routine.watchUrl}:\n${changed.diff ?? changed.excerpt}`);
+          }
+        }
+        if (routine.check) {
+          const check = routine.check as RoutineCheck;
+          const changed = await this.checkChanged(
+            routine.id,
+            routine.botId,
+            check,
+            routine.checkHash,
+            routine.createdByUserId,
+            !!routine.slackChannel,
+          );
+          if (changed) {
+            news.push(t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }));
+            changes.push(`App ${changed.app}, tool ${check.tool}, new answer:\n${changed.text}`);
+          }
+        }
+        // Its new answer is already kept: a change found while the server stops still runs.
+        const still = news.length ? await current(routine) : null;
+        if (still)
+          await this.fire(toRoutine(still), occurrence, news.join('\n\n'), false, {
+            trigger: 'watch',
+            input: changes.join('\n\n'),
+          });
+      } else {
+        await this.fire(toRoutine(routine), occurrence);
+      }
+    } catch (err) {
+      console.error(`Routine ${routine.id} could not run`, err);
+      await this.recordFailure(toRoutine(routine), occurrence, err, t).catch((e) =>
+        console.error(`Failed run of routine ${routine.id} could not be recorded`, e),
+      );
+    }
+    await this.advance(routine).catch((err) =>
+      console.error(`Routine ${routine.id} could not move to its next run`, err),
+    );
+  }
+
+  /**
+   * Moves a routine that came due on to its next slot. A one-time routine stays as a paused record
+   * after its run. After a retry the schedule goes on from the slot the retry stood in front of.
+   */
+  private async advance(r: RoutineRow) {
+    const schedule = r.schedule as Schedule;
+    await this.ctx.db
+      .update(schema.routines)
+      .set(
+        schedule.type === 'once'
+          ? { nextRunAt: null, enabled: false, resumeAt: null }
+          : {
+              nextRunAt: r.resumeAt ?? nextRun(schedule, r.timezone, this.clock(), r.nextRunAt),
+              resumeAt: null,
+            },
+      )
+      // A schedule the person changed meanwhile keeps the next run they set.
+      .where(and(eq(schema.routines.id, r.id), eq(schema.routines.nextRunAt, r.nextRunAt!)));
   }
 
   /**
@@ -877,7 +995,7 @@ export class RoutineService {
       const skipped = occurrence.startsWith('hook:')
         ? `${occurrence}:busy:${newId().slice(0, 8)}`
         : occurrence;
-      return this.record(routine, skipped, 'skipped', t('routine.stillRunning'));
+      return this.recordBusy(routine, skipped, t);
     }
     await this.ctx.db
       .update(schema.routines)
@@ -887,14 +1005,99 @@ export class RoutineService {
     const engine = mode !== 'off' ? this.checker?.() : undefined;
     if (check && engine?.gate) {
       const checked = this.checkThenStart(engine, mode === 'on', routine, run, check, () =>
-        this.begin(routine, bot.id, thread.id, run, payload, t),
-      ).catch((err) => console.error(`Pre-check of routine ${routine.id} failed`, err));
+        this.startRun(routine, bot.id, thread.id, run, payload, t),
+      ).catch(async (err) => {
+        console.error(`Pre-check of routine ${routine.id} failed`, err);
+        await this.startFailed(routine.id, run.id, err, t).catch(() => {});
+      });
       this.checking.add(checked);
       void checked.finally(() => this.checking.delete(checked));
       return toRun(run);
     }
-    await this.begin(routine, bot.id, thread.id, run, payload, t);
-    return toRun(run);
+    if (await this.startRun(routine, bot.id, thread.id, run, payload, t)) return toRun(run);
+    // It ended as failed: the caller is told so, not that it runs.
+    const [ended] = await this.ctx.db
+      .select()
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.id, run.id));
+    return toRun(ended ?? run);
+  }
+
+  /**
+   * Starts the bot on a recorded run. When that goes wrong the run ends as failed, with why: left
+   * active, it would hold off every later run of the routine as "still running" until the server
+   * starts again.
+   */
+  private async startRun(
+    routine: Routine,
+    botId: string,
+    threadId: string,
+    run: RunRow,
+    payload: string | undefined,
+    t: T,
+  ): Promise<boolean> {
+    try {
+      await this.begin(routine, botId, threadId, run, payload, t);
+      return true;
+    } catch (err) {
+      console.error(`Run ${run.id} of routine ${routine.id} could not start`, err);
+      await this.startFailed(routine.id, run.id, err, t);
+      return false;
+    }
+  }
+
+  /** Ends a run that could not start as failed, and starts one that waited for it. */
+  private async startFailed(routineId: string, runId: string, err: unknown, t: T) {
+    if (await this.failRun(runId, t('routine.startFailed', { message: errorText(err, t) })))
+      await this.startQueued(routineId);
+  }
+
+  /**
+   * Ends a run still marked active as failed, when no turn of it is queued or going (one that is
+   * finishes it itself). True when it ended it.
+   */
+  private async failRun(runId: string, reason: string): Promise<boolean> {
+    const ended = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status: 'error', reason, finishedAt: this.clock() })
+      .where(
+        and(
+          eq(schema.routineRuns.id, runId),
+          inArray(schema.routineRuns.status, ['running', 'waiting']),
+          notExists(
+            this.ctx.db
+              .select({ id: schema.turns.id })
+              .from(schema.turns)
+              .where(
+                and(
+                  eq(schema.turns.routineRunId, runId),
+                  inArray(schema.turns.status, ['queued', 'running']),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: schema.routineRuns.id });
+    if (ended.length) this.ctx.bus.refresh({ scope: 'routines' });
+    return ended.length > 0;
+  }
+
+  /**
+   * A due slot whose run could not be started: recorded as a failed run, or the run already written
+   * for it ends as failed.
+   */
+  private async recordFailure(routine: Routine, occurrence: string, err: unknown, t: T) {
+    const reason = t('routine.startFailed', { message: errorText(err, t) });
+    if (await this.record(routine, occurrence, 'error', reason)) {
+      this.ctx.bus.refresh({ scope: 'routines' });
+      return;
+    }
+    const [run] = await this.ctx.db
+      .select({ id: schema.routineRuns.id })
+      .from(schema.routineRuns)
+      .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.routineRuns.occurrence, occurrence)))
+      .limit(1);
+    if (run && (await this.failRun(run.id, reason))) await this.startQueued(routine.id);
   }
 
   /**
@@ -913,7 +1116,7 @@ export class RoutineService {
       .select({ queued: count() })
       .from(schema.routineRuns)
       .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.routineRuns.status, 'queued')));
-    if (queued >= MAX_QUEUED) return this.record(routine, occurrence, 'skipped', t('routine.stillRunning'));
+    if (queued >= MAX_QUEUED) return this.recordBusy(routine, occurrence, t);
     try {
       const [row] = await this.ctx.db
         .insert(schema.routineRuns)
@@ -983,7 +1186,7 @@ export class RoutineService {
       .set({ lastRunAt: this.clock() })
       .where(eq(schema.routines.id, routineId));
     const threadId = started.threadId ?? (await this.threadFor(routine, bot.id)).id;
-    await this.begin(routine, bot.id, threadId, started, next.payload ?? undefined, t);
+    await this.startRun(routine, bot.id, threadId, started, next.payload ?? undefined, t);
     this.ctx.bus.refresh({ scope: 'routines' });
   }
 
@@ -999,7 +1202,7 @@ export class RoutineService {
     routine: Routine,
     run: typeof schema.routineRuns.$inferSelect,
     check: { trigger: GateRequest['trigger']; input: string },
-    start: () => Promise<void>,
+    start: () => Promise<unknown>,
   ) {
     if (!enforce) await start();
     let verdict: GateVerdict | null = null;
@@ -1140,7 +1343,40 @@ export class RoutineService {
     return { text, at: row.createdAt.toISOString().slice(0, 16).replace('T', ' '), outside: row.outside };
   }
 
-  private async record(routine: Routine, occurrence: string, status: 'skipped', reason: string) {
+  /**
+   * Records a slot skipped because a run of the routine is still going. Slots skipped one after
+   * another behind the same run share one line, which counts them: a run stuck for an hour on a
+   * routine every five minutes leaves one line, not twelve.
+   */
+  private async recordBusy(routine: Routine, occurrence: string, t: T) {
+    const [last] = await this.ctx.db
+      .select()
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.routineId, routine.id))
+      .orderBy(desc(schema.routineRuns.startedAt), desc(schema.routineRuns.id))
+      .limit(1);
+    if (last?.status === 'skipped' && last.busySkips > 0) {
+      const [row] = await this.ctx.db
+        .update(schema.routineRuns)
+        .set({
+          busySkips: sql`${schema.routineRuns.busySkips} + 1`,
+          reason: t('routine.stillRunningMany', { count: last.busySkips + 1 }),
+          finishedAt: this.clock(),
+        })
+        .where(eq(schema.routineRuns.id, last.id))
+        .returning();
+      if (row) return toRun(row);
+    }
+    return this.record(routine, occurrence, 'skipped', t('routine.stillRunning'), 1);
+  }
+
+  private async record(
+    routine: Routine,
+    occurrence: string,
+    status: 'skipped' | 'error',
+    reason: string,
+    busySkips = 0,
+  ) {
     try {
       const [row] = await this.ctx.db
         .insert(schema.routineRuns)
@@ -1152,6 +1388,7 @@ export class RoutineService {
           reason,
           promptSnapshot: routine.prompt,
           finishedAt: this.clock(),
+          busySkips,
         })
         .returning();
       return toRun(row!);
@@ -1173,7 +1410,7 @@ export class RoutineService {
     if (!run) return null;
     const [row] = await this.ctx.db
       .update(schema.routines)
-      .set({ enabled: false, nextRunAt: null })
+      .set({ enabled: false, nextRunAt: null, resumeAt: null })
       .where(eq(schema.routines.id, run.routineId))
       .returning();
     await this.ctx.db.update(schema.routineRuns).set({ reason }).where(eq(schema.routineRuns.id, runId));
@@ -1263,7 +1500,7 @@ export class RoutineService {
       if (run) {
         await this.ctx.db
           .update(schema.routines)
-          .set({ nextRunAt: retryAt })
+          .set({ nextRunAt: retryAt, resumeAt: resumeFrom })
           .where(
             and(
               eq(schema.routines.id, run.routineId),
@@ -1302,7 +1539,7 @@ export class RoutineService {
         const retryAt = new Date(now.getTime() + TRANSIENT_RETRY_DELAY_MS);
         await this.ctx.db
           .update(schema.routines)
-          .set({ nextRunAt: retryAt })
+          .set({ nextRunAt: retryAt, resumeAt: resumeFrom })
           .where(
             and(
               eq(schema.routines.id, run.routineId),
@@ -1331,8 +1568,17 @@ const POST_MAX = 20_000;
 const MISSED_GRACE_MS = 10 * 60_000;
 /** A routine stopped by the usage limit runs again this long after the limit resets. */
 const LIMIT_RETRY_DELAY_MS = 2 * 60_000;
+/** Routines one bot may have; each run costs, and a list this long is already hard to keep up. */
+export const MAX_ROUTINES_PER_BOT = 50;
+/** Watched pages and app checks read at once before their routines run. */
+const MAX_READS = 4;
 
-/** Compares two secrets in a time that does not tell how much of a guess was right. */
+/**
+ * What a retry keeps as the slot it stands in front of: the next run the routine had, or the one an
+ * earlier retry still waiting kept.
+ */
+const resumeFrom = sql`coalesce(${schema.routines.resumeAt}, ${schema.routines.nextRunAt})`;
+
 /** Whether `signature` (`sha256=<hex>`) is the HMAC of `raw` with `secret`. */
 export function validSignature(signature: string, secret: string, raw: Buffer): boolean {
   const m = /^sha256=([0-9a-f]{64})$/i.exec(signature.trim());
@@ -1354,6 +1600,7 @@ function withEvent(body: string, event?: string): string {
   return JSON.stringify({ event });
 }
 
+/** Compares two secrets in a time that does not tell how much of a guess was right. */
 function sameSecret(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);

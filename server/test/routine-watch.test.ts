@@ -104,4 +104,49 @@ describe('izlenen sayfa', () => {
     expect(set).not.toBeNull();
     expect(now.nextRunAt).toBe(set);
   });
+
+  it('yavaş okunan sayfa öbür rutinleri ve sonraki geçişi bekletmez; okunurken ikinci kez okunmaz', async () => {
+    const bot = await t.bot();
+    const watched = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Fiyat',
+        prompt: 'Fiyat değişti mi?',
+        schedule: { type: 'interval', minutes: 30 },
+        watchUrl: 'https://ornek.com/urun',
+      })
+    ).body;
+    const plain = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Özet',
+        prompt: 'Özeti yaz',
+        schedule: { type: 'interval', minutes: 30 },
+      })
+    ).body;
+    let reads = 0;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    page.html = '<p>Fiyat 100</p>';
+    page.during = async () => {
+      reads++;
+      await held;
+    };
+    const pass = () => (t.services.routines as unknown as { pass(): Promise<void> }).pass();
+    t.now.value = new Date(t.now.value.getTime() + 31 * 60_000);
+    // A pass ends while the page is still being read, and the plain routine has run.
+    await pass();
+    await t.services.turns.idle();
+    const runs = async (id: string) => (await t.api<RoutineRun[]>('GET', `/api/routines/${id}/runs`)).body;
+    expect((await runs(plain.id)).map((r) => r.status)).toEqual(['done']);
+    // The next pass leaves the routine still reading alone.
+    t.now.value = new Date(t.now.value.getTime() + 1000);
+    await pass();
+    expect(reads).toBe(1);
+    release();
+    await t.services.routines.settled();
+    page.during = null;
+    const after = (await t.api<Routine[]>('GET', '/api/routines')).body.find((x) => x.id === watched.id)!;
+    expect(Date.parse(after.nextRunAt!)).toBeGreaterThan(t.now.value.getTime());
+  });
 });
