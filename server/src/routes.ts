@@ -57,6 +57,8 @@ import {
   SkillBot,
   SkillCreate,
   SkillUpdate,
+  DiscordConnect,
+  DiscordUpdate,
   SlackConnect,
   SlackUpdate,
   TelegramConnect,
@@ -1578,6 +1580,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/slack/me', async (req) => s.slack.link(me(req).userId));
   app.post('/api/slack/me/code', async (req) => s.slack.newCode(me(req).userId));
   app.delete('/api/slack/me', async (req) => s.slack.unlink(me(req).userId));
+  // The server's Discord bot, set up by those who look after the server. People in the Discord
+  // servers it is in have no account here and link nothing.
+  app.get('/api/discord', async () => s.discord.status());
+  app.put('/api/discord', async (req) => s.discord.connect(DiscordConnect.parse(req.body)));
+  app.patch('/api/discord', async (req) => s.discord.update(DiscordUpdate.parse(req.body)));
+  app.delete('/api/discord', async () => {
+    await s.discord.disconnect();
+    return { ok: true };
+  });
 
   // Memory: each person's notes about themselves, and the notes of the bots they may change.
   const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({

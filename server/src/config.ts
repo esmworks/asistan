@@ -91,6 +91,8 @@ export interface Config {
   telegramPollSeconds: number;
   /** Slack's Web API; tests put a stand-in here. */
   slackApi: string;
+  /** Discord's REST API with its version; tests put a stand-in here. */
+  discordApi: string;
   /** Whether chat apps (Telegram, WhatsApp) connect at all; tests that do not use them leave them off. */
   channelsEnabled: boolean;
 }
@@ -193,6 +195,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     telegramApi: (env.YUMAKBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
     telegramPollSeconds: 50,
     slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
+    discordApi: (env.YUMAKBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
     channelsEnabled: true,
     aiEndpoints: aiEndpointsFrom(env),
     ...overrides,

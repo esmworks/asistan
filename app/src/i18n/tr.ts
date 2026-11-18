@@ -272,7 +272,7 @@ export const tr = {
     'Oturum açtığınızda Yumak Bot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
   'sidebarMenu.markGroupRead': 'Gruptakileri okundu işaretle',
   'chat.apiThreads': 'API üzerinden',
-  'chat.teamThreads': 'Ekip (Slack)',
+  'chat.teamThreads': 'Ekip (Slack, Discord)',
   'chat.ticketThreads': 'Pano işleri',
   'activity.watch': 'İzle',
   'shortcuts.newThread': 'Bu botla yeni sohbet',
@@ -1824,6 +1824,36 @@ export const tr = {
   'channels.telegram': 'Telegram',
   'channels.telegramHint':
     'Her bot kendi Telegram botuyla bağlanır; bunu botun ayarlarında, Telegram bölümünde yaparsınız.',
+  'discord.title': 'Discord',
+  'discord.on': 'Bağlı',
+  'discord.off': 'Bağlı değil',
+  'discord.error': 'Discord bağlantısı çalışmıyor: {error}',
+  'discord.noMessageContent':
+    'Discord bota her mesajın metnini vermiyor; bot yalnızca kendisini etiketleyen mesajları okur, öncesinde yazılanları göremez. Geliştirici portalında Bot altında Message Content Intent’i aç.',
+  'discord.about':
+    'Botu eklediğin Discord sunucusundaki herkes onu bir kanalda etiketleyebilir. Her etiket, botla konuşabilen herkesin burada gördüğü bir ekip konuşması açar; botun mesajına verilen cevap aynı konuşmada sürer.',
+  'discord.guests':
+    'Discord’daki kişilerin burada hesabı yok. İstekleri yalnızca ekibin paylaştıklarını kullanır ve botla yalnızca konuşabilir. Ekibin uygulamalarını, postasını, tablolarını ya da web’i okumak ve bir şeyi değiştiren her adım bir kartı bekler. Kartı burada botu değiştirebilenler cevaplar; rolleri seçilmiş bir sunucuda isteği yazan üye de Discord’da düğmelerine basabilir. Böyle bir konuşmaya burada yazılanlar adınla Discord kanalına gönderilir.',
+  'discord.step1': 'Geliştirici portalında bir uygulama ve onun botunu oluştur:',
+  'discord.step1Link': 'discord.com/developers',
+  'discord.step2':
+    'Bot bölümünde Message Content Intent’i aç, sonra Reset Token’a bas ve anahtarı aşağıya yapıştır.',
+  'discord.step3': 'Bağlandıktan sonra burada çıkan bağlantıyla botu Discord sunucuna ekle.',
+  'discord.token': 'Bot anahtarı',
+  'discord.bot': 'Cevap veren bot',
+  'discord.botHint': 'Biriyle paylaşılmış olmalı; kimseyle paylaşılmamış bot Discord’da cevap vermez.',
+  'discord.noBot': 'Hiçbiri; bot henüz cevap vermez',
+  'discord.servers': 'Discord sunucuları',
+  'discord.invite': 'Botu bir Discord sunucusuna ekle',
+  'discord.noServers': 'Bot henüz hiçbir Discord sunucusunda değil.',
+  'discord.everyone':
+    'Bu sunucudaki herkes botu kullanabilir. Yalnızca belirli rollerin üyelerine izin vermek için rolleri aç.',
+  'discord.rolesOnly': 'Botu yalnızca açık rollerin üyeleri kullanabilir.',
+  'discord.connect': 'Bağla',
+  'discord.connected': 'Discord bağlandı',
+  'discord.disconnect': 'Bağlantıyı kes',
+  'discord.disconnectConfirm':
+    'Discord bağlantısı kesilsin mi? Bot oradan biri çıkarana kadar sunucularında kalır ve cevap vermeyi bırakır.',
   'slack.title': 'Slack',
   'slack.appName': 'Yumak Bot',
   'slack.off': 'Bağlı değil',

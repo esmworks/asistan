@@ -247,6 +247,11 @@ export const turns = pgTable(
      * a bot allowed more than itself); null for the bot's own level.
      */
     modeCap: text('mode_cap', { enum: ['ask', 'review', 'auto', 'readonly'] }),
+    /**
+     * Asked by someone with no account here (a member of a Discord server): the turn may do no
+     * more with its bot than talk with it, and the person's "always allow" rules do not count.
+     */
+    guest: boolean('guest').notNull().default(false),
     createdAt: created(),
     startedAt: ts('started_at'),
     finishedAt: ts('finished_at'),
@@ -762,13 +767,14 @@ export const botSkills = pgTable(
  * Telegram bot (its token sealed with the vault key) and the one Telegram account paired with it.
  * WhatsApp: a single row for the linked number; `botId` is the bot its messages go to now.
  * Slack: a single row for the server's Slack app (its two tokens sealed together); `botId` is the
- * bot that answers when a message names none.
+ * bot that answers when a message names none. Discord: a single row for the server's Discord bot
+ * (its token sealed); `botId` is the bot that answers there, `settings.roles` who may use it.
  */
 export const channels = pgTable(
   'channels',
   {
     id: text('id').primaryKey(),
-    kind: text('kind', { enum: ['telegram', 'whatsapp', 'slack'] }).notNull(),
+    kind: text('kind', { enum: ['telegram', 'whatsapp', 'slack', 'discord'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
     /** Telegram: the bot token, sealed. */
     secret: text('secret'),
@@ -803,6 +809,9 @@ export const channels = pgTable(
     uniqueIndex('channels_slack_uq')
       .on(t.kind)
       .where(sql`${t.kind} = 'slack'`),
+    uniqueIndex('channels_discord_uq')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'discord'`),
   ],
 );
 
@@ -842,6 +851,25 @@ export const slackThreads = pgTable(
     createdAt: created(),
   },
   (t) => [uniqueIndex('slack_threads_uq').on(t.channel, t.threadTs)],
+);
+
+/**
+ * A team conversation that a Discord reply chain is. The bot replies to the chain's first message
+ * with every post, so a reply to any of its posts names that message, and the conversation.
+ */
+export const discordThreads = pgTable(
+  'discord_threads',
+  {
+    threadId: text('thread_id')
+      .primaryKey()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    serverId: text('server_id').notNull(),
+    channel: text('channel').notNull(),
+    /** The first message of the reply chain. */
+    rootId: text('root_id').notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('discord_threads_uq').on(t.channel, t.rootId)],
 );
 
 /** Which message in a chat app is which message here, so an answer to one finds its place. */

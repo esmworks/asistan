@@ -63,6 +63,10 @@ The interface is available in English and Turkish.
   account with a code. A direct message goes to their own conversation; mentioning the app in a channel starts a team
   conversation that uses only what the team shares and that everyone who may talk with the bot sees in the app.
   Approval buttons answer only for the person who asked, and a routine can post its report to a channel.
+- **Discord** — one Discord bot for the server, over the Gateway (no public address). Anyone in a Discord server it is
+  in, or only the members of chosen roles, mentions it in a channel to start a team conversation; a reply to its post
+  goes on with it. They have no account here, so their requests use only what the team shares and change nothing
+  without a card.
 - **A bot as an API** — call a bot from a script with the access key and get its reply.
 - **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
   choose which bots may use them.
@@ -329,6 +333,7 @@ The server reads these environment variables:
 | `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
 | `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
 | `YUMAKBOT_SLACK_API`             | Slack's own         | Address of Slack's Web API; only tests change it                        |
+| `YUMAKBOT_DISCORD_API`           | Discord's own       | Address of Discord's API with its version; only tests change it         |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from

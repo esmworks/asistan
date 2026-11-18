@@ -161,6 +161,15 @@ function keepToolResult(threadDir: string) {
   };
 }
 
+/** The reads a turn asked by someone with no account here makes without a card. */
+const GUEST_READS: ReadonlySet<string> = new Set([
+  'skill_read',
+  'memory_search',
+  'bots_list',
+  'models_list',
+  'bot_profile',
+]);
+
 export class TurnManager {
   private running = new Map<string, Running>();
   private hooks: TurnFinishedHook[] = [];
@@ -311,6 +320,8 @@ export class TurnManager {
     modeCap?: Bot['permissionMode'] | null;
     /** The person the turn works for; left out, it is worked out from what started it. */
     userId?: string | null;
+    /** Asked by someone with no account here; see the `guest` column. */
+    guest?: boolean;
   }): Promise<TurnRow> {
     const userId =
       t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null, t.threadId, t.botId);
@@ -328,6 +339,7 @@ export class TurnManager {
         outside: t.outside ?? null,
         modeCap: t.modeCap ?? null,
         userId,
+        guest: t.guest ?? false,
       })
       .returning();
     this.emitState(t.threadId, t.botId);
@@ -402,6 +414,9 @@ export class TurnManager {
     const prompt = [turn.prompt, ...later.map((t) => t.prompt)].join('\n\n');
     // One of them carrying someone else's words (a forward) makes the whole turn carry them.
     const outside = turn.outside ?? later.find((t) => t.outside)?.outside ?? null;
+    // So does one asked by someone with no account here: the whole turn is theirs as much.
+    const guest = turn.guest || later.some((t) => t.guest);
+    const modeCap = guest ? cappedMode('ask', turn.modeCap) : turn.modeCap;
     const ids = later.map((t) => t.id);
     await this.ctx.db
       .update(schema.messages)
@@ -410,10 +425,10 @@ export class TurnManager {
     await this.ctx.db.delete(schema.turns).where(inArray(schema.turns.id, ids));
     const [merged] = await this.ctx.db
       .update(schema.turns)
-      .set({ prompt, outside })
+      .set({ prompt, outside, guest, modeCap })
       .where(eq(schema.turns.id, turn.id))
       .returning();
-    return merged ?? { ...turn, prompt, outside };
+    return merged ?? { ...turn, prompt, outside, guest, modeCap };
   }
 
   /** Gives a turn that has not started a new prompt; false once it has. */
@@ -613,6 +628,8 @@ export class TurnManager {
       .where(and(eq(schema.turns.id, turnId), eq(schema.turns.status, 'queued')))
       .limit(1);
     if (!queued || !this.running.has(entry.turn.id)) return false;
+    // Words of someone with no account here do not join a turn that may do more than theirs.
+    if (queued.guest && !entry.turn.guest) return false;
     if (!entry.steers.some((s) => s.turnId === turnId)) {
       entry.steers.push({ turnId, messageId, prompt: queued.prompt, outside: queued.outside });
     }
@@ -871,9 +888,17 @@ export class TurnManager {
       });
     // Internal app tools, and connection tools marked read, run without a card; `ask` rules can
     // still require one.
-    const readOnlyTools = new Set(tools.filter((t) => t.internal || t.readOnly).map(toolPermName));
+    // Someone with no account here reads freely only the bot's own skills and notes: the team's
+    // apps, mail, tables and the web each wait for a card, since the answer goes back to them.
+    const readOnlyTools = new Set(
+      tools
+        .filter((t) =>
+          turn.guest ? !t.server && (t.internal || GUEST_READS.has(t.name)) : t.internal || t.readOnly,
+        )
+        .map(toolPermName),
+    );
     // With the internet on, searching and reading pages are reads like opening one in the browser.
-    if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
+    if (bot.internet && !turn.guest) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
     const down = await this.services.connections.unavailableFor(bot.id, own);
@@ -969,7 +994,8 @@ export class TurnManager {
       );
       // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
       // the card says what started the run. In the person's own request they count as always.
-      const locked = !!outside() && !(await askedBy());
+      // Someone with no account here asked: the rules the person set do not count for them.
+      const locked = (!!outside() && !(await askedBy())) || turn.guest;
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
