@@ -3,6 +3,7 @@ import {
   catalogEntry,
   connectionToolParts,
   describeAction,
+  emailPreview,
   outsideTrigger,
   parseAnswers,
   questionItems,
@@ -74,6 +75,7 @@ import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
 import { BotPage } from './BotPage';
 import { McpAppView } from './McpAppView';
+import { EmailApprovalCard } from './EmailApproval';
 import { speechSupported, toggleSpeech, useServerVoice, useSpeech } from '@/lib/speech';
 import { useUi } from '@/lib/store';
 import { AppLogo } from './Connections';
@@ -1218,6 +1220,37 @@ function ApprovalCard({
     }
   }
   if (a.kind === 'login' && a.status === 'pending') return <LoginCard a={a} />;
+  const notes = (heldBy || reviewReason || askRule || outside) && (
+    <>
+      {heldBy && (
+        <div className="text-xs text-muted-foreground">{t('approval.heldBy', { rule: heldBy })}</div>
+      )}
+      {reviewReason && (
+        <div className="text-xs text-muted-foreground">
+          {t('approval.reviewReason', { reason: reviewReason })}
+        </div>
+      )}
+      {askRule && (
+        <div className="text-xs text-muted-foreground">{t('approval.askRule', { rule: askRule })}</div>
+      )}
+      {outside && <div className="text-xs text-muted-foreground">{t(`approval.outside.${outside}`)}</div>}
+    </>
+  );
+  // A mail shows as the mail itself, with the button that sends it.
+  const mail = a.kind === 'tool' ? emailPreview(a.toolName, a.input) : null;
+  if (mail) {
+    return (
+      <EmailApprovalCard
+        a={a}
+        mail={mail}
+        service={service}
+        notes={notes}
+        offerAlways={!heldBy && !askRule && !outside}
+        busy={decide.isPending}
+        onDecide={(d) => decide.mutate(d)}
+      />
+    );
+  }
   if (a.status !== 'pending') return <AnsweredLine text={answeredText(a, botName, t, locale, service)} />;
   const action = describeAction(a.toolName, a.input, { bot: botName, locale, service });
   return (
@@ -1227,18 +1260,7 @@ function ApprovalCard({
         <div className="min-w-0 flex-1 space-y-1 text-[15px]">
           <div className="font-medium">{action.want}</div>
           <div className="text-muted-foreground">{t('approval.question')}</div>
-          {heldBy && (
-            <div className="text-xs text-muted-foreground">{t('approval.heldBy', { rule: heldBy })}</div>
-          )}
-          {reviewReason && (
-            <div className="text-xs text-muted-foreground">
-              {t('approval.reviewReason', { reason: reviewReason })}
-            </div>
-          )}
-          {askRule && (
-            <div className="text-xs text-muted-foreground">{t('approval.askRule', { rule: askRule })}</div>
-          )}
-          {outside && <div className="text-xs text-muted-foreground">{t(`approval.outside.${outside}`)}</div>}
+          {notes}
           {action.detail && <Detail text={action.detail} />}
         </div>
       </div>
