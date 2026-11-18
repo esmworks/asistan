@@ -220,8 +220,12 @@ export class ConnectionService {
     input: ConnectionCreate & { catalogId: string | null; allBots: boolean; botIds: string[] },
     userId: string | null,
   ): Promise<Connection> {
-    const all = await this.ctx.db.select({ slug: schema.connections.slug }).from(schema.connections);
-    if (all.length >= MAX_CONNECTIONS)
+    const all = await this.ctx.db
+      .select({ slug: schema.connections.slug, userId: schema.connections.userId })
+      .from(schema.connections);
+    // Counted per owner, the team's apart from each person's: one person's cannot use up the
+    // room the team and everyone else have.
+    if (all.filter((r) => r.userId === userId).length >= MAX_CONNECTIONS)
       throw new HttpError(400, 'error.connectionLimit', { max: MAX_CONNECTIONS });
     const secrets: ConnectionSecrets = {};
     if (input.auth === 'token') {
@@ -391,7 +395,6 @@ export class ConnectionService {
     return this.get(id);
   }
 
-  /** Opens a connection to every bot, or limits it to the given ones. */
   /** Gives a connection to a person, or to the team when null. */
   async setOwner(id: string, userId: string | null): Promise<Connection> {
     await this.row(id);
@@ -400,6 +403,7 @@ export class ConnectionService {
     return this.get(id);
   }
 
+  /** Opens a connection to every bot, or limits it to the given ones. */
   async setBots(
     id: string,
     access: { allBots: boolean; botIds: string[] },

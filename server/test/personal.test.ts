@@ -1,7 +1,21 @@
-import type { Bot, Connection, Memory, MemoryChange, Thread, VaultLogin } from '@yumakbot/shared';
+import {
+  MAX_CONNECTIONS,
+  type Bot,
+  type Connection,
+  type Memory,
+  type MemoryChange,
+  type Message,
+  type Routine,
+  type RoutineRun,
+  type Thread,
+  type VaultLogin,
+} from '@yumakbot/shared';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { schema } from '../src/db';
 import { translator } from '../src/i18n';
 import { OWNER_ID } from '../src/users';
+import { newId } from '../src/util';
 import { testServer, type Person, type TestServer } from './helpers';
 
 describe('her kişinin kendisine ait olanlar', () => {
@@ -173,6 +187,75 @@ describe('her kişinin kendisine ait olanlar', () => {
       new AbortController().signal,
     );
     expect(tools.some((x) => x.name.includes('crm'))).toBe(false);
+  });
+
+  it('rutini değiştiren onun kişisi olur; koşuları ve raporu yalnızca o kişinin görebildiği yerde durur', async () => {
+    const bot = await t.bot({ name: 'Rutinli' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'none', people: { ayse: 'edit' } });
+    const made = await t.api<Routine>('POST', '/api/routines', {
+      botId: bot.id,
+      name: 'Sabah',
+      prompt: 'Günü özetle',
+      schedule: { type: 'interval', minutes: 5 },
+    });
+    expect(made.body.createdByUserId).toBe(OWNER_ID);
+    // Changing what it does makes it Ayşe's: it no longer acts with the owner's own apps and notes.
+    const changed = await ayse.api<Routine>('PATCH', `/api/routines/${made.body.id}`, {
+      prompt: 'Kasadaki girişle bakiyeyi yaz',
+    });
+    expect(changed.body.createdByUserId).toBe('ayse');
+    // Pausing it leaves it whose it is.
+    const paused = await t.api<Routine>('PATCH', `/api/routines/${made.body.id}`, { enabled: false });
+    expect(paused.body.createdByUserId).toBe('ayse');
+
+    const run = (await ayse.api<RoutineRun>('POST', `/api/routines/${made.body.id}/run`)).body;
+    await t.services.turns.idle();
+    const thread = (await ayse.api<Thread>('GET', `/api/threads/${run.threadId}`)).body;
+    expect(thread.userId).toBe('ayse');
+    expect((await t.api('GET', `/api/threads/${run.threadId}`)).status).toBe(404);
+    const [turn] = await t.services.ctx.db
+      .select({ userId: schema.turns.userId })
+      .from(schema.turns)
+      .where(eq(schema.turns.routineRunId, run.id));
+    expect(turn!.userId).toBe('ayse');
+    // Its report reaches Ayşe's main conversation, not the bot owner's.
+    const hers = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const owners = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const inHers = (await ayse.api<Message[]>('GET', `/api/threads/${hers.id}/messages`)).body;
+    expect(inHers.some((m) => m.props.routineReport)).toBe(true);
+    expect((await t.messages(owners.id)).some((m) => m.props.routineReport)).toBe(false);
+  });
+
+  it('not geçmişi en yeni satırları verir', async () => {
+    for (let i = 0; i < 4; i++) {
+      await mert.api('POST', '/api/memory', { scope: 'user', content: `Mert notu ${i}` });
+      // Lines of the same millisecond have no order between them.
+      await new Promise((r) => setTimeout(r, 3));
+    }
+    const all = (await t.services.memory.history(1000, { userId: 'mert', botIds: [] })).map((h) => h.after);
+    const latest = (await t.services.memory.history(2, { userId: 'mert', botIds: [] })).map((h) => h.after);
+    expect(all.slice(-2)).toEqual(['Mert notu 2', 'Mert notu 3']);
+    expect(latest).toEqual(['Mert notu 2', 'Mert notu 3']);
+  });
+
+  it('bağlantı sınırı her sahibe ayrı sayılır', async () => {
+    await t.services.ctx.db.insert(schema.connections).values(
+      Array.from({ length: MAX_CONNECTIONS }, (_, i) => ({
+        id: newId(),
+        slug: `mert_${i}`,
+        name: `Mert ${i}`,
+        url: `https://m${i}.example.invalid/mcp`,
+        auth: 'none' as const,
+        status: 'error' as const,
+        userId: 'mert',
+      })),
+    );
+    const one = { name: 'Bir tane daha', url: 'https://bir.example.invalid/mcp', auth: 'none' };
+    expect((await mert.api('POST', '/api/connections', one)).status).toBe(400);
+    // Mert's full list does not keep anyone else from adding theirs.
+    const hers = await ayse.api<Connection>('POST', '/api/connections', one);
+    expect(hers.status).toBe(200);
+    await ayse.api('DELETE', `/api/connections/${hers.body.id}`);
   });
 
   it('kasadaki giriş, sahibinin işi dışında yazılmaz; aynı hesap iki kişide ayrı durur', async () => {

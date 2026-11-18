@@ -198,7 +198,6 @@ export function byteRange(header: string | undefined, size: number): { start: nu
   return start <= end && start < size ? { start, end } : null;
 }
 
-/** A browser problem as an answer to the person who asked. */
 /** Who a signed-in request comes from; every route past the sign-in check has one. */
 function me(req: FastifyRequest): Principal {
   if (!req.principal) throw new HttpError(401, 'error.accessKeyRequired');
@@ -208,6 +207,7 @@ function me(req: FastifyRequest): Principal {
 /** How the audit log names the person a request comes from. */
 const actorOf = (req: FastifyRequest) => `user:${me(req).userId}`;
 
+/** A browser problem as an answer to the person who asked. */
 function browserHttpError(err: unknown): unknown {
   if (!(err instanceof BrowserError)) return err;
   switch (err.code) {
@@ -677,13 +677,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
-  app.get('/api/today', async (req) => ({
-    ...(await s.usage.today(
-      canAdminister(me(req).role) ? undefined : await s.access.botIds(me(req), 'chat'),
-    )),
-    staleMemory: (await s.memory.stale(new Date(), await memoryReach(req))).length,
-    pendingMemory: (await s.memory.pending(await memoryReach(req))).length,
-  }));
+  app.get('/api/today', async (req) => {
+    // Every bot's level is read once, for what the person may talk with and what they may change.
+    const levels = [...(await s.access.levels(me(req)))];
+    const reach = (wanted: BotLevel) => levels.filter(([, l]) => atLeast(l, wanted)).map(([id]) => id);
+    const notes: MemoryReach = { userId: me(req).userId, botIds: reach('edit') };
+    return {
+      ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
+      staleMemory: (await s.memory.stale(new Date(), notes)).length,
+      pendingMemory: (await s.memory.pending(notes)).length,
+    };
+  });
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
   // turn's id to ask again later when the wait runs out).
@@ -1680,7 +1684,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.routines.create(body, me(req).userId);
   });
   app.patch('/api/routines/:id', async (req) =>
-    s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body)),
+    s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body), me(req).userId),
   );
   app.delete('/api/routines/:id', async (req) => {
     await s.routines.remove(IdParams.parse(req.params).id);

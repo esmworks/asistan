@@ -792,7 +792,7 @@ export class ToolFactory {
             rename &&
             routines.find((x) => x.id !== r.id && x.botId === r.botId && x.name.toLowerCase() === rename);
           if (taken) return t('tool.routineExists', { name: taken.name });
-          const updated = await s.routines.update(r.id, patch);
+          const updated = await s.routines.update(r.id, patch, person);
           return t('tool.routineUpdated', {
             name: updated.name,
             when: describeSchedule(updated.schedule, await s.settings.locale()),

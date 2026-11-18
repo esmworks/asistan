@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -216,14 +216,10 @@ export class SettingsService {
       Object.entries(valid).filter(([k, v]) => isPersonal(k) && v !== undefined),
     );
     if (Object.keys(personal).length) {
-      const [row] = await this.ctx.db
-        .select({ profile: schema.users.profile })
-        .from(schema.users)
-        .where(eq(schema.users.id, userId))
-        .limit(1);
+      // Merged by the database in one write: two changes made at once both stay.
       await this.ctx.db
         .update(schema.users)
-        .set({ profile: { ...(row?.profile ?? {}), ...personal } })
+        .set({ profile: sql`${schema.users.profile} || ${JSON.stringify(personal)}::jsonb` })
         .where(eq(schema.users.id, userId));
     }
     for (const [k, v] of Object.entries(valid)) {

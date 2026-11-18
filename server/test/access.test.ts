@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import type { DeltaEvent } from '@yumakbot/shared';
 import { io as connect } from 'socket.io-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { schema } from '../src/db';
 import { OWNER_ID } from '../src/users';
+import { newId } from '../src/util';
 import { KEY, testServer, type Person, type TestServer } from './helpers';
 
 describe('kim neyi görür', () => {
@@ -161,11 +163,15 @@ describe('kim neyi görür', () => {
     const ayseThread = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
     t.services.access.forget();
     expect(await t.services.access.threadAudience(ayseThread.id)).toEqual(['ayse']);
-    const routine = await t.services.threads.routineThread(bot.id, 'Rutin', null);
-    // The bot's own work goes to those who may change it: its owner and the admins.
-    expect((await t.services.access.threadAudience(routine.id)).sort()).toEqual(
-      [OWNER_ID, 'yonetici'].sort(),
-    );
+    // A routine's runs are its person's alone.
+    const routine = await t.services.threads.routineThread(bot.id, 'Rutin', null, 'ayse');
+    expect(await t.services.access.threadAudience(routine.id)).toEqual(['ayse']);
+    // The bot's own work, which is no one person's, goes to those who may change it.
+    const [work] = await t.services.ctx.db
+      .insert(schema.threads)
+      .values({ id: newId(), botId: bot.id, kind: 'routine', title: 'Eski iş' })
+      .returning();
+    expect((await t.services.access.threadAudience(work!.id)).sort()).toEqual([OWNER_ID, 'yonetici'].sort());
   });
 
   it('yalnızca konuşabilen kişi kendi sohbetinin dosyalarını açar, başkasınınkini açamaz', async () => {
@@ -255,6 +261,39 @@ describe('kim neyi görür', () => {
       expect(got.sort()).toEqual([`thread:${mine.id}`, `threads:${shared.id}`].sort());
     } finally {
       socket.close();
+    }
+  });
+
+  it('botların web çıkışını yalnızca sunucuyu yöneten verir', async () => {
+    const url = await listening();
+    const offer = (p: Person) =>
+      connect(`${url}/egress`, {
+        transports: ['websocket'],
+        reconnection: false,
+        extraHeaders: { cookie: p.cookie, origin: url },
+        auth: { device: p.id },
+      });
+    const device = async () =>
+      (await t.api<{ egress?: { connected: boolean; device: string } }>('GET', '/api/info')).body.egress;
+    const theirs = offer(ayse);
+    try {
+      await new Promise<void>((resolve) => {
+        theirs.on('disconnect', () => resolve());
+        theirs.on('connect_error', () => resolve());
+      });
+      expect((await device())?.device ?? '').not.toBe(ayse.id);
+    } finally {
+      theirs.close();
+    }
+    const managed = offer(admin);
+    try {
+      const until = Date.now() + 3000;
+      while ((await device())?.device !== admin.id && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect((await device())?.device).toBe(admin.id);
+    } finally {
+      managed.close();
     }
   });
 

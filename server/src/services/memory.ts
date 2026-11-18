@@ -5,7 +5,7 @@ import {
   type MemoryChange,
   type MemoryScope,
 } from '@yumakbot/shared';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { matchInServer } from '../db/sealed';
@@ -410,10 +410,13 @@ export class MemoryService {
     return { count: rows.length };
   }
 
-  /** What happened to notes; with `reach`, only to the notes that person reaches (see `seesHistory`). */
+  /**
+   * The latest `limit` things that happened to notes, oldest first; with `reach`, only to the
+   * notes that person reaches.
+   */
   async history(limit = 100, reach?: MemoryReach) {
     const owners = reach && [`user:${reach.userId}`, ...reach.botIds.map((id) => `bot:${id}`)];
-    return this.ctx.db
+    const rows = await this.ctx.db
       .select()
       .from(schema.auditLog)
       .where(
@@ -427,8 +430,9 @@ export class MemoryService {
             ),
         ),
       )
-      .orderBy(asc(schema.auditLog.createdAt))
+      .orderBy(desc(schema.auditLog.createdAt))
       .limit(limit);
+    return rows.reverse();
   }
 
   private async log(

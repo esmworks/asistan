@@ -604,7 +604,7 @@ describe('rutinler', () => {
   };
   /** The rows a server leaves behind when it dies mid-run. */
   const crashedRun = async (r: Routine, botId: string, withTurn: boolean) => {
-    const thread = await t.services.threads.routineThread(botId, r.name, null);
+    const thread = await t.services.threads.routineThread(botId, r.name, null, OWNER_ID);
     const id = newId();
     await t.db.db.insert(schema.routineRuns).values({
       id,

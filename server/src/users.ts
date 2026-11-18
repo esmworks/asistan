@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from './account';
 import { schema, type Db } from './db';
 import type { PasswordHash } from './db/schema';
-import { HttpError, newId } from './util';
+import { HttpError, isUniqueViolation, newId } from './util';
 
 /** The owner's fixed id: whoever installed this server, and whom the access key signs in as. */
 export const OWNER_ID = 'owner';
@@ -88,6 +88,12 @@ async function adoptLegacyProfile(db: Db): Promise<void> {
   await db.update(schema.users).set({ profile }).where(eq(schema.users.id, OWNER_ID));
 }
 
+/** A username another person took while this one was being saved reads as taken. */
+const usernameTaken = (err: unknown): never => {
+  if (isUniqueViolation(err)) throw new HttpError(409, 'error.usernameTaken');
+  throw err;
+};
+
 /** The people who sign in to this server, and their usernames and passwords. */
 export class Users {
   constructor(private db: Db) {}
@@ -129,6 +135,8 @@ export class Users {
       .where(eq(schema.users.usernameKey, key))
       .limit(1);
     if (taken) throw new HttpError(409, 'error.usernameTaken');
+    const password = await hashPassword(input.password);
+    // Two added at once with one username: the index keeps one, the other is told it is taken.
     const [row] = await this.db
       .insert(schema.users)
       .values({
@@ -137,9 +145,10 @@ export class Users {
         usernameKey: key,
         displayName: input.displayName?.trim() || null,
         role: input.role,
-        password: await hashPassword(input.password),
+        password,
       })
-      .returning();
+      .returning()
+      .catch(usernameTaken);
     return personOf(row!);
   }
 
@@ -209,11 +218,13 @@ export class Users {
       .where(and(eq(schema.users.usernameKey, key), ne(schema.users.id, userId)))
       .limit(1);
     if (taken) throw new HttpError(409, 'error.usernameTaken');
+    const hash = await hashPassword(password);
     const [row] = await this.db
       .update(schema.users)
-      .set({ username: username.trim(), usernameKey: key, password: await hashPassword(password) })
+      .set({ username: username.trim(), usernameKey: key, password: hash })
       .where(eq(schema.users.id, userId))
-      .returning();
+      .returning()
+      .catch(usernameTaken);
     if (!row) throw new HttpError(404, 'error.notFound');
     return userOf(row);
   }

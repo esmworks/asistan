@@ -45,7 +45,7 @@ import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
 import { adoptLegacyAccount } from './users';
-import { atLeast } from './services/access';
+import { atLeast, managesServer } from './services/access';
 import { enforceRule, ruleFor } from './access-rules';
 import { setContentKey } from './db/sealed';
 import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
@@ -484,10 +484,12 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     },
   );
   // The desktop app offers its computer as the bots' way out to the web. Frames are binary
-  // messages of the egress protocol; the sign-in is the same as for every socket.
+  // messages of the egress protocol; the sign-in is the same as for every socket. Every bot's
+  // pages then pass through that computer, so only those who look after the server offer one.
   const egressSockets = io.of('/egress') as unknown as Namespace;
   egressSockets.on('connection', (socket) => {
-    if (!egress) return void socket.disconnect(true);
+    const by = socketPrincipals.get(socket.request);
+    if (!egress || !by || !managesServer(by.role)) return void socket.disconnect(true);
     const device: unknown = socket.handshake.auth?.device;
     const link = egress.attach(
       typeof device === 'string' ? device : '',

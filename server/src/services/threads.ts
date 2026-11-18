@@ -299,19 +299,36 @@ export class ThreadService {
     }
   }
 
-  /** The thread a routine's runs post into (one per routine). */
-  async routineThread(botId: string, routineName: string, existingId: string | null): Promise<ThreadRow> {
+  /**
+   * The thread a routine's runs post into (one per routine), `userId`'s own. One kept from before
+   * becomes theirs; one of someone else's, from before the routine changed hands, is left to them.
+   */
+  async routineThread(
+    botId: string,
+    routineName: string,
+    existingId: string | null,
+    userId: string,
+  ): Promise<ThreadRow> {
     if (existingId) {
       const [row] = await this.ctx.db
         .select()
         .from(schema.threads)
         .where(eq(schema.threads.id, existingId))
         .limit(1);
-      if (row) return row;
+      if (row?.userId === userId) return row;
+      if (row && !row.userId) {
+        const [adopted] = await this.ctx.db
+          .update(schema.threads)
+          .set({ userId })
+          .where(eq(schema.threads.id, row.id))
+          .returning();
+        this.ctx.bus.refresh({ scope: 'threads', botId });
+        return adopted!;
+      }
     }
     const [row] = await this.ctx.db
       .insert(schema.threads)
-      .values({ id: newId(), botId, kind: 'routine', title: routineName })
+      .values({ id: newId(), botId, userId, kind: 'routine', title: routineName })
       .returning();
     this.ctx.bus.refresh({ scope: 'threads', botId });
     return row!;
