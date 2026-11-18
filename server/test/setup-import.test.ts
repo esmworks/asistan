@@ -94,7 +94,7 @@ describe('başka yapay zekâ araçlarından alma', () => {
       expect(again.skills.map((k) => k.name)).not.toContain('rapor');
       await t.dispose();
 
-      t = await testServer();
+      t = await testServer({ onUserComputer: false });
       expect((await t.api('GET', '/api/setup-import')).body).toEqual({
         available: false,
         skills: [],

@@ -540,6 +540,9 @@ describe('rutinler', () => {
   };
 
   it('bot kendi rutinlerini ve nerede çalıştığını istemde görür; yönetici bütün rutinleri görür', async () => {
+    // A server of its own, whose routines run while the person's computer is off.
+    await t.dispose();
+    t = await testServer({ onUserComputer: false });
     const a = await t.bot({ name: 'Ali' });
     const b = await t.bot({ name: 'Ayşe' });
     const boss = await t.bot({ name: 'Kahya', isManager: true });

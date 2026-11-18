@@ -94,7 +94,7 @@ describe('bu bilgisayardaki ajanların klasörleri', () => {
   });
 
   it('sunucu kişinin bilgisayarında değilse liste yoktur', async () => {
-    t = await testServer();
+    t = await testServer({ onUserComputer: false });
     expect((await t.api('GET', '/api/setup-import/projects')).body).toEqual({
       available: false,
       projects: [],
