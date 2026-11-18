@@ -68,6 +68,11 @@ import {
   ThreadCreate,
   USAGE_RANGES,
   type UsageRange,
+  PasswordManagerCreate,
+  PaymentCardCreate,
+  PaymentCardUpdate,
+  PasswordManagerUpdate,
+  VaultImport,
   VaultLoginCreate,
   VaultLoginUpdate,
   frameCsp,
@@ -76,6 +81,7 @@ import {
   PAGE_LIBRARIES,
   PageShareCreate,
   ApiCredentialCreate,
+  ApiKeyImport,
   ApiCredentialUpdate,
   EmailClaim,
   AI_KINDS,
@@ -1511,14 +1517,43 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
 
-  // API keys bots call services with; listed without their values.
-  app.get('/api/api-keys', async () => s.apiCredentials.list());
-  app.post('/api/api-keys', async (req) => s.apiCredentials.create(ApiCredentialCreate.parse(req.body)));
-  app.patch('/api/api-keys/:id', async (req) =>
-    s.apiCredentials.update(IdParams.parse(req.params).id, ApiCredentialUpdate.parse(req.body)),
-  );
+  // API keys bots call services with; listed without their values. Each is a person's own or the
+  // team's, as sign-ins are.
+  /** A key a person may change: their own, or the team's when they look after the server. */
+  const keyFor = async (req: FastifyRequest, id: string) => {
+    const k = await s.apiCredentials.get(id);
+    const who = me(req);
+    if (k.userId && k.userId !== who.userId) throw notFound('apiKey');
+    if (!k.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return k;
+  };
+  app.get('/api/api-keys', async (req) => s.apiCredentials.list(me(req).userId));
+  app.post('/api/api-keys', async (req) => {
+    const { team, ...body } = ApiCredentialCreate.parse(req.body);
+    // Left out, a key is the team's for those who look after the server, as every key was before
+    // keys had owners, and the person's own for everyone else.
+    const owner = ownerFor(req, team ?? managesServer(me(req).role));
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.apiCredentials.create(body, owner ?? null);
+  });
+  app.post('/api/api-keys/import', async (req) => {
+    const { team, ...body } = ApiKeyImport.parse(req.body);
+    const owner = ownerFor(req, team ?? managesServer(me(req).role));
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.apiCredentials.importEnv(body, owner ?? null);
+  });
+  app.patch('/api/api-keys/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const k = await keyFor(req, id);
+    const { team, ...body } = ApiCredentialUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    if ((owner === undefined ? k.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
+    return s.apiCredentials.update(id, body, owner);
+  });
   app.delete('/api/api-keys/:id', async (req) => {
-    await s.apiCredentials.remove(IdParams.parse(req.params).id);
+    const { id } = IdParams.parse(req.params);
+    await keyFor(req, id);
+    await s.apiCredentials.remove(id);
     return { ok: true };
   });
   /** A sign-in a person may change: their own, or the team's when they look after the server. */
@@ -1544,10 +1579,81 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if ((owner === undefined ? v.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
     return s.vault.update(id, body, owner);
   });
+  app.post('/api/vault/import', async (req) => {
+    const { team, ...body } = VaultImport.parse(req.body);
+    const owner = ownerOrSelf(req, team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.vault.importCsv(body, owner);
+  });
   app.delete('/api/vault/:id', async (req) => {
     const { id } = IdParams.parse(req.params);
     await loginFor(req, id);
     await s.vault.remove(id);
+    return { ok: true };
+  });
+
+  /** A password manager a person may change: their own, or the team's when they look after the server. */
+  const managerFor = async (req: FastifyRequest, id: string) => {
+    const m = await s.passwordManagers.get(id);
+    const who = me(req);
+    if (m.userId && m.userId !== who.userId) throw notFound('vault');
+    if (!m.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return m;
+  };
+  app.get('/api/password-managers', async (req) => s.passwordManagers.list(me(req).userId));
+  app.post('/api/password-managers', async (req) => {
+    const { team, ...body } = PasswordManagerCreate.parse(req.body);
+    const owner = ownerOrSelf(req, team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.passwordManagers.create(body, owner);
+  });
+  app.patch('/api/password-managers/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const m = await managerFor(req, id);
+    const { team, ...body } = PasswordManagerUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    if ((owner === undefined ? m.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
+    return s.passwordManagers.update(id, body, owner);
+  });
+  app.post('/api/password-managers/:id/refresh', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await managerFor(req, id);
+    return s.passwordManagers.refresh(id);
+  });
+  app.delete('/api/password-managers/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await managerFor(req, id);
+    await s.passwordManagers.remove(id);
+    return { ok: true };
+  });
+
+  /** A card a person may change: their own, or the team's when they look after the server. */
+  const cardFor = async (req: FastifyRequest, id: string) => {
+    const c = await s.cards.get(id);
+    const who = me(req);
+    if (c.userId && c.userId !== who.userId) throw notFound('vault');
+    if (!c.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return c;
+  };
+  app.get('/api/cards', async (req) => s.cards.list(me(req).userId));
+  app.post('/api/cards', async (req) => {
+    const { team, ...body } = PaymentCardCreate.parse(req.body);
+    const owner = ownerOrSelf(req, team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.cards.create(body, owner);
+  });
+  app.patch('/api/cards/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const c = await cardFor(req, id);
+    const { team, ...body } = PaymentCardUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    if ((owner === undefined ? c.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
+    return s.cards.update(id, body, owner);
+  });
+  app.delete('/api/cards/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await cardFor(req, id);
+    await s.cards.remove(id);
     return { ok: true };
   });
 

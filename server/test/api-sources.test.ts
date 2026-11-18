@@ -85,12 +85,15 @@ describe('OpenAPI belgeleri', () => {
 
   it('bot işlemleri listeler ve anahtarla çağırır; değiştiren işlem onay ister', async () => {
     const bot = await t.bot({ name: 'Veteriner' });
-    await t.services.apiCredentials.create({
-      name: 'pets',
-      origin,
-      auth: { type: 'header', header: 'X-API-Key' },
-      value: 'anahtar-123456',
-    });
+    await t.services.apiCredentials.create(
+      {
+        name: 'pets',
+        origin,
+        auth: { type: 'header', header: 'X-API-Key' },
+        value: 'anahtar-123456',
+      },
+      null,
+    );
     const made = await t.api<ApiSource>('POST', '/api/api-sources', {
       name: 'evcil',
       spec: JSON.stringify(SPEC(origin)),

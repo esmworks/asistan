@@ -49,6 +49,14 @@ import type {
   ServerInfo,
   Thread,
   Locale,
+  PasswordManager,
+  PasswordManagerCreate,
+  PasswordManagerUpdate,
+  PaymentCard,
+  PaymentCardCreate,
+  PaymentCardUpdate,
+  VaultImport,
+  VaultImportResult,
   VaultLogin,
   VaultLoginCreate,
   VaultLoginUpdate,
@@ -73,6 +81,8 @@ import type {
   ApiCredential,
   ApiCredentialCreate,
   ApiCredentialUpdate,
+  ApiKeyImport,
+  ApiKeyImportResult,
   EmailSettings,
   AiEndpoint,
   AiEndpoints,
@@ -444,6 +454,18 @@ export const api = {
   addVaultLogin: (v: VaultLoginCreate) => http.post<VaultLogin>('/api/vault', v),
   updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
   removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
+  importVault: (v: VaultImport) => http.post<VaultImportResult>('/api/vault/import', v),
+  passwordManagers: () => http.get<PasswordManager[]>('/api/password-managers'),
+  addPasswordManager: (v: PasswordManagerCreate) => http.post<PasswordManager>('/api/password-managers', v),
+  updatePasswordManager: (id: string, v: PasswordManagerUpdate) =>
+    http.patch<PasswordManager>(`/api/password-managers/${id}`, v),
+  refreshPasswordManager: (id: string) =>
+    http.post<PasswordManager>(`/api/password-managers/${id}/refresh`, {}),
+  removePasswordManager: (id: string) => http.del<{ ok: true }>(`/api/password-managers/${id}`),
+  cards: () => http.get<PaymentCard[]>('/api/cards'),
+  addCard: (v: PaymentCardCreate) => http.post<PaymentCard>('/api/cards', v),
+  updateCard: (id: string, v: PaymentCardUpdate) => http.patch<PaymentCard>(`/api/cards/${id}`, v),
+  removeCard: (id: string) => http.del<{ ok: true }>(`/api/cards/${id}`),
   rules: () => http.get<PermissionRule[]>('/api/rules'),
   botActions: (botId: string, limit = 100) =>
     http.get<BotAction[]>(`/api/bots/${botId}/actions?limit=${limit}`),
@@ -562,6 +584,7 @@ export const api = {
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>
     http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
   removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
+  importApiKeys: (input: ApiKeyImport) => http.post<ApiKeyImportResult>('/api/api-keys/import', input),
   /** The page opened on its own, with the print dialog, to save it as a PDF. */
   pagePrintUrl: (botId: string, path: string) =>
     `/api/bots/${botId}/library/page?path=${encodeURIComponent(path)}&print=1`,

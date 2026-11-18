@@ -3,7 +3,13 @@ import type { AddressInfo } from 'node:net';
 import type { Approval, TelegramStatus, Thread } from '@yumakbot/shared';
 import { telegramToken } from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import { telegramMessages } from '../src/channels/format';
+import {
+  discordMessages,
+  slackMessages,
+  slackPlain,
+  telegramMessages,
+  whatsappMessages,
+} from '../src/channels/format';
 import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -492,6 +498,26 @@ describe('Telegram biçimi', () => {
     expect(m!.html).toContain('<a href="https://ornek.com/a_b_c">bağlantı</a>');
     expect(m!.html).toContain('<b>Masa</b>\nFiyat: 100');
     expect(m!.html).toContain('<pre><code class="language-js">let a = 1 &lt; 2;</code></pre>');
+  });
+
+  it('sohbet uygulamasına giden cevapta bilinen biçimli anahtarları maskeler, sıradan metne dokunmaz', () => {
+    const reply =
+      'Anahtarın: sk-ant-api03-abcdefghijklmnopqrstuvwx\n\n```\nexport GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n```\n\nPIN: 1234, şifre: kedi';
+    const outs = [
+      telegramMessages(reply)[0]!.html,
+      telegramMessages(reply)[0]!.plain,
+      whatsappMessages(reply)[0]!,
+      slackMessages(reply)[0]!,
+      discordMessages(reply)[0]!,
+      slackPlain(reply),
+    ];
+    for (const out of outs) {
+      expect(out).not.toContain('sk-ant-api03');
+      expect(out).not.toContain('ghp_abc');
+      expect(out).toContain('••••••');
+      // A labelled value is the reply's own words; only keys of a known shape are taken out.
+      expect(out).toContain('PIN: 1234, şifre: kedi');
+    }
   });
 
   it("uzun yanıtı Telegram'ın sınırını aşmayan parçalara böler", () => {

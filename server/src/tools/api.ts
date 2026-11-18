@@ -22,12 +22,14 @@ export function apiTools(opts: {
   sources?: ApiSource[];
   thread: { id: string };
   turn: TurnRow;
+  /** Whom the turn works for; null in a team conversation, which uses only the team's keys. */
+  own: string | null;
   signal: AbortSignal;
   /** How long a card waits when nobody may be watching (a routine's turn); undefined waits on. */
   unattended?: number;
   t: T;
 }): AppTool[] {
-  const { def, services: s, bot, thread, turn, signal, unattended, t } = opts;
+  const { def, services: s, bot, thread, turn, own, signal, unattended, t } = opts;
   const sources = opts.sources ?? [];
   const describe = (auth: ApiAuth) =>
     auth.type === 'header'
@@ -40,7 +42,7 @@ export function apiTools(opts: {
       'api_keys_list',
       {},
       async () => {
-        const keys = await s.apiCredentials.forBot(bot.id);
+        const keys = await s.apiCredentials.forBot(bot.id, own);
         if (!keys.length) return t('tool.apiKeysNone');
         return keys
           .map((k) => `- ${k.name}: ${k.origin} (${describe(k.auth)})${k.label ? ` — ${k.label}` : ''}`)
@@ -62,11 +64,38 @@ export function apiTools(opts: {
         if (!name.success) return t('tool.credentialBadName');
         const where = ApiOrigin.safeParse(origin);
         if (!where.success) return t('tool.credentialBadOrigin');
-        const mine = await s.apiCredentials.forBot(bot.id);
-        const existing = (await s.apiCredentials.list()).find((k) => k.name === name.data);
-        // A key under that name another bot keeps to itself: this bot cannot replace it.
-        if (existing && !mine.some((k) => k.id === existing.id))
-          return t('tool.credentialTaken', { key: name.data });
+        // The key typed on the card is the person's own; a team conversation has no one to own it.
+        if (!own) return t('tool.credentialTeam');
+        const existing = await s.apiCredentials.owned(name.data, own);
+        // Their own key under that name, kept for other bots: the person may open it to this bot
+        // as it is, or type a new one, which this bot may then use as well.
+        const closed = existing?.botIds && !existing.botIds.includes(bot.id) ? existing : null;
+        if (closed) {
+          const useSaved = t('tool.credentialUseSaved');
+          const typeNew = t('tool.credentialTypeNew');
+          const c = await askPerson(s, {
+            bot,
+            thread,
+            turn,
+            signal,
+            timeoutMs: unattended,
+            title: t('tool.credentialTitle', { bot: bot.name, label }),
+            items: [
+              {
+                question: t('tool.credentialSavedQuestion', { key: name.data, origin: closed.origin }),
+                options: [useSaved, typeNew],
+              },
+            ],
+          });
+          if (c.timedOut) return t('tool.questionTimedOut');
+          if (c.status === 'expired') return t('tool.questionExpired');
+          const pick = c.status === 'allowed' ? c.answers[0] : undefined;
+          if (pick === useSaved) {
+            await s.apiCredentials.update(closed.id, { botIds: [...closed.botIds!, bot.id] });
+            return t('tool.credentialOpened', { key: name.data, origin: closed.origin });
+          }
+          if (pick !== typeNew) return t('tool.credentialSkipped');
+        }
         const how = auth ?? { type: 'bearer' as const };
         const r = await askPerson(s, {
           bot,
@@ -90,15 +119,19 @@ export function apiTools(opts: {
         if (r.status === 'expired') return t('tool.questionExpired');
         const value = r.answers[0]?.trim();
         if (r.status !== 'allowed' || !value) return t('tool.credentialSkipped');
-        await s.apiCredentials.put({
-          name: name.data,
-          origin: where.data,
-          auth: how,
-          label,
-          value,
-          // A new key is this bot's alone until the person opens it to others in the vault.
-          ...(existing ? {} : { botIds: [bot.id] }),
-        });
+        const saved = await s.apiCredentials.put(
+          {
+            name: name.data,
+            origin: where.data,
+            auth: how,
+            label,
+            value,
+            // A new key is this bot's alone until the person opens it to others in the vault.
+            ...(existing ? {} : { botIds: [bot.id] }),
+          },
+          own,
+        );
+        if (closed) await s.apiCredentials.update(saved.id, { botIds: [...closed.botIds!, bot.id] });
         return t('tool.credentialSaved', { key: name.data, origin: where.data });
       },
       'internal',
@@ -118,7 +151,7 @@ export function apiTools(opts: {
       },
       async ({ key, method, url, headers, body }) => {
         try {
-          const res = await s.apiCredentials.call(bot.id, key, { method, url, headers, body }, signal);
+          const res = await s.apiCredentials.call(bot.id, own, key, { method, url, headers, body }, signal);
           const head = [
             `HTTP ${res.status}${res.type ? ` · ${res.type}` : ''}`,
             res.location && t('tool.apiRedirect', { location: res.location }),
@@ -182,7 +215,7 @@ export function apiTools(opts: {
             },
             async ({ api, operation, params, body }) => {
               try {
-                const res = await s.apiSources.call(bot.id, api, operation, { params, body }, signal);
+                const res = await s.apiSources.call(bot.id, own, api, operation, { params, body }, signal);
                 const head = [
                   `HTTP ${res.status}${res.type ? ` · ${res.type}` : ''}`,
                   res.location && t('tool.apiRedirect', { location: res.location }),

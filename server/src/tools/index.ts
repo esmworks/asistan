@@ -32,7 +32,7 @@ import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
 import { errorText, newId, notFound, truncate } from '../util';
-import { browserTools, type AskLogin } from './browser';
+import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
@@ -94,6 +94,9 @@ const MANAGER_MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_update', 
  */
 const TEAM_OFF = new Set<string>([
   'app_add',
+  // A card is a person's own, filled only for them.
+  'browser_card',
+  'credential_request',
   'routine_create',
   'routine_update',
   'routine_delete',
@@ -110,7 +113,7 @@ const TEAM_OFF = new Set<string>([
  * Tools a turn asked by someone with no account here does without: each starts work that later
  * goes on for the person the turn acts for, with all they may do.
  */
-const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save']);
+const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save', 'browser_card']);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -194,6 +197,7 @@ export type ToolName =
   | 'browser_type'
   | 'browser_fill'
   | 'browser_code'
+  | 'browser_card'
   | 'browser_login'
   | 'browser_upload'
   | 'browser_select'
@@ -1280,7 +1284,18 @@ export class ToolFactory {
     if (bot.internet) {
       tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
       tools.push(
-        ...apiTools({ def, services: s, bot, thread, turn, signal, unattended, t, sources: opts.apiSources }),
+        ...apiTools({
+          def,
+          services: s,
+          bot,
+          thread,
+          turn,
+          own,
+          signal,
+          unattended,
+          t,
+          sources: opts.apiSources,
+        }),
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
@@ -1323,6 +1338,34 @@ export class ToolFactory {
                 : t('browser.loginSkipped'),
         };
       };
+      const askCard: AskCard = async ({ card, site, frames, team: teamCard }) => {
+        const once = t('browser.cardOnce');
+        const always = t('browser.cardAlways', { site });
+        // A team card is allowed on a site for good only by someone who looks after the server.
+        const mayKeep = !teamCard || managesServer((await s.access.viewerOf(person)).role);
+        const r = await askPerson(s, {
+          bot,
+          thread,
+          turn,
+          signal,
+          timeoutMs: unattended,
+          title: t('browser.cardTitle', { bot: bot.name }),
+          items: [
+            {
+              question: frames.length
+                ? t('browser.cardQuestionFrames', { bot: bot.name, card, site, frames: frames.join(', ') })
+                : t('browser.cardQuestion', { bot: bot.name, card, site }),
+              options: mayKeep ? [once, always, t('browser.cardRefuse')] : [once, t('browser.cardRefuse')],
+            },
+          ],
+        });
+        if (r.timedOut) return { message: t('tool.questionTimedOut') };
+        if (r.status === 'expired') return { message: t('tool.questionExpired') };
+        const pick = r.status === 'allowed' ? r.answers[0] : undefined;
+        if (pick === once) return 'once';
+        if (pick === always && mayKeep) return 'always';
+        return { message: t('browser.cardRefused', { site }) };
+      };
       tools.push(
         ...browserTools({
           def,
@@ -1334,6 +1377,11 @@ export class ToolFactory {
           vault: s.vault,
           person: own,
           askLogin,
+          cards: s.cards,
+          askCard,
+          // A card is filled only for the person who wrote this turn themselves, here and now: not
+          // for a chat app's unknown sender, a guest, a routine or another bot.
+          attended: attended(turn.source) && !!turn.userId && turn.userId === own && !turn.guest,
           siteNotes: async (host) =>
             bot.memory ? (await s.memory.forSite(bot.id, host, own)).map((m) => m.content) : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,

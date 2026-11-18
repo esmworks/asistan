@@ -1,4 +1,4 @@
-import { quoteExcerpt, type Bot, type Message, type Thread } from '@yumakbot/shared';
+import { hasSecretShape, quoteExcerpt, type Bot, type Message, type Thread } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
@@ -1535,6 +1535,26 @@ function Composer({
               aria-label={t('chat.cancelReply')}
             >
               <X className="size-3.5" />
+            </Button>
+          </div>
+        )}
+        {hasSecretShape(text) && (
+          // A key typed here reaches the model and stays in the conversation; the vault keeps it
+          // where no bot sees it. Sending is still the person's call.
+          <div
+            role="status"
+            className="mx-1 mb-1 flex items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 py-1.5 pr-1.5 pl-3 text-xs"
+          >
+            <ShieldAlert className="size-4 shrink-0 text-amber-500" />
+            <span className="flex-1">{t('chat.secretWarning')}</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 rounded-full"
+              onClick={() => useUi.getState().openSettings('vault')}
+            >
+              {t('chat.secretToVault')}
             </Button>
           </div>
         )}

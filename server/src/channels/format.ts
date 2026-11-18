@@ -3,6 +3,15 @@
  * marks. Neither shows tables, so each table row becomes a short labelled list.
  */
 
+import { maskSecretShapes } from '@yumakbot/shared';
+
+/**
+ * What stands in for a key or token in a message that leaves for a chat app. Only keys of a known
+ * shape are taken out, not every `password: …` a reply writes: a channel is read by more people
+ * than the conversation was, and a bot may repeat a key someone pasted to it.
+ */
+export const SECRET_MARK = '••••••';
+
 type Block =
   | { kind: 'code'; lang: string; body: string }
   | { kind: 'table'; rows: string[][] }
@@ -113,7 +122,7 @@ export function chunks(md: string, max: number): Block[][] {
   const out: Block[][] = [];
   let cur: Block[] = [];
   let n = 0;
-  for (const b of blocks(md).flatMap((b) => pieces(b, max))) {
+  for (const b of blocks(maskSecretShapes(md, SECRET_MARK)).flatMap((b) => pieces(b, max))) {
     const len = size(b);
     if (cur.length && n + len > max) {
       out.push(cur);
@@ -323,7 +332,7 @@ export function slackMessages(md: string): string[] {
 }
 
 /** Text written into Slack as it is, with nothing in it read as a mention or a link. */
-export const slackPlain = (s: string) => esc(s);
+export const slackPlain = (s: string) => esc(maskSecretShapes(s, SECRET_MARK));
 
 /**
  * Discord's own Markdown, without tables, which it does not show. Who a post may notify is set

@@ -10,7 +10,7 @@ import {
   type Group,
   type GroupMove,
 } from '@yumakbot/shared';
-import { asc, eq, isNull, max } from 'drizzle-orm';
+import { asc, eq, isNull, max, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
@@ -240,7 +240,23 @@ export class BotService {
     const bot = await this.get(id);
     if (!bot.archivedAt) throw new HttpError(409, 'error.botNotArchived');
     await this.ctx.db.delete(schema.bots).where(eq(schema.bots.id, id));
+    // Saved sign-ins, keys and APIs kept for some bots name them by id: a bot that is gone leaves
+    // those lists, and one kept for it alone is then open to none.
+    for (const table of [
+      schema.vaultLogins,
+      schema.apiCredentials,
+      schema.apiSources,
+      schema.passwordManagers,
+      schema.paymentCards,
+    ]) {
+      await this.ctx.db
+        .update(table)
+        .set({ botIds: sql`${table.botIds} - ${id}::text` })
+        .where(sql`${table.botIds} @> jsonb_build_array(${id}::text)`);
+    }
     this.ctx.bus.refresh({ scope: 'bots' });
+    this.ctx.bus.refresh({ scope: 'vault' });
+    this.ctx.bus.refresh({ scope: 'info' });
   }
 
   /** Who may message whom: any bot any other active bot. Groups only share a folder. */

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as httpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, Thread } from '@yumakbot/shared';
+import type { Approval, PaymentCard, Routine, Thread } from '@yumakbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { findBrowser } from '../src/browser/find';
@@ -394,6 +394,43 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
         res.statusCode = 500;
         return res.end('{}');
       }
+      if (req.url === '/passkey') {
+        // A sign-in page that waits quietly for a passkey from the field on load, and asks for one
+        // outright behind a button.
+        return res.end(`<title>Passkey</title><button id="b">Passkey ile gir</button><p id="out">-</p><p id="sessiz">bekliyor</p>
+          <script>const ch = new Uint8Array(32);
+            const quiet = new AbortController();
+            navigator.credentials.get({ mediation: 'conditional', signal: quiet.signal, publicKey: { challenge: ch } })
+              .catch((e) => { document.getElementById('sessiz').textContent = 'Sessiz ' + e.name; });
+            document.getElementById('b').onclick = () => { const t0 = Date.now();
+              navigator.credentials.get({ publicKey: { challenge: ch, timeout: 120000 } })
+                .then(() => { document.getElementById('out').textContent = 'Girdi'; })
+                .catch((e) => { document.getElementById('out').textContent = 'Sonuç ' + e.name + (Date.now() - t0 < 5000 ? ' hemen' : ' geç'); });
+              quiet.abort(); };</script>`);
+      }
+      if (req.url === '/odeme') {
+        // A checkout form, the number in a frame of another site as payment providers keep it,
+        // and a note field beside the card fields.
+        const port = (site.address() as AddressInfo).port;
+        // Months without a leading zero, and the year's label in capitals with nothing else to go by.
+        const months = Array.from({ length: 12 }, (_, i) => String(i + 1))
+          .map((m) => `<option value="${m}">${m}</option>`)
+          .join('');
+        return res.end(`<title>Ödeme</title><h1>Ödeme</h1><form action="/odendi" method="post">
+          <iframe src="http://localhost:${port}/odeme-numara" title="Kart" width="400" height="80"></iframe>
+          <label>Son kullanma <input name="exp" id="e" autocomplete="cc-exp" placeholder="AA/YY"></label>
+          <label>Güvenlik kodu <input name="cvc" id="c" autocomplete="cc-csc"></label>
+          <label>Ay <select name="m" id="m" autocomplete="cc-exp-month"><option value="">-</option>${months}</select></label>
+          <label>YIL <select name="y" id="y"><option>2030</option><option>2034</option></select></label>
+          <label>Sipariş notu <input name="note" id="note"></label><button>Öde</button></form>`);
+      }
+      if (req.url === '/odeme-numara') {
+        return res.end(
+          '<label>Kart numarası <input name="cardnumber" id="n" autocomplete="cc-number"></label>' +
+            '<p id="goster"></p><script>document.getElementById("n").oninput = (e) => ' +
+            '{ document.getElementById("goster").textContent = "Girilen " + e.target.value; };</script>',
+        );
+      }
       if (req.url?.startsWith('/sonuc')) {
         const q = new URL(req.url, 'http://x').searchParams.get('ad');
         return res.end(`<title>Sonuç</title><h1>Merhaba ${q}</h1>`);
@@ -413,7 +450,8 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     t = await testServer({
       browserPath: BROWSER,
       browserSandbox: process.getuid?.() !== 0,
-      browserLocalHosts: ['127.0.0.1'],
+      // localhost is another site than 127.0.0.1: a payment provider's frame inside a checkout page.
+      browserLocalHosts: ['127.0.0.1', 'localhost'],
     });
   });
   afterEach(() => t.dispose());
@@ -426,6 +464,28 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
   };
   const refOf = (outline: string, label: string) =>
     new RegExp(`${label}[^\\n]*\\[ref=(\\w+)\\]`).exec(outline)?.[1] ?? '';
+
+  it('passkey isteğini hemen geri çevirir ve bota söyler; sessiz bekleyen isteği söylemez', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/passkey"}]`);
+    await t.services.turns.idle();
+    const opened = (await t.messages(thread.id)).at(-1)!.text;
+    expect(opened).toContain('bekliyor');
+    expect(opened).not.toContain('passkey istedi');
+    const outline = await text('browser_snapshot', {});
+    const after = await text('browser_click', {
+      ref: refOf(outline, 'button "Passkey ile gir"'),
+      element: 'Passkey',
+    });
+    expect(after).toContain('127.0.0.1 passkey istedi');
+    const page = await text('browser_snapshot', {});
+    expect(page).toContain('Sonuç NotAllowedError hemen');
+    // The quiet request ends when the page itself lets it go, as in any browser.
+    expect(page).toContain('Sessiz AbortError');
+    // Heard once.
+    expect(await text('browser_snapshot', {})).not.toContain('passkey istedi');
+  });
 
   it('izinli siteyi kartsız açar; sayfada yazar, tıklar ve sonucu okur', async () => {
     const bot = await t.bot();
@@ -981,6 +1041,144 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     off();
     expect(browser.state(bot.id).status).toBe('idle');
     expect(await text('browser_snapshot', {})).toContain('Merhaba Ali');
+  });
+
+  it('ödeme kartını yalnız kart alanlarına, sitenin ilk kullanımında sorarak doldurur; bot numarayı görmez', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/odeme"}]`);
+    await t.services.turns.idle();
+    let page = await text('browser_snapshot', {});
+    const refs = {
+      number_ref: refOf(page, 'textbox "Kart numarası"'),
+      expiry_ref: refOf(page, 'textbox "Son kullanma"'),
+      cvc_ref: refOf(page, 'textbox "Güvenlik kodu"'),
+      month_ref: refOf(page, 'combobox "Ay"'),
+      year_ref: refOf(page, 'combobox "YIL"'),
+    };
+    expect(Object.values(refs).every(Boolean)).toBe(true);
+    expect(await text('browser_card', refs)).toContain('kayıtlı bir ödeme kartı yok');
+
+    // A published test card number; never a real one.
+    const made = await t.api<PaymentCard>('POST', '/api/cards', {
+      label: 'İş',
+      number: '4242 4242 4242 4242',
+      expMonth: 3,
+      expYear: 34,
+      cvc: '987',
+    });
+    expect(made.body).toMatchObject({ brand: 'visa', last4: '4242', expYear: 2034, hasCvc: true, sites: [] });
+    expect(JSON.stringify(made.body)).not.toContain('42424242');
+    expect(
+      (await t.api('POST', '/api/cards', { number: '4242424242424241', expMonth: 1, expYear: 30 })).status,
+    ).toBe(400);
+
+    // The number goes only into a field that says it is one, never into the note.
+    expect(
+      await text('browser_card', { ...refs, number_ref: refOf(page, 'textbox "Sipariş notu"') }),
+    ).toContain('kart numarası alanı değil');
+
+    // First use on this site: the person is asked, and may allow it for the site from now on.
+    const pending = text('browser_card', refs);
+    const card = await waitFor(
+      async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
+    );
+    const q = (card.input.questions as { question: string; options: string[] }[])[0]!;
+    expect(q.question).toContain('İş · Visa •••• 4242');
+    expect(q.question).toContain('127.0.0.1');
+    // The number's field is in a frame of another site: the person is told which.
+    expect(q.question).toContain('localhost');
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: q.options[1] });
+    const filled = await pending;
+    expect(filled).toContain('dolduruldu');
+    // The page shows what was typed; the bot reads it masked.
+    expect(filled).not.toContain('4242424242424242');
+    expect(filled).toContain('Girilen ••••••');
+    // The security code is too short to hide in free text, but not shown as the field's value.
+    expect(filled).not.toMatch(/Güvenlik kodu[^\n]*987/);
+    // Nor in a picture of the page.
+    expect(await text('browser_screenshot', {})).toContain('ekran görüntüsü alınmadı');
+    const values = await t.services.ctx.browser.use(bot.id, async (p) => ({
+      number: await p.frameLocator('iframe').locator('#n').inputValue(),
+      exp: await p.inputValue('#e'),
+      cvc: await p.inputValue('#c'),
+      month: await p.inputValue('#m'),
+      year: await p.inputValue('#y'),
+      note: await p.inputValue('#note'),
+    }));
+    expect(values).toEqual({
+      number: '4242424242424242',
+      exp: '03/34',
+      cvc: '987',
+      month: '3',
+      year: '2034',
+      note: '',
+    });
+    // In a later turn the security code is still not read back as the field's value.
+    await t.send(thread.id, 'devam');
+    await t.services.turns.idle();
+    expect(await text('browser_snapshot', {})).not.toMatch(/Güvenlik kodu[^\n]*987/);
+    // Kept for this site with that frame's site; the site alone would not let another frame in.
+    expect((await t.api<PaymentCard[]>('GET', '/api/cards')).body[0]!.sites).toEqual([
+      '127.0.0.1 (localhost)',
+    ]);
+
+    // Agreed to for this site, it is filled again without a card.
+    page = await text('browser_snapshot', {});
+    expect(await text('browser_card', { number_ref: refOf(page, 'textbox "Kart numarası"') })).toContain(
+      'dolduruldu',
+    );
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
+
+    // Taken back, the person is asked again; refused, nothing is filled.
+    await t.api('PATCH', `/api/cards/${made.body.id}`, { forgetSites: ['127.0.0.1 (localhost)'] });
+    const again = text('browser_card', { number_ref: refOf(page, 'textbox "Kart numarası"') });
+    const second = await waitFor(
+      async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
+    );
+    await t.api('POST', `/api/approvals/${second.id}`, {
+      decision: 'allow',
+      answer: (second.input.questions as { options: string[] }[])[0]!.options[2],
+    });
+    expect(await again).toContain('izin vermedi');
+  });
+
+  it('kartı gözetimsiz turda doldurmaz; kart aracı izin kurallarına bağlı değil', async () => {
+    const bot = await t.bot();
+    await t.api('POST', '/api/cards', { number: '5555555555554444', expMonth: 1, expYear: 2035 });
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/odeme"}]`);
+    await t.services.turns.idle();
+    // The card step asks on its own, per site; no "always allow" rule stands in for that.
+    expect(tool('browser_card').internal).toBe(true);
+    expect(tool('browser_card').gated).toBeUndefined();
+
+    // A routine's turn has no one to ask: the card is not filled.
+    const routine = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Ödeme',
+        prompt: '[araç:browser_card {"number_ref":"e1"}]',
+        schedule: { type: 'daily', time: '08:00' },
+      })
+    ).body;
+    const run = (await t.services.routines.runNow(routine.id)) as { threadId: string };
+    await t.services.turns.idle();
+    expect((await t.messages(run.threadId)).map((m) => m.text).join('\n')).toContain(
+      'yalnızca kullanıcının başlattığı',
+    );
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
+
+    // A chat app's message from someone not paired with an account is no one's own turn either.
+    await t.services.turns.enqueue({
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'user',
+      prompt: '[araç:browser_card {"number_ref":"e1"}]',
+      userId: null,
+    });
+    await t.services.turns.idle();
+    expect((await t.messages(thread.id)).at(-1)!.text).toContain('yalnızca kullanıcının başlattığı');
   });
 
   it('girişte şifreyi kasadan ya da karttan yazar; bot şifreyi hiç görmez', async () => {

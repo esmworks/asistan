@@ -1,6 +1,6 @@
 import type { VaultLogin } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { FileUp, KeyRound, Pencil, Plus, QrCode, Search, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,14 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useBots, useManagesServer, useSession, useVault } from '@/lib/queries';
+import { canReadQr, readQr } from '@/lib/qr';
 import { ApiKeys } from './ApiKeys';
 import { ApiSources } from './ApiSources';
 import { ContentSeal } from './ContentSeal';
+import { PasswordManagers } from './PasswordManagers';
+import { PaymentCards } from './PaymentCards';
 import { SharedPages } from './SharedPages';
+import { VaultCsvImport } from './VaultImport';
 
 /** The password vault: saved sign-ins, listed without their passwords. */
 export function VaultTab() {
@@ -20,6 +24,7 @@ export function VaultTab() {
   const { data: logins = [], isLoading } = useVault();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<VaultLogin | 'new' | null>(null);
+  const [importing, setImporting] = useState(false);
   const manages = useManagesServer();
   const isOwner = useSession().data?.user?.role === 'owner';
   const q = query.trim().toLowerCase();
@@ -37,11 +42,21 @@ export function VaultTab() {
             className="h-10 rounded-full pl-9"
           />
         </div>
+        <Button
+          variant="secondary"
+          className="rounded-full"
+          onClick={() => setImporting(true)}
+          aria-label={t('vaultImport.open')}
+          title={t('vaultImport.open')}
+        >
+          <FileUp />
+        </Button>
         <Button className="rounded-full" onClick={() => setEditing('new')}>
           <Plus /> {t('common.add')}
         </Button>
       </div>
 
+      {importing && <VaultCsvImport onDone={() => setImporting(false)} />}
       {editing === 'new' && <LoginForm onDone={() => setEditing(null)} />}
 
       <div className="divide-y rounded-2xl border bg-card/50">
@@ -62,7 +77,9 @@ export function VaultTab() {
         )}
       </div>
       <p className="px-1 text-xs text-muted-foreground">{t('vault.note')}</p>
-      {manages && <ApiKeys />}
+      <PasswordManagers />
+      <PaymentCards />
+      <ApiKeys />
       {manages && <ApiSources />}
       <SharedPages />
       {isOwner && <ContentSeal />}
@@ -139,6 +156,15 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
   const [botIds, setBotIds] = useState<string[] | null>(login?.botIds ?? null);
   const manages = useManagesServer();
   const [team, setTeam] = useState(login ? login.userId === null : false);
+  /** Takes the authenticator setup from a picture of the site's QR code. */
+  const fromPicture = async (picture: Blob) => {
+    const text = await readQr(picture);
+    if (text && /^otpauth:\/\//i.test(text)) {
+      setTotp(text);
+      setClearTotp(false);
+      toast.success(t('vault.totpQrRead'));
+    } else toast.error(t('vault.totpQrNone'));
+  };
   const save = useMutation({
     mutationFn: () =>
       login
@@ -193,14 +219,42 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
         autoComplete="new-password"
         required={!login}
       />
-      <Input
-        type="password"
-        value={totp}
-        onChange={(e) => setTotp(e.target.value)}
-        placeholder={login?.hasTotp && !clearTotp ? t('vault.totpKept') : t('vault.totp')}
-        aria-label={t('vault.totp')}
-        autoComplete="off"
-      />
+      <div className="flex gap-2">
+        <Input
+          type="password"
+          value={totp}
+          onChange={(e) => setTotp(e.target.value)}
+          onPaste={(e) => {
+            // A screenshot of the site's QR code, pasted, is read here like a chosen picture.
+            const picture = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
+            if (!picture) return;
+            e.preventDefault();
+            void fromPicture(picture);
+          }}
+          placeholder={login?.hasTotp && !clearTotp ? t('vault.totpKept') : t('vault.totp')}
+          aria-label={t('vault.totp')}
+          autoComplete="off"
+        />
+        {canReadQr() && (
+          <label
+            className="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full border text-muted-foreground hover:bg-accent"
+            title={t('vault.totpQr')}
+          >
+            <QrCode className="size-4" />
+            <span className="sr-only">{t('vault.totpQr')}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                const picture = e.target.files?.[0];
+                e.target.value = '';
+                if (picture) void fromPicture(picture);
+              }}
+            />
+          </label>
+        )}
+      </div>
       {login?.hasTotp && (
         <label className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
           <input type="checkbox" checked={clearTotp} onChange={(e) => setClearTotp(e.target.checked)} />

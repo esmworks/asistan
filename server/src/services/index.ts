@@ -44,6 +44,8 @@ import { ThreadService } from './threads';
 import { UsageService } from './usage';
 import { BotApi } from './bot-api';
 import { VaultService } from './vault';
+import { PasswordManagerService } from './password-managers';
+import { PaymentCardService } from './payment-cards';
 
 export class Services {
   readonly access: AccessService;
@@ -54,6 +56,8 @@ export class Services {
   readonly actions: ActionService;
   readonly instructionDocs: InstructionDocService;
   readonly vault: VaultService;
+  readonly passwordManagers: PasswordManagerService;
+  readonly cards: PaymentCardService;
   readonly claudeAuth: ClaudeAuthService;
   readonly connections: ConnectionService;
   readonly memory: MemoryService;
@@ -106,6 +110,9 @@ export class Services {
     this.instructionDocs = new InstructionDocService(ctx, this.threads);
     this.rooms = new RoomService(ctx, this);
     this.vault = new VaultService(ctx);
+    this.passwordManagers = new PasswordManagerService(ctx, this.vault);
+    this.vault.useOthers(this.passwordManagers);
+    this.cards = new PaymentCardService(ctx, this.vault);
     this.claudeAuth = new ClaudeAuthService(ctx, this.vault);
     this.connections = new ConnectionService(ctx, this.vault);
     this.approvals = new ApprovalService(ctx, this.vault);
