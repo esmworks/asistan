@@ -1,5 +1,11 @@
-import { MAX_MESSAGE_FILES, MAX_UPLOAD_BYTES, type MessageFile } from '@yumakbot/shared';
-import { Download, FileText, Loader2, X } from 'lucide-react';
+import {
+  MAX_MESSAGE_FILES,
+  MAX_UPLOAD_BYTES,
+  newUploadId,
+  startUpload,
+  type MessageFile,
+} from '@yumakbot/shared';
+import { AlertCircle, Download, FileText, Loader2, RotateCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { create } from 'zustand';
@@ -27,7 +33,20 @@ export interface Attachment {
   saved: StagedFile | null;
   /** When it was added; the server removes uploads left unsent for a day. */
   addedAt: number;
+  /** How much has gone up, 0 to 1, while uploading. */
+  progress: number;
+  /** Why the upload failed; the file stays in the composer to be tried again or taken off. */
+  error: string | null;
 }
+
+/**
+ * What a file not yet on the server needs and the composer's list does not keep: the file
+ * itself, for another try, the id the server knows its tries by, and the way to call it off.
+ */
+const uploads = new Map<
+  string,
+  { threadId: string; file: File; uploadId: string; ctrl: AbortController | null }
+>();
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
 export const isImage = (name: string) => IMAGE.test(name);
@@ -58,13 +77,28 @@ const revoke = (url: string | null) => {
 const discard = (threadId: string, name: string, keepalive = false) =>
   void api.removeFile(threadId, name, { keepalive }).catch(() => {});
 
+/**
+ * Calls off a file that is not on the server yet. Its upload may get through all the same (it
+ * was all sent and only the answer is missing); the server removes it then, by its upload id.
+ */
+const cancel = (key: string, keepalive = false) => {
+  const u = uploads.get(key);
+  if (!u) return;
+  uploads.delete(key);
+  u.ctrl?.abort();
+  void api.cancelUpload(u.threadId, u.uploadId, { keepalive }).catch(() => {});
+};
+
 // Closing or reloading the page: files never sent are removed, and the request must outlive it.
 if (typeof window !== 'undefined')
   window.addEventListener('pagehide', (e) => {
     // Kept for the back-forward cache: the page may come back as it was.
     if (e.persisted) return;
     for (const [threadId, list] of Object.entries(useComposerFiles.getState().byThread))
-      for (const a of list) if (a.saved) discard(threadId, a.saved.name, true);
+      for (const a of list) {
+        if (a.saved) discard(threadId, a.saved.name, true);
+        else cancel(a.key, true);
+      }
   });
 
 /**
@@ -87,6 +121,44 @@ export function useAttachments(threadId: string) {
     setFiles(threadId, (list) => list.filter((a) => !old.includes(a)));
   }, [threadId]);
 
+  const patch = (key: string, change: Partial<Attachment>) =>
+    setFiles(threadId, (list) => list.map((a) => (a.key === key ? { ...a, ...change } : a)));
+
+  /** Sends one file up, once more on a passing failure; a failure leaves it in the composer. */
+  const upload = (key: string) => {
+    const u = uploads.get(key);
+    if (!u) return;
+    patch(key, { error: null, progress: 0 });
+    let last = 0;
+    u.ctrl = startUpload({
+      attempt: (signal) =>
+        api.uploadFile(threadId, u.file, {
+          uploadId: u.uploadId,
+          signal,
+          // Redrawn at each whole percent, not at every chunk.
+          onProgress: (part) => {
+            const pct = Math.floor(part * 100);
+            if (pct === last) return;
+            last = pct;
+            patch(key, { progress: part });
+          },
+        }),
+      onDone: (saved) => {
+        uploads.delete(key);
+        // Taken off while it was uploading.
+        if (!filesOf(threadId).some((a) => a.key === key)) return discard(threadId, saved.name);
+        patch(key, { saved, name: saved.name, addedAt: Date.now(), progress: 1 });
+      },
+      onFail: (message) => {
+        // Taken off already: nothing left to undo.
+        if (!filesOf(threadId).some((a) => a.key === key)) return;
+        u.ctrl = null;
+        patch(key, { error: message });
+        toast.error(t('chat.uploadFailed', { name: u.file.name, error: message }));
+      },
+    });
+  };
+
   const add = (files: File[]) => {
     const room = MAX_MESSAGE_FILES - filesOf(threadId).length;
     if (files.length > room) toast.error(t('chat.tooManyFiles', { max: MAX_MESSAGE_FILES }));
@@ -97,38 +169,42 @@ export function useAttachments(threadId: string) {
       }
       const key = crypto.randomUUID();
       const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-      const item = { key, name: file.name, size: file.size, preview, saved: null, addedAt: Date.now() };
+      const item: Attachment = {
+        key,
+        name: file.name,
+        size: file.size,
+        preview,
+        saved: null,
+        addedAt: Date.now(),
+        progress: 0,
+        error: null,
+      };
       setFiles(threadId, (list) => [...list, item]);
-      api.uploadFile(threadId, file).then(
-        (saved) => {
-          // Taken off while it was uploading.
-          if (!filesOf(threadId).some((a) => a.key === key)) return discard(threadId, saved.name);
-          setFiles(threadId, (list) =>
-            list.map((a) => (a.key === key ? { ...a, saved, name: saved.name, addedAt: Date.now() } : a)),
-          );
-        },
-        (e: Error) => {
-          // Taken off already: nothing left to undo.
-          if (!filesOf(threadId).some((a) => a.key === key)) return;
-          revoke(preview);
-          setFiles(threadId, (list) => list.filter((a) => a.key !== key));
-          toast.error(t('chat.uploadFailed', { name: file.name, error: e.message }));
-        },
-      );
+      uploads.set(key, { threadId, file, uploadId: newUploadId(), ctrl: null });
+      upload(key);
     }
+  };
+
+  /** Tries a failed file again, under the same upload id. */
+  const retry = (a: Attachment) => {
+    if (a.saved || !a.error) return;
+    upload(a.key);
   };
 
   const remove = (a: Attachment) => {
     revoke(a.preview);
     setFiles(threadId, (list) => list.filter((x) => x.key !== a.key));
-    // Still uploading: removed from the server once the upload ends.
     if (a.saved) discard(threadId, a.saved.name);
+    else cancel(a.key);
   };
 
   /** Hands the uploaded files to a message and empties the composer. */
   const take = (): StagedFile[] => {
     const list = filesOf(threadId);
-    for (const a of list) revoke(a.preview);
+    for (const a of list) {
+      revoke(a.preview);
+      uploads.delete(a.key);
+    }
     setFiles(threadId, () => EMPTY);
     return list.flatMap((a) => (a.saved ? [a.saved] : []));
   };
@@ -144,18 +220,29 @@ export function useAttachments(threadId: string) {
         preview: null,
         saved: f,
         addedAt: now,
+        progress: 1,
+        error: null,
       })),
       ...list,
     ]);
   };
 
-  return { items, uploading: items.some((a) => !a.saved), add, remove, take, restore };
+  // A file that failed counts as not there yet: the message waits until it is tried again or taken off.
+  return { items, uploading: items.some((a) => !a.saved), add, remove, retry, take, restore };
 }
 
 /** Whether any conversation has files waiting in its composer. */
 export const useAnyAttachments = () => useComposerFiles((s) => Object.keys(s.byThread).length > 0);
 
-export function AttachmentChips({ items, onRemove }: { items: Attachment[]; onRemove(a: Attachment): void }) {
+export function AttachmentChips({
+  items,
+  onRemove,
+  onRetry,
+}: {
+  items: Attachment[];
+  onRemove(a: Attachment): void;
+  onRetry(a: Attachment): void;
+}) {
   const t = useT();
   const { fileSize } = useFormat();
   // A picture about to be sent, seen at full size before sending.
@@ -180,11 +267,15 @@ export function AttachmentChips({ items, onRemove }: { items: Attachment[]; onRe
           key={a.key}
           className={cn(
             'flex max-w-60 items-center gap-2 rounded-xl border bg-background py-1.5 pr-1.5 pl-1.5 text-sm',
-            !a.saved && 'opacity-70',
+            !a.saved && !a.error && 'opacity-70',
+            a.error && 'border-destructive/50',
           )}
+          title={a.error ?? undefined}
         >
           <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
-            {!a.saved ? (
+            {a.error ? (
+              <AlertCircle className="size-4 text-destructive" aria-hidden />
+            ) : !a.saved ? (
               <Loader2 className="size-4 animate-spin" aria-label={t('chat.uploading')} />
             ) : a.preview ? (
               <button
@@ -201,8 +292,30 @@ export function AttachmentChips({ items, onRemove }: { items: Attachment[]; onRe
           </span>
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate font-medium">{a.name}</span>
-            <span className="block text-xs text-muted-foreground">{fileSize(a.size)}</span>
+            {a.error ? (
+              <span className="block truncate text-xs text-destructive">{t('chat.uploadNotDone')}</span>
+            ) : (
+              <span className="block text-xs text-muted-foreground tabular-nums">
+                {a.saved
+                  ? fileSize(a.size)
+                  : t('chat.uploadProgress', {
+                      size: fileSize(a.size),
+                      percent: Math.floor(a.progress * 100),
+                    })}
+              </span>
+            )}
           </span>
+          {a.error && (
+            <button
+              type="button"
+              onClick={() => onRetry(a)}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t('chat.retryUpload', { name: a.name })}
+              title={t('chat.retryUpload', { name: a.name })}
+            >
+              <RotateCw className="size-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onRemove(a)}
