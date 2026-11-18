@@ -155,6 +155,10 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('info');
       inv('providers');
       break;
+    case 'plan':
+      inv('plan-usage');
+      inv('usage');
+      break;
     case 'people':
       inv('people');
       // A changed role changes what this device may do.

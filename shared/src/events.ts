@@ -20,7 +20,9 @@ export type RefreshScope =
   | { scope: 'tables'; botId: string }
   | { scope: 'actions'; botId: string }
   | { scope: 'info' }
-  | { scope: 'people' };
+  | { scope: 'people' }
+  /** The Claude plan's usage windows changed, as a turn heard them. */
+  | { scope: 'plan' };
 
 export interface HelloEvent {
   bootId: string;

@@ -204,6 +204,9 @@ export const en: Catalog<MessageKey> = {
   'usage.plan.hint':
     'The line shows how much of the window has passed; a bar past it uses the plan up before the window ends.',
   'usage.plan.seen': 'As the last Claude turn saw it: {time}',
+  'planMeter.left': '{percent}% left',
+  'planMeter.none': 'Limit reached',
+  'planMeter.label': 'Claude plan: {percent}% left ({window})',
   'usage.parallel.hint':
     'The most work the bots carry on at the same time. Fewer spends more slowly, more gets more done together; the rest waits in line.',
   'usage.parallel.default': 'Default ({count})',

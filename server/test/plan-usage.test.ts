@@ -1,4 +1,12 @@
-import { planPace, type UsageReport } from '@yumakbot/shared';
+import {
+  currentPlanWindows,
+  planHeadline,
+  planLeftPercent,
+  planPace,
+  planTone,
+  type PlanWindow,
+  type UsageReport,
+} from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eventWindow, planWindows } from '../src/engine/claude';
 import { testServer, type TestServer } from './helpers';
@@ -41,6 +49,43 @@ describe('Claude planının kullanım pencereleri', () => {
     expect(planPace({ kind: 'five_hour', resetsAt: null }, now)).toBeNull();
   });
 
+  it('sohbetteki gösterge 5 saatlik ve haftalık pencereden dolu olanı alır, model penceresini ve süresi geçeni almaz', () => {
+    const now = Date.parse('2026-11-18T00:00:00.000Z');
+    const windows: PlanWindow[] = [
+      { kind: 'five_hour', used: 0.3, resetsAt: '2026-11-18T02:00:00.000Z' },
+      { kind: 'seven_day', used: 0.55, resetsAt: '2026-11-20T00:00:00.000Z' },
+      { kind: 'seven_day_opus', used: 0.99, resetsAt: '2026-11-20T00:00:00.000Z' },
+      { kind: 'model:Fable', label: 'Fable', used: 1, resetsAt: null },
+    ];
+    expect(planHeadline(windows, now)?.kind).toBe('seven_day');
+    // Once both windows have reset, nothing is known of what is left.
+    expect(planHeadline(windows, Date.parse('2026-11-20T00:00:00.000Z'))).toBeNull();
+    expect(planHeadline(windows, Date.parse('2026-11-19T00:00:00.000Z'))?.kind).toBe('seven_day');
+    expect(currentPlanWindows(windows, Date.parse('2026-11-18T02:00:00.000Z')).map((w) => w.kind)).toEqual([
+      'seven_day',
+      'seven_day_opus',
+      'model:Fable',
+    ]);
+    expect(planHeadline([{ kind: 'five_hour', used: null, resetsAt: null }], now)).toBeNull();
+    expect(planLeftPercent({ used: 0.424 })).toBe(58);
+    expect(planLeftPercent({ used: 1 })).toBe(0);
+    expect(planLeftPercent({ used: null })).toBe(100);
+  });
+
+  it('rengi doluluğa ve pencerenin geçen kısmına göre verir; pencerenin başındaki az kullanım uyarı sayılmaz', () => {
+    const now = Date.parse('2026-11-18T00:00:00.000Z');
+    // Five hours long, resets in four and a half: a tenth has passed.
+    const early = { kind: 'five_hour', resetsAt: '2026-11-18T04:30:00.000Z' };
+    expect(planTone({ ...early, used: 0.2 }, now)).toBe('fine');
+    expect(planTone({ ...early, used: 0.6 }, now)).toBe('ahead');
+    expect(planTone({ ...early, used: 0.9 }, now)).toBe('near');
+    // Four fifths have passed: 60% used is behind the window's time.
+    expect(planTone({ kind: 'five_hour', used: 0.6, resetsAt: '2026-11-18T01:00:00.000Z' }, now)).toBe(
+      'fine',
+    );
+    expect(planTone({ kind: 'five_hour', used: 0.7, resetsAt: null }, now)).toBe('fine');
+  });
+
   describe('kullanım raporunda', () => {
     let t: TestServer;
     beforeEach(async () => {
@@ -66,6 +111,20 @@ describe('Claude planının kullanım pencereleri', () => {
       t.now.value = new Date('2026-11-18T03:00:00.000Z');
       report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
       expect(report.plan?.windows.map((w) => w.kind)).toEqual(['seven_day']);
+    });
+
+    it('planın pencereleri, raporu göremeyen bir üyeye de sohbetteki gösterge için verilir', async () => {
+      const member = await t.person('uye');
+      expect((await member.api('GET', '/api/usage?days=7')).status).toBe(403);
+      expect((await member.api<{ plan: unknown }>('GET', '/api/usage/plan')).body).toEqual({ plan: null });
+      await t.services.usage.notePlan([
+        { kind: 'five_hour', used: 0.25, resetsAt: '2026-11-18T02:00:00.000Z' },
+      ]);
+      const res = await member.api<{ plan: UsageReport['plan'] }>('GET', '/api/usage/plan');
+      expect(res.status).toBe(200);
+      expect(res.body.plan?.windows).toEqual([
+        { kind: 'five_hour', used: 0.25, resetsAt: '2026-11-18T02:00:00.000Z' },
+      ]);
     });
 
     it('aynı anda çalışacak tur sayısını ayardan alır, 0 sunucunun sayısıdır', async () => {

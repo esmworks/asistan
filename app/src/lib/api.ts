@@ -352,6 +352,7 @@ export const api = {
   disableWebhook: (id: string) => http.del<Routine>(`/api/routines/${id}/webhook`),
   usage: (days: UsageRange, botId?: string) =>
     http.get<UsageReport>(`/api/usage?days=${days}${botId ? `&bot=${encodeURIComponent(botId)}` : ''}`),
+  planUsage: () => http.get<{ plan: UsageReport['plan'] | null }>('/api/usage/plan'),
   openBrowserWindow: (botId: string, url?: string) =>
     http.post<{ ok: true }>(`/api/bots/${botId}/browser/window`, { url }),
   closeBrowserWindow: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/browser/window`),

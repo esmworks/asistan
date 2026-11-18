@@ -1,8 +1,8 @@
 import {
   planPace,
+  planTone,
   ROUTINE_GATE_MODES,
   USAGE_RANGES,
-  type PlanWindow,
   type UsageRange,
   type UsageReport,
 } from '@yumakbot/shared';
@@ -14,6 +14,7 @@ import { BotAvatar } from '@/components/BotAvatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useT } from '@/i18n';
 import { useFormat } from '@/lib/format';
+import { PLAN_TONE_BAR, planLabel } from '@/lib/planUsage';
 import { useBots, useSettings, useUsage } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Chip } from './onboarding/Chip';
@@ -184,15 +185,6 @@ function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
   );
 }
 
-const PLAN_LABELS = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'] as const;
-
-/** A plan window's name: the account's own, a known one translated, else its kind as given. */
-export function planLabel(w: PlanWindow, t: ReturnType<typeof useT>): string {
-  if (w.label) return w.label;
-  const known = PLAN_LABELS.find((k) => k === w.kind);
-  return known ? t(`usage.plan.${known}`) : w.kind;
-}
-
 /**
  * The Claude plan's usage windows, each a bar with a line where the window's time stands: a bar
  * past its line spends the plan faster than the window lasts.
@@ -220,14 +212,7 @@ function PlanUsage({ plan }: { plan?: UsageReport['plan'] }) {
               </div>
               <div className="relative h-2 rounded-full bg-secondary">
                 <div
-                  className={cn(
-                    'h-full rounded-full',
-                    used >= 0.9
-                      ? 'bg-red-500'
-                      : pace !== null && used > pace
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500',
-                  )}
+                  className={cn('h-full rounded-full', PLAN_TONE_BAR[planTone(w, now)])}
                   style={{ width: `${used * 100}%` }}
                 />
                 {pace !== null && (
