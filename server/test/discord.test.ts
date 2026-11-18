@@ -496,6 +496,8 @@ describe('Discord', () => {
     await waitFor(async () => (await t.services.ctx.db.select().from(schema.channelRequests)).length === 1);
     const [held] = await t.services.ctx.db.select().from(schema.channelRequests);
     expect(held!.place).toMatchObject({ channel: 'C1', root: first, requester: AYSE.id, messages: [first] });
+    // The request is kept before its turn starts: "stop" is sent once the turn is running.
+    await waitFor(async () => t.engine.requests.length === 1);
     await discord.write(AYSE, 'stop', { replyTo: { id: '9999', author: BOT_USER, root: first } });
     await waitFor(async () => (await t.services.ctx.db.select().from(schema.channelRequests)).length === 0);
   });
