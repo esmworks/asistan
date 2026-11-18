@@ -850,19 +850,6 @@ export const en: Catalog<MessageKey> = {
     'You allowed {allowed} of the last {total} cards. Let a reviewer pass the clearly safe ones and ask you about the rest?',
   'suggest.reviewOn': 'Turn on auto review',
   'suggest.notNow': 'Not now',
-  'steps.title': 'Steps it was let take',
-  'steps.none':
-    'Nothing yet. Each step that changes something shows here once it is let through, with what let it.',
-  'steps.showAll': 'Show all',
-  'steps.allTitle': 'Steps {name} was let take',
-  'steps.allHint':
-    'Steps that change something, as they were let through: newest first, kept for 90 days. Whether a step then went through is in its conversation. Reads are not listed.',
-  'steps.downloadCsv': 'Download CSV',
-  'steps.byCard': 'You allowed it',
-  'steps.byRule': 'Rule: {rule}',
-  'steps.byLevel': 'Its approval level',
-  'steps.byReview': 'The reviewer allowed it',
-  'steps.outside': 'started by outside text',
   'bot.instructionsUrl': 'Instructions document',
   'bot.instructionsUrlHint':
     'Keep the instructions in a public document edited elsewhere: a GitHub file or a page anyone can read as text, at an address that does not redirect. Pages behind a sign-in (Notion, Google Docs, private repositories) cannot be read. It is read once a day; a change reaches the bot only after you accept it.',
