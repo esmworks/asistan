@@ -39,7 +39,7 @@ import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { browses, markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerAnswers, ownerWords, quoteFound, requestedBy } from './owner-words';
+import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -1004,13 +1004,19 @@ export class TurnManager {
         return { behavior: 'deny', message: t('turn.refusedLately') };
       }
       // Review mode: a small model may let a clearly safe request through. Never for what an
-      // "always ask" rule covers, what only the person may approve, or a step that sends.
+      // "always ask" rule covers, what only the person may approve, or a step that sends, unless
+      // the person is there and wrote the message the turn answers: their "ok, do it" to what the
+      // bot proposed should not need a card as well.
       // Why the reviewer left it to the person, when it said; the card shows it.
       let reviewReason = '';
+      // A step that sends: the bot says so, or the browser sees a form posted or a "Send" button.
+      const sends =
+        ask.input.sends === true ||
+        (gated && !!appTool && !appTool.server && appTool.name.startsWith('browser_'));
       if (
         mode === 'review' &&
-        !gated &&
-        ask.input.sends !== true &&
+        (!gated || sends) &&
+        (!sends || (present && (await askedBy()) === 'message')) &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
         // After outside text, a step that can send to another host is the person's to allow;
         // looking something up on the web goes to the review.
@@ -1466,6 +1472,8 @@ export class TurnManager {
     // What they chose on the bot's question cards is theirs too; the question is the bot's.
     const answers = await ownerAnswers(this.ctx, o.turn);
     if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
+    // What the bot proposed just before the person's latest message: what their "ok" agrees to.
+    const proposal = await ownerProposal(this.ctx, o.turn);
     let verdict;
     try {
       verdict = await engine.review({
@@ -1474,6 +1482,7 @@ export class TurnManager {
         bot: { name: o.bot.name, description: o.bot.description },
         words,
         answers,
+        ...(proposal ? { proposal } : {}),
         outside: o.outside,
         locale: o.locale,
         signal: o.signal,
