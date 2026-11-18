@@ -89,6 +89,8 @@ export interface Config {
   telegramApi: string;
   /** How long one request for new Telegram messages waits for one to arrive. */
   telegramPollSeconds: number;
+  /** Slack's Web API; tests put a stand-in here. */
+  slackApi: string;
   /** Whether chat apps (Telegram, WhatsApp) connect at all; tests that do not use them leave them off. */
   channelsEnabled: boolean;
 }
@@ -190,6 +192,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     reactionDelayMs: 4000,
     telegramApi: (env.YUMAKBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
     telegramPollSeconds: 50,
+    slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
     channelsEnabled: true,
     aiEndpoints: aiEndpointsFrom(env),
     ...overrides,

@@ -357,8 +357,8 @@ export function browserTools(opts: {
   t: T;
   browser: BrowserManager;
   vault: VaultService;
-  /** Whom the bot works for: only the team's sign-ins and theirs are typed. */
-  person: string;
+  /** Whom the bot works for: only the team's sign-ins and theirs are typed; null for the team's alone. */
+  person: string | null;
   askLogin: AskLogin;
   /** What the bot noted earlier about how a site works. */
   siteNotes?: (host: string) => Promise<string[]>;

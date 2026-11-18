@@ -294,3 +294,33 @@ function plainText(parts: Block[]): string {
     .join('\n')
     .trim();
 }
+
+/**
+ * Slack's mrkdwn. Its `& < >` are escaped everywhere, so text never becomes a mention such as
+ * `<!channel>` or `<@U123>`, nor a link the bot did not write as one.
+ */
+const SLACK: Marks = {
+  inline: (s) =>
+    inline(s, {
+      text: esc,
+      code: (c) => `\`${esc(c)}\``,
+      link: (label, url) =>
+        /^https?:\/\/[^\s|<>]+$/.test(url) ? `<${esc(url)}|${esc(label).replace(/\|/g, '¦')}>` : esc(label),
+      bold: (x) => `*${x}*`,
+      italic: (x) => `_${x}_`,
+      strike: (x) => `~${x}~`,
+    }),
+  bold: (s) => `*${s}*`,
+  code: (_lang, body) => `\`\`\`${esc(body)}\`\`\``,
+  quote: (lines) => lines.map((l) => `> ${l}`).join('\n'),
+};
+
+/** Slack messages for a reply, each well under Slack's limit for one message's text. */
+export function slackMessages(md: string): string[] {
+  return chunks(md, 3900)
+    .map((parts) => render(parts, SLACK))
+    .filter((m) => m.trim());
+}
+
+/** Text written into Slack as it is, with nothing in it read as a mention or a link. */
+export const slackPlain = (s: string) => esc(s);

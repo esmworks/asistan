@@ -17,7 +17,9 @@ type ThreadVia = 'thread' | 'message' | 'turn' | 'approval' | 'job';
  * - `self`: anyone signed in, and the handler itself keeps each person to what is theirs;
  * - a bot level: the bot the route names must be shared with them at least that far;
  * - a conversation: it must be theirs (or the bot's own work, for those who may change the bot);
- *   to write in it they must also still be able to talk with its bot.
+ *   to write in it they must also still be able to talk with its bot. `manage` (rename, archive,
+ *   delete, edit lines) is read for one's own; a team conversation is managed only by those who
+ *   may change its bot, since everyone in it shares it.
  */
 export type Rule =
   | 'signedIn'
@@ -25,12 +27,13 @@ export type Rule =
   | 'owner'
   | 'self'
   | { bot: 'chat' | 'edit'; via: BotVia }
-  | { thread: 'read' | 'write'; via: ThreadVia };
+  | { thread: 'read' | 'write' | 'manage'; via: ThreadVia };
 
 const chat = (via: BotVia = 'bot'): Rule => ({ bot: 'chat', via });
 const edit = (via: BotVia = 'bot'): Rule => ({ bot: 'edit', via });
 const read = (via: ThreadVia = 'thread'): Rule => ({ thread: 'read', via });
 const write = (via: ThreadVia = 'thread'): Rule => ({ thread: 'write', via });
+const manage = (via: ThreadVia = 'thread'): Rule => ({ thread: 'manage', via });
 
 /**
  * Every signed-in route, as registered, with who may call it. A route missing here is left to the
@@ -194,20 +197,20 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/threads': chat(),
   'DELETE /api/bots/:id/threads': chat(),
   'GET /api/threads/:id': read(),
-  'PATCH /api/threads/:id': read(),
-  'DELETE /api/threads/:id': read(),
+  'PATCH /api/threads/:id': manage(),
+  'DELETE /api/threads/:id': manage(),
   'GET /api/threads/:id/messages': read(),
   'POST /api/threads/:id/messages': write(),
-  'PATCH /api/messages/:id': write('message'),
+  'PATCH /api/messages/:id': manage('message'),
   'POST /api/messages/:id/steer': write('message'),
   'POST /api/messages/:id/retry': write('message'),
-  'DELETE /api/messages/:id': write('message'),
-  'PUT /api/threads/:id/pin': read(),
+  'DELETE /api/messages/:id': manage('message'),
+  'PUT /api/threads/:id/pin': manage(),
   'POST /api/messages/:id/fork': write('message'),
   'PUT /api/messages/:id/reaction': write('message'),
   'POST /api/threads/:id/files': write(),
-  'DELETE /api/threads/:id/files/:name': write(),
-  'POST /api/threads/:id/reset': write(),
+  'DELETE /api/threads/:id/files/:name': manage(),
+  'POST /api/threads/:id/reset': manage(),
   'POST /api/threads/:id/stop': read(),
   'GET /api/apps/:id/frame': read('message'),
   'POST /api/apps/:id/call': write('message'),
@@ -279,6 +282,13 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/whatsapp': 'admin',
   'POST /api/whatsapp/link': 'admin',
   'DELETE /api/whatsapp': 'admin',
+  'GET /api/slack': 'admin',
+  'PUT /api/slack': 'admin',
+  'PATCH /api/slack': 'admin',
+  'DELETE /api/slack': 'admin',
+  'GET /api/slack/me': 'self',
+  'POST /api/slack/me/code': 'self',
+  'DELETE /api/slack/me': 'self',
   'GET /api/email': 'admin',
   'POST /api/email/secret': 'admin',
 };
@@ -389,7 +399,7 @@ export async function enforceRule(s: Services, req: FastifyRequest, rule: Rule):
   let lastErr: unknown = notFound('thread');
   for (const id of ids) {
     try {
-      await s.access.requireThread(p, id, rule.thread === 'write');
+      await s.access.requireThread(p, id, rule.thread === 'write', rule.thread === 'manage');
       return;
     } catch (err) {
       lastErr = err;

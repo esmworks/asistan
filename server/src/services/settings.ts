@@ -185,6 +185,16 @@ export class SettingsService {
     return Settings.parse({ ...base, ...own });
   }
 
+  /**
+   * The server's settings with no one's own in them, for a team conversation: its turns are not
+   * any one person's, so no profile goes in; the server's language stands in.
+   */
+  async team(): Promise<Settings> {
+    const base: Record<string, unknown> = { ...(await this.server()) };
+    for (const key of PERSONAL_SETTINGS) if (key !== 'language') delete base[key];
+    return Settings.parse(base);
+  }
+
   private async server(): Promise<Settings> {
     const rows = await this.ctx.db.select().from(schema.kv);
     const obj: Record<string, unknown> = {};
