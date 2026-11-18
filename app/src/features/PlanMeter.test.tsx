@@ -46,6 +46,9 @@ describe('sohbetteki plan göstergesi', () => {
     expect(rows[0]!.textContent).toContain('58% left');
     expect(rows[0]!.textContent).toContain('Resets');
     expect(rows[2]!.textContent).toContain('5% left');
+    // The bars fill with what is left, like the ring and the words.
+    const bars = rows.map((r) => r.querySelector<HTMLElement>('[data-plan-bar]')!.style.width);
+    expect(bars).toEqual(['58%', '88%', '5%']);
   });
 
   it('sınırdaki pencereyi kırmızı ve “sınıra ulaşıldı” diye gösterir', () => {
