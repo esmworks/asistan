@@ -130,8 +130,10 @@ export const threads = pgTable(
   (t) => [
     index('threads_bot_idx').on(t.botId, t.updatedAt),
     index('threads_user_idx').on(t.userId, t.botId),
+    // One exchange between two bots for each person it is done for: what one person asked through
+    // a bot is not in the engine session another person's request continues.
     uniqueIndex('threads_peer_uq')
-      .on(t.botId, t.peerBotId)
+      .on(t.botId, t.peerBotId, t.userId)
       .where(sql`${t.kind} = 'bot'`),
   ],
 );
@@ -397,6 +399,11 @@ export const routines = pgTable('routines', {
    * it no longer marks the bot: runs a check skips leave no new result to clear it with.
    */
   failureSeenAt: ts('failure_seen_at'),
+  /**
+   * The person who set it up; its runs work for them. Null for routines from before people came
+   * in, and for one whose person was removed: those work for the bot's owner.
+   */
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: created(),
   /** Secret of the routine's webhook address; null when it has none. */
   webhookToken: text('webhook_token'),

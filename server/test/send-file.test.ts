@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message, MessageFile, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { AUTH, testServer, type TestServer } from './helpers';
 
 describe('botun dosya göndermesi', () => {
@@ -61,7 +62,7 @@ describe('botun dosya göndermesi', () => {
   it('başka bir botla konuşurken gönderdiği dosyayı kullanıcının sohbetine koyar ve bunu bota söyler', async () => {
     const bot = await t.bot();
     const peer = await t.bot({ name: 'Paşa' });
-    const botThread = await t.services.threads.peerThread(bot.id, peer.id);
+    const botThread = await t.services.threads.peerThread(bot.id, peer.id, OWNER_ID);
     const own = join(t.dataDir, 'workspaces', 'bots', bot.id, 'files', 'Teklifler');
     mkdirSync(own, { recursive: true });
     writeFileSync(join(own, 'teklif.pdf'), '%PDF');

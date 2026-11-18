@@ -267,8 +267,8 @@ export class ThreadService {
     return this.create(botId, { userId });
   }
 
-  /** The thread in `botId` where messages from `peerBotId` land; one per pair. */
-  async peerThread(botId: string, peerBotId: string): Promise<ThreadRow> {
+  /** The thread in `botId` where messages from `peerBotId` land; one per pair and person. */
+  async peerThread(botId: string, peerBotId: string, userId: string): Promise<ThreadRow> {
     const find = async () => {
       const [row] = await this.ctx.db
         .select()
@@ -278,6 +278,7 @@ export class ThreadService {
             eq(schema.threads.botId, botId),
             eq(schema.threads.peerBotId, peerBotId),
             eq(schema.threads.kind, 'bot'),
+            eq(schema.threads.userId, userId),
           ),
         )
         .limit(1);
@@ -288,7 +289,7 @@ export class ThreadService {
     try {
       const [row] = await this.ctx.db
         .insert(schema.threads)
-        .values({ id: newId(), botId, peerBotId, kind: 'bot', title: '' })
+        .values({ id: newId(), botId, peerBotId, userId, kind: 'bot', title: '' })
         .returning();
       this.ctx.bus.refresh({ scope: 'threads', botId });
       return row!;

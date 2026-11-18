@@ -451,6 +451,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (canAdminister(p.role)) return;
     if ((await s.access.botOwner(botId)) !== p.userId) throw new HttpError(403, 'error.botOwnerOnly');
   };
+  /**
+   * A group's bots share its files folder, so a bot joins one only for someone who may change
+   * every bot already in it.
+   */
+  const checkGroup = async (req: FastifyRequest, groupId: string | null | undefined) => {
+    if (!groupId || canAdminister(me(req).role)) return;
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    const members = (await s.bots.list({ includeArchived: true })).filter((b) => b.groupId === groupId);
+    if (!members.every((b) => editable.has(b.id))) throw new HttpError(403, 'error.groupNotYours');
+  };
   /** A bot with what the asking person may do with it. */
   const leveled = async (req: FastifyRequest, bot: Bot): Promise<Bot> => ({
     ...bot,
@@ -471,6 +481,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/bots', async (req) => {
     const body = BotCreate.parse(req.body);
     checkProjectDir(req, body.projectDir);
+    await checkGroup(req, body.groupId);
     const bot = await s.bots.create(body, me(req).userId);
     return leveled(req, bot.instructionsUrl ? await s.instructionDocs.check(bot.id) : bot);
   });
@@ -492,6 +503,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (patch.projectDir !== undefined && patch.projectDir !== before.projectDir) {
       checkProjectDir(req, patch.projectDir);
     }
+    if (patch.groupId !== undefined && patch.groupId !== before.groupId) await checkGroup(req, patch.groupId);
     const bot = await s.bots.update(id, patch);
     const relinked = !!bot.instructionsUrl && bot.instructionsUrl !== before.instructionsUrl;
     return leveled(req, relinked ? await s.instructionDocs.check(id) : bot);
@@ -515,9 +527,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/bots/:id/instructions/decline', async (req) =>
     s.instructionDocs.decline(IdParams.parse(req.params).id),
   );
-  app.post('/api/bots/:id/move', async (req) =>
-    s.bots.move(IdParams.parse(req.params).id, BotMove.parse(req.body)),
-  );
+  app.post('/api/bots/:id/move', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const body = BotMove.parse(req.body);
+    if (body.groupId !== (await s.bots.get(id)).groupId) await checkGroup(req, body.groupId);
+    return s.bots.move(id, body);
+  });
   app.post('/api/bots/:id/archive', async (req) => s.bots.archive(IdParams.parse(req.params).id));
   app.post('/api/bots/:id/restore', async (req) => s.bots.restore(IdParams.parse(req.params).id));
   app.delete('/api/bots/:id', async (req) => {
@@ -796,7 +811,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   );
   app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
   app.get('/api/skills', async () => s.skills.list());
-  app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body), me(req).userId));
+  app.post('/api/skills', async (req) => {
+    const body = SkillCreate.parse(req.body);
+    // Turning a skill on for a bot changes the bot.
+    for (const botId of body.botIds ?? []) await s.access.requireBot(me(req), botId, 'edit');
+    return s.skills.create(body, me(req).userId);
+  });
   // A skill file from a link (a GitHub page of a SKILL.md, or any https address); read here, so
   // the page is not stopped by the other site's rules on who may read it.
   app.post('/api/skills/fetch', async (req) =>
@@ -1333,7 +1353,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   // Chat apps: a bot's own Telegram bot.
   app.get('/api/bots/:id/telegram', async (req) => s.telegram.status(IdParams.parse(req.params).id));
   app.put('/api/bots/:id/telegram', async (req) =>
-    s.telegram.connect(IdParams.parse(req.params).id, TelegramConnect.parse(req.body).token),
+    s.telegram.connect(IdParams.parse(req.params).id, TelegramConnect.parse(req.body).token, me(req).userId),
   );
   app.patch('/api/bots/:id/telegram', async (req) =>
     s.telegram.update(IdParams.parse(req.params).id, TelegramUpdate.parse(req.body)),
@@ -1346,7 +1366,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // Chat apps: WhatsApp through a linked device, for whichever bot is chosen.
   app.get('/api/whatsapp', async () => s.whatsapp.status());
-  app.put('/api/whatsapp', async (req) => s.whatsapp.configure(WhatsAppSet.parse(req.body)));
+  app.put('/api/whatsapp', async (req) => {
+    const body = WhatsAppSet.parse(req.body);
+    if (body.botId) await s.access.requireBot(me(req), body.botId, 'chat');
+    return s.whatsapp.configure(body, me(req).userId);
+  });
   app.post('/api/whatsapp/link', async () => s.whatsapp.link());
   app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
 
@@ -1454,7 +1478,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/routines', async (req) => {
     const body = RoutineCreate.parse(req.body);
     await s.access.requireBot(me(req), body.botId, 'edit');
-    return s.routines.create(body);
+    return s.routines.create(body, me(req).userId);
   });
   app.patch('/api/routines/:id', async (req) =>
     s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body)),

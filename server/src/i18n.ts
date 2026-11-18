@@ -18,6 +18,7 @@ const tr = {
   'error.ownerOnly': 'Bunu yalnızca sunucunun sahibi yapabilir',
   'error.botEditOnly': 'Bu botu yalnızca değiştirme izni olanlar değiştirebilir',
   'error.botNotShared': 'Bu bot artık seninle paylaşılmıyor',
+  'error.groupNotYours': 'Bu grubun dosyalarını paylaşan botların hepsini değiştirme iznin yok',
   'error.botOwnerOnly': 'Bunu yalnızca botun sahibi ya da sunucuyu yönetenler yapabilir',
   'error.accessKeyRequired': 'Erişim anahtarı gerekli',
   'error.authCheckFailed': 'Kimlik denetlenemedi',
@@ -911,6 +912,8 @@ const tr = {
   'browser.loginSkipped':
     'Kullanıcı giriş bilgilerini vermedi. Giriş yapmadan devam et ya da ne yapmak istediğini sor.',
   'tool.notFound': 'Bulunamadı.',
+  'tool.changeNotAllowed':
+    'Bu değişikliği yalnızca botu değiştirme izni olan biri isteyebilir; bu kişi botla yalnızca konuşabiliyor.',
   'tool.reacted': 'Mesaja {emoji} bırakıldı. Yazıyla yanıt gerekmiyorsa başka bir şey yazmadan bitir.',
   'tool.noUserMessage': 'Tepki bırakılacak kullanıcı mesajı yok.',
   'tool.fileSent': 'Kullanıcıya gönderildi: {names}. Sohbette dosya kartı olarak görünüyor.',
@@ -1084,6 +1087,7 @@ const en: Catalog<ServerKey> = {
   'error.ownerOnly': 'Only the owner of this server can do this',
   'error.botEditOnly': 'Only people allowed to change this bot can do this',
   'error.botNotShared': 'This bot is no longer shared with you',
+  'error.groupNotYours': "You aren't allowed to change every bot that shares this group's files",
   'error.botOwnerOnly': "Only the bot's owner or the people who manage this server can do this",
   'error.accessKeyRequired': 'Access key required',
   'error.authCheckFailed': 'Could not check credentials',
@@ -1970,6 +1974,8 @@ const en: Catalog<ServerKey> = {
   'browser.loginSkipped':
     "The user did not give sign-in details. Continue without signing in, or ask what they'd like.",
   'tool.notFound': 'Nothing found.',
+  'tool.changeNotAllowed':
+    'Only someone allowed to change this bot can ask for this change; this person can only talk with it.',
   'tool.reacted':
     'Left {emoji} on the message. If no written reply is needed, finish without writing anything else.',
   'tool.noUserMessage': 'There is no user message to react to.',

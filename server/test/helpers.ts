@@ -127,7 +127,9 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
             },
             ...(body !== undefined ? { payload: body as object } : {}),
           });
-          return { status: res.statusCode, body: (res.body ? res.json() : null) as T };
+          // A file comes back as itself, not JSON.
+          const json = String(res.headers['content-type'] ?? '').includes('json');
+          return { status: res.statusCode, body: (res.body ? (json ? res.json() : res.body) : null) as T };
         },
       };
     },

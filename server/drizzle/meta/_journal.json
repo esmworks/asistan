@@ -414,6 +414,13 @@
       "when": 1794958700184,
       "tag": "0058_bot_access",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794960474145,
+      "tag": "0059_person_work",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ import {
   skillSlug,
   type ApiSource,
   type Bot,
+  type BotLevel,
   type Memory,
   type MemoryChange,
   outsideIn,
@@ -43,6 +44,7 @@ import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 import { OWNER_ID } from '../users';
+import { atLeast } from '../services/access';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
 
@@ -300,6 +302,14 @@ export class ToolFactory {
     /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
     const reachBot = async (ref: string, wanted: 'chat' | 'edit') =>
       s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+    let levelHere: Promise<BotLevel> | undefined;
+    /** What the person may do with this bot. */
+    const personLevel = () =>
+      (levelHere ??= s.access.viewerOf(person).then((v) => s.access.level(v, bot.id)));
+    const mayChange = async () => atLeast(await personLevel(), 'edit');
+    /** This bot's conversations the person sees: theirs, and its own work when they may change it. */
+    const seenHere = async () =>
+      (await mayChange()) ? s.access.seenFrom(person) : eq(schema.threads.userId, person);
     /** The bots the person reaches at `wanted`. */
     const reachable = async (wanted: 'chat' | 'edit') =>
       new Set(await s.access.botIds(await s.access.viewerOf(person), wanted));
@@ -575,6 +585,8 @@ export class ToolFactory {
         'app_add',
         { name: z.string().min(1).max(80), url: z.string().min(1).max(2000) },
         async ({ name, url }) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const input = ConnectionCreate.safeParse({ name, url, auth: 'none' });
           if (!input.success) return t('tool.appBadUrl', { url });
           const known = (await s.connections.list()).find((c) => c.url === input.data.url);
@@ -631,31 +643,36 @@ export class ToolFactory {
           model: z.string().trim().max(200).optional(),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const own = await s.routines.list(bot.id);
           const same = own.find((r) => r.name.toLowerCase() === a.name.trim().toLowerCase());
           if (same) return t('tool.routineExists', { name: same.name });
           const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool) : null;
           if (a.check_tool && !check) return t('tool.routineBadCheck', { tool: a.check_tool });
           const settings = await s.settings.all();
-          const r = await s.routines.create({
-            botId: bot.id,
-            name: a.name.trim(),
-            prompt: a.prompt.trim(),
-            schedule: a.schedule,
-            timezone: settings.timezone,
-            enabled: true,
-            missed: a.missed,
-            carryReport: a.carry_report,
-            inMain: a.in_main,
-            onStartup: a.on_startup,
-            watchUrl: a.watch_url ?? null,
-            check: check && { ...check, args: a.check_args ?? {} },
-            webhookFilter: '',
-            webhookPost: false,
-            model: a.model ?? '',
-            emailTrigger: a.on_email,
-            emailFilter: a.email_filter ?? '',
-          });
+          const r = await s.routines.create(
+            {
+              botId: bot.id,
+              name: a.name.trim(),
+              prompt: a.prompt.trim(),
+              schedule: a.schedule,
+              timezone: settings.timezone,
+              enabled: true,
+              missed: a.missed,
+              carryReport: a.carry_report,
+              inMain: a.in_main,
+              onStartup: a.on_startup,
+              watchUrl: a.watch_url ?? null,
+              check: check && { ...check, args: a.check_args ?? {} },
+              webhookFilter: '',
+              webhookPost: false,
+              model: a.model ?? '',
+              emailTrigger: a.on_email,
+              emailFilter: a.email_filter ?? '',
+            },
+            person,
+          );
           const made = t('tool.routineCreated', {
             name: r.name,
             when: describeSchedule(r.schedule, await s.settings.locale()),
@@ -699,6 +716,8 @@ export class ToolFactory {
           email_filter: z.string().max(2000).optional(),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           const { routine: r, routines } = found;
@@ -748,6 +767,8 @@ export class ToolFactory {
         'routine_delete',
         { routine: z.string().min(1).max(200), bot: z.string().min(1).max(200).optional() },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           await s.routines.remove(found.routine.id);
@@ -785,6 +806,8 @@ export class ToolFactory {
           body: z.string().max(50_000),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const name = skillSlug(a.name);
           if (!name) return t('tool.skillBadName');
           const mine = skills.find((k) => k.name === name);
@@ -804,7 +827,7 @@ export class ToolFactory {
         { days: z.number().int().min(1).max(30).default(1), query: z.string().max(200).optional() },
         async ({ days, query }) => {
           const since = new Date(Date.now() - days * 86_400_000);
-          const mine = (await s.threads.list(bot.id, { userId: person, botWork: true })).filter(
+          const mine = (await s.threads.list(bot.id, { userId: person, botWork: await mayChange() })).filter(
             (th) => th.id !== thread.id && new Date(th.updatedAt) >= since,
           );
           const out: string[] = [];
@@ -832,7 +855,7 @@ export class ToolFactory {
           const hits = await s.threads.search(query, {
             botId: bot.id,
             limit,
-            seen: s.access.seenFrom(person),
+            seen: await seenHere(),
           });
           if (!hits.length) return t('tool.notFound');
           const found = await Promise.all(hits.map((h) => s.threads.message(h.messageId).catch(() => null)));
@@ -858,6 +881,8 @@ export class ToolFactory {
           const owner = found ? await s.threads.row(found.threadId).catch(() => null) : null;
           // Another bot's message reads as missing, so its existence is not given away.
           if (!found || owner?.botId !== bot.id) return t('tool.notFound');
+          // Nor another person's conversation with it.
+          if (owner.userId ? owner.userId !== person : !(await mayChange())) return t('tool.notFound');
           const page = [
             ...(around ? await s.threads.messages(found.threadId, { before: found.id, limit: around }) : []),
             found,

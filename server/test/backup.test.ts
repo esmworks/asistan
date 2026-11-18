@@ -137,6 +137,35 @@ describe('yedek', () => {
     expect(await t.auth.validSession(ownerSession, later)).toMatchObject({ userId: OWNER_ID });
   });
 
+  it('kişilerden önceki bir yedeğin sohbetleri owner’ın olur, botları owner’a kalır', async () => {
+    const bot = await t.bot({ name: 'Eski' });
+    const thread = (await t.api<{ id: string }>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    // The same rows as such a backup holds them: no person on the bot or the conversation.
+    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-old-backup-'));
+    const write = (name: string, rows: Record<string, unknown>[]) => {
+      writeFileSync(join(dir, `${name}.json`), JSON.stringify(rows));
+      return join(dir, `${name}.json`);
+    };
+    const bots = (await t.services.ctx.db.select().from(schema.bots)).map(
+      ({ ownerUserId: _o, access: _a, ...r }) => r,
+    );
+    const threads = (await t.services.ctx.db.select().from(schema.threads)).map(({ userId: _u, ...r }) => r);
+    await replaceRows(
+      t.services.ctx.db,
+      new Map([
+        ['bots', write('bots', bots)],
+        ['threads', write('threads', threads)],
+      ]),
+    );
+    const [restored] = await t.services.ctx.db
+      .select()
+      .from(schema.threads)
+      .where(eq(schema.threads.id, thread.id));
+    expect(restored!.userId).toBe(OWNER_ID);
+    const [b] = await t.services.ctx.db.select().from(schema.bots).where(eq(schema.bots.id, bot.id));
+    expect(b).toMatchObject({ ownerUserId: OWNER_ID, access: { everyone: 'none', people: {} } });
+  });
+
   it('bir bot çalışırken geri yüklemez', async () => {
     const { file } = await download(PASSWORD);
     const bot = await t.bot();

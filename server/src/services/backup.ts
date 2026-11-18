@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { PassThrough, Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
-import { getTableColumns, getTableName, inArray, is, notInArray, sql } from 'drizzle-orm';
+import { and, getTableColumns, getTableName, inArray, is, isNull, notInArray, sql } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
@@ -179,6 +179,12 @@ export async function replaceRows(db: Db, files: Map<string, string>) {
     }
     // A backup from before people came in has none: its single account becomes the owner.
     await adoptLegacyAccount(tx as unknown as Db);
+    // Nor do its conversations name a person: the ones with the person were the owner's, as the
+    // migration that brought people in decided. Left unnamed they would read as the bots' own work.
+    await tx
+      .update(schema.threads)
+      .set({ userId: OWNER_ID })
+      .where(and(isNull(schema.threads.userId), inArray(schema.threads.kind, ['user', 'room', 'api'])));
     // A device signed in as someone the backup does not have is signed out.
     await tx
       .delete(schema.sessions)

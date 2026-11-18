@@ -137,7 +137,8 @@ export class AccessService {
    * reaches at least at `wanted`. A bot works for someone, so it reaches no further than they do.
    */
   async reach(person: string, from: { id: string }, target: Bot, wanted: BotLevel): Promise<Bot> {
-    if (target.id === from.id) return target;
+    // Talking with itself needs nothing; changing itself needs what changing any bot needs.
+    if (target.id === from.id && wanted === 'chat') return target;
     if (!atLeast(await this.level(await this.viewerOf(person), target.id), wanted)) throw notFound('bot');
     return target;
   }

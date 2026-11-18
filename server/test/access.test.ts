@@ -1,7 +1,11 @@
 import type { Approval, Bot, BotSummary, PermissionRule, SearchHit, Thread, Ticket } from '@yumakbot/shared';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { DeltaEvent } from '@yumakbot/shared';
+import { io as connect } from 'socket.io-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
-import { testServer, type Person, type TestServer } from './helpers';
+import { KEY, testServer, type Person, type TestServer } from './helpers';
 
 describe('kim neyi görür', () => {
   let t: TestServer;
@@ -158,5 +162,75 @@ describe('kim neyi görür', () => {
     expect((await t.services.access.threadAudience(routine.id)).sort()).toEqual(
       [OWNER_ID, 'yonetici'].sort(),
     );
+  });
+
+  it('yalnızca konuşabilen kişi kendi sohbetinin dosyalarını açar, başkasınınkini açamaz', async () => {
+    const bot = await t.bot({ name: 'Dosyalı' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
+    const mine = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const theirs = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const put = (threadId: string) => {
+      const dir = join(t.dataDir, 'workspaces', 'bots', bot.id, 'threads', threadId);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'not.txt'), 'merhaba');
+      return encodeURIComponent(`bots/${bot.id}/threads/${threadId}/not.txt`);
+    };
+    const own = put(mine.id);
+    const other = put(theirs.id);
+    expect((await ayse.api('GET', `/api/bots/${bot.id}/library/file?path=${own}`)).status).toBe(200);
+    expect((await ayse.api('GET', `/api/bots/${bot.id}/library/file?path=${other}`)).status).toBe(403);
+    // Listing every file is for those who may change the bot.
+    expect((await ayse.api('GET', `/api/bots/${bot.id}/library`)).status).toBe(403);
+    const owner = await t.app.inject({
+      method: 'GET',
+      url: `/api/bots/${bot.id}/library/file?path=${other}`,
+      headers: { host: 'localhost', authorization: `Bearer ${KEY}` },
+    });
+    expect(owner.statusCode).toBe(200);
+  });
+
+  it('kişinin soketi başkasının sohbetinin yazısını almaz', async () => {
+    const bot = await t.bot({ name: 'Soketli' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
+    const mine = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const theirs = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const url = await t.listen();
+    const socket = connect(url, {
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { cookie: ayse.cookie, origin: url },
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        socket.on('hello', resolve);
+        socket.on('connect_error', reject);
+      });
+      const got: DeltaEvent[] = [];
+      socket.on('delta', (e: DeltaEvent) => got.push(e));
+      t.services.ctx.bus.delta({ threadId: theirs.id, turnId: 'x', text: 'sahibin yazısı' });
+      t.services.ctx.bus.delta({ threadId: mine.id, turnId: 'y', text: 'ayşenin yazısı' });
+      const until = Date.now() + 3000;
+      while (!got.length && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(got.map((e) => e.text)).toEqual(['ayşenin yazısı']);
+    } finally {
+      socket.close();
+    }
+  });
+
+  it('bot, çalıştığı kişinin ulaşamadığına ulaşamaz; bot-bot işi kişi başına ayrıdır', async () => {
+    const shared = await t.bot({ name: 'Aracı' });
+    await t.api('PUT', `/api/bots/${shared.id}/access`, { everyone: 'chat', people: {} });
+    const hidden = await t.bot({ name: 'Kapalı' });
+    await expect(t.services.access.reach('ayse', shared, hidden, 'chat')).rejects.toThrow();
+    // Talking with itself is fine; changing itself needs what changing any bot needs.
+    expect((await t.services.access.reach('ayse', shared, shared, 'chat')).id).toBe(shared.id);
+    await expect(t.services.access.reach('ayse', shared, shared, 'edit')).rejects.toThrow();
+    expect((await t.services.access.reach(OWNER_ID, shared, hidden, 'edit')).id).toBe(hidden.id);
+
+    const forAyse = await t.services.threads.peerThread(hidden.id, shared.id, 'ayse');
+    const forOwner = await t.services.threads.peerThread(hidden.id, shared.id, OWNER_ID);
+    expect(forAyse.id).not.toBe(forOwner.id);
+    expect((await t.services.threads.peerThread(hidden.id, shared.id, 'ayse')).id).toBe(forAyse.id);
   });
 });

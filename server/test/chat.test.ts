@@ -826,7 +826,7 @@ describe('sohbet', () => {
     await t.services.turns.idle();
 
     notice.mockClear();
-    const peer = await t.services.threads.peerThread(bot.id, (await t.bot({ name: 'Diğer' })).id);
+    const peer = await t.services.threads.peerThread(bot.id, (await t.bot({ name: 'Diğer' })).id, OWNER_ID);
     await t.services.turns.enqueue({ threadId: peer.id, botId: bot.id, source: 'bot', prompt: 'selam' });
     await t.services.turns.idle();
     expect(notice).not.toHaveBeenCalled();

@@ -84,6 +84,8 @@ export function ticketTools(opts: {
           },
           by,
           start,
+          // Opened for the person the turn works for.
+          turn.userId,
         );
         return t(start || !k.assigneeBotId ? 'tool.ticketCreated' : 'tool.ticketCreatedWaiting', {
           number: k.number,

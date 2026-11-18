@@ -200,7 +200,8 @@ export class RoutineService {
     return toRoutine(row);
   }
 
-  async create(input: RoutineCreate): Promise<Routine> {
+  /** A new routine; its runs work for `userId`, or for the bot's owner when null. */
+  async create(input: RoutineCreate, userId: string | null = null): Promise<Routine> {
     await this.services.bots.get(input.botId);
     if (input.check) await this.checkCheck(input.botId, input.check);
     const now = this.clock();
@@ -212,6 +213,7 @@ export class RoutineService {
         .values({
           id: newId(),
           ...input,
+          createdByUserId: userId,
           nextRunAt: input.enabled ? nextRun(input.schedule, input.timezone, now) : null,
         })
         .returning();
@@ -1040,6 +1042,8 @@ export class RoutineService {
       source: 'routine',
       prompt: payload ? `${prompt}\n\n${t('routine.payload', { payload })}` : prompt,
       routineRunId: run.id,
+      // Its runs work for whoever set it up; one from before people came in, for the bot's owner.
+      ...(routine.createdByUserId && { userId: routine.createdByUserId }),
     });
   }
 

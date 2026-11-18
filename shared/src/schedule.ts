@@ -63,6 +63,8 @@ export const RoutineCheck = z.object({
 export type RoutineCheck = z.infer<typeof RoutineCheck>;
 
 export const Routine = z.object({
+  /** The person whose work it runs as; null for the bot's owner. Missing on older servers. */
+  createdByUserId: z.string().nullable().optional(),
   id: z.string(),
   botId: z.string(),
   name: z.string(),

@@ -253,7 +253,14 @@ export class TicketService {
       text: prompt,
       props: { ticketNumber: row.number },
     });
-    await this.services.turns.enqueue({ threadId, botId: bot.id, source: 'ticket', prompt });
+    // The work is for whoever opened the ticket; a bot's own ticket works for the bot's owner.
+    await this.services.turns.enqueue({
+      threadId,
+      botId: bot.id,
+      source: 'ticket',
+      prompt,
+      ...(row.createdByUserId && { userId: row.createdByUserId }),
+    });
     this.changed();
   }
 

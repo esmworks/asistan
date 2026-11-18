@@ -244,7 +244,8 @@ export class WhatsAppChannel {
     };
   }
 
-  async configure(input: WhatsAppSet): Promise<WhatsAppStatus> {
+  /** Sets the chat up for `userId`: what comes in through it is theirs. */
+  async configure(input: WhatsAppSet, userId: string): Promise<WhatsAppStatus> {
     if (input.botId) await this.services.bots.get(input.botId);
     const row = await this.row();
     const settings: Settings = {
@@ -256,12 +257,12 @@ export class WhatsAppChannel {
     if (row) {
       await this.ctx.db
         .update(schema.channels)
-        .set({ settings, botId: input.botId })
+        .set({ settings, botId: input.botId, userId })
         .where(eq(schema.channels.id, row.id));
     } else {
       await this.ctx.db
         .insert(schema.channels)
-        .values({ id: newId(), kind: 'whatsapp', botId: input.botId, settings });
+        .values({ id: newId(), kind: 'whatsapp', botId: input.botId, settings, userId });
     }
     this.changed();
     return this.status();
@@ -533,7 +534,11 @@ export class WhatsAppChannel {
   }
 
   private async pickBot(jid: string, row: Row, name: string | undefined, t: T) {
-    const bots = (await this.services.bots.list()).filter((b) => !b.archivedAt);
+    // Only bots the person who set the chat up may talk with.
+    const reached = new Set(
+      await this.services.access.botIds(await this.services.access.viewerOf(row.userId), 'chat'),
+    );
+    const bots = (await this.services.bots.list()).filter((b) => !b.archivedAt && reached.has(b.id));
     const names = bots.map((b) => b.name).join(', ');
     if (!name) {
       const current = bots.find((b) => b.id === row.botId);
@@ -737,6 +742,8 @@ export class WhatsAppChannel {
     if (!target || target.row.botId !== e.botId) return;
     const settings = target.row.settings as Settings;
     if (settings.notices === false) return;
+    // Only of the person's own conversations, or the bot's own work they may change.
+    if (!(await this.services.access.threadAudience(e.threadId)).includes(target.row.userId)) return;
     // Its cards come as cards there, or the person is in the app with it.
     if (settings.threadId === e.threadId) return;
     const t = await this.services.settings.translator();

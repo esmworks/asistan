@@ -135,6 +135,7 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
 
 export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   id: r.id,
+  createdByUserId: r.createdByUserId,
   botId: r.botId,
   name: r.name,
   prompt: r.prompt,
