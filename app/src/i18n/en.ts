@@ -772,6 +772,7 @@ export const en: Catalog<MessageKey> = {
   'email.showRaw': 'Details',
   'email.hideRaw': 'Hide details',
   'email.signature': "Your account's signature is added at the end.",
+  'email.signatureFrame': 'Signature',
   'email.unnamedAttachment': 'Unnamed attachment',
   'email.body': 'The text of the email',
   'email.status.allowed.send': 'Sending approved',

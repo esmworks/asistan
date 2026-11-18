@@ -9,6 +9,7 @@ import {
   type ConnectionCreate,
   type ConnectionToolPatch,
   type ConnectionUpdate,
+  type MailSender,
 } from '@yumakbot/shared';
 import { and, asc, eq, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import {
@@ -26,7 +27,8 @@ import {
 } from '../connections/client';
 import type { CallToolResult, ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ElicitForm } from '../connections/elicit';
-import { sendGmail, withGmailSend } from '../connections/gmail';
+import { gmailSender, isGmailMcp, runGmailTool, withGmailTools } from '../connections/gmail';
+import { inlinePictures } from '../connections/mail-signature';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { StoredConnectionTool } from '../db/schema';
@@ -50,6 +52,8 @@ const MAX_TOOL_NAME = 64;
 export const OAUTH_CALLBACK_PATH = '/api/connections/oauth/callback';
 
 const LOOPBACK_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** How long who a mail account sends as is kept before it is read again: a signature changes rarely. */
+const SENDER_TTL_MS = 10 * 60_000;
 
 /**
  * The OAuth callback as the app reaches this server. `host` is the already checked Host header.
@@ -114,6 +118,33 @@ export class ConnectionService {
     } catch {
       // Sealed with a key this server no longer has: as if never signed in.
       return {};
+    }
+  }
+
+  /** Who each mail connection sends as, read lately: the card asks for it with every mail it shows. */
+  private senders = new Map<string, { at: number; value: MailSender }>();
+
+  /**
+   * Who a mail connection sends as, for the card that shows a mail before it goes. Nothing when
+   * the service is not one this server can ask, or the asking fails: the card then goes without.
+   */
+  async mailSender(id: string): Promise<MailSender> {
+    const none: MailSender = { address: null, signature: null };
+    const row = await this.row(id);
+    if (!isGmailMcp(row.url) || row.status !== 'connected') return none;
+    const hit = this.senders.get(id);
+    if (hit && Date.now() - hit.at < SENDER_TTL_MS) return hit.value;
+    try {
+      const found = await gmailSender(
+        this.target(row),
+        AbortSignal.timeout(this.ctx.config.mcpCallTimeoutMs),
+      );
+      const value = found.signature ? { ...found, signature: await inlinePictures(found.signature) } : found;
+      this.senders.set(id, { at: Date.now(), value });
+      return value;
+    } catch (err) {
+      console.warn('mail sender', err instanceof Error ? err.message : err);
+      return none;
     }
   }
 
@@ -363,7 +394,7 @@ export class ConnectionService {
   async refresh(id: string): Promise<Connection> {
     const row = await this.row(id);
     try {
-      const tools = withGmailSend(row.url, await listTools(this.target(row), row.tools), row.tools);
+      const tools = withGmailTools(row.url, await listTools(this.target(row), row.tools), row.tools);
       await this.ctx.db
         .update(schema.connections)
         .set({ tools, status: 'connected', error: null, updatedAt: new Date() })
@@ -761,7 +792,7 @@ export class ConnectionService {
     keep?: KeepResult,
     showApp?: ShowApp,
   ): AppTool {
-    // A tool this server adds sends mail: it always counts as a change, whatever it was set to.
+    // A tool this server adds sends or changes mail: it always counts as a change, whatever it was set to.
     const kind = tool.local ? 'write' : (tool.kind ?? tool.hinted);
     const about = [tool.title, tool.description].filter(Boolean).join(' — ');
     return {
@@ -785,16 +816,15 @@ export class ConnectionService {
           return t('connection.unavailable', { name: row.name });
         }
         try {
-          const result =
-            tool.local === 'gmailSend'
-              ? await sendGmail(this.target(current), args, signal)
-              : await callTool(
-                  this.target(current),
-                  tool.name,
-                  args,
-                  signal,
-                  elicit && ((form) => elicit(form, row.name)),
-                );
+          const result = tool.local
+            ? await runGmailTool(this.target(current), tool.name, args, signal)
+            : await callTool(
+                this.target(current),
+                tool.name,
+                args,
+                signal,
+                elicit && ((form) => elicit(form, row.name)),
+              );
           if (tool.ui && current.showApps && showApp && !result.isError) {
             // The tool's own view joins the conversation; the bot's answer does not wait on it.
             void this.appResource(current, tool.ui)

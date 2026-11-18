@@ -761,6 +761,7 @@ export const tr = {
   'email.showRaw': 'Ayrıntılar',
   'email.hideRaw': 'Ayrıntıları gizle',
   'email.signature': 'Hesabınızın imzası sona eklenecek.',
+  'email.signatureFrame': 'İmza',
   'email.unnamedAttachment': 'Adsız ek',
   'email.body': 'E-postanın metni',
   'email.status.allowed.send': 'Gönderme onaylandı',

@@ -693,8 +693,11 @@ export interface StoredConnectionTool {
   ui?: string | null;
   /** Meant for its view alone: never given to a bot. */
   appOnly?: boolean;
-  /** A tool this server adds and runs itself, not one the connection's server listed. */
-  local?: 'gmailSend';
+  /**
+   * A tool this server adds and runs itself, not one the connection's server listed. `gmailSend`
+   * is how rows stored before the other Gmail tools came name it, until their next refresh.
+   */
+  local?: 'gmail' | 'gmailSend';
 }
 
 /** Which bots may use a connection that is not open to every bot. */

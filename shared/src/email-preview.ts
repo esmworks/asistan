@@ -28,6 +28,12 @@ export interface EmailPreview {
   raw: string;
 }
 
+/** Who a connected mail account sends as: its default address and that address's signature (HTML). */
+export interface MailSender {
+  address: string | null;
+  signature: string | null;
+}
+
 /** Tool names mail services use, by what they do. A tool is read as mail only when its input looks like one too. */
 const KINDS: [RegExp, EmailKind][] = [
   [/^(send_message|send_email|send_mail|send_draft)$/, 'send'],

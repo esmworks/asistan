@@ -1219,7 +1219,8 @@ function ApprovalCard({
   const locale = useLocale((s) => s.locale);
   const { data: approvals } = useApprovals();
   const a = approvals?.find((x) => x.id === approvalId);
-  const service = useServiceName(a?.toolName);
+  const connection = useToolConnection(a?.toolName);
+  const service = connection?.name;
   const decide = useMutation({
     mutationFn: (d: { decision: 'allow' | 'deny'; remember?: boolean }) => api.answer(approvalId, d),
     onError: (e) => toast.error((e as Error).message),
@@ -1282,6 +1283,7 @@ function ApprovalCard({
         a={a}
         mail={mail}
         service={service}
+        connectionId={connection?.id}
         notes={notes}
         offerAlways={!heldBy && !askRule && !outside}
         busy={decide.isPending}
@@ -1429,11 +1431,11 @@ function LoginCard({ a }: { a: Approval }) {
   );
 }
 
-/** The name of the connection a tool belongs to (`mcp__<connection>__<tool>`), when it is one. */
-function useServiceName(toolName: string | undefined): string | undefined {
+/** The connection a tool belongs to (`mcp__<connection>__<tool>`), when it is one. */
+function useToolConnection(toolName: string | undefined) {
   const { data: connections } = useConnections();
   const parts = toolName ? connectionToolParts(toolName) : null;
-  return parts ? connections?.find((c) => c.slug === parts.server)?.name : undefined;
+  return parts ? connections?.find((c) => c.slug === parts.server) : undefined;
 }
 
 /** The one line an answered card leaves in the thread. */
