@@ -81,6 +81,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Bots are told to look up exact wording, numbers and earlier decisions in past conversations instead of guessing, and
   a message cut short when a conversation moves to a new session can be read whole.
 
+### Settings
+
+- The default model and effort for Claude bots are each picked from a drop-down, in Settings → Model and in the
+  first setup, instead of a list of cards and a row of buttons that took up most of the screen.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety
