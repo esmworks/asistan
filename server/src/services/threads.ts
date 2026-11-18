@@ -447,6 +447,14 @@ export class ThreadService {
       text: t('thread.contextReset'),
       props: { kind: 'contextReset' },
     });
+    for (const fn of this.resetListeners) void Promise.resolve(fn(thread.id)).catch(() => {});
+  }
+
+  private resetListeners: ((threadId: string) => void | Promise<void>)[] = [];
+
+  /** Told when a conversation was reset, once the line saying so is in; the memory review looks back at it. */
+  onContextReset(fn: (threadId: string) => void | Promise<void>) {
+    this.resetListeners.push(fn);
   }
 
   async setSession(id: string, sessionId: string | null) {

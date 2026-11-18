@@ -13,7 +13,8 @@ export function changeLabel(c: MemoryChange): string {
 /** Where a waiting change came from and whose note it is. */
 export function changeHint(c: MemoryChange, bots: readonly Pick<Bot, 'id' | 'name'>[], t: T): string {
   const name = (id: string | null) => bots.find((b) => b.id === id)?.name ?? t('common.bot');
-  const whose = c.scope === 'user' ? t('memory.staleShared') : name(c.botId);
+  const whose =
+    c.scope === 'user' ? t('memory.staleShared') : c.scope === 'room' ? t('memory.scopeRoom') : name(c.botId);
   const origin = c.origin.name
     ? t(`memory.origin.${c.origin.kind}`, { name: c.origin.name })
     : t('memory.origin.unknown');
