@@ -1,3 +1,4 @@
+import { watchPage, type PageLog } from './logs';
 import { addTyping, DESCRIBE, MAX_STEPS, type Target, type TeachStep } from './teach';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { lookup } from 'node:dns/promises';
@@ -104,6 +105,8 @@ interface Live {
   speed: WeakMap<Page, Promise<CDPSession | null>>;
   /** What the person showed in teach mode, step by step; null when not teaching. */
   lesson: TeachStep[] | null;
+  /** Each tab's requests and console messages since it opened (see `logs.ts`). */
+  logs: WeakMap<Page, PageLog>;
 }
 
 /** A question a page asked with alert, confirm or prompt, and how it was answered. */
@@ -335,6 +338,11 @@ export class BrowserManager {
   pages(botId: string): { pages: Page[]; active: Page } | null {
     const l = this.live.get(botId);
     return l ? { pages: l.context.pages(), active: l.page } : null;
+  }
+
+  /** A tab's requests and console messages since it opened; null for a tab not of this bot. */
+  log(botId: string, page: Page): PageLog | null {
+    return this.live.get(botId)?.logs.get(page) ?? null;
   }
 
   /**
@@ -765,6 +773,7 @@ export class BrowserManager {
       closedBySite: [],
       closing: new WeakSet(),
       speed: new WeakMap(),
+      logs: new WeakMap(),
     };
     await this.guardNetwork(live, context);
     for (const p of context.pages()) this.track(live, p);
@@ -790,6 +799,7 @@ export class BrowserManager {
   }
 
   private track(live: Live, page: Page) {
+    if (!live.logs.has(page)) live.logs.set(page, watchPage(page));
     // Without a listener a page's confirm is cancelled unseen, and the click that asked it does
     // nothing the bot can tell. A notice is let through; a confirm or prompt is answered as the bot
     // said beforehand, else cancelled, and either way the bot hears what the page asked.

@@ -196,6 +196,8 @@ export type ToolName =
   | 'browser_tabs'
   | 'browser_screenshot'
   | 'browser_wait'
+  | 'browser_network'
+  | 'browser_console'
   | 'memory_search'
   | 'conversations_search'
   | 'message_read'

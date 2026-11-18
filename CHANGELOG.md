@@ -61,6 +61,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   connection it shows the address the mail goes from and, when the signature is added, the signature itself under the
   text, its pictures fetched by the server and put inside it so the page still loads nothing from outside.
 
+### Browser
+
+- A bot can read the requests each tab of its browser made and what the page's scripts logged, uncaught errors
+  included, to find out why a page does not work. Only the method, address, status, type and time of a request are
+  kept, never its body or headers; address parameters that may carry a secret and tokens printed to the console are
+  hidden.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety

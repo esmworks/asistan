@@ -718,6 +718,10 @@ const tr = {
   'tool.browser_screenshot':
     'Tarayıcının ekran görüntüsünü al. Taslak yetmediğinde (görsel düzen, resimler, grafikler) kullan. ref ile tek bir öğeyi çeker. Kullanıcı görüntüyü isterse save_as ile kaydet ve send_file ile gönder.',
   'tool.browser_wait': 'Bir metnin sayfada görünmesini ya da birkaç saniye bekle, sonra taslağı döndür.',
+  'tool.browser_network':
+    'Bir sekmenin açıldığından beri yaptığı istekleri listele: yöntem, durum kodu, tür, süre ve adres. Sayfa beklendiği gibi çalışmadığında (veri gelmiyor, düğme bir şey yapmıyor, form hata veriyor) nedenini bulmak için kullan. failed: true yalnızca başarısız olanları ya da 400 ve üstü kodla dönenleri, filter adresinde o metni geçenleri gösterir. İsteklerin gövdesi ve başlıkları tutulmaz; gizli bilgi taşıyabilecek adres parametreleri gizlenir.',
+  'tool.browser_console':
+    'Bir sekmede sayfanın betiklerinin konsola yazdıklarını ve yakalanmamış hatalarını listele. Sayfa beklendiği gibi çalışmadığında kullan. errors: true yalnızca hataları ve uyarıları gösterir.',
   'tool.quick_replies':
     'Yanıtının altına kullanıcının tek dokunuşla seçebileceği kısa cevaplar koy (en çok 6, her biri birkaç sözcük); seçilen metin kullanıcının sonraki mesajı olarak gelir. Sorunu yine yanıtında yaz. Beklemen gereken bir karar için değil, kolaylık için kullan; cevabı mutlaka gerekiyorsa ask_user kullan.',
   'tool.quickRepliesShown': 'Hızlı cevaplar yanıtının altında gösterilecek.',
@@ -940,6 +944,17 @@ const tr = {
   'browser.screenshot': 'Ekran görüntüsü: {url}',
   'browser.screenshotSaved': 'Dosya olarak da kaydedildi: {path} (send_file ile gönderebilirsin)',
   'browser.textNotFound': '"{text}" sayfada görünmedi.',
+  'browser.logTab': 'Sekme: {url}',
+  'browser.logOlder': '(Daha eski {count} kayıt gösterilmedi.)',
+  'browser.logDropped': '(Kayıt dolduğu için en eski {count} kayıt tutulmadı.)',
+  'browser.logCleared': 'Kayıt temizlendi; bundan sonrakiler yeniden tutulacak.',
+  'browser.netNone':
+    'Bu sekmede uyan istek kaydı yok. Kayıt sekme açılınca başlar; sayfanın yüklenişini görmek için browser_history ile yenile.',
+  'browser.netFailed': 'başarısız ({error})',
+  'browser.netRefused': 'reddedildi (bu bilgisayar ya da yerel ağ)',
+  'browser.netWaiting': 'bekliyor',
+  'browser.consoleNone': 'Bu sekmede uyan konsol kaydı yok.',
+  'browser.consoleUncaught': 'yakalanmamış hata',
   'browser.loginNoField': 'username_ref ya da password_ref ver.',
   'browser.loginChoose': 'Kasada bu site için birden çok hesap var: {accounts}. account ile birini seç.',
   'browser.loginMoved': 'Sayfa artık {host}; giriş bilgileri yalnızca {site} sitesine yazılır.',
@@ -1826,6 +1841,10 @@ const en: Catalog<ServerKey> = {
     'Take a screenshot of the browser. Use it when the outline is not enough (visual layout, images, charts). With ref it pictures one element. When the user wants the picture, keep it with save_as and send it with send_file.',
   'tool.browser_wait':
     'Wait for a text to appear on the page, or for a few seconds, then return the outline.',
+  'tool.browser_network':
+    'List the requests a tab made since it opened: method, status, type, time and address. Use it to find out why a page does not work as it should (data does not load, a button does nothing, a form fails). failed: true shows only those that failed or came back with a status of 400 or more; filter shows only those whose address contains the text. Request bodies and headers are not kept; address parameters that may carry a secret are hidden.',
+  'tool.browser_console':
+    "List what the page's scripts wrote to the console in a tab, and the errors they did not catch. Use it when a page does not work as it should. errors: true shows only errors and warnings.",
   'tool.quick_replies':
     "Put short answers under your reply that the user can pick with one tap (at most 6, a few words each); the picked text arrives as the user's next message. Still write the question in your reply. It is a convenience, not a wait: when you need the answer, use ask_user.",
   'tool.quickRepliesShown': 'The quick replies will show under your reply.',
@@ -2045,6 +2064,17 @@ const en: Catalog<ServerKey> = {
   'browser.screenshot': 'Screenshot: {url}',
   'browser.screenshotSaved': 'Also saved as a file: {path} (you can send it with send_file)',
   'browser.textNotFound': '"{text}" did not appear on the page.',
+  'browser.logTab': 'Tab: {url}',
+  'browser.logOlder': '(Earlier records not shown: {count}.)',
+  'browser.logDropped': '(The record was full; the oldest were not kept: {count}.)',
+  'browser.logCleared': 'The record was cleared; what comes next is kept afresh.',
+  'browser.netNone':
+    'No matching requests recorded on this tab. Recording starts when the tab opens; reload with browser_history to see the page load.',
+  'browser.netFailed': 'failed ({error})',
+  'browser.netRefused': 'refused (this computer or the local network)',
+  'browser.netWaiting': 'waiting',
+  'browser.consoleNone': 'No matching console messages recorded on this tab.',
+  'browser.consoleUncaught': 'uncaught error',
   'browser.loginNoField': 'Give username_ref or password_ref.',
   'browser.loginChoose': 'The vault has several accounts for this site: {accounts}. Pick one with account.',
   'browser.loginMoved': 'The page is now {host}; sign-in details are only typed into {site}.',
