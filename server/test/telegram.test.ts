@@ -22,6 +22,14 @@ async function fakeTelegram() {
   let nextUpdate = 1;
   let nextMessage = 1000;
   const files = new Map<string, Buffer>();
+  // Refusals the test asks for: the next `times` calls that match are answered with an error.
+  const faults: {
+    match: (c: Call) => boolean;
+    times: number;
+    code: number;
+    description: string;
+    retryAfter?: number;
+  }[] = [];
   const read = async (req: IncomingMessage) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
@@ -52,6 +60,20 @@ async function fakeTelegram() {
       }
       const method = m[2]!;
       if (method !== 'getUpdates') calls.push({ method, body });
+      const fault =
+        method === 'getUpdates' ? undefined : faults.find((f) => f.times > 0 && f.match(calls.at(-1)!));
+      if (fault) {
+        fault.times--;
+        res.writeHead(fault.code, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            ok: false,
+            error_code: fault.code,
+            description: fault.description,
+            ...(fault.retryAfter !== undefined && { parameters: { retry_after: fault.retryAfter } }),
+          }),
+        );
+        return;
+      }
       if (method === 'getMe')
         return reply({ id: 777, is_bot: true, first_name: 'Araştırmacı', username: 'arastirma_bot' });
       if (method === 'getUpdates') {
@@ -91,6 +113,20 @@ async function fakeTelegram() {
         message: { message_id: id, from, chat: { id: from.id, type: 'private' }, date: 0, text, ...extra },
       });
       return id;
+    },
+    /** Answers the next `times` calls of `method` (whose text holds `text`, when given) with an error. */
+    fail(method: string, code: number, description: string, times = 1, text = '', retryAfter?: number) {
+      faults.push({
+        match: (c) => c.method === method && String(c.body.text ?? '').includes(text),
+        times,
+        code,
+        description,
+        retryAfter,
+      });
+    },
+    /** An update of any kind, as Telegram would hand it over. */
+    push(update: Record<string, unknown>) {
+      updates.push({ update_id: nextUpdate++, ...update });
     },
     press(data: string, messageId: number, from = PERSON) {
       updates.push({
@@ -321,6 +357,121 @@ describe('Telegram', () => {
     await t.services.turns.idle();
     tg.write('[araç:send_file {"paths":["fatura.txt"]}]');
     await waitFor(async () => tg.sent('sendDocument').length > 0);
+  });
+
+  it('Telegram yavaşla (429) deyince bekleyip yeniden dener ve cevap tamam gider', async () => {
+    const { code } = await setUp();
+    await pair(code);
+    tg.fail('sendMessage', 429, 'Too Many Requests: retry after 0', 1, 'merhaba', 0);
+    tg.write('merhaba dünya');
+    await waitFor(async () => tg.sent().filter((c) => String(c.body.text).includes('merhaba')).length >= 2);
+    expect(tg.sent().some((c) => String(c.body.text).includes('uygulamada duruyor'))).toBe(false);
+  });
+
+  it('cevap denemelerden sonra da gitmezse kişiye bir kısmının iletilemediğini söyler', async () => {
+    const { code } = await setUp();
+    await pair(code);
+    tg.fail('sendMessage', 429, 'Too Many Requests: retry after 0', 99, 'merhaba', 0);
+    tg.write('merhaba dünya');
+    const note = await waitFor(async () =>
+      tg.sent().find((c) => String(c.body.text).includes('tamamı uygulamada duruyor')),
+    );
+    expect(note.body.chat_id).toBe(String(PERSON.id));
+    expect(tg.sent().filter((c) => String(c.body.text).includes('merhaba'))).toHaveLength(3);
+  });
+
+  it('sunucu yarıda kalan isteği bırakırsa açılışta kişiye haber verir ve kaydı siler', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    const thread = await main(bot.id);
+    const [channel] = await t.db.db.select().from(schema.channels);
+    await t.db.db
+      .insert(schema.channelRequests)
+      .values({ channelId: channel!.id, threadId: thread.id, place: { chat: String(PERSON.id) } });
+    await t.services.telegram.start();
+    await waitFor(async () => tg.sent().find((c) => String(c.body.text).includes('yarıda kaldı')));
+    await waitFor(async () => (await t.db.db.select().from(schema.channelRequests)).length === 0);
+  });
+
+  it('bot engellenince kanalda hata görünür, geri alınınca silinir', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    const change = (status: string) =>
+      tg.push({
+        my_chat_member: {
+          chat: { id: PERSON.id, type: 'private' },
+          from: PERSON,
+          new_chat_member: { status },
+        },
+      });
+    const error = async () => (await t.api<TelegramStatus>('GET', `/api/bots/${bot.id}/telegram`)).body.error;
+    change('kicked');
+    await waitFor(async () => (await error())?.includes('engelledin'));
+    // Telegram answering the next poll does not clear it.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(await error()).toContain('engelledin');
+    change('member');
+    await waitFor(async () => (await error()) === null);
+  });
+
+  it('gönderim 403 ile reddedilirse hata görünür; kişi yazınca silinir', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    tg.fail('sendMessage', 403, 'Forbidden: bot was blocked by the user', 1, 'merhaba');
+    tg.write('merhaba dünya');
+    const error = async () => (await t.api<TelegramStatus>('GET', `/api/bots/${bot.id}/telegram`)).body.error;
+    await waitFor(async () => (await error())?.includes('engelledin'));
+    expect(tg.sent().some((c) => String(c.body.text).includes('uygulamada duruyor'))).toBe(false);
+    await t.services.turns.idle();
+    tg.write('tekrar');
+    await waitFor(async () => (await error()) === null);
+    await t.services.turns.idle();
+    await waitFor(async () => tg.sent().some((c) => String(c.body.text).includes('tekrar')));
+    // Blocked again later: the note comes back, it was not left half-cleared by the message.
+    tg.push({
+      my_chat_member: {
+        chat: { id: PERSON.id, type: 'private' },
+        from: PERSON,
+        new_chat_member: { status: 'kicked' },
+      },
+    });
+    await waitFor(async () => (await error())?.includes('engelledin'));
+  });
+
+  it('onay işlenirken beklenmedik hata olsa da düğmeye basış yanıtlanır', async () => {
+    const { code } = await setUp();
+    await pair(code);
+    tg.write('[izin:Write {"file_path":"a.txt"}]');
+    const card = await waitFor(async () =>
+      tg
+        .sent()
+        .find((c) => (c.body.reply_markup as { inline_keyboard?: unknown[] } | undefined)?.inline_keyboard),
+    );
+    const buttons = (
+      card.body.reply_markup as { inline_keyboard: { callback_data: string }[][] }
+    ).inline_keyboard.flat();
+    t.services.approvals.answer = () => Promise.reject(new Error('beklenmedik'));
+    tg.press(buttons[0]!.callback_data, 1000);
+    const answered = await waitFor(async () => tg.sent('answerCallbackQuery')[0]);
+    expect(answered.body.text).toBe('Bu işlem yapılamadı.');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(tg.sent('answerCallbackQuery')).toHaveLength(1);
+  });
+
+  it('alınamayan dosya bota da söylenir', async () => {
+    const { bot, code } = await setUp();
+    await pair(code);
+    tg.write('', PERSON, {
+      caption: 'şuna bak',
+      document: { file_id: 'yok', file_name: 'fatura.txt', file_size: 15 },
+    });
+    await waitFor(async () => tg.sent().find((c) => String(c.body.text).includes('alınamadı')));
+    const thread = await main(bot.id);
+    const said = await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'user'));
+    expect(said.text).toContain('şuna bak');
+    expect(said.text).toContain('Ulaşmayan dosyalar: fatura.txt');
+    const req = await waitFor(async () => t.engine.requests.find((r) => r.prompt.includes('şuna bak')));
+    expect(req.prompt).toContain('Ulaşmayan dosyalar');
   });
 
   it('bağlantı kesilince anahtar unutulur', async () => {

@@ -103,6 +103,20 @@ export interface SlackLink {
   codeUntil: string | null;
 }
 
+/** The permissions the Slack app's bot token needs; the manifest asks for them and the server checks them. */
+export const SLACK_BOT_SCOPES = [
+  'app_mentions:read',
+  'channels:history',
+  'groups:history',
+  'im:history',
+  'mpim:history',
+  'chat:write',
+  'files:read',
+  'files:write',
+  'reactions:write',
+  'users:read',
+] as const;
+
 /**
  * What to paste into Slack's "Create an app from a manifest": Socket Mode (no public address),
  * the events and permissions the server uses, and the buttons on cards.
@@ -118,18 +132,7 @@ export function slackManifest(name: string): string {
       },
       oauth_config: {
         scopes: {
-          bot: [
-            'app_mentions:read',
-            'channels:history',
-            'groups:history',
-            'im:history',
-            'mpim:history',
-            'chat:write',
-            'files:read',
-            'files:write',
-            'reactions:write',
-            'users:read',
-          ],
+          bot: [...SLACK_BOT_SCOPES],
         },
       },
       settings: {

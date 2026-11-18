@@ -13,7 +13,7 @@ import {
   type Message,
   type TurnEvent,
 } from '@yumakbot/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { T } from '../i18n';
@@ -23,7 +23,18 @@ import type { VaultService } from '../services/vault';
 import { saveUpload, stagingDir } from '../uploads';
 import { OWNER_ID } from '../users';
 import { HttpError, isStopRequest, newId, truncate } from '../util';
-import { cardView, messageFiles, parseChoice, receivedName, SendQueue } from './common';
+import {
+  cardView,
+  dropRequest,
+  heldRequests,
+  holdRequest,
+  messageFiles,
+  parseChoice,
+  queuedTurn,
+  receivedName,
+  SendQueue,
+  withMissingFiles,
+} from './common';
 import {
   DiscordApi,
   DiscordError,
@@ -41,6 +52,14 @@ type Row = typeof schema.channels.$inferSelect;
 const CONTEXT_MESSAGES = 10;
 const CONTEXT_MS = 15 * 60_000;
 const CONTEXT_CHARS = 8000;
+/** What a bot reads of the channel since its last request in a conversation it is in: at most this much. */
+const SINCE_MESSAGES = 30;
+const SINCE_CHARS = 12_000;
+/** Most of a forwarded message's or embed's words read into context. */
+const EXTRA_CHARS = 1500;
+/** A direct message is answered once an hour per person; this many people are remembered. */
+const DM_NOTICE_MS = 60 * 60_000;
+const DM_NOTICE_PEOPLE = 10_000;
 /** Discord's limit on a bot's file, unless the server has a higher boost level. */
 const SEND_MAX = 10 * 1024 * 1024;
 /** How long a message is remembered, so the same one coming twice counts once. */
@@ -68,6 +87,8 @@ interface Settings {
 
 /** A conversation the bot works on in Discord, until it is done. */
 interface Work {
+  /** The channel's row, for the note of the work kept in the database. */
+  rowId: string;
   channel: string;
   root: string;
   /** Who wrote the request under way: only they press its buttons or stop it. */
@@ -82,6 +103,10 @@ interface Work {
 /** Who wrote a Discord message, as people there see them. */
 const nameOf = (u: DiscordUser, nick?: string | null) => nick || u.global_name || u.username || u.id;
 
+/** The words of a message's embeds: each one's title and description. */
+const embedWords = (embeds?: { title?: string; description?: string }[]) =>
+  (embeds ?? []).flatMap((e) => [e.title, e.description]);
+
 /**
  * Discord's markup as plain words: the bot's own mention goes, other people's become their names,
  * roles and channels keep their ids, a custom emoji keeps its name.
@@ -90,10 +115,13 @@ export function discordText(
   raw: string,
   botUserId: string,
   mentions: { id: string; name: string }[] = [],
+  botRoles: string[] = [],
 ): string {
   const names = new Map(mentions.map((m) => [m.id, m.name]));
+  const own = new Set(botRoles);
   return raw
     .replace(new RegExp(`<@!?${botUserId}>`, 'g'), '')
+    .replace(/<@&(\d+)>/g, (all, id: string) => (own.has(id) ? '' : all))
     .replace(/<@!?(\d+)>/g, (_, id: string) => `@${names.get(id) ?? id}`)
     .replace(/<@&(\d+)>/g, (_, id: string) => `@role:${id}`)
     .replace(/<#(\d+)>/g, (_, id: string) => `#${id}`)
@@ -115,6 +143,14 @@ export class DiscordChannel {
   private sends = new SendQueue();
   private seen = new Map<string, number>();
   private working = new Map<string, Work>();
+  /** The role Discord manages for the bot in each server it is in: a mention of it is one of the bot. */
+  private botRoles = new Map<string, Set<string>>();
+  /** When each person last got the reply to a direct message, oldest first. */
+  private dmNotified = new Map<string, number>();
+  /** The lines of each conversation still being sent, so its mark waits for them. */
+  private lines = new SendQueue();
+  /** Conversations whose reply did not reach Discord in full: their mark is not a success. */
+  private undelivered = new Set<string>();
   private unsubs: (() => void)[] = [];
   private stopped = false;
 
@@ -127,7 +163,58 @@ export class DiscordChannel {
   async start() {
     this.unsubs.push(this.services.threads.onMessage((m) => this.outgoing(m)));
     this.unsubs.push(this.ctx.bus.on('turn', (e) => void this.turnState(e).catch(() => {})));
-    if ((await this.row())?.secret) await this.listen();
+    const row = await this.row();
+    if (!row?.secret) return;
+    // Before reading Discord again, so a message that arrives now is never taken for a stale one.
+    await this.settleHeld(row).catch((err: unknown) => console.warn('discord held', err));
+    await this.listen();
+  }
+
+  /**
+   * Requests that were being worked on when the server stopped are over: the "Working on it…" post
+   * says so and loses its button, the person's messages show the failure mark. A queued turn
+   * survives the restart and still runs, so its request stays.
+   */
+  async settleHeld(row: Row) {
+    const held = await heldRequests(this.ctx, row.id);
+    if (!held.length) return;
+    const t = await this.services.settings.translator();
+    const api = this.api(row);
+    for (const h of held) {
+      const place = h.place as Partial<Omit<Work, 'rowId' | 'stopped'>>;
+      if (await queuedTurn(this.ctx, h.threadId)) {
+        if (place.channel && place.root && place.requester) {
+          this.working.set(h.threadId, {
+            rowId: row.id,
+            channel: place.channel,
+            root: place.root,
+            requester: place.requester,
+            messages: place.messages ?? [],
+            status: place.status ?? null,
+            stopped: false,
+          });
+        }
+        continue;
+      }
+      await dropRequest(this.ctx, row.id, h.threadId);
+      if (!place.channel || !place.root) continue;
+      const channel = place.channel;
+      const root = place.root;
+      await this.sends.run(`${channel}:${root}`, async () => {
+        const note = t('channel.cutShort');
+        let edited = false;
+        if (place.status)
+          edited = await api.edit(channel, place.status, note).then(
+            () => true,
+            () => false,
+          );
+        if (!edited) await api.post(channel, note, { replyTo: root }).catch(() => {});
+        for (const id of place.messages ?? []) {
+          await api.unreact(channel, id, '👀');
+          await api.react(channel, id, '❌');
+        }
+      });
+    }
   }
 
   async stop() {
@@ -257,7 +344,9 @@ export class DiscordChannel {
   async disconnect(): Promise<void> {
     this.gateway?.close();
     this.gateway = null;
+    // The notes of the work in the database go with the channel's row.
     this.working.clear();
+    this.botRoles.clear();
     await this.ctx.db.delete(schema.channels).where(eq(schema.channels.kind, 'discord'));
     this.changed();
   }
@@ -282,6 +371,50 @@ export class DiscordChannel {
   private async event(e: GatewayEvent) {
     if (e.t === 'MESSAGE_CREATE') await this.received(e.d as unknown as DiscordMessage);
     else if (e.t === 'INTERACTION_CREATE') await this.pressed(e.d as unknown as DiscordInteraction);
+    else if (e.t.startsWith('GUILD_')) await this.guildEvent(e);
+  }
+
+  /**
+   * Which role is the bot's own in each server, from the server's roles when it is first seen and
+   * from the changes after. A server that is gone for good is forgotten; one that is only
+   * unavailable for a while keeps what is known.
+   */
+  private async guildEvent(e: GatewayEvent) {
+    const d = e.d as {
+      id?: string;
+      guild_id?: string;
+      unavailable?: boolean;
+      roles?: { id: string; tags?: { bot_id?: string } }[];
+      role?: { id: string; tags?: { bot_id?: string } };
+      role_id?: string;
+    };
+    if (e.t === 'GUILD_DELETE') {
+      if (!d.unavailable && d.id) this.botRoles.delete(d.id);
+      return;
+    }
+    if (!['GUILD_CREATE', 'GUILD_ROLE_CREATE', 'GUILD_ROLE_UPDATE', 'GUILD_ROLE_DELETE'].includes(e.t))
+      return;
+    const row = await this.row();
+    if (!row) return;
+    const me = (row.account as Partial<Account>).botUserId;
+    const guild = d.guild_id ?? d.id;
+    if (!me || !guild) return;
+    if (e.t === 'GUILD_CREATE') {
+      this.botRoles.set(
+        guild,
+        new Set((d.roles ?? []).filter((r) => r.tags?.bot_id === me).map((r) => r.id)),
+      );
+      return;
+    }
+    const known = this.botRoles.get(guild) ?? new Set<string>();
+    if (e.t === 'GUILD_ROLE_DELETE') known.delete(d.role_id ?? '');
+    else if (d.role?.tags?.bot_id === me) known.add(d.role.id);
+    else if (d.role) known.delete(d.role.id);
+    this.botRoles.set(guild, known);
+  }
+
+  private botRolesOf(guild?: string): string[] {
+    return guild ? [...(this.botRoles.get(guild) ?? [])] : [];
   }
 
   /** Whether this message was handled already (a resumed connection may send it again). */
@@ -304,12 +437,15 @@ export class DiscordChannel {
     if (!this.once(`${msg.channel_id}:${msg.id}`)) return;
     const api = this.api(row);
     const t = await this.services.settings.translator();
+    const botRoles = this.botRolesOf(msg.guild_id);
     const mentioned =
       (msg.mentions ?? []).some((u) => u.id === account.botUserId) ||
-      new RegExp(`<@!?${account.botUserId}>`).test(msg.content ?? '');
+      new RegExp(`<@!?${account.botUserId}>`).test(msg.content ?? '') ||
+      (msg.mention_roles ?? []).some((r) => botRoles.includes(r));
     if (!msg.guild_id) {
-      // A direct message has no server, so no one chose who may use the bot there.
-      await api.post(msg.channel_id, t('discord.dmOnly')).catch(() => {});
+      // A direct message has no server, so no one chose who may use the bot there. The notice is
+      // sent once an hour per person, so a chatty one does not get an answer to every line.
+      if (this.dmDue(msg.author.id)) await api.post(msg.channel_id, t('discord.dmOnly')).catch(() => {});
       return;
     }
     // Only a message that mentions the bot is for it; a reply keeps the mention by default.
@@ -318,7 +454,7 @@ export class DiscordChannel {
     // A mention from someone outside the chosen roles is not answered, nor told why.
     if (allowed.length && !(msg.member?.roles ?? []).some((r) => allowed.includes(r))) return;
     const author = nameOf(msg.author, msg.member?.nick);
-    const text = discordText(msg.content ?? '', account.botUserId, this.mentioned(msg));
+    const text = discordText(msg.content ?? '', account.botUserId, this.mentioned(msg), botRoles);
     const say = (key: Parameters<T>[0], vars?: Record<string, string>) =>
       api.post(msg.channel_id, t(key, vars), { replyTo: msg.id }).catch(() => {});
 
@@ -395,17 +531,24 @@ export class DiscordChannel {
       }
     }
 
-    const files = await this.files(api, msg, threadId, t);
+    const got = await this.files(api, msg, threadId, t);
+    const files = got.names;
     if (!text && !files.length) return;
     // A new conversation reads what came just before it in the channel, or the message it
-    // replies to, as others' words.
-    const history = bound ? '' : await this.context(api, msg, account, ref && !toBot ? ref : null);
+    // replies to, as others' words. A chain it is already in reads what was said in that chain since
+    // its last request (lines that were not for the bot do not reach it otherwise).
+    let history = '';
+    if (!bound) history = await this.context(api, msg, account, ref && !toBot ? ref : null);
+    else {
+      const since = await this.lastRequest(threadId, msg.channel_id);
+      if (since) history = await this.context(api, msg, account, null, { since, root });
+    }
     const busy = (await this.services.threads.state(threadId)) !== 'idle';
     // "Working on it…" goes up first, so even a quick answer takes its place.
-    await this.started(threadId, msg, root, api, t);
+    await this.started(row.id, threadId, msg, root, api, t);
     try {
       await this.services.inbox.send(threadId, {
-        text,
+        text: withMissingFiles(text, got, t),
         files,
         clientId: `discord:${msg.channel_id}:${msg.id}`,
         userId: row.userId,
@@ -422,6 +565,34 @@ export class DiscordChannel {
     }
   }
 
+  /** Whether the notice for a direct message is due for this person; noted when it is. */
+  private dmDue(person: string): boolean {
+    const now = Date.now();
+    const at = this.dmNotified.get(person);
+    if (at !== undefined && now - at < DM_NOTICE_MS) return false;
+    // Re-added at the end, so the map stays oldest first and the oldest goes when it is full.
+    this.dmNotified.delete(person);
+    this.dmNotified.set(person, now);
+    if (this.dmNotified.size > DM_NOTICE_PEOPLE) {
+      const oldest = this.dmNotified.keys().next().value;
+      if (oldest !== undefined) this.dmNotified.delete(oldest);
+    }
+    return true;
+  }
+
+  /** The id of the last message from this channel that went to the conversation. */
+  private async lastRequest(threadId: string, channel: string): Promise<string | null> {
+    const prefix = `discord:${channel}:`;
+    const [last] = await this.ctx.db
+      .select({ clientId: schema.messages.clientId })
+      .from(schema.messages)
+      .where(and(eq(schema.messages.threadId, threadId), like(schema.messages.clientId, `${prefix}%`)))
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(1);
+    const id = last?.clientId?.slice(prefix.length);
+    return id && /^\d+$/.test(id) ? id : null;
+  }
+
   /** The people a message mentions, by the names they have there. */
   private mentioned(msg: DiscordMessage) {
     return (msg.mentions ?? []).map((u) => ({ id: u.id, name: nameOf(u, u.member?.nick) }));
@@ -436,41 +607,83 @@ export class DiscordChannel {
     msg: DiscordMessage,
     account: Account,
     quoted: DiscordMessage | null,
+    /**
+     * In a reply chain the bot is already in: only that chain's lines after `since` (the last
+     * request), not the rest of the channel's talk.
+     */
+    chain?: { since: string; root: string },
   ) {
+    const since = chain?.since;
+    const roles = this.botRolesOf(msg.guild_id);
     const line = (m: DiscordMessage) => {
-      const words = discordText(m.content ?? '', account.botUserId, this.mentioned(m));
-      const files = (m.attachments ?? []).map((a) => a.filename).join(', ');
-      const said = [words, files && `(${files})`].filter(Boolean).join(' ');
+      const words = discordText(m.content ?? '', account.botUserId, this.mentioned(m), roles);
+      // A forwarded message holds its words in a snapshot, and a link's preview or a bot's card in
+      // embeds; both are read, a little of each.
+      const extra = [
+        ...(m.message_snapshots ?? []).flatMap((x) => [x.message?.content, ...embedWords(x.message?.embeds)]),
+        ...embedWords(m.embeds),
+      ]
+        .filter((x): x is string => !!x?.trim())
+        .join(' ');
+      const files = [
+        ...(m.attachments ?? []),
+        ...(m.message_snapshots ?? []).flatMap((x) => x.message?.attachments ?? []),
+      ]
+        .map((a) => a.filename)
+        .join(', ');
+      const said = [words, extra && truncate(extra.replace(/\s+/g, ' '), EXTRA_CHARS), files && `(${files})`]
+        .filter(Boolean)
+        .join(' ');
       return said ? `${nameOf(m.author, m.member?.nick)}: ${said}` : '';
     };
     if (quoted) return truncate(line(quoted), CONTEXT_CHARS);
     // Without the text of every message, Discord gives the earlier ones empty.
     if (!account.messageContent) return '';
     const at = msg.timestamp ? Date.parse(msg.timestamp) : Date.now();
-    const earlier = await api.history(msg.channel_id, msg.id, CONTEXT_MESSAGES).catch(() => []);
+    const earlier = await api
+      .history(msg.channel_id, msg.id, since ? SINCE_MESSAGES : CONTEXT_MESSAGES)
+      .catch(() => []);
     const lines: string[] = [];
+    // The chain grows by replies: to its first message, to the last request, or to any line already
+    // in it. The bot's posts all reply to the first message, so a reply to an older one counts too.
+    const inChain = new Set(chain ? [chain.root, chain.since] : []);
     for (const m of [...earlier].reverse()) {
-      if (m.timestamp && at - Date.parse(m.timestamp) > CONTEXT_MS) continue;
+      if (chain) {
+        if (!/^\d+$/.test(m.id) || BigInt(m.id) <= BigInt(chain.since)) continue;
+        const to = m.message_reference?.message_id;
+        const ref = m.referenced_message;
+        const toBot =
+          ref?.author?.id === account.botUserId && ref.message_reference?.message_id === chain.root;
+        if (!to || (!inChain.has(to) && !toBot)) continue;
+        inChain.add(m.id);
+      } else if (m.timestamp && at - Date.parse(m.timestamp) > CONTEXT_MS) continue;
       if (m.author?.id === account.botUserId) continue;
       const l = line(m);
       if (l) lines.push(l);
     }
+    const cap = since ? SINCE_CHARS : CONTEXT_CHARS;
     const kept: string[] = [];
     let size = 0;
     for (const l of lines.reverse()) {
-      if (size + l.length > CONTEXT_CHARS) break;
+      if (size + l.length > cap) break;
       kept.unshift(l);
       size += l.length + 1;
     }
     return kept.join('\n');
   }
 
-  /** The files of a message, downloaded into the conversation's staging folder. */
-  private async files(api: DiscordApi, msg: DiscordMessage, threadId: string, t: T): Promise<string[]> {
+  /**
+   * The files of a message, downloaded into the conversation's staging folder; those that did not
+   * arrive, by name, so the bot can be told.
+   */
+  private async files(api: DiscordApi, msg: DiscordMessage, threadId: string, t: T) {
     const names: string[] = [];
+    const failed: string[] = [];
+    const tooLarge: string[] = [];
     for (const f of msg.attachments ?? []) {
       const name = receivedName('file', f.id, f.content_type, f.filename);
       if ((f.size ?? 0) > MAX_UPLOAD_BYTES) {
+        tooLarge.push(name);
         await api
           .post(msg.channel_id, t('channel.fileTooLarge', { name }), { replyTo: msg.id })
           .catch(() => {});
@@ -482,23 +695,33 @@ export class DiscordChannel {
         names.push(saved.name);
       } catch (err) {
         console.warn('discord file', (err as Error).message);
+        failed.push(name);
         await api
           .post(msg.channel_id, t('channel.fileFailed', { name }), { replyTo: msg.id })
           .catch(() => {});
       }
     }
-    return names;
+    return { names, failed, tooLarge };
   }
 
   /** 👀 on the message, and a "Working on it…" post with Stop until the first answer. */
-  private async started(threadId: string, msg: DiscordMessage, root: string, api: DiscordApi, t: T) {
+  private async started(
+    rowId: string,
+    threadId: string,
+    msg: DiscordMessage,
+    root: string,
+    api: DiscordApi,
+    t: T,
+  ) {
     const work = this.working.get(threadId);
     await api.react(msg.channel_id, msg.id, '👀');
     if (work) {
       work.messages.push(msg.id);
+      await this.hold(threadId, work);
       return;
     }
     const entry: Work = {
+      rowId,
       channel: msg.channel_id,
       root,
       requester: msg.author.id,
@@ -507,6 +730,8 @@ export class DiscordChannel {
       stopped: false,
     };
     this.working.set(threadId, entry);
+    // Noted before the turn can start, so a restart in the middle leaves a trace to settle.
+    await this.hold(threadId, entry);
     await this.sends.run(this.key(entry), async () => {
       entry.status = await api
         .post(msg.channel_id, t('discord.working'), {
@@ -515,6 +740,18 @@ export class DiscordChannel {
         })
         .catch(() => null);
     });
+    await this.hold(threadId, entry);
+  }
+
+  /** Keeps what is needed to undo the work's marks in Discord, should the server stop meanwhile. */
+  private async hold(threadId: string, work: Work) {
+    await holdRequest(this.ctx, work.rowId, threadId, {
+      channel: work.channel,
+      root: work.root,
+      requester: work.requester,
+      messages: work.messages,
+      status: work.status,
+    }).catch((err: unknown) => console.warn('discord hold', err));
   }
 
   /** Stops the work on a conversation; its messages get ⏹ when it is done. */
@@ -525,34 +762,59 @@ export class DiscordChannel {
     if (!stopped) await this.finished(threadId, api, '⏹️');
   }
 
-  /** A press of a button the bot posted: a card's answer, or Stop. */
+  /**
+   * A press of a button the bot posted: a card's answer, or Stop. Discord waits three seconds for
+   * exactly one answer to it, whatever the press turns out to be, so one is always given.
+   */
   private async pressed(i: DiscordInteraction) {
     if (i.type !== 3 || !i.id || !i.token) return;
+    // A resumed connection may send the same press again.
+    if (!this.once(`press:${i.id}`)) return;
     const row = await this.row();
     if (!row?.secret) return;
     const api = this.api(row);
-    const t = await this.services.settings.translator();
+    let answered = false;
+    const respond = async (answer: Parameters<DiscordApi['respond']>[1]) => {
+      if (answered) return;
+      answered = true;
+      await api.respond(i, answer).catch(() => {});
+    };
+    try {
+      await this.press(i, row, api, respond);
+    } finally {
+      await respond({ ack: true });
+    }
+  }
+
+  private async press(
+    i: DiscordInteraction,
+    row: Row,
+    api: DiscordApi,
+    respond: (answer: Parameters<DiscordApi['respond']>[1]) => Promise<void>,
+  ) {
     const presser = i.member?.user ?? i.user;
     const data = i.data?.custom_id ?? '';
-    const note = (key: Parameters<T>[0]) => api.respond(i, { note: t(key) }).catch(() => {});
-    if (!presser) return;
+    const stop = /^stop:([\w-]+)$/.exec(data);
+    const choice = stop ? null : parseChoice(data);
+    // Not a button of ours, or no one pressing it: nothing to do but the acknowledgement.
+    if (!presser || (!stop && !choice)) return;
+    const t = await this.services.settings.translator();
+    const note = (key: Parameters<T>[0]) => respond({ note: t(key) });
     // A member who lost the chosen roles since asking presses nothing.
     const allowed = i.guild_id ? this.rolesOf(row, i.guild_id) : [];
     if (allowed.length && !(i.member?.roles ?? []).some((r) => allowed.includes(r)))
       return note('discord.notYours');
 
-    const stop = /^stop:([\w-]+)$/.exec(data);
     if (stop) {
       const threadId = stop[1]!;
       const work = this.working.get(threadId);
       if (!work) return note('channel.cardClosed');
       if (work.requester !== presser.id) return note('discord.notYours');
-      await api.respond(i, { ack: true }).catch(() => {});
+      await respond({ ack: true });
       await this.halt(threadId, work, api);
       return;
     }
 
-    const choice = parseChoice(data);
     if (!choice) return;
     const card = await this.services.approvals.get(choice.approvalId).catch(() => null);
     if (!card || card.status !== 'pending') return note('channel.cardClosed');
@@ -571,7 +833,7 @@ export class DiscordChannel {
       option = card.kind === 'question' ? this.option(card, Number(choice.value)) : null;
       if (option === null) return note('channel.cardClosed');
     }
-    await api.respond(i, { ack: true }).catch(() => {});
+    await respond({ ack: true });
     const allow = choice.kind === 'q' || choice.value !== 'n';
     try {
       await this.services.approvals.answer(
@@ -625,8 +887,12 @@ export class DiscordChannel {
     return `${place.channel}:${place.root}`;
   }
 
-  /** A new message here that belongs in Discord too. */
-  private async outgoing(m: Message) {
+  /** A new message here that belongs in Discord too; a conversation's lines are sent one after another. */
+  private outgoing(m: Message): Promise<void> {
+    return this.lines.run(m.threadId, () => this.sendLine(m)).then(() => {});
+  }
+
+  private async sendLine(m: Message) {
     if (this.stopped || !['assistant', 'approval', 'error', 'user'].includes(m.role)) return;
     // A person's line goes to Discord only when written in the app.
     if (m.role === 'user' && m.props.via === 'discord') return;
@@ -643,7 +909,7 @@ export class DiscordChannel {
     const t = await this.services.settings.translator();
     const api = this.api(row);
     const place = { channel: bound.channel, root: bound.rootId };
-    await this.sends.run(this.key(place), async () => {
+    const ok = await this.deliver(place, api, t, async () => {
       /** Posts in the conversation, the first in place of "Working on it…" when it still shows. */
       const write = async (parts: string[], last?: DiscordButton[]) => {
         const work = this.working.get(m.threadId);
@@ -654,6 +920,7 @@ export class DiscordChannel {
             work.status = null;
             try {
               await api.edit(place.channel, status, part, buttons);
+              await this.hold(m.threadId, work);
               continue;
             } catch {
               // Deleted meanwhile: a new post instead.
@@ -700,7 +967,6 @@ export class DiscordChannel {
       }
       if (m.role === 'error') {
         await write([truncate(`⚠️ ${m.text}`, 2000)]);
-        await this.finished(thread.id, api, '❌');
         return;
       }
       if (m.author !== `bot:${thread.botId}`) return;
@@ -723,6 +989,27 @@ export class DiscordChannel {
         }
       }
     });
+    // Not inside the send: finishing sends too, and would wait for it.
+    if (m.role === 'error') await this.finished(thread.id, api, '❌');
+    else if (!ok && this.working.has(thread.id)) this.undelivered.add(thread.id);
+  }
+
+  /**
+   * Runs the sends of one line in the place's order. When it could not be delivered the person is
+   * told once, in the same place, that the rest is in the app; whether it went through is returned.
+   */
+  private async deliver(
+    place: { channel: string; root: string },
+    api: DiscordApi,
+    t: T,
+    job: () => Promise<void>,
+  ): Promise<boolean> {
+    const key = this.key(place);
+    if (await this.sends.run(key, job)) return true;
+    await this.sends.run(key, async () => {
+      await api.post(place.channel, t('channel.notDelivered'), { replyTo: place.root });
+    });
+    return false;
   }
 
   /** The bot stopped working on a conversation: each message's 👀 becomes a mark of how it went. */
@@ -730,14 +1017,20 @@ export class DiscordChannel {
     if (e.state !== 'idle' || !this.working.has(e.threadId)) return;
     const row = await this.row();
     if (!row?.secret) return;
-    const work = this.working.get(e.threadId)!;
-    await this.finished(e.threadId, this.api(row), work.stopped ? '⏹️' : '✅');
+    // The lines of the reply are sent first: a reply that did not arrive is no ✅.
+    await this.lines.after(e.threadId);
+    const work = this.working.get(e.threadId);
+    if (!work) return;
+    const failed = this.undelivered.delete(e.threadId);
+    await this.finished(e.threadId, this.api(row), failed ? '❌' : work.stopped ? '⏹️' : '✅');
   }
 
   private async finished(threadId: string, api: DiscordApi, mark: string) {
     const work = this.working.get(threadId);
     if (!work) return;
     this.working.delete(threadId);
+    this.undelivered.delete(threadId);
+    await dropRequest(this.ctx, work.rowId, threadId).catch(() => {});
     await this.sends.run(this.key(work), async () => {
       // No answer took its place (the bot stayed quiet, or was stopped): the post goes.
       if (work.status) await api.remove(work.channel, work.status).catch(() => {});

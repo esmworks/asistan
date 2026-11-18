@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -10,7 +11,7 @@ import {
   type WhatsAppSet,
   type WhatsAppStatus,
 } from '@yumakbot/shared';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, not, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { T } from '../i18n';
@@ -18,7 +19,21 @@ import type { Services } from '../services';
 import type { VaultService } from '../services/vault';
 import { saveUpload, stagingDir } from '../uploads';
 import { HttpError, newId } from '../util';
-import { cardView, chatCommand, lastWroteVia, messageFiles, mimeOf, receivedName, SendQueue } from './common';
+import {
+  cardView,
+  chatCommand,
+  dropRequest,
+  heldRequests,
+  holdRequest,
+  lastWroteVia,
+  messageFiles,
+  mimeOf,
+  queuedTurn,
+  receivedName,
+  saidNothing,
+  SendQueue,
+  withMissingFiles,
+} from './common';
 import { whatsappMessages } from './format';
 import { qrImage } from './qr';
 
@@ -47,6 +62,40 @@ const LINK_MS = 5 * 60_000;
 /** WhatsApp takes files up to about this size. */
 const SEND_MAX = 64 * 1024 * 1024;
 const RECEIVE_MAX = 64 * 1024 * 1024;
+/** How long a reply waits for the connection to come back before it is given up on. */
+const OFFLINE_WAIT_MS = 5 * 60_000;
+/** Failed connection attempts in a row after which the person is told it keeps failing. */
+const FAILING_AFTER = 12;
+/** The least time between two posts to one chat; a burst from a dedicated number looks like spam. */
+const PACE_MS = 1000;
+/** How long the current WhatsApp Web version is looked up before the last known one is used. */
+const VERSION_WAIT_MS = 5000;
+const VERSION_FRESH_MS = 3600_000;
+/** How many sent messages are kept for WhatsApp's resend requests, and for how long. */
+const SENT_KEPT = 500;
+const SENT_KEEP_MS = 24 * 3600_000;
+/** Message ids already handled, so a message WhatsApp hands twice is answered once. */
+const SEEN_KEPT = 1000;
+/** Requests in the self chat that mean two bots are answering each other, and how long to pause. */
+const LOOP_LIMITS = [
+  { count: 30, ms: 10 * 60_000 },
+  { count: 90, ms: 3600_000 },
+];
+const LOOP_PAUSE_MS = 10 * 60_000;
+/** Keys of a device being linked live under this prefix until the link is saved. */
+const LINK_NS = 'link/';
+/** Keys that belong to no device: they survive a new link and an unlink. */
+const META_NS = 'meta:';
+
+/** A WhatsApp Web version as Baileys takes it. */
+export type WaVersion = [number, number, number];
+
+/** What the library is told when a socket is made. */
+export interface WaConnectOptions {
+  version?: WaVersion;
+  /** The content of a message this device sent, for WhatsApp's resend requests. */
+  getMessage(key: { id?: string | null }): Promise<Record<string, unknown> | undefined>;
+}
 
 /** The parts of a WhatsApp message this server reads. */
 export interface WaMessage {
@@ -75,7 +124,10 @@ export interface WaSocket {
   sendMessage(
     jid: string,
     content: Record<string, unknown>,
-  ): Promise<{ key?: { id?: string | null } } | undefined>;
+    options?: { messageId?: string },
+  ): Promise<{ key?: { id?: string | null }; message?: Record<string, unknown> | null } | undefined>;
+  /** Asks the phone to upload media again, for files whose link on WhatsApp's servers expired. */
+  updateMediaMessage?: (m: WaMessage) => Promise<WaMessage>;
   sendPresenceUpdate(type: 'composing' | 'paused', jid: string): Promise<void>;
   logout(): Promise<void>;
   end(err?: Error): void;
@@ -84,13 +136,22 @@ export interface WaSocket {
 
 /** What the server needs from Baileys; loaded only when WhatsApp is used. */
 export interface WaLibrary {
-  connect(auth: unknown): WaSocket;
+  connect(auth: unknown, options: WaConnectOptions): WaSocket;
+  /** The WhatsApp Web version now in use, or null when it cannot be found out. */
+  latestVersion?(signal: AbortSignal): Promise<WaVersion | null>;
   initAuthCreds(): Record<string, unknown>;
   replacer: (k: string, v: unknown) => unknown;
   reviver: (k: string, v: unknown) => unknown;
   /** Turns a stored app-state key back into what Baileys expects. */
   appStateKey(value: unknown): unknown;
-  download(m: WaMessage): Promise<Readable>;
+  download(m: WaMessage, socket: WaSocket): Promise<Readable>;
+  /** `DisconnectReason` codes that end the connection for good or need their own words. */
+  codes?: {
+    forbidden: number;
+    connectionReplaced: number;
+    multideviceMismatch: number;
+    restartRequired: number;
+  };
   loggedOut: number;
 }
 
@@ -109,15 +170,16 @@ async function baileys(): Promise<WaLibrary> {
     fatal: () => {},
   };
   return {
-    connect: (auth) =>
+    connect: (auth, options) =>
       makeWASocket({
         auth: auth as never,
+        ...(options.version && { version: options.version }),
         logger: quiet as never,
         browser: ['Yumak Bot', 'Chrome', '1.0'],
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
         markOnlineOnConnect: false,
-        getMessage: async () => undefined,
+        getMessage: async (key) => options.getMessage(key) as never,
         // Groups, status updates and channels are never read.
         shouldIgnoreJid: (jid: string) =>
           jid === 'status@broadcast' ||
@@ -129,7 +191,24 @@ async function baileys(): Promise<WaLibrary> {
     replacer: wa.BufferJSON.replacer,
     reviver: wa.BufferJSON.reviver,
     appStateKey: (v) => wa.proto.Message.AppStateSyncKeyData.fromObject(v as never),
-    download: (m) => wa.downloadMediaMessage(m as never, 'stream', {}) as Promise<Readable>,
+    latestVersion: async (signal) => {
+      const found = await wa.fetchLatestWaWebVersion({ signal });
+      return found.error || !found.isLatest ? null : (found.version as WaVersion);
+    },
+    // Old media whose link expired is asked of the phone again.
+    download: (m, socket) =>
+      wa.downloadMediaMessage(
+        m as never,
+        'stream',
+        {},
+        { reuploadRequest: socket.updateMediaMessage as never, logger: quiet as never },
+      ) as Promise<Readable>,
+    codes: {
+      forbidden: wa.DisconnectReason.forbidden,
+      connectionReplaced: wa.DisconnectReason.connectionReplaced,
+      multideviceMismatch: wa.DisconnectReason.multideviceMismatch,
+      restartRequired: wa.DisconnectReason.restartRequired,
+    },
     loggedOut: wa.DisconnectReason.loggedOut,
   };
 }
@@ -250,6 +329,38 @@ export class WhatsAppChannel {
   private sends = new SendQueue();
   private unsubs: (() => void)[] = [];
   private stopped = false;
+  /** Prefix of the keys in use: the link prefix while a new device is being linked, else none. */
+  private ns = '';
+  /** Whether a QR code was shown for the link in progress; a close before that is a dead connection. */
+  private qrShown = false;
+  /** Sends and the connection: sends wait here for the connection to come back. */
+  private waiters = new Set<(ok: boolean) => void>();
+  private gaveUp = false;
+  /** A reply could not be delivered; the person is told once the connection allows. */
+  private undelivered = false;
+  /** Requests from WhatsApp being worked on, to end each once, and the ones to settle at the first connect. */
+  private working = new Set<string>();
+  private settlePending = false;
+  /** Incoming messages are handled one at a time, in the order they came. */
+  private reading: Promise<void> = Promise.resolve();
+  private seen = new Set<string>();
+  /** Writes of keys and creds go one after another; the newest creds win. */
+  private writes: Promise<unknown> = Promise.resolve();
+  private credsChain: Promise<void> = Promise.resolve();
+  private credsDirty = false;
+  private credsNow: (() => string) | null = null;
+  /** What was sent lately, for WhatsApp's resend requests; kept in memory only. */
+  private sentBodies = new Map<string, { message: Record<string, unknown>; at: number }>();
+  private lastPost = new Map<string, number>();
+  /** The least time between two posts to a chat; tests turn it off. */
+  paceMs = PACE_MS;
+  /** How long a QR code may wait to be scanned; tests shorten it. */
+  linkMs = LINK_MS;
+  private version: { value: WaVersion; at: number } | null = null;
+  private requestTimes: number[] = [];
+  private pausedUntil = 0;
+  /** When the person was last told a request waits out the pause. */
+  private heldNoteAt = 0;
 
   constructor(
     private ctx: Ctx,
@@ -261,10 +372,29 @@ export class WhatsAppChannel {
     this.unsubs.push(this.services.threads.onMessage((m) => this.outgoing(m)));
     this.unsubs.push(this.ctx.bus.on('turn', (e) => void this.turnState(e).catch(() => {})));
     this.unsubs.push(this.ctx.bus.on('notice', (e) => void this.notice(e).catch(() => {})));
+    // A link that was never finished leaves its keys behind; the device in use is untouched.
+    await this.dropNs();
     const row = await this.row();
     const creds = await this.key('creds');
     if (row && creds && (JSON.parse(creds) as { registered?: boolean; me?: unknown }).me) {
+      // A queued turn survives the restart and still runs, so its request stays; the others are
+      // settled once the connection is open and the person can be written to.
+      for (const h of await heldRequests(this.ctx, row.id)) {
+        if (await queuedTurn(this.ctx, h.threadId)) this.working.add(h.threadId);
+      }
+      this.settlePending = true;
       await this.open().catch((err: unknown) => this.fail(errorText(err)));
+    }
+  }
+
+  /** Requests that were being worked on when the server stopped are over: the person is told so they write again. */
+  private async settleHeld(row: Row) {
+    const t = await this.services.settings.translator();
+    for (const h of await heldRequests(this.ctx, row.id)) {
+      if (this.working.has(h.threadId)) continue;
+      await dropRequest(this.ctx, row.id, h.threadId);
+      const jid = (h.place as { jid?: string }).jid;
+      if (jid) await this.say(jid, t('channel.cutShort'));
     }
   }
 
@@ -274,7 +404,11 @@ export class WhatsAppChannel {
     this.clearTimers();
     for (const timer of this.typing.values()) clearInterval(timer);
     this.typing.clear();
+    // Sends waiting for the connection stop waiting.
+    this.settle();
     await this.sends.drain();
+    await this.reading;
+    await this.credsChain;
     this.socket?.end();
     this.socket = null;
   }
@@ -320,30 +454,59 @@ export class WhatsAppChannel {
     return this.status();
   }
 
-  /** Starts over with a new device: the QR code to scan comes in the status. */
+  /**
+   * Starts over with a new device: the QR code to scan comes in the status. The new device's keys
+   * are kept apart until the scan is saved, so a code that is never scanned costs nothing: the
+   * device that works now is brought back.
+   */
   async link(): Promise<WhatsAppStatus> {
     const row = await this.row();
     if (!row || !(row.settings as Settings).phone) throw new HttpError(409, 'error.whatsappNotSetUp');
     await this.close();
-    await this.ctx.db.delete(schema.whatsappKeys);
-    await this.ctx.db
-      .update(schema.channels)
-      .set({ account: {}, error: null })
-      .where(eq(schema.channels.id, row.id));
+    await this.flushCreds();
+    await this.dropNs();
+    this.ns = LINK_NS;
+    this.qrShown = false;
+    await this.ctx.db.update(schema.channels).set({ error: null }).where(eq(schema.channels.id, row.id));
     this.state = 'linking';
     this.qr = null;
+    this.attempt = 0;
     try {
       await this.open();
     } catch (err) {
+      await this.dropNs();
+      this.ns = '';
       this.state = 'error';
+      this.settle();
       throw new HttpError(502, 'error.whatsappUnavailable', { message: errorText(err) });
     }
     this.linkTimer = setTimeout(() => {
-      if (this.state === 'linking') void this.close().then(() => this.fail('expired'));
-    }, LINK_MS);
+      if (this.state === 'linking') void this.abandonLink('expired', true).catch(() => {});
+    }, this.linkMs);
     this.linkTimer.unref?.();
     this.changed();
     return this.status();
+  }
+
+  /**
+   * A link that will not finish (the code expired, WhatsApp cannot be reached): its keys go and the
+   * device that worked before is connected again; without one, the error is shown.
+   */
+  private async abandonLink(error: string, reconnect: boolean) {
+    await this.close();
+    await this.flushCreds();
+    await this.dropNs();
+    this.ns = '';
+    this.qr = null;
+    this.qrShown = false;
+    const old = await this.key('creds');
+    if (reconnect && old && (JSON.parse(old) as { me?: unknown }).me && !this.stopped) {
+      this.state = 'connecting';
+      this.changed();
+      await this.open().catch((err: unknown) => this.fail(errorText(err)));
+      return;
+    }
+    await this.fail(error);
   }
 
   /** Unlinks the device (WhatsApp shows it gone from Linked Devices) and forgets its keys. */
@@ -355,20 +518,63 @@ export class WhatsAppChannel {
       await socket.logout().catch(() => {});
       socket.end();
     }
-    await this.ctx.db.delete(schema.whatsappKeys);
+    await this.flushCreds();
+    await this.wipeKeys();
+    this.ns = '';
     await this.ctx.db.delete(schema.channels).where(eq(schema.channels.kind, 'whatsapp'));
     this.state = 'off';
     this.qr = null;
+    this.settle();
     this.changed();
     return this.status();
   }
 
   // The connection
 
+  /**
+   * The WhatsApp Web version to connect with: the current one when it can be found out in a few
+   * seconds, else the last good one, else the library's own. WhatsApp turns old versions away.
+   */
+  private async webVersion(lib: WaLibrary): Promise<WaVersion | undefined> {
+    if (!lib.latestVersion) return undefined;
+    if (this.version && Date.now() - this.version.at < VERSION_FRESH_MS) return this.version.value;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), VERSION_WAIT_MS);
+    try {
+      const found = await Promise.race([
+        lib.latestVersion(abort.signal),
+        new Promise<null>((resolve) => abort.signal.addEventListener('abort', () => resolve(null))),
+      ]);
+      if (found) {
+        this.version = { value: found, at: Date.now() };
+        await this.setKeys({ [`${META_NS}version`]: JSON.stringify(found) }, true).catch(() => {});
+        return found;
+      }
+    } catch (err) {
+      console.warn('whatsapp version', errorText(err));
+    } finally {
+      clearTimeout(timer);
+    }
+    if (this.version) return this.version.value;
+    const kept = await this.key(`${META_NS}version`, '').catch(() => null);
+    try {
+      const value = kept ? (JSON.parse(kept) as WaVersion) : null;
+      if (Array.isArray(value) && value.length === 3 && value.every((n) => Number.isInteger(n))) {
+        this.version = { value, at: 0 };
+        return value;
+      }
+    } catch {
+      // A stored version that cannot be read is as good as none.
+    }
+    return undefined;
+  }
+
   private async open() {
     if (this.stopped) return;
     this.lib ??= await this.library();
     const lib = this.lib;
+    // What the scan wrote must be on disk before it is read back for the restart that follows.
+    await this.flushCreds();
     const saved = await this.key('creds');
     const creds = saved ? (JSON.parse(saved, lib.reviver) as Record<string, unknown>) : lib.initAuthCreds();
     if (!saved) await this.setKeys({ creds: JSON.stringify(creds, lib.replacer) });
@@ -397,12 +603,19 @@ export class WhatsAppChannel {
       },
     };
     if (this.state !== 'linking') this.state = 'connecting';
-    const socket = lib.connect(auth);
+    const version = await this.webVersion(lib);
+    if (this.stopped) return;
+    const socket = lib.connect(auth, {
+      ...(version && { version }),
+      getMessage: async (key) => this.sentMessage(key.id),
+    });
     this.socket = socket;
     socket.ev.on('creds.update', (update) => {
       if (this.socket !== socket) return;
       Object.assign(creds, update);
-      void this.setKeys({ creds: JSON.stringify(creds, lib.replacer) }).catch(() => {});
+      this.credsNow = () => JSON.stringify(creds, lib.replacer);
+      this.credsDirty = true;
+      void this.flushCreds();
     });
     socket.ev.on('connection.update', (u) => {
       if (this.socket !== socket) return;
@@ -413,11 +626,66 @@ export class WhatsAppChannel {
       // `append` after it connects again; those are read only when newer than the last one read.
       if (this.socket !== socket || (u.type !== 'notify' && u.type !== 'append')) return;
       for (const m of u.messages) {
-        void this.received(socket, m, u.type === 'append').catch((err: unknown) =>
-          console.warn('whatsapp message', err),
-        );
+        this.reading = this.reading
+          .then(() => this.received(socket, m, u.type === 'append'))
+          .catch((err: unknown) => console.warn('whatsapp message', err));
       }
     });
+  }
+
+  /** Writes the newest creds; one write at a time, in the order asked, and a failure is logged. */
+  private flushCreds(): Promise<void> {
+    this.credsChain = this.credsChain.then(async () => {
+      if (!this.credsDirty || !this.credsNow) return;
+      this.credsDirty = false;
+      try {
+        await this.setKeys({ creds: this.credsNow() });
+      } catch (err) {
+        console.warn('whatsapp creds', errorText(err));
+      }
+    });
+    return this.credsChain;
+  }
+
+  /** What `connection.update` said about why the connection closed. */
+  private async closed(code: number | undefined) {
+    const codes = this.lib?.codes;
+    const linking = this.state === 'linking';
+    this.socket = null;
+    const final = (error: string) => (linking ? this.abandonLink(error, false) : this.fail(error));
+    if (code === this.lib?.loggedOut) {
+      // Removed from Linked Devices on the phone: its keys are useless now.
+      if (linking) return this.abandonLink('loggedOut', false);
+      await this.wipeKeys();
+      return this.fail('loggedOut');
+    }
+    if (code !== undefined && codes) {
+      if (code === codes.forbidden) return final('forbidden');
+      if (code === codes.multideviceMismatch) return final('mismatch');
+      // The number was opened somewhere else; taking it back would only start a tug of war.
+      if (code === codes.connectionReplaced) return final('replaced');
+    }
+    if (this.stopped) return;
+    // A link that was just scanned asks for a restart at once; any other drop is tried again, slower each time.
+    const restart = code !== undefined && code === codes?.restartRequired;
+    if (linking && !restart && !this.qrShown) return this.abandonLink('unreachable', true);
+    const wait = restart ? 0 : Math.min(linking ? 10_000 : 60_000, 1000 * 2 ** Math.min(this.attempt++, 6));
+    if (!linking) this.state = 'connecting';
+    this.changed();
+    if (this.attempt >= FAILING_AFTER) {
+      const row = await this.row();
+      if (row && row.error !== 'failing') {
+        await this.ctx.db
+          .update(schema.channels)
+          .set({ error: 'failing' })
+          .where(eq(schema.channels.id, row.id));
+        this.changed();
+      }
+    }
+    this.retry = setTimeout(() => {
+      void this.open().catch((err: unknown) => this.fail(errorText(err)));
+    }, wait);
+    this.retry.unref?.();
   }
 
   private async connection(
@@ -426,6 +694,7 @@ export class WhatsAppChannel {
   ) {
     if (u.qr && this.state === 'linking') {
       this.qr = u.qr;
+      this.qrShown = true;
       this.changed();
     }
     if (u.connection === 'open') {
@@ -435,9 +704,15 @@ export class WhatsAppChannel {
       if (row && own && settings.mode === 'separate' && own === settings.phone) {
         // With "separate number" the linked account must not be the person's own.
         await this.close();
-        await this.ctx.db.delete(schema.whatsappKeys);
+        if (this.state === 'linking') {
+          await this.dropNs();
+          this.ns = '';
+        } else {
+          await this.wipeKeys();
+        }
         return this.fail('ownNumber');
       }
+      if (this.state === 'linking') await this.promote();
       if (row) {
         await this.ctx.db
           .update(schema.channels)
@@ -447,36 +722,31 @@ export class WhatsAppChannel {
       this.state = 'connected';
       this.qr = null;
       this.attempt = 0;
+      this.gaveUp = false;
       if (this.linkTimer) clearTimeout(this.linkTimer);
       this.linkTimer = null;
+      this.settle();
       this.changed();
+      if (row && this.settlePending) {
+        this.settlePending = false;
+        void this.settleHeld(row).catch((err: unknown) => console.warn('whatsapp held', err));
+      }
+      void this.tellUndelivered().catch(() => {});
     }
     if (u.connection === 'close') {
       const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
         ?.statusCode;
-      this.socket = null;
-      if (code === this.lib?.loggedOut) {
-        // Removed from Linked Devices on the phone: its keys are useless now.
-        await this.ctx.db.delete(schema.whatsappKeys);
-        return this.fail('loggedOut');
-      }
-      if (this.stopped) return;
-      // A link that was just scanned asks for a restart; any other drop is tried again, slower each time.
-      const wait = this.state === 'linking' ? 0 : Math.min(60_000, 1000 * 2 ** Math.min(this.attempt++, 6));
-      if (this.state !== 'linking') this.state = 'connecting';
-      this.changed();
-      this.retry = setTimeout(() => {
-        void this.open().catch((err: unknown) => this.fail(errorText(err)));
-      }, wait);
-      this.retry.unref?.();
+      await this.closed(code);
     }
   }
 
   private async fail(error: string) {
-    this.state = 'error';
-    this.qr = null;
+    // The reason is saved before the state shows it, so no one sees a stopped chat without one.
     const row = await this.row();
     if (row) await this.ctx.db.update(schema.channels).set({ error }).where(eq(schema.channels.id, row.id));
+    this.state = 'error';
+    this.qr = null;
+    this.settle();
     this.changed();
   }
 
@@ -494,10 +764,46 @@ export class WhatsAppChannel {
     this.retry = null;
   }
 
+  /** Wakes the sends waiting for the connection: it came back, or it will not. */
+  private settle() {
+    for (const w of [...this.waiters]) w(true);
+  }
+
+  /**
+   * The open socket, waiting for it to come back when the connection dropped; null when it does not
+   * (the chat was stopped, it failed for good, or the wait ran out). Once a wait has run out, later
+   * sends do not wait again until the connection is back, so a long outage does not hold every reply
+   * for its own five minutes.
+   */
+  private async online(): Promise<WaSocket | null> {
+    const ready = () => (this.state === 'connected' && this.socket ? this.socket : null);
+    if (ready()) return ready();
+    if (this.stopped || this.gaveUp || this.state === 'off' || this.state === 'error') return null;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.waiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.gaveUp = true;
+        done();
+      }, OFFLINE_WAIT_MS);
+      timer.unref?.();
+      this.waiters.add(done);
+    });
+    return ready();
+  }
+
   // Reading WhatsApp
 
   /** The address to answer at when the message is the person's own; null for anyone else's. */
-  private async from(socket: WaSocket, m: WaMessage, settings: Settings): Promise<string | null> {
+  private async from(
+    socket: WaSocket,
+    m: WaMessage,
+    settings: Settings,
+    channelId: string,
+  ): Promise<string | null> {
     const jid = m.key.remoteJid;
     if (!jid || m.key.participant || !/@(s\.whatsapp\.net|lid)$/.test(jid)) return null;
     let phone = numberOf(jid);
@@ -517,7 +823,8 @@ export class WhatsAppChannel {
     if (settings.mode === 'own') {
       // Only "Message yourself", and only what the person typed there, not this server's replies.
       if (phone !== numberOf(socket.user?.id) || !m.key.fromMe) return null;
-      if (m.key.id && this.sentIds.has(m.key.id)) return null;
+      // Remembered in memory for the moment after a send, and in the records for after a restart.
+      if (m.key.id && (this.sentIds.has(m.key.id) || (await this.ours(channelId, m.key.id)))) return null;
     } else if (phone !== settings.phone || m.key.fromMe) {
       return null;
     }
@@ -528,14 +835,61 @@ export class WhatsAppChannel {
     const row = await this.row();
     if (!row) return;
     const settings = row.settings as Settings;
-    const jid = await this.from(socket, m, settings);
+    const jid = await this.from(socket, m, settings, row.id);
     if (!jid) return;
+    // Before any command or download: a message WhatsApp hands again must not run twice.
+    const id = m.key.id;
+    if (id) {
+      if (this.seen.has(id) || (await this.ours(row.id, id))) return;
+      this.seen.add(id);
+      if (this.seen.size > SEEN_KEPT) this.seen.delete(this.seen.values().next().value!);
+    }
     const stamp = stampOf(m);
     if (held) {
       // Only what came after the last message read, and not long ago: never old history.
       const seen = settings.seenAt ?? 0;
       if (!seen || stamp <= seen || Date.now() / 1000 - stamp > HELD_MAX_S) return;
     }
+    try {
+      await this.handle(socket, row, jid, m, stamp);
+    } catch (err) {
+      console.warn('whatsapp message', err);
+      const t = await this.services.settings.translator();
+      await this.say(jid, t('channel.updateFailed')).catch(() => {});
+    }
+  }
+
+  /**
+   * Whether the self chat is being flooded, which happens when another bot answers on the same
+   * number: requests pause for a while and the person is told. A request that comes during the pause
+   * is not passed on, but the person hears so (at most once a minute) and when to write again;
+   * commands and card answers still work, so they can stop what is going on.
+   */
+  private async looping(jid: string, t: T): Promise<boolean> {
+    const now = Date.now();
+    if (now < this.pausedUntil) {
+      if (now - this.heldNoteAt >= 60_000) {
+        this.heldNoteAt = now;
+        const minutes = Math.max(1, Math.ceil((this.pausedUntil - now) / 60_000));
+        await this.say(jid, t('channel.loopHeld', { minutes })).catch(() => {});
+      }
+      return true;
+    }
+    this.requestTimes.push(now);
+    const longest = Math.max(...LOOP_LIMITS.map((l) => l.ms));
+    this.requestTimes = this.requestTimes.filter((at) => now - at <= longest);
+    const flood = LOOP_LIMITS.some(
+      (l) => this.requestTimes.filter((at) => now - at <= l.ms).length > l.count,
+    );
+    if (!flood) return false;
+    this.pausedUntil = now + LOOP_PAUSE_MS;
+    this.requestTimes = [];
+    this.heldNoteAt = now;
+    await this.say(jid, t('channel.loopPaused')).catch(() => {});
+    return true;
+  }
+
+  private async handle(socket: WaSocket, row: Row, jid: string, m: WaMessage, stamp: number) {
     const t = await this.services.settings.translator();
     const { text: raw, media, forwarded, quoted } = contentOf(m);
     const text = raw.trim();
@@ -569,20 +923,29 @@ export class WhatsAppChannel {
       if (numbered && (await this.answeredCard(jid, thread.id, Number(numbered[1]), !!numbered[2], t)))
         return;
     }
+    // Only what would start the bot counts toward the flood guard; commands and card answers do not.
+    if ((row.settings as Settings).mode === 'own' && (await this.looping(jid, t))) return;
     const files: string[] = [];
+    const failed: string[] = [];
+    const tooLarge: string[] = [];
+    const fetchFile = async (target: WaMessage, name: string, size: number | undefined, log: string) => {
+      if ((size ?? 0) > RECEIVE_MAX) {
+        tooLarge.push(name);
+        await this.say(jid, t('channel.fileTooLarge', { name }));
+        return;
+      }
+      try {
+        const body = await this.lib!.download(target, socket);
+        files.push((await saveUpload(stagingDir(this.ctx.config.dataDir, thread.id), name, body)).name);
+      } catch (err) {
+        console.warn(log, errorText(err));
+        failed.push(name);
+        await this.say(jid, t('channel.fileFailed', { name }));
+      }
+    };
     if (media) {
       const name = receivedName(media.kind, m.key.id ?? newId().slice(0, 8), media.mime, media.name);
-      if ((media.size ?? 0) > RECEIVE_MAX) {
-        await this.say(jid, t('channel.fileTooLarge', { name }));
-      } else {
-        try {
-          const body = await this.lib!.download(m);
-          files.push((await saveUpload(stagingDir(this.ctx.config.dataDir, thread.id), name, body)).name);
-        } catch (err) {
-          console.warn('whatsapp file', errorText(err));
-          await this.say(jid, t('channel.fileFailed', { name }));
-        }
-      }
+      await fetchFile(m, name, media.size, 'whatsapp file');
     }
     // A reply to a message: one of ours is quoted by the app; another one's text and file come along.
     const replyTo = quoted?.id ? await this.ours(row.id, quoted.id) : null;
@@ -596,20 +959,12 @@ export class WhatsAppChannel {
           quoted.media.mime,
           quoted.media.name,
         );
-        if ((quoted.media.size ?? 0) > RECEIVE_MAX) {
-          await this.say(jid, t('channel.fileTooLarge', { name }));
-        } else {
-          try {
-            const body = await this.lib!.download({
-              key: { remoteJid: m.key.remoteJid, id: quoted.id },
-              message: quoted.message,
-            });
-            files.push((await saveUpload(stagingDir(this.ctx.config.dataDir, thread.id), name, body)).name);
-          } catch (err) {
-            console.warn('whatsapp quoted file', errorText(err));
-            await this.say(jid, t('channel.fileFailed', { name }));
-          }
-        }
+        await fetchFile(
+          { key: { remoteJid: m.key.remoteJid, id: quoted.id }, message: quoted.message },
+          name,
+          quoted.media.size,
+          'whatsapp quoted file',
+        );
       }
     }
     if (!text && !files.length) return;
@@ -627,14 +982,30 @@ export class WhatsAppChannel {
       threadId: thread.id,
       seenAt: Math.max(now.seenAt ?? 0, stamp) || undefined,
     }));
-    const { message } = await this.services.inbox.send(thread.id, {
-      text: `${quoteBlock}${text}`,
-      files,
-      clientId: `whatsapp:${(m.key.id ?? newId()).slice(0, 48)}`,
-      userId: row.userId,
-      ...(replyTo && { replyTo }),
-      props: { via: 'whatsapp', ...(outside && { outside }) },
-    });
+    // Noted before the turn can start, so a restart in the middle leaves a trace to settle.
+    await holdRequest(this.ctx, row.id, thread.id, { jid });
+    this.working.add(thread.id);
+    let message;
+    try {
+      ({ message } = await this.services.inbox.send(thread.id, {
+        // Files that did not arrive are said to the bot too, or it would answer as if it had them.
+        text: withMissingFiles(`${quoteBlock}${text}`, { failed, tooLarge }, t),
+        files,
+        clientId: `whatsapp:${(m.key.id ?? newId()).slice(0, 48)}`,
+        userId: row.userId,
+        ...(replyTo && { replyTo }),
+        props: { via: 'whatsapp', ...(outside && { outside }) },
+      }));
+    } catch (err) {
+      this.working.delete(thread.id);
+      await dropRequest(this.ctx, row.id, thread.id);
+      throw err;
+    }
+    // Nothing started (a repeated message, say): no turn will end it, so it ends here.
+    if (this.working.has(thread.id) && (await this.services.threads.state(thread.id)) === 'idle') {
+      this.working.delete(thread.id);
+      await dropRequest(this.ctx, row.id, thread.id);
+    }
     if (m.key.id) await this.remember(row.id, m.key.id, message.id);
   }
 
@@ -742,10 +1113,13 @@ export class WhatsAppChannel {
 
   // Writing to WhatsApp
 
-  /** Where replies go: "Message yourself", or the person's own number. */
+  /**
+   * Where replies go: "Message yourself", or the person's own number. Not only while connected: a
+   * reply written while the connection is down waits for it (see `online`).
+   */
   private async chat(): Promise<{ row: Row; jid: string } | null> {
     const row = await this.row();
-    if (!row || this.state !== 'connected' || !this.socket) return null;
+    if (!row || this.state === 'off' || this.state === 'error') return null;
     const settings = row.settings as Settings;
     const own = (row.account as { number?: string }).number;
     const number = settings.mode === 'own' ? own : settings.phone;
@@ -771,10 +1145,10 @@ export class WhatsAppChannel {
     if (!here) {
       if (settings.notices === false || thread.botId !== row.botId) return;
       if (!report || m.role !== 'assistant' || !m.text.trim()) return;
-      await this.sends.run('wa', () => this.markdown(jid, headed(), m.id));
+      await this.deliver(() => this.markdown(jid, headed(), m.id));
       return;
     }
-    await this.sends.run('wa', async () => {
+    await this.deliver(async () => {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
@@ -839,19 +1213,67 @@ export class WhatsAppChannel {
 
   /** A short line outside the order of replies (a command's answer). */
   private async say(jid: string, text: string) {
-    await this.sends.run('wa', () => this.markdown(jid, text));
+    await this.deliver(() => this.markdown(jid, text));
+  }
+
+  /**
+   * Runs the sends of one reply in the chat's order. When some of it could not be delivered, the
+   * person is told once that the rest is in the app, as soon as the connection allows.
+   */
+  private async deliver(job: () => Promise<void>) {
+    const ok = await this.sends.run('wa', job);
+    if (!ok && !this.stopped) this.undelivered = true;
+    await this.tellUndelivered();
+  }
+
+  private async tellUndelivered() {
+    if (!this.undelivered || this.stopped || this.state !== 'connected') return;
+    const target = await this.chat();
+    if (!target) return;
+    this.undelivered = false;
+    const t = await this.services.settings.translator();
+    // Not through `deliver`: this note failing is only logged, it does not ask for another note.
+    await this.sends.run('wa', () => this.markdown(target.jid, t('channel.notDelivered')));
+  }
+
+  /** What was sent lately, for WhatsApp's resend requests when the phone could not read a reply. */
+  private sentMessage(id: string | null | undefined): Record<string, unknown> | undefined {
+    const found = id ? this.sentBodies.get(id) : undefined;
+    return found && Date.now() - found.at < SENT_KEEP_MS ? found.message : undefined;
   }
 
   private async send(jid: string, content: Record<string, unknown>): Promise<string | null> {
-    const socket = this.socket;
-    if (!socket) return null;
-    const sent = await socket.sendMessage(jid, content);
+    let socket = await this.online();
+    if (!socket) throw new Error('WhatsApp is not connected');
+    // One chat is posted to at a time (the send queue); this keeps its posts from coming in a burst.
+    const wait = (this.lastPost.get(jid) ?? 0) + this.paceMs - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    // The id is chosen here and kept for a second try: should the first have gone through after
+    // all, WhatsApp takes the second as the same message and the person sees it once.
+    const messageId = waMessageId();
+    // Known as ours before WhatsApp hands it back, which can happen before the send returns.
+    this.sentIds.add(messageId);
+    let sent;
+    try {
+      sent = await socket.sendMessage(jid, content, { messageId });
+    } catch (err) {
+      // The connection dropped under the send: once it is back, the send is tried again, once.
+      if (this.socket === socket && this.state === 'connected') throw err;
+      socket = await this.online();
+      if (!socket) throw err;
+      sent = await socket.sendMessage(jid, content, { messageId });
+    }
+    this.lastPost.set(jid, Date.now());
     const id = sent?.key?.id;
     this.lastSent = id ?? newId();
     if (id) {
       this.sentIds.add(id);
       // Only recent ones matter: WhatsApp hands a sent message back at once.
       if (this.sentIds.size > 500) this.sentIds.delete(this.sentIds.values().next().value!);
+      if (sent?.message) {
+        this.sentBodies.set(id, { message: sent.message, at: Date.now() });
+        if (this.sentBodies.size > SENT_KEPT) this.sentBodies.delete(this.sentBodies.keys().next().value!);
+      }
     }
     return id ?? null;
   }
@@ -861,6 +1283,7 @@ export class WhatsAppChannel {
     const settings = (target?.row.settings ?? {}) as Settings;
     const active =
       !!target &&
+      this.state === 'connected' &&
       settings.threadId === e.threadId &&
       (e.state === 'running' || e.state === 'queued') &&
       (await lastWroteVia(this.ctx, e.threadId, 'whatsapp'));
@@ -871,6 +1294,7 @@ export class WhatsAppChannel {
         this.typing.delete(e.threadId);
         if (target) void this.socket?.sendPresenceUpdate('paused', target.jid).catch(() => {});
       }
+      if (e.state === 'idle') await this.finished(e.threadId);
       return;
     }
     if (timer || this.stopped) return;
@@ -879,6 +1303,23 @@ export class WhatsAppChannel {
     const next = setInterval(send, 8000);
     next.unref?.();
     this.typing.set(e.threadId, next);
+  }
+
+  /**
+   * The bot is done with a request from WhatsApp: the note of it goes, and when it ended well but
+   * said nothing, the person hears that instead of only seeing "typing…" stop.
+   */
+  private async finished(threadId: string) {
+    if (!this.working.delete(threadId)) return;
+    const row = await this.row();
+    if (!row) return;
+    await dropRequest(this.ctx, row.id, threadId);
+    if (this.stopped) return;
+    if (!(await saidNothing(this.ctx, threadId))) return;
+    const target = await this.chat();
+    if (!target) return;
+    const t = await this.services.settings.translator();
+    await this.deliver(() => this.markdown(target.jid, t('channel.noAnswer')));
   }
 
   private async notice(e: NoticeEvent) {
@@ -924,11 +1365,12 @@ export class WhatsAppChannel {
       .where(eq(schema.channels.id, row.id));
   }
 
-  private async key(key: string): Promise<string | null> {
+  /** A stored key; `ns` is the prefix of the device being used, or '' for keys of no device. */
+  private async key(key: string, ns = this.ns): Promise<string | null> {
     const [row] = await this.ctx.db
       .select()
       .from(schema.whatsappKeys)
-      .where(eq(schema.whatsappKeys.key, key))
+      .where(eq(schema.whatsappKeys.key, `${ns}${key}`))
       .limit(1);
     if (!row) return null;
     try {
@@ -938,18 +1380,71 @@ export class WhatsAppChannel {
     }
   }
 
-  private async setKeys(values: Record<string, string | null>) {
-    for (const [key, value] of Object.entries(values)) {
-      if (value === null) {
-        await this.ctx.db.delete(schema.whatsappKeys).where(eq(schema.whatsappKeys.key, key));
-        continue;
-      }
-      const sealed = this.vault.seal(value);
-      await this.ctx.db
-        .insert(schema.whatsappKeys)
-        .values({ key, value: sealed })
-        .onConflictDoUpdate({ target: schema.whatsappKeys.key, set: { value: sealed } });
-    }
+  /** Runs a change of the keys after the ones asked before it, so the order they were asked in holds. */
+  private ordered<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(job);
+    this.writes = run.catch(() => {});
+    return run;
+  }
+
+  /** Writes keys in one transaction; `plain` keys belong to no device and ignore the link prefix. */
+  private setKeys(values: Record<string, string | null>, plain = false): Promise<void> {
+    return this.ordered(async () => {
+      const ns = plain ? '' : this.ns;
+      await this.ctx.db.transaction(async (tx) => {
+        for (const [name, value] of Object.entries(values)) {
+          const key = `${ns}${name}`;
+          if (value === null) {
+            await tx.delete(schema.whatsappKeys).where(eq(schema.whatsappKeys.key, key));
+            continue;
+          }
+          const sealed = this.vault.seal(value);
+          await tx
+            .insert(schema.whatsappKeys)
+            .values({ key, value: sealed })
+            .onConflictDoUpdate({ target: schema.whatsappKeys.key, set: { value: sealed } });
+        }
+      });
+    });
+  }
+
+  /** The keys of a device that is gone; keys of no device stay. */
+  private wipeKeys(): Promise<void> {
+    return this.ordered(async () => {
+      await this.ctx.db.delete(schema.whatsappKeys).where(not(like(schema.whatsappKeys.key, `${META_NS}%`)));
+    });
+  }
+
+  /** The keys of a link that did not finish. */
+  private dropNs(): Promise<void> {
+    return this.ordered(async () => {
+      await this.ctx.db.delete(schema.whatsappKeys).where(like(schema.whatsappKeys.key, `${LINK_NS}%`));
+    });
+  }
+
+  /**
+   * The new device is saved: the device that was linked before goes, and the new keys take their
+   * place, all at once, so there is never a moment with neither.
+   */
+  private async promote() {
+    await this.flushCreds();
+    await this.ordered(async () => {
+      await this.ctx.db.transaction(async (tx) => {
+        await tx
+          .delete(schema.whatsappKeys)
+          .where(
+            and(
+              not(like(schema.whatsappKeys.key, `${LINK_NS}%`)),
+              not(like(schema.whatsappKeys.key, `${META_NS}%`)),
+            ),
+          );
+        await tx
+          .update(schema.whatsappKeys)
+          .set({ key: sql`substr(${schema.whatsappKeys.key}, ${LINK_NS.length + 1})` })
+          .where(like(schema.whatsappKeys.key, `${LINK_NS}%`));
+      });
+      this.ns = '';
+    });
   }
 
   /** Keys of a kind, e.g. every session; only for tests and checks. */
@@ -965,5 +1460,8 @@ export class WhatsAppChannel {
     this.ctx.bus.refresh({ scope: 'channels' });
   }
 }
+
+/** A message id in the form WhatsApp's own clients use. */
+const waMessageId = () => `3EB0${randomBytes(18).toString('hex').toUpperCase()}`;
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));

@@ -1910,6 +1910,14 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.error.ownNumber':
     'The linked account is your own number. Link another number, or choose "My own number".',
   'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
+  'whatsapp.error.forbidden':
+    'WhatsApp refused this connection; the number may be banned. Check the account in the WhatsApp app.',
+  'whatsapp.error.mismatch':
+    'WhatsApp no longer accepts this linked device. Link again and scan the QR code.',
+  'whatsapp.error.replaced':
+    'This number was opened somewhere else, so the connection stopped. Link again to use it here.',
+  'whatsapp.error.unreachable': 'WhatsApp could not be reached. Check the internet connection and try again.',
+  'whatsapp.error.failing': 'Cannot connect to WhatsApp; still trying.',
   'whatsapp.mode.separate': 'A separate bot number',
   'whatsapp.modeHint.separate': 'Recommended. A second number is linked; you write to it from your own.',
   'whatsapp.mode.own': 'My own number',

@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   MAX_UPLOAD_BYTES,
+  SLACK_BOT_SCOPES,
   questionItems,
   type Approval,
   type Bot,
@@ -11,7 +12,7 @@ import {
   type SlackStatus,
   type TurnEvent,
 } from '@yumakbot/shared';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, like, desc, ne } from 'drizzle-orm';
 import { atLeast } from '../services/access';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -21,7 +22,19 @@ import type { VaultService } from '../services/vault';
 import { saveUpload, stagingDir } from '../uploads';
 import { OWNER_ID } from '../users';
 import { HttpError, newId, truncate } from '../util';
-import { cardView, lastWroteVia, messageFiles, parseChoice, receivedName, SendQueue } from './common';
+import {
+  cardView,
+  dropRequest,
+  heldRequests,
+  holdRequest,
+  lastWroteVia,
+  messageFiles,
+  parseChoice,
+  queuedTurn,
+  receivedName,
+  SendQueue,
+  withMissingFiles,
+} from './common';
 import { slackMessages, slackPlain } from './format';
 import { SlackApi, SlackError, slackToken, type SlackFile, type SlackMessage } from './slack-api';
 import { SlackSocket, type SlackEnvelope } from './slack-socket';
@@ -134,9 +147,19 @@ export class SlackChannel {
   private seen = new Map<string, number>();
   private names = new Map<string, string>();
   /** The message each running conversation answers in Slack, to mark when the bot is done. */
-  private working = new Map<string, Place & { ts: string }>();
+  private working = new Map<string, Place & { ts: string; rowId: string }>();
+  /** The lines of each conversation still being sent to Slack, so its mark waits for them. */
+  private lines = new SendQueue();
+  /** Conversations whose reply did not reach Slack, so their message is not marked as answered. */
+  private undelivered = new Set<string>();
+  /** Why the bot token is refused (null while it works), and the note shown for it. */
+  private tokenError: { code: string; note: string } | null = null;
+  /** Permissions the app lacks, found when it connected; shown with the status, not stored. */
+  private scopeNote: string | null = null;
   private unsubs: (() => void)[] = [];
   private stopped = false;
+  /** Aborts on stop, so a wait for Slack's "slow down" does not hold the stop up. */
+  private halting = new AbortController();
 
   constructor(
     private ctx: Ctx,
@@ -147,11 +170,87 @@ export class SlackChannel {
   async start() {
     this.unsubs.push(this.services.threads.onMessage((m) => this.outgoing(m)));
     this.unsubs.push(this.ctx.bus.on('turn', (e) => void this.turnState(e).catch(() => {})));
-    if ((await this.row())?.secret) await this.listen();
+    const row = await this.row();
+    if (!row?.secret) return;
+    // Before reading Slack again, so a message that arrives now is never taken for a stale one.
+    await this.settleHeld(row).catch((err: unknown) => console.warn('slack held', err));
+    await this.listen();
+    void this.probe(row).catch(() => {});
   }
 
+  /**
+   * Requests that were being worked on when the server stopped are over: their 👀 goes, they show
+   * the failure mark and the thread is told so the person writes again. A queued turn survives the
+   * restart and still runs, so its request stays.
+   */
+  async settleHeld(row: Row) {
+    const held = await heldRequests(this.ctx, row.id);
+    if (!held.length) return;
+    const t = await this.services.settings.translator();
+    const api = this.botApi(row);
+    for (const h of held) {
+      const place = h.place as Partial<Place & { ts: string }>;
+      if (await queuedTurn(this.ctx, h.threadId)) {
+        if (place.channel && place.ts)
+          this.working.set(h.threadId, { ...place, channel: place.channel, ts: place.ts, rowId: row.id });
+        continue;
+      }
+      await dropRequest(this.ctx, row.id, h.threadId);
+      if (!place.channel) continue;
+      if (place.ts) {
+        await api.unreact(place.channel, place.ts, 'eyes');
+        await api.react(place.channel, place.ts, 'x');
+      }
+      await this.sends.run(`${place.channel}:${place.threadTs ?? ''}`, async () => {
+        await api.post(place.channel!, slackPlain(t('channel.cutShort')), { thread_ts: place.threadTs });
+      });
+    }
+  }
+
+  /** The bot token and its permissions, looked at once the server starts. */
+  private async probe(row: Row) {
+    const who = await this.botApi(row).authTest();
+    await this.noteScopes(who.scopes);
+  }
+
+  /** Remembers which of the permissions the app needs its token lacks; nothing when Slack did not list them. */
+  private async noteScopes(scopes: string[] | null) {
+    const missing = scopes ? SLACK_BOT_SCOPES.filter((s) => !scopes.includes(s)) : [];
+    const note = missing.length
+      ? (await this.services.settings.translator())('slack.scopesMissing', { scopes: missing.join(', ') })
+      : null;
+    if (note === this.scopeNote) return;
+    this.scopeNote = note;
+    this.changed();
+  }
+
+  /**
+   * The bot token works (null) or Slack refused it: the status says so until a call goes through
+   * again. An error the socket reported is its own and is left alone.
+   */
+  private tokenState(code: string | null) {
+    if (code === null) {
+      if (!this.tokenError) return;
+      const { note } = this.tokenError;
+      this.tokenError = null;
+      void this.row()
+        .then((row) => (row?.error === note ? this.setError(null) : undefined))
+        .catch(() => {});
+      return;
+    }
+    if (this.tokenError?.code === code || this.stopped) return;
+    void this.services.settings
+      .translator()
+      .then((t) => {
+        const note = t('slack.tokenInvalid', { reason: code });
+        this.tokenError = { code, note };
+        return this.setError(note);
+      })
+      .catch(() => {});
+  }
   async stop() {
     this.stopped = true;
+    this.halting.abort();
     for (const u of this.unsubs) u();
     this.socket?.close();
     await this.socket?.done;
@@ -184,7 +283,7 @@ export class SlackChannel {
         name: p.displayName || p.username || '',
         slackName: p.slackName,
       })),
-      error: row?.error ?? null,
+      error: row?.error ?? this.scopeNote,
     };
   }
 
@@ -207,6 +306,8 @@ export class SlackChannel {
       .userName(who.user_id)
       .catch(() => who.user_id);
     const account: Account = { teamId: who.team_id, team: who.team, botUserId: who.user_id, botName };
+    this.tokenError = null;
+    await this.noteScopes(who.scopes);
     const values = {
       secret: this.vault.seal(JSON.stringify({ app, bot } satisfies Tokens)),
       account: { ...account },
@@ -298,7 +399,11 @@ export class SlackChannel {
     this.socket = new SlackSocket(
       (signal) => app.socketUrl(signal),
       (e) => this.envelope(e),
-      (error) => void this.setError(error).catch(() => {}),
+      // A hello must not wipe the note of a refused bot token; the socket only knows the app token.
+      (error) => {
+        if (error === null && this.tokenError) return;
+        void this.setError(error).catch(() => {});
+      },
     );
   }
 
@@ -306,6 +411,11 @@ export class SlackChannel {
     if (e.type === 'events_api') {
       const p = e.payload as { event_id?: string; event?: SlackMessage & { type: string } } | undefined;
       const ev = p?.event;
+      // The workspace took the app's access away: said at once, not at the next failed send.
+      if (ev?.type === 'tokens_revoked' || ev?.type === 'app_uninstalled') {
+        this.tokenState(ev.type === 'app_uninstalled' ? 'app_uninstalled' : 'token_revoked');
+        return;
+      }
       if (!ev || (ev.type !== 'message' && ev.type !== 'app_mention')) return;
       await this.received(ev);
     } else if (e.type === 'interactive') {
@@ -330,7 +440,7 @@ export class SlackChannel {
     // other without end.
     if (ev.bot_id || ev.user === account.botUserId || !WRITTEN.has(ev.subtype)) return;
     if (!this.once(`${ev.channel}:${ev.ts}`)) return;
-    const api = this.api(this.tokens(row).bot);
+    const api = this.botApi(row);
     const t = await this.services.settings.translator();
     const raw = ev.text ?? '';
     const mentioned = raw.includes(`<@${account.botUserId}`);
@@ -413,19 +523,58 @@ export class SlackChannel {
       .where(eq(schema.slackPeople.slackUserId, person.slackUserId));
     const words = named ? named.rest : text;
     const thread = await this.services.threads.main(bot.id, person.userId);
-    const files = await this.files(api, ev, thread.id, t);
+    const got = await this.files(api, ev, thread.id, t);
+    const files = got.names;
     if (!words && !files.length) {
       if (named) await api.post(ev.channel!, slackPlain(t('slack.talkingTo', { bot: bot.name })));
       return;
     }
-    await this.services.inbox.send(thread.id, {
-      text: words,
-      files,
-      clientId: `slack:${ev.channel}:${ev.ts}`,
-      userId: person.userId,
-      props: { via: 'slack' },
-    });
-    await this.started(thread.id, { channel: ev.channel!, ts: ev.ts }, api);
+    await this.submit(
+      row,
+      api,
+      thread.id,
+      { channel: ev.channel!, ts: ev.ts },
+      {
+        text: withMissingFiles(words, got, t),
+        files,
+        clientId: `slack:${ev.channel}:${ev.ts}`,
+        userId: person.userId,
+        props: { via: 'slack' },
+      },
+      t,
+    );
+  }
+
+  /**
+   * Hands a line to the conversation. The 👀 and the note of the request come first, so a restart in
+   * the middle leaves a trace to settle; if the line cannot be taken the person is told.
+   */
+  private async submit(
+    row: Row,
+    api: SlackApi,
+    threadId: string,
+    place: Place & { ts: string },
+    input: Parameters<Services['inbox']['send']>[1],
+    t: T,
+  ) {
+    await this.started(row.id, threadId, place, api);
+    try {
+      await this.services.inbox.send(threadId, input);
+    } catch (err) {
+      console.warn('slack inbox', err);
+      await this.finished(threadId, api, 'x');
+      await api
+        .post(place.channel, slackPlain(t('channel.updateFailed')), { thread_ts: place.threadTs })
+        .catch(() => {});
+      return;
+    }
+    // Nothing started (a repeated message, say): no turn will end it, so it ends here.
+    if (
+      this.working.get(threadId)?.ts === place.ts &&
+      (await this.services.threads.state(threadId)) === 'idle'
+    ) {
+      await this.finished(threadId, api, null);
+    }
   }
 
   /** A line in a channel: a team conversation, new or the one this Slack thread already is. */
@@ -491,31 +640,72 @@ export class SlackChannel {
         fresh = false;
       }
     }
-    const files = await this.files(api, ev, threadId, t);
+    const got = await this.files(api, ev, threadId, t);
+    const files = got.names;
     if (!words && !files.length) return;
-    // Called into a thread that was going on without it: what was said before, as others' words.
-    const history =
-      fresh && ev.thread_ts && ev.thread_ts !== ev.ts
-        ? await this.history(api, ev.channel!, ev.thread_ts, ev.ts, row)
-        : '';
-    await this.services.inbox.send(threadId, {
-      text: words,
-      files,
-      clientId: `slack:${ev.channel}:${ev.ts}`,
-      userId: person.userId,
-      ...(history && { history }),
-      props: { via: 'slack' },
-    });
-    await this.started(threadId, { channel: ev.channel!, threadTs: ev.thread_ts ?? ev.ts, ts: ev.ts }, api);
+    // Called into a thread that was going on without it: what was said before, as others' words. In
+    // a thread it is already in, what was said since its last request there (lines that were for
+    // someone else do not reach it otherwise).
+    let history = '';
+    if (ev.thread_ts && ev.thread_ts !== ev.ts) {
+      if (fresh) history = await this.history(api, ev.channel!, ev.thread_ts, ev.ts, row);
+      else {
+        const since = await this.lastRequest(threadId, ev.channel!);
+        if (since) history = await this.history(api, ev.channel!, ev.thread_ts, ev.ts, row, since);
+      }
+    }
+    await this.submit(
+      row,
+      api,
+      threadId,
+      { channel: ev.channel!, threadTs: ev.thread_ts ?? ev.ts, ts: ev.ts },
+      {
+        text: withMissingFiles(words, got, t),
+        files,
+        clientId: `slack:${ev.channel}:${ev.ts}`,
+        userId: person.userId,
+        ...(history && { history }),
+        props: { via: 'slack' },
+      },
+      t,
+    );
   }
 
-  /** The earlier lines of a Slack thread, `Name: text` each, newest kept when it is long. */
-  private async history(api: SlackApi, channel: string, threadTs: string, before: string, row: Row) {
+  /** The time of the last line from Slack that went to this conversation, as Slack's `ts`. */
+  private async lastRequest(threadId: string, channel: string): Promise<string | null> {
+    const [last] = await this.ctx.db
+      .select({ clientId: schema.messages.clientId })
+      .from(schema.messages)
+      .where(
+        and(eq(schema.messages.threadId, threadId), like(schema.messages.clientId, `slack:${channel}:%`)),
+      )
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(1);
+    return last?.clientId?.slice(`slack:${channel}:`.length) ?? null;
+  }
+
+  /**
+   * The earlier lines of a Slack thread, `Name: text` each, newest kept when it is long; with
+   * `since`, only the lines after that one.
+   */
+  private async history(
+    api: SlackApi,
+    channel: string,
+    threadTs: string,
+    before: string,
+    row: Row,
+    since?: string,
+  ) {
     const account = row.account as unknown as Account;
-    const messages = await api.replies(channel, threadTs, HISTORY_MESSAGES + 1).catch(() => []);
+    const messages = await api
+      .replies(channel, threadTs, HISTORY_MESSAGES + 1, 5, since)
+      .catch(() => [] as SlackMessage[]);
     const lines: string[] = [];
     for (const m of messages) {
       if (m.ts === before || Number(m.ts) > Number(before) || !m.text?.trim()) continue;
+      if (since && Number(m.ts) <= Number(since)) continue;
+      // The bot's own lines are its words, not something it has missed.
+      if (m.user === account.botUserId) continue;
       const who = m.user ? await this.nameOf(api, m.user) : m.bot_id ? 'bot' : '?';
       const words = slackText(m.text, account.botUserId, await this.namesIn(api, m.text));
       lines.push(`${who}: ${words}`);
@@ -531,11 +721,19 @@ export class SlackChannel {
   }
 
   /** The files of a message, downloaded into the conversation's staging folder. */
-  private async files(api: SlackApi, ev: SlackMessage, threadId: string, t: T): Promise<string[]> {
+  private async files(
+    api: SlackApi,
+    ev: SlackMessage,
+    threadId: string,
+    t: T,
+  ): Promise<{ names: string[]; failed: string[]; tooLarge: string[] }> {
     const names: string[] = [];
+    const failed: string[] = [];
+    const tooLarge: string[] = [];
     for (const f of (ev.files ?? []) as SlackFile[]) {
       const name = receivedName('file', f.id, f.mimetype, f.name);
       if (!f.url_private_download || (f.size ?? 0) > MAX_UPLOAD_BYTES) {
+        tooLarge.push(name);
         await this.say(api, ev, t('channel.fileTooLarge', { name }));
         continue;
       }
@@ -545,10 +743,11 @@ export class SlackChannel {
         names.push(saved.name);
       } catch (err) {
         console.warn('slack file', (err as Error).message);
+        failed.push(name);
         await this.say(api, ev, t('channel.fileFailed', { name }));
       }
     }
-    return names;
+    return { names, failed, tooLarge };
   }
 
   /** A short line back where the message came from. */
@@ -557,10 +756,12 @@ export class SlackChannel {
   }
 
   /** 👀 on the message the bot works on, until it is done. */
-  private async started(threadId: string, place: Place & { ts: string }, api: SlackApi) {
+  private async started(rowId: string, threadId: string, place: Place & { ts: string }, api: SlackApi) {
     const before = this.working.get(threadId);
     if (before) await api.unreact(before.channel, before.ts, 'eyes');
-    this.working.set(threadId, place);
+    // Noted before the turn can start, so a restart in the middle leaves a trace to settle.
+    await holdRequest(this.ctx, rowId, threadId, { ...place });
+    this.working.set(threadId, { ...place, rowId });
     await api.react(place.channel, place.ts, 'eyes');
   }
 
@@ -569,7 +770,7 @@ export class SlackChannel {
     if (p?.type !== 'block_actions' || !p.user?.id || !p.actions?.length) return;
     const row = await this.row();
     if (!row?.secret) return;
-    const api = this.api(this.tokens(row).bot);
+    const api = this.botApi(row);
     const t = await this.services.settings.translator();
     const channel = p.channel?.id ?? p.container?.channel_id;
     const threadTs = p.message?.thread_ts ?? p.container?.thread_ts;
@@ -650,8 +851,12 @@ export class SlackChannel {
     return person?.dmChannel ? { channel: person.dmChannel } : null;
   }
 
-  /** A new message here that belongs in Slack too. */
-  private async outgoing(m: Message) {
+  /** A new message here that belongs in Slack too; a conversation's lines are sent one after another. */
+  private outgoing(m: Message): Promise<void> {
+    return this.lines.run(m.threadId, () => this.sendLine(m)).then(() => {});
+  }
+
+  private async sendLine(m: Message) {
     if (this.stopped || !['assistant', 'approval', 'error', 'user'].includes(m.role)) return;
     const row = await this.row();
     if (!row?.secret) return;
@@ -663,9 +868,9 @@ export class SlackChannel {
     const place = await this.placeOf(thread);
     if (!place) return;
     const t = await this.services.settings.translator();
-    const api = this.api(this.tokens(row).bot);
+    const api = this.botApi(row);
     const where = { thread_ts: place.threadTs };
-    await this.sends.run(`${place.channel}:${place.threadTs ?? ''}`, async () => {
+    const ok = await this.deliver(place, api, t, async () => {
       if (m.role === 'user') {
         const [who] = await this.ctx.db
           .select({ displayName: schema.users.displayName, username: schema.users.username })
@@ -713,7 +918,6 @@ export class SlackChannel {
       }
       if (m.role === 'error') {
         await api.post(place.channel, `⚠️ ${slackPlain(m.text)}`, where);
-        await this.finished(thread.id, api, 'x');
         return;
       }
       if (m.author !== `bot:${thread.botId}`) return;
@@ -736,6 +940,21 @@ export class SlackChannel {
         }
       }
     });
+    if (m.role === 'error') await this.finished(thread.id, api, 'x');
+    else if (!ok && this.working.has(thread.id)) this.undelivered.add(thread.id);
+  }
+
+  /**
+   * Runs the sends of one line in the place's order. When it could not be delivered the person is
+   * told once, in the same place, that the rest is in the app; whether it went through is returned.
+   */
+  private async deliver(place: Place, api: SlackApi, t: T, job: () => Promise<void>): Promise<boolean> {
+    const key = `${place.channel}:${place.threadTs ?? ''}`;
+    if (await this.sends.run(key, job)) return true;
+    await this.sends.run(key, async () => {
+      await api.post(place.channel, slackPlain(t('channel.notDelivered')), { thread_ts: place.threadTs });
+    });
+    return false;
   }
 
   /**
@@ -745,15 +964,14 @@ export class SlackChannel {
   async report(channel: string, routineName: string, text: string): Promise<boolean> {
     const row = await this.row();
     if (!row?.secret || this.stopped) return false;
-    const api = this.api(this.tokens(row).bot);
+    const api = this.botApi(row);
     try {
       const parts = slackMessages(text);
-      await this.sends.run(channel, async () => {
+      return await this.sends.run(channel, async () => {
         for (const [i, part] of parts.entries()) {
           await api.post(channel, i === 0 ? `📋 *${slackPlain(routineName)}*\n\n${part}` : part);
         }
       });
-      return true;
     } catch (err) {
       console.warn('slack report', (err as Error).message);
       return false;
@@ -765,21 +983,35 @@ export class SlackChannel {
     if (e.state !== 'idle') return;
     const row = await this.row();
     if (!row?.secret) return;
-    await this.finished(e.threadId, this.api(this.tokens(row).bot), 'white_check_mark');
+    // The lines of the reply are sent first: a reply that did not arrive is no ✅.
+    await this.lines.after(e.threadId);
+    const mark = this.undelivered.delete(e.threadId) ? 'x' : 'white_check_mark';
+    await this.finished(e.threadId, this.botApi(row), mark);
   }
 
-  private async finished(threadId: string, api: SlackApi, mark: string) {
+  private async finished(threadId: string, api: SlackApi, mark: string | null) {
     const place = this.working.get(threadId);
     if (!place) return;
     this.working.delete(threadId);
+    await dropRequest(this.ctx, place.rowId, threadId);
     await api.unreact(place.channel, place.ts, 'eyes');
-    await api.react(place.channel, place.ts, mark);
+    if (mark) await api.react(place.channel, place.ts, mark);
   }
 
   // Records
 
   private api(token: string) {
-    return new SlackApi(token, this.ctx.config.slackApi);
+    return new SlackApi(token, this.ctx.config.slackApi, undefined, this.halting.signal);
+  }
+
+  /** The bot's own API: what Slack says about its token is watched. */
+  private botApi(row: Row) {
+    return new SlackApi(
+      this.tokens(row).bot,
+      this.ctx.config.slackApi,
+      (code) => this.tokenState(code),
+      this.halting.signal,
+    );
   }
 
   private tokens(row: Row): Tokens {
@@ -830,7 +1062,13 @@ export class SlackChannel {
   private async nameOf(api: SlackApi, user: string): Promise<string> {
     const known = this.names.get(user);
     if (known) return known;
-    const name = await api.userName(user).catch(() => user);
+    let name: string;
+    try {
+      name = await api.userName(user);
+    } catch {
+      // The id stands in for this message only; a failed lookup is asked again next time.
+      return user;
+    }
     if (this.names.size > 2000) this.names.clear();
     this.names.set(user, name);
     return name;

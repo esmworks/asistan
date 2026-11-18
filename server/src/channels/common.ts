@@ -80,14 +80,137 @@ export async function lastWroteVia(ctx: Ctx, threadId: string, via: Via): Promis
   return (last?.props as { via?: unknown } | undefined)?.via === via;
 }
 
+/**
+ * Notes that the bot is working on a request from a chat app, with what the chat shows for it, or
+ * updates that note. Kept until `dropRequest`, so a start after a crash finds it with `heldRequests`.
+ */
+export async function holdRequest(
+  ctx: Ctx,
+  channelId: string,
+  threadId: string,
+  place: Record<string, unknown>,
+): Promise<void> {
+  await ctx.db
+    .insert(schema.channelRequests)
+    .values({ channelId, threadId, place })
+    .onConflictDoUpdate({
+      target: [schema.channelRequests.channelId, schema.channelRequests.threadId],
+      set: { place },
+    });
+}
+
+/** The request is over: answered, stopped, failed or settled after a restart. */
+export async function dropRequest(ctx: Ctx, channelId: string, threadId: string): Promise<void> {
+  await ctx.db
+    .delete(schema.channelRequests)
+    .where(
+      and(eq(schema.channelRequests.channelId, channelId), eq(schema.channelRequests.threadId, threadId)),
+    );
+}
+
+/** Requests a chat app still showed as under way when the server stopped, oldest first. */
+export async function heldRequests(
+  ctx: Ctx,
+  channelId: string,
+): Promise<{ threadId: string; place: Record<string, unknown>; createdAt: Date }[]> {
+  return ctx.db
+    .select({
+      threadId: schema.channelRequests.threadId,
+      place: schema.channelRequests.place,
+      createdAt: schema.channelRequests.createdAt,
+    })
+    .from(schema.channelRequests)
+    .where(eq(schema.channelRequests.channelId, channelId))
+    .orderBy(schema.channelRequests.createdAt);
+}
+
+/**
+ * Whether the conversation still has a turn waiting to run. Such a turn survives a restart and runs
+ * after it, so the request it answers is not over.
+ */
+export async function queuedTurn(ctx: Ctx, threadId: string): Promise<boolean> {
+  const [queued] = await ctx.db
+    .select({ id: schema.turns.id })
+    .from(schema.turns)
+    .where(and(eq(schema.turns.threadId, threadId), eq(schema.turns.status, 'queued')))
+    .limit(1);
+  return !!queued;
+}
+
+/**
+ * Whether the conversation's last turn, one the person started, ended well without leaving anything
+ * to show: no words, no file, no card and no failure. The person would only see "typing…" stop.
+ */
+export async function saidNothing(ctx: Ctx, threadId: string): Promise<boolean> {
+  const [turn] = await ctx.db
+    .select()
+    .from(schema.turns)
+    .where(eq(schema.turns.threadId, threadId))
+    .orderBy(desc(schema.turns.createdAt))
+    .limit(1);
+  if (!turn || turn.status !== 'done' || turn.source !== 'user') return false;
+  const made = await ctx.db
+    .select()
+    .from(schema.messages)
+    .where(and(eq(schema.messages.threadId, threadId), eq(schema.messages.turnId, turn.id)));
+  return !made.some(
+    (m) =>
+      m.role === 'error' ||
+      m.role === 'approval' ||
+      (m.role === 'assistant' &&
+        (m.text.trim() !== '' || (Array.isArray(m.props.files) && m.props.files.length > 0))),
+  );
+}
+
+/** The person's words with a note of the files that did not arrive, so the bot does not answer as if it had them. */
+export function withMissingFiles(text: string, got: { failed: string[]; tooLarge: string[] }, t: T): string {
+  return [
+    text,
+    got.failed.length && t('channel.filesMissing', { names: got.failed.join(', ') }),
+    got.tooLarge.length && t('channel.filesTooLarge', { names: got.tooLarge.join(', ') }),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** How long to wait before trying a refused send again, at most this many times. */
+export const SEND_TRIES = 3;
+/** The longest a chat app's "slow down" is waited out before the send is given up. */
+export const MAX_RATE_WAIT_MS = 60_000;
+
+/** Waits `ms`, or fails at once when the signal aborts (the chat app is being stopped, say). */
+export const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason as Error);
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason as Error);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 /** Runs the sends of one chat in order, one at a time, so a reply never overtakes its file. */
 export class SendQueue {
-  private tails = new Map<string, Promise<void>>();
+  private tails = new Map<string, Promise<unknown>>();
 
-  run(key: string, job: () => Promise<void>): Promise<void> {
-    const next = (this.tails.get(key) ?? Promise.resolve())
-      .then(job)
-      .catch((err: unknown) => console.warn('chat app send', err));
+  /** Settles once every job asked for under `key` so far is done. */
+  async after(key: string): Promise<void> {
+    await this.tails.get(key);
+  }
+
+  /** Whether the job went through; a failure is logged, never thrown, so the next send still runs. */
+  run(key: string, job: () => Promise<void>): Promise<boolean> {
+    const next = (this.tails.get(key) ?? Promise.resolve()).then(job).then(
+      () => true,
+      (err: unknown) => {
+        console.warn('chat app send', err);
+        return false;
+      },
+    );
     this.tails.set(key, next);
     void next.finally(() => {
       if (this.tails.get(key) === next) this.tails.delete(key);

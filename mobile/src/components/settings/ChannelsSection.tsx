@@ -15,6 +15,11 @@ const ERRORS: Record<string, MessageKey> = {
   expired: 'whatsapp.error.expired',
   ownNumber: 'whatsapp.error.ownNumber',
   loggedOut: 'whatsapp.error.loggedOut',
+  forbidden: 'whatsapp.error.forbidden',
+  mismatch: 'whatsapp.error.mismatch',
+  replaced: 'whatsapp.error.replaced',
+  unreachable: 'whatsapp.error.unreachable',
+  failing: 'whatsapp.error.failing',
 };
 
 /** The "chat apps" settings section: WhatsApp here, and where each bot's Telegram is. */

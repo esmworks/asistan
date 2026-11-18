@@ -470,6 +470,13 @@
       "when": 1795007354656,
       "tag": "0066_routine_busy_and_resume",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795024872765,
+      "tag": "0067_channel_requests",
+      "breakpoints": true
     }
   ]
 }

@@ -1909,6 +1909,14 @@ export const tr = {
   'whatsapp.error.ownNumber':
     'Bağlanan hesap sizin kendi numaranız. Başka bir numarayı bağlayın ya da "Kendi numaram"ı seçin.',
   'whatsapp.error.loggedOut': 'WhatsApp bu cihazın bağlantısını kaldırdı. Yeniden bağlayıp QR kodunu okutun.',
+  'whatsapp.error.forbidden':
+    'WhatsApp bu bağlantıyı reddetti; numara engellenmiş olabilir. WhatsApp uygulamasından hesabın durumuna bakın.',
+  'whatsapp.error.mismatch':
+    'WhatsApp bu bağlı cihazı artık kabul etmiyor. Yeniden bağlayıp QR kodunu okutun.',
+  'whatsapp.error.replaced':
+    'Bu numara başka bir yerde açıldı, bu yüzden bağlantı durdu. Burada kullanmak için yeniden bağlayın.',
+  'whatsapp.error.unreachable': 'WhatsApp’a ulaşılamadı. İnternet bağlantısını kontrol edip yeniden deneyin.',
+  'whatsapp.error.failing': 'WhatsApp’a bağlanılamıyor; yeniden deneniyor.',
   'whatsapp.mode.separate': 'Ayrı bir bot numarası',
   'whatsapp.modeHint.separate':
     'Önerilen. İkinci bir numara bağlanır; siz kendi numaranızdan ona yazarsınız.',

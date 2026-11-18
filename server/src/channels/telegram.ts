@@ -11,7 +11,7 @@ import {
   type TelegramStatus,
   type TurnEvent,
 } from '@yumakbot/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { T } from '../i18n';
@@ -23,6 +23,12 @@ import { qrImage } from './qr';
 import {
   cardView,
   chatCommand,
+  dropRequest,
+  heldRequests,
+  holdRequest,
+  queuedTurn,
+  saidNothing,
+  withMissingFiles,
   lastWroteVia,
   messageFiles,
   parseChoice,
@@ -95,6 +101,9 @@ const sleep = (ms: number, signal: AbortSignal) =>
     );
   });
 
+/** Telegram says the person blocked the bot (or never started it): nothing sent there can arrive. */
+const isBlocked = (err: unknown) => err instanceof TelegramError && err.code === 403;
+
 const sameText = (a: string, b: string) => {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
@@ -114,6 +123,10 @@ export class TelegramChannels {
   private sends = new SendQueue();
   private unsubs: (() => void)[] = [];
   private stopped = false;
+  /** Aborts on stop, so a wait for Telegram's "slow down" does not hold the stop up. */
+  private halting = new AbortController();
+  /** Conversations where a request from Telegram is being worked on, to end it once. */
+  private working = new Set<string>();
 
   constructor(
     private ctx: Ctx,
@@ -129,11 +142,39 @@ export class TelegramChannels {
     await this.ctx.db
       .delete(schema.channels)
       .where(and(eq(schema.channels.kind, 'telegram'), isNull(schema.channels.botId)));
+    // Before reading Telegram again, so a message that arrives now is never taken for a stale one.
+    for (const row of await this.rows()) {
+      if (row.secret) await this.settleHeld(row).catch((err: unknown) => console.warn('telegram held', err));
+    }
     for (const row of await this.rows()) if (row.secret) this.listen(row.id);
+  }
+
+  /**
+   * Requests that were being worked on when the server stopped are over: the person is told so
+   * they write again. A queued turn survives the restart and still runs, so its request stays.
+   */
+  private async settleHeld(row: Row) {
+    const held = await heldRequests(this.ctx, row.id);
+    if (!held.length) return;
+    const t = await this.services.settings.translator();
+    const api = row.secret ? this.api(this.vault.open(row.secret)) : null;
+    for (const h of held) {
+      if (await queuedTurn(this.ctx, h.threadId)) {
+        this.working.add(h.threadId);
+        continue;
+      }
+      await dropRequest(this.ctx, row.id, h.threadId);
+      const chat = (h.place as { chat?: string }).chat;
+      if (!api || !chat || !row.owner) continue;
+      await this.sends.run(row.id, async () => {
+        await api.sendMessage(chat, t('channel.cutShort'));
+      });
+    }
   }
 
   async stop() {
     this.stopped = true;
+    this.halting.abort();
     for (const u of this.unsubs) u();
     for (const p of this.polls.values()) p.stop.abort();
     await Promise.all([...this.polls.values()].map((p) => p.done));
@@ -245,10 +286,7 @@ export class TelegramChannels {
   async update(botId: string, patch: { notices: boolean }): Promise<TelegramStatus> {
     const row = await this.forBot(botId);
     if (!row) throw new HttpError(409, 'error.telegramNotConnected');
-    await this.ctx.db
-      .update(schema.channels)
-      .set({ settings: { ...row.settings, notices: patch.notices } })
-      .where(eq(schema.channels.id, row.id));
+    await this.patchSettings(row.id, { notices: patch.notices });
     this.changed();
     return this.status(botId);
   }
@@ -289,10 +327,11 @@ export class TelegramChannels {
           this.ctx.config.telegramPollSeconds,
           signal,
         );
-        if (row.error) await this.setError(id, null);
+        // A blocked bot is not cleared by Telegram answering; the person unblocking it does that.
+        if (row.error && !(row.settings as { blocked?: boolean }).blocked) await this.setError(id, null);
         for (const u of updates) {
           if (signal.aborted) return;
-          await this.handle(id, api, u).catch((err: unknown) => console.warn('telegram update', err));
+          await this.handle(id, api, u).catch((err: unknown) => this.failed(row, api, u, err));
           await this.ctx.db
             .update(schema.channels)
             .set({ cursor: String(u.update_id + 1) })
@@ -302,7 +341,10 @@ export class TelegramChannels {
       } catch (err) {
         if (signal.aborted) return;
         if (err instanceof TelegramError) {
-          await this.setError(id, err.description || err.message);
+          // The blocked note stays until the person unblocks; a poll error would hide it for good.
+          if (!(row.settings as { blocked?: boolean }).blocked) {
+            await this.setError(id, err.description || err.message);
+          }
           // The token was revoked or the bot deleted: asking again changes nothing.
           if (err.code === 401 || err.code === 404) return;
           if (err.retryAfter) wait = Math.max(wait, err.retryAfter * 1000);
@@ -315,9 +357,27 @@ export class TelegramChannels {
     }
   }
 
+  /** One update could not be handled: it is logged, and the person is told so they can try again. */
+  private async failed(row: Row, api: TelegramApi, u: TgUpdate, err: unknown) {
+    console.warn('telegram update', err);
+    const chat = u.message?.chat.id ?? u.callback_query?.message?.chat.id;
+    const from = u.message?.from?.id ?? u.callback_query?.from.id;
+    // Only the paired person is ever written to, not whoever found the bot.
+    if (!chat || !row.owner || String(from) !== row.owner || isBlocked(err)) return;
+    const t = await this.services.settings.translator();
+    await api.sendMessage(chat, t('channel.updateFailed')).catch(() => {});
+  }
+
   private async handle(id: string, api: TelegramApi, u: TgUpdate) {
     const row = await this.row(id);
     if (!row?.botId) return;
+    if (u.my_chat_member) {
+      const { chat, new_chat_member: now } = u.my_chat_member;
+      if (chat.type !== 'private' || !row.owner || String(chat.id) !== row.owner) return;
+      if (now.status === 'kicked' || now.status === 'left') await this.blocked(row);
+      else if (now.status === 'member') await this.unblock(row);
+      return;
+    }
     if (u.callback_query) return this.pressed(row, api, u.callback_query);
     const m = u.message;
     // Only one-to-one chats with a person; groups and other bots are not read.
@@ -327,6 +387,8 @@ export class TelegramChannels {
     if (start) return this.paired(row, api, m, start[1], t);
     // Nobody but the paired account is listened to, not even with a reply.
     if (!row.owner || String(m.from.id) !== row.owner) return;
+    // A message from the person means they can reach the bot again.
+    await this.unblock(row);
     const bot = await this.services.bots.get(row.botId).catch(() => null);
     if (!bot || bot.archivedAt) {
       await api.sendMessage(m.chat.id, t('channel.botArchived'));
@@ -342,27 +404,41 @@ export class TelegramChannels {
       await api.sendMessage(m.chat.id, done);
       return;
     }
-    const files = await this.received(api, m, thread.id, t);
+    const got = await this.received(api, m, thread.id, t);
+    const files = got.names;
     if (!text && !files.length) return;
+    const said = withMissingFiles(text, got, t);
     const replyTo = m.reply_to_message
       ? await this.ours(row.id, String(m.reply_to_message.message_id))
       : null;
     // Known before the bot starts, so "typing…" and its reply find their way back here.
-    await this.ctx.db
-      .update(schema.channels)
-      .set({ settings: { ...row.settings, threadId: thread.id } })
-      .where(eq(schema.channels.id, row.id));
-    const { message } = await this.services.inbox.send(thread.id, {
-      text,
-      files,
-      clientId: `telegram:${m.chat.id}:${m.message_id}`,
-      userId: row.userId,
-      ...(replyTo && { replyTo }),
-      props: {
-        via: 'telegram',
-        ...(forward !== null && { outside: 'forward', ...(forward && { forwardedFrom: forward }) }),
-      },
-    });
+    await this.patchSettings(row.id, { threadId: thread.id });
+    // Noted before the turn can start, so a restart in the middle leaves a trace to settle.
+    await holdRequest(this.ctx, row.id, thread.id, { chat: String(m.chat.id) });
+    this.working.add(thread.id);
+    let message;
+    try {
+      ({ message } = await this.services.inbox.send(thread.id, {
+        text: said,
+        files,
+        clientId: `telegram:${m.chat.id}:${m.message_id}`,
+        userId: row.userId,
+        ...(replyTo && { replyTo }),
+        props: {
+          via: 'telegram',
+          ...(forward !== null && { outside: 'forward', ...(forward && { forwardedFrom: forward }) }),
+        },
+      }));
+    } catch (err) {
+      this.working.delete(thread.id);
+      await dropRequest(this.ctx, row.id, thread.id);
+      throw err;
+    }
+    // Nothing started (a repeated message, say): no turn will end it, so it ends here.
+    if (this.working.has(thread.id) && (await this.services.threads.state(thread.id)) === 'idle') {
+      this.working.delete(thread.id);
+      await dropRequest(this.ctx, row.id, thread.id);
+    }
     await this.remember(row.id, String(m.message_id), message.id);
   }
 
@@ -399,8 +475,28 @@ export class TelegramChannels {
   /** A button under a card: the person's answer to it, as if given in the app. */
   private async pressed(row: Row, api: TelegramApi, cb: TgCallback) {
     const t = await this.services.settings.translator();
-    const answer = (text: string) =>
-      api.call('answerCallbackQuery', { callback_query_id: cb.id, text }).catch(() => {});
+    // Every press is answered once, or the button keeps spinning in Telegram.
+    let answered = false;
+    const answer = async (text: string) => {
+      if (answered) return;
+      answered = true;
+      await api.call('answerCallbackQuery', { callback_query_id: cb.id, text }).catch(() => {});
+    };
+    try {
+      await this.press(row, api, cb, t, answer);
+    } catch (err) {
+      console.warn('telegram press', err);
+      await answer(t('channel.pressFailed'));
+    }
+  }
+
+  private async press(
+    row: Row,
+    api: TelegramApi,
+    cb: TgCallback,
+    t: T,
+    answer: (text: string) => Promise<void>,
+  ) {
     const choice = cb.data ? parseChoice(cb.data) : null;
     if (!row.owner || String(cb.from.id) !== row.owner || !choice) return answer('');
     const card = await this.services.approvals.get(choice.approvalId).catch(() => null);
@@ -437,7 +533,7 @@ export class TelegramChannels {
         .catch(() => {});
       await api
         .sendMessage(cb.message.chat.id, `✓ ${result}`, {
-          reply_parameters: { message_id: cb.message.message_id },
+          reply_parameters: { message_id: cb.message.message_id, allow_sending_without_reply: true },
         })
         .catch(() => {});
     }
@@ -450,7 +546,12 @@ export class TelegramChannels {
   }
 
   /** The files of a message, downloaded into the conversation's staging folder. */
-  private async received(api: TelegramApi, m: TgMessage, threadId: string, t: T): Promise<string[]> {
+  private async received(
+    api: TelegramApi,
+    m: TgMessage,
+    threadId: string,
+    t: T,
+  ): Promise<{ names: string[]; failed: string[]; tooLarge: string[] }> {
     const found: [string, TgFile][] = [];
     if (m.photo?.length) found.push(['photo', m.photo.at(-1)!]);
     for (const kind of ['document', 'audio', 'voice', 'video', 'video_note', 'animation'] as const) {
@@ -458,9 +559,12 @@ export class TelegramChannels {
       if (f) found.push([kind, f]);
     }
     const names: string[] = [];
+    const failed: string[] = [];
+    const tooLarge: string[] = [];
     for (const [kind, f] of found) {
       const name = receivedName(kind, String(m.message_id), f.mime_type, f.file_name);
       if ((f.file_size ?? 0) > Math.min(DOWNLOAD_MAX, MAX_UPLOAD_BYTES)) {
+        tooLarge.push(name);
         await api.sendMessage(m.chat.id, t('channel.fileTooLarge', { name }));
         continue;
       }
@@ -470,10 +574,11 @@ export class TelegramChannels {
         names.push(saved.name);
       } catch (err) {
         console.warn('telegram file', (err as Error).message);
+        failed.push(name);
         await api.sendMessage(m.chat.id, t('channel.fileFailed', { name }));
       }
     }
-    return names;
+    return { names, failed, tooLarge };
   }
 
   // Writing to Telegram
@@ -499,12 +604,12 @@ export class TelegramChannels {
     if (!here) {
       // A routine's report from another conversation, when the person wants those here too.
       if (settings.notices === false || !report || m.role !== 'assistant' || !m.text.trim()) return;
-      await this.sends.run(row.id, async () => {
+      await this.deliver(row, api, chat, t, async () => {
         await this.text(api, chat, headed());
       });
       return;
     }
-    await this.sends.run(row.id, async () => {
+    await this.deliver(row, api, chat, t, async () => {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
@@ -541,10 +646,35 @@ export class TelegramChannels {
           const sent = await api.sendDocument(chat, path);
           await this.remember(row.id, String(sent.message_id), m.id);
         } catch (err) {
+          if (isBlocked(err)) throw err;
           console.warn('telegram send file', (err as Error).message);
           await this.text(api, chat, t('channel.fileInApp', { name: f.name }));
         }
       }
+    });
+  }
+
+  /**
+   * Runs the sends of one reply in the chat's order. When some of it could not be delivered, the
+   * person is told once that the rest is in the app; a blocked bot is noted on the channel instead.
+   */
+  private async deliver(row: Row, api: TelegramApi, chat: string, t: T, job: () => Promise<void>) {
+    let blocked = false;
+    const ok = await this.sends.run(row.id, async () => {
+      try {
+        await job();
+      } catch (err) {
+        if (isBlocked(err)) {
+          blocked = true;
+          await this.blocked(row);
+        }
+        throw err;
+      }
+      await this.unblock(row);
+    });
+    if (ok || blocked) return;
+    await this.sends.run(row.id, async () => {
+      await api.sendMessage(chat, t('channel.notDelivered'));
     });
   }
 
@@ -592,16 +722,40 @@ export class TelegramChannels {
     if (!active) {
       if (timer) clearInterval(timer);
       this.typing.delete(e.threadId);
+      if (e.state === 'idle' && row) await this.finished(row, e.threadId);
       return;
     }
     if (timer || this.stopped) return;
     const api = this.api(this.vault.open(row.secret!));
     const send = () =>
-      void api.call('sendChatAction', { chat_id: row.owner, action: 'typing' }).catch(() => {});
+      void api.call('sendChatAction', { chat_id: row.owner, action: 'typing' }).catch((err: unknown) => {
+        // Typing to someone who blocked the bot only fails again every few seconds.
+        if (!isBlocked(err)) return;
+        clearInterval(this.typing.get(e.threadId));
+        this.typing.delete(e.threadId);
+        void this.blocked(row).catch(() => {});
+      });
     send();
     const next = setInterval(send, 4500);
     next.unref?.();
     this.typing.set(e.threadId, next);
+  }
+
+  /**
+   * The bot is done with a request from Telegram: the note of it goes, and when it ended well but
+   * said nothing, the person hears that instead of only seeing "typing…" stop.
+   */
+  private async finished(row: Row, threadId: string) {
+    if (!this.working.delete(threadId)) return;
+    await dropRequest(this.ctx, row.id, threadId);
+    if (this.stopped || !row.secret || !row.owner) return;
+    if (!(await saidNothing(this.ctx, threadId))) return;
+    const t = await this.services.settings.translator();
+    const api = this.api(this.vault.open(row.secret));
+    const chat = row.owner;
+    await this.deliver(row, api, chat, t, async () => {
+      await api.sendMessage(chat, t('channel.noAnswer'));
+    });
   }
 
   /** A card or a failure in another conversation of the bot: a short note, so it is not missed. */
@@ -620,7 +774,7 @@ export class TelegramChannels {
     const thread = await this.services.threads.row(e.threadId).catch(() => null);
     const title = thread?.title || t('channel.otherChat');
     const api = this.api(this.vault.open(row.secret));
-    await this.sends.run(row.id, async () => {
+    await this.deliver(row, api, row.owner!, t, async () => {
       await this.text(
         api,
         row.owner!,
@@ -632,7 +786,7 @@ export class TelegramChannels {
   // Records
 
   private api(token: string) {
-    return new TelegramApi(token, this.ctx.config.telegramApi);
+    return new TelegramApi(token, this.ctx.config.telegramApi, this.halting.signal);
   }
 
   private async rows(): Promise<Row[]> {
@@ -656,6 +810,42 @@ export class TelegramChannels {
   private async setError(id: string, error: string | null) {
     await this.ctx.db.update(schema.channels).set({ error }).where(eq(schema.channels.id, id));
     this.changed();
+  }
+
+  /**
+   * Changes some of the channel's settings where they are stored, so a change made meanwhile (the
+   * blocked note, the conversation in use) is never written over with an older copy.
+   */
+  private async patchSettings(id: string, patch: Record<string, unknown>) {
+    await this.ctx.db
+      .update(schema.channels)
+      .set({ settings: sql`${schema.channels.settings} || ${JSON.stringify(patch)}::jsonb` })
+      .where(eq(schema.channels.id, id));
+  }
+
+  /** The person blocked the bot in Telegram: the channel says so until they let it back in. */
+  private async blocked(row: Row) {
+    const t = await this.services.settings.translator();
+    // Only when not noted yet, judged by the stored settings rather than a copy read earlier.
+    const changed = await this.ctx.db
+      .update(schema.channels)
+      .set({
+        error: t('channel.telegramBlocked'),
+        settings: sql`${schema.channels.settings} || '{"blocked":true}'::jsonb`,
+      })
+      .where(and(eq(schema.channels.id, row.id), sql`(${schema.channels.settings}->>'blocked') is null`))
+      .returning({ id: schema.channels.id });
+    if (changed.length) this.changed();
+  }
+
+  /** Telegram reached the person again (a send went through, or they wrote or unblocked): the note goes. */
+  private async unblock(row: Row) {
+    const changed = await this.ctx.db
+      .update(schema.channels)
+      .set({ error: null, settings: sql`${schema.channels.settings} - 'blocked'` })
+      .where(and(eq(schema.channels.id, row.id), sql`(${schema.channels.settings}->>'blocked') is not null`))
+      .returning({ id: schema.channels.id });
+    if (changed.length) this.changed();
   }
 
   private async remember(channelId: string, externalId: string, messageId: string) {
