@@ -120,6 +120,17 @@ version is 0.x, a minor release may change the data format or the API; the serve
   this version shows up from it too, and runs with the catalog's limits and price. Without the catalog the lists are
   the built-in ones. `YUMAKBOT_MODEL_CATALOG_URL=off` turns it off.
 
+### Bots' computer
+
+- Git, and pnpm and yarn through corepack, are on the bots' desktops, so a bot can clone a repository, install and
+  build it there.
+- Git reaches GitHub through the computer service, which adds the API key saved for `https://github.com` that the bot
+  may use (a fine-grained token limits it to chosen repositories). The key never enters the desktop: no command, file
+  or setting there shows it. A change to the key reaches running desktops at once; a bot with the internet off gets
+  none.
+- A push to a repository's default branch is refused there, whatever the bot was told: work reaches it through a pull
+  request a person merges.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety

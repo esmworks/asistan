@@ -149,6 +149,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
             })),
           };
         },
+        // A bot with the internet off keeps git off GitHub too, though its desktop's browser is online.
+        gitToken: async (botId) =>
+          (await services.bots.get(botId)).internet ? services.apiCredentials.gitToken(botId) : null,
       })
     : null;
   // The person's own computer as the bots' way out to the web, when this server runs elsewhere.

@@ -879,7 +879,7 @@ const tr = {
   'tool.command_status':
     'run_command ile arka planda başlatılan komutun durumunu ve son çıktısını sor (kimliğiyle). wait_seconds kadar bitmesini bekleyebilir.',
   'tool.run_command':
-    'Kendi bilgisayarının terminalinde bir bash komutu çalıştır (çalışma klasöründe). python3, openpyxl, python-docx ve LibreOffice (soffice --headless --convert-to pdf) kurulu. Çıktı ve çıkış kodu döner; uzun işler için timeout_seconds ver. 10 dakikadan uzun sürebilecek işlerde (derleme, kurulum) background: true ver ve command_status ile izle.',
+    'Kendi bilgisayarının terminalinde bir bash komutu çalıştır (çalışma klasöründe). python3, openpyxl, python-docx, LibreOffice (soffice --headless --convert-to pdf), git ve node (pnpm ile yarn corepack üzerinden) kurulu. Git GitHub’a sunucu üzerinden çıkar: özel bir depo için origin’i https://github.com olan kayıtlı bir anahtarı (yoksa credential_request ile iste; ör. key: github_git, label: depoya Contents okuma/yazma izni olan fine-grained GitHub tokenı) sunucu isteklere kendisi ekler, sen değeri görmezsin. Deponun varsayılan dalına push reddedilir: bir dala push et, pull request’i GitHub uygulamasıyla aç. Git kullanıcı adı okuyamadığını söylerse anahtar yoktur ya da o depoya erişimi yoktur. Çıktı ve çıkış kodu döner; uzun işler için timeout_seconds ver. 10 dakikadan uzun sürebilecek işlerde (derleme, kurulum) background: true ver ve command_status ile izle.',
 
   // App tools: results
   'tool.invalidInput': 'Geçersiz girdi: {issues}',
@@ -2056,7 +2056,7 @@ const en: Catalog<ServerKey> = {
   'tool.command_status':
     'Ask for the state and latest output of a command started in the background with run_command (by its id). It can wait wait_seconds for it to end.',
   'tool.run_command':
-    "Run a bash command in your own computer's terminal (in the work folder). python3, openpyxl, python-docx and LibreOffice (soffice --headless --convert-to pdf) are installed. Returns the output and the exit code; give timeout_seconds for long jobs. For work that may take longer than 10 minutes (a build, an install), give background: true and follow it with command_status.",
+    "Run a bash command in your own computer's terminal (in the work folder). python3, openpyxl, python-docx, LibreOffice (soffice --headless --convert-to pdf), git and node (pnpm and yarn through corepack) are installed. Git reaches GitHub through the server: for a private repository, the server adds a saved key whose origin is https://github.com to the requests itself, and you never see the value (if there is none, ask with credential_request; e.g. key: github_git, label: a fine-grained GitHub token with Contents read/write on the repository). A push to the repository's default branch is refused: push a branch and open the pull request with the GitHub app. If git says it cannot read a username, there is no key or it has no access to that repository. Returns the output and the exit code; give timeout_seconds for long jobs. For work that may take longer than 10 minutes (a build, an install), give background: true and follow it with command_status.",
 
   'tool.invalidInput': 'Invalid input: {issues}',
   'tool.error': 'Error: {message}',

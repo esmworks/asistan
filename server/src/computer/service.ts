@@ -13,6 +13,10 @@ interface Desk {
   starting: Promise<void> | null;
   /** A background command runs until about then; the desktop stays awake for it. */
   awakeUntil?: number;
+  /** The GitHub key last given to the running desktop; undefined until one was given. */
+  git?: string | null;
+  /** The key handover in progress: one at a time, so two cannot cross. */
+  gitSync?: Promise<void>;
 }
 
 export interface ComputerOptions {
@@ -21,6 +25,8 @@ export interface ComputerOptions {
   idleMs: number;
   /** Folders, language and home for a bot's desktop, worked out when it starts. */
   prepare(botId: string): Promise<DesktopStart>;
+  /** The GitHub key git on the bot's desktop may use, read again before each of its steps. */
+  gitToken?(botId: string): Promise<string | null>;
 }
 
 /**
@@ -93,6 +99,7 @@ export class ComputerService {
     if (!d.starting) {
       d.starting = (async () => {
         d.status = 'starting';
+        d.git = undefined;
         this.emit(botId);
         try {
           let s = await this.start(botId, await this.opts.prepare(botId));
@@ -107,6 +114,8 @@ export class ComputerService {
             throw new ComputerError('failed', `desktop did not start${why}`);
           }
           d.status = 'running';
+          // Also for a desktop a person woke or the bot's browser started: git may run there first.
+          await this.syncGit(botId, d).catch(() => undefined);
         } catch (err) {
           d.status = 'off';
           throw err;
@@ -133,11 +142,13 @@ export class ComputerService {
     this.emit(botId);
     try {
       try {
+        await this.syncGit(botId, d);
         return await fn(this.client);
       } catch (err) {
         if (!(err instanceof ComputerError) || err.code !== 'notRunning') throw err;
         d.status = 'off';
         await this.ensure(botId);
+        await this.syncGit(botId, d);
         return await fn(this.client);
       }
     } finally {
@@ -232,6 +243,37 @@ export class ComputerService {
         if (!spare) throw err;
         await this.stop(spare[0]);
       }
+    }
+  }
+
+  /** A GitHub key was added, changed or removed: every running desktop gets its bot's key now. */
+  async refreshGit() {
+    for (const [botId, d] of this.desks) {
+      if (d.status === 'running') await this.syncGit(botId, d).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Gives the desktop the bot's GitHub key when it changed (a key added, replaced, removed or no
+   * longer open to the bot), so a step sees the key as it is now. A failure leaves git without a
+   * key; the step itself goes on.
+   */
+  private syncGit(botId: string, d: Desk): Promise<void> {
+    const run = (d.gitSync ?? Promise.resolve()).then(() => this.giveGit(botId, d));
+    d.gitSync = run.catch(() => undefined);
+    return run;
+  }
+
+  private async giveGit(botId: string, d: Desk) {
+    if (!this.opts.gitToken) return;
+    try {
+      const token = await this.opts.gitToken(botId);
+      if (d.git === token) return;
+      await this.client.git(botId, { token });
+      d.git = token;
+    } catch (err) {
+      if (err instanceof ComputerError && err.code === 'notRunning') throw err;
+      console.warn('computer git key', err instanceof Error ? err.message : err);
     }
   }
 

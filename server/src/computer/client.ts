@@ -8,6 +8,7 @@ import {
   type ComputerErrorCode,
   type DesktopAction,
   type DesktopExec,
+  type DesktopGit,
   type DesktopStart,
 } from '@yumakbot/shared';
 import { z } from 'zod';
@@ -86,6 +87,11 @@ export class ComputerClient {
   exec(id: string, req: DesktopExec) {
     const wait = (req.timeoutMs ?? 120_000) + 15_000;
     return this.call('POST', `/desktops/${id}/exec`, DesktopExecResult, req, wait);
+  }
+
+  /** The GitHub key the desktop's git relay adds for this bot, or none. */
+  async git(id: string, req: DesktopGit) {
+    await this.call('POST', `/desktops/${id}/git`, z.unknown(), req);
   }
 
   /** Starts a command that keeps running after this call; its state comes from `job`. */

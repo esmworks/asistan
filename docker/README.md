@@ -334,3 +334,9 @@ dışarı çıkışı yoktur.
   maskeleri `systempaths=unconfined` ile Bash yalıtımındaki gibi kaldırılır.
 - Masaüstü oturumları kapsayıcı yeniden başlayınca kapanır; botların ana klasörleri ve dosyaları
   `data` biriminde kalır.
+- **GitHub, git rölesi üzerinden.** Masaüstlerinde git, pnpm ve yarn (corepack) kuruludur. Oturumdaki git
+  `github.com` adreslerini kapsayıcının `127.0.0.1:4322` adresindeki röleye gönderir
+  (`YUMAKBOT_COMPUTER_GIT_PORT`); röle, bota açık ve `https://github.com` için kaydedilmiş API anahtarını
+  isteğe ekler. Anahtar oturuma hiç girmez. Röle yalnızca git isteklerini ve yalnızca GitHub'a geçirir;
+  deponun varsayılan dalına push'u reddeder. Oturumlar ağı paylaştığı için her oturumun röle adresinde
+  kendine ait rastgele bir anahtar vardır.
