@@ -9,6 +9,7 @@ import {
   isLocale,
   isValidTimeZone,
   LOCALES,
+  MEMORY_REVIEW_STEPS,
   patchOf,
   PROFILE_FOCUS,
   PROFILE_HELP,
@@ -79,6 +80,15 @@ export const Settings = z.object({
    * watching only (it records what it would do), or on (it skips runs with nothing new).
    */
   routineGate: z.enum(ROUTINE_GATE_MODES).default('off'),
+  /**
+   * How many finished turns of a conversation pass between two looks back at it for lasting facts
+   * to remember (the memory review); 0 is off.
+   */
+  memoryReviewEvery: z
+    .number()
+    .int()
+    .refine((n) => (MEMORY_REVIEW_STEPS as readonly number[]).includes(n))
+    .default(20),
   /**
    * How many turns may run at the same time across every bot; 0 leaves it to the server's
    * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.

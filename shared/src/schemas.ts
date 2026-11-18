@@ -550,7 +550,8 @@ export const PermissionRuleCreate = z
     path: ['limit'],
   });
 
-export const MemoryScope = z.enum(['bot', 'user']);
+/** `room`: a note about a place (a chat app channel, or a room), read only where it was written. */
+export const MemoryScope = z.enum(['bot', 'user', 'room']);
 export type MemoryScope = z.infer<typeof MemoryScope>;
 export const Memory = z.object({
   id: Id,
@@ -572,6 +573,10 @@ export const Memory = z.object({
   threadId: Id.nullable().optional(),
   /** The page the fact came from, as the bot gave it. Missing from older servers. */
   sourceUrl: z.string().nullable().optional(),
+  /** A room note's place: `slack:<channel>`, `discord:<channel>` or `room:<id>`. Missing from older servers. */
+  place: z.string().nullable().optional(),
+  /** The person asked for the note to go into every prompt that reaches it. Missing from older servers. */
+  pinned: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -587,6 +592,8 @@ export interface MemoryChange {
   memoryId: string | null;
   scope: MemoryScope;
   botId: string | null;
+  /** A room note's place. Missing on older servers. */
+  place?: string | null;
   site: string | null;
   /** The words after the change; for a forget, the words that would go. */
   content: string;
@@ -595,8 +602,10 @@ export interface MemoryChange {
   /**
    * `outside`: a run of the bot `name` that had read outside text, though the person was there.
    * `person`: someone who may talk with the bot but not change it asked for it; `name` is theirs.
+   * `stopped`: a run of the bot `name` made it, then was stopped or failed; it was taken back.
+   * `review`: the background review of a conversation of the bot `name` found it.
    */
-  origin: { kind: 'routine' | 'bot' | 'outside' | 'person'; name: string };
+  origin: { kind: 'routine' | 'bot' | 'outside' | 'person' | 'stopped' | 'review'; name: string };
   /** The person the work was for. Missing on older servers. */
   userId?: string | null;
   threadId: string | null;
@@ -604,21 +613,55 @@ export interface MemoryChange {
   sourceUrl: string | null;
   createdAt: string;
 }
+/** One thing that happened to a memory note, as `GET /api/memory-history` lists it (oldest first). */
+export interface MemoryHistoryLine {
+  id: string;
+  /** `user:<id>` for a person, `bot:<id>` for a bot; older lines hold a bare `bot` or `person`. */
+  actor: string;
+  action: 'create' | 'update' | 'delete' | 'pin' | 'unpin';
+  targetId: string;
+  /** The words before; null for a new note, and for a deleted one (its text is not kept). */
+  before: string | null;
+  /** The words after; null for a deletion, a pin or an unpin. */
+  after: string | null;
+  /** Whose note it was: `user:<id>`, `bot:<id>` or `room:<place>`. Null on lines from before people came in. */
+  owner: string | null;
+  createdAt: string;
+}
 /**
  * Days after which a note that no prompt carries, and that no bot changed or looked up, is offered
  * to the user for deletion.
  */
 export const STALE_MEMORY_DAYS = 30;
+/**
+ * How many finished turns of a conversation pass between two looks back at it for lasting facts
+ * (the memory review); 0 turns the review off.
+ */
+export const MEMORY_REVIEW_STEPS = [0, 10, 20, 40] as const;
+export type MemoryReviewEvery = (typeof MEMORY_REVIEW_STEPS)[number];
 export const MemoryCreate = z.object({
-  scope: MemoryScope,
+  // A person writes their own notes and a bot's; a place's notes are written by the bots there.
+  scope: z.enum(['bot', 'user']),
   botId: Id.nullable().default(null),
   content: z.string().trim().min(1).max(2000),
   /** The site a note is about (`example.com`), when it is a site note. */
   site: z.string().trim().max(253).nullable().optional(),
 });
-export const MemoryUpdate = z.object({
-  content: z.string().trim().min(1).max(2000),
-});
+export const MemoryUpdate = z
+  .object({
+    content: z.string().trim().min(1).max(2000).optional(),
+    /** Pin the note (it goes into the prompt first, before the rest) or let it go. */
+    pinned: z.boolean().optional(),
+    /**
+     * The `updatedAt` of the note as the person began editing it. When the note has changed since,
+     * the save is refused instead of overwriting the newer words. Older clients leave it out.
+     */
+    updatedAt: z.string().optional(),
+  })
+  .refine((u) => u.content !== undefined || u.pinned !== undefined, {
+    message: 'validation.memoryUpdateEmpty',
+  });
+export type MemoryUpdate = z.infer<typeof MemoryUpdate>;
 
 /** What a person may do on this server: the owner installed it; admins manage it with them. */
 export const Role = z.enum(['owner', 'admin', 'member']);

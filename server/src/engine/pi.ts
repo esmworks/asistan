@@ -42,6 +42,8 @@ import {
   resultText,
   toolPermName,
   type AppTool,
+  type CompleteRequest,
+  type Completion,
   type Engine,
   type ModelStep,
   type ModelTest,
@@ -80,6 +82,9 @@ export const MAX_STEPS = 50;
 export const MAX_CONTEXT_MESSAGES = 160;
 /** A key test that takes longer than this counts as failed. */
 const TEST_TIMEOUT = 30_000;
+/** The longest and largest answer of a single request that belongs to no turn. */
+const COMPLETE_TIMEOUT = 90_000;
+const COMPLETE_TOKENS = 4_000;
 
 /** Keeps the latest messages, starting at a user message so no tool result loses its call. */
 export function trimHistory(messages: AgentMessage[], max = MAX_CONTEXT_MESSAGES): AgentMessage[] {
@@ -389,6 +394,37 @@ export class PiEngine implements Engine {
     } catch (e) {
       return { ok: false, detail: (e as Error).message || t('engine.testFailed') };
     }
+  }
+
+  /**
+   * One answer from the bot's own model, without tools or a session. No smaller model is picked:
+   * a key may reach only the one the person chose. Throws when the model cannot answer.
+   */
+  async complete(req: CompleteRequest): Promise<Completion> {
+    const t = translator(req.locale);
+    const target = splitModel(req.model);
+    const found = target && (await this.resolve(target.provider, target.id));
+    if (!target || !found) throw new Error(t('engine.modelNotFound', { model: req.model }));
+    const authorized = await this.authorize(target.provider, found);
+    if (!authorized) throw new Error(t('engine.noApiKey', { provider: target.provider }));
+    const { apiKey, model } = authorized;
+    const reply = await (this.opts.complete ?? completeSimple)(
+      model,
+      {
+        systemPrompt: req.system,
+        messages: [{ role: 'user', content: req.user, timestamp: Date.now() }],
+      },
+      {
+        apiKey,
+        maxTokens: Math.min(model.maxTokens || COMPLETE_TOKENS, COMPLETE_TOKENS),
+        signal: AbortSignal.any([req.signal, AbortSignal.timeout(COMPLETE_TIMEOUT)]),
+        sessionId: randomUUID(),
+      },
+    );
+    if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
+      throw new Error(reply.errorMessage || t('engine.testFailed'));
+    }
+    return { text: textOf(reply), costUsd: reply.usage?.cost?.total ?? null };
   }
 
   async run(req: TurnRequest): Promise<TurnOutcome> {

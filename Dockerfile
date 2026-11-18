@@ -9,7 +9,8 @@ RUN pnpm install --frozen-lockfile --filter "@yumakbot/server..." --filter "@yum
  && pnpm --filter @yumakbot/server build \
  && pnpm --filter @yumakbot/server deploy --prod --legacy /out \
  && cp -r server/dist /out/dist \
- && cp -r app/dist /out/app
+ && cp -r app/dist /out/app \
+ && cp LICENSE NOTICE /out/
 
 FROM node:22-bookworm-slim
 # bubblewrap and socat: the Claude sandbox for Bash on Linux. tini: reaps orphaned processes.

@@ -1,20 +1,124 @@
-import { botNoteGroups, STALE_MEMORY_DAYS, type BotNoteGroup, type Memory } from '@yumakbot/shared';
+import {
+  botNoteGroups,
+  MEMORY_REVIEW_STEPS,
+  STALE_MEMORY_DAYS,
+  type BotNoteGroup,
+  type Memory,
+} from '@yumakbot/shared';
 import { changeHint, changeLabel } from '@yumakbot/app/src/lib/memoryChange';
+import {
+  historyText,
+  historyWho,
+  noteMatches,
+  pinnedFirst,
+  placeLabel,
+  placeNoteGroups,
+} from '@yumakbot/app/src/lib/memoryNotes';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { confirm, toast, toastError } from '@/components/overlay';
-import { IconButton, PillButton, Row, Section } from '@/components/page';
+import { IconButton, PillButton, Row, Section, SwitchRow } from '@/components/page';
 import { Field } from '@/components/ui';
-import { Hint, Pad, Rows } from './common/controls';
+import { ChoiceRow, Hint, Lead, Pad, Rows, useSaveSettings } from './common/controls';
 import { locale, t } from '@/i18n';
 import { formatters } from '@/lib/format';
-import { useBots, useMemory, useMemoryChanges, useStaleMemory } from '@/lib/queries';
+import {
+  useBots,
+  useMemory,
+  useMemoryChanges,
+  useRooms,
+  useSession,
+  useSettings,
+  useStaleMemory,
+} from '@/lib/queries';
+import { ApiError } from '@/lib/api';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
 const fmt = formatters(locale, t);
+
+/** The interval a looking back starts with when the person turns it on. */
+const REVIEW_DEFAULT = 20;
+
+/**
+ * One note: its words, a pin, an edit and a delete. Editing turns the line into a box; the save
+ * carries the version the person began on, so a note changed meanwhile is not overwritten.
+ */
+function NoteLine({
+  m,
+  detail,
+  onSave,
+  onPin,
+  onForget,
+}: {
+  m: Memory;
+  detail?: string;
+  onSave: (m: Memory, content: string) => Promise<unknown>;
+  onPin: (m: Memory) => void;
+  onForget: (m: Memory) => void;
+}) {
+  const c = useColors();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (draft !== null) {
+    const submit = () => {
+      const content = draft.trim();
+      if (!content || busy) return;
+      if (content === m.content) return setDraft(null);
+      setBusy(true);
+      onSave(m, content)
+        .then(() => setDraft(null))
+        // A note changed meanwhile: the list is already fetched again, so leave the stale draft.
+        .catch((e) => e instanceof ApiError && e.status === 409 && setDraft(null))
+        .finally(() => setBusy(false));
+    };
+    return (
+      <Pad>
+        <Field
+          value={draft}
+          onChangeText={setDraft}
+          accessibilityLabel={t('memory.edit')}
+          maxLength={2000}
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={submit}
+        />
+        <View style={styles.pair}>
+          <PillButton
+            variant="primary"
+            label={t('common.save')}
+            onPress={submit}
+            busy={busy}
+            disabled={!draft.trim()}
+          />
+          <PillButton variant="ghost" label={t('common.cancel')} onPress={() => setDraft(null)} />
+        </View>
+      </Pad>
+    );
+  }
+  const text = m.site ? `${m.site} · ${m.content}` : m.content;
+  return (
+    <Row
+      label={text}
+      detail={[m.pinned ? t('memory.pinned') : null, detail].filter(Boolean).join(' · ') || undefined}
+      right={
+        <View style={styles.pair}>
+          <IconButton
+            icon="bookmark"
+            size={18}
+            color={m.pinned ? c.brand : undefined}
+            label={m.pinned ? t('memory.unpin') : t('memory.pin')}
+            onPress={() => onPin(m)}
+          />
+          <IconButton icon="edit-2" size={18} label={t('memory.edit')} onPress={() => setDraft(m.content)} />
+          <IconButton icon="trash-2" size={18} label={t('common.delete')} onPress={() => onForget(m)} />
+        </View>
+      }
+    />
+  );
+}
 
 /** The "memory" settings section's content, under the section's own title bar. */
 export function MemorySection() {
@@ -30,6 +134,14 @@ export function MemorySection() {
   const qc = useQueryClient();
   const c = useColors();
   const [text, setText] = useState('');
+  const [query, setQuery] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: rooms = [] } = useRooms();
+  const { data: settings } = useSettings();
+  const saveSettings = useSaveSettings();
+  const session = useSession().data?.user;
+  const me = session?.id;
+  const managesServer = session?.role === 'owner' || session?.role === 'admin';
   // Each bot's notes stay folded until opened, so a long list reads as one line per bot.
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const toggle = (id: string) =>
@@ -39,6 +151,26 @@ export function MemorySection() {
       return next;
     });
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory', origin] });
+  // The server refuses a save over a note that changed meanwhile; the list is fetched again then.
+  const save = useMutation({
+    mutationFn: ({ m, content }: { m: Memory; content: string }) =>
+      api.updateMemory(m.id, { content, updatedAt: m.updatedAt }),
+    onSuccess: refresh,
+    onError: (e) => {
+      toastError(e);
+      void refresh();
+    },
+  });
+  const pin = useMutation({
+    mutationFn: (m: Memory) => api.updateMemory(m.id, { pinned: !m.pinned }),
+    onSuccess: refresh,
+    onError: toastError,
+  });
+  const { data: history = [], isPending: historyPending } = useQuery({
+    queryKey: ['memory', origin, 'history'],
+    queryFn: api.memoryHistory,
+    enabled: historyOpen,
+  });
   const add = useMutation({
     mutationFn: () => api.addMemory({ scope: 'user', content: text }),
     onSuccess: () => {
@@ -60,12 +192,17 @@ export function MemorySection() {
     },
     onSuccess: (m) => {
       void refresh();
+      // A place's note is written by the bots there, so it cannot be put back from here.
+      const { scope } = m;
+      if (scope === 'room') return;
       toast(t('memory.deleted'), {
         action: {
           label: t('memory.undo'),
           onPress: () =>
             void api
-              .addMemory({ scope: m.scope, botId: m.botId, content: m.content, site: m.site })
+              .addMemory({ scope, botId: m.botId, content: m.content, site: m.site })
+              // A pinned note comes back pinned, as it was.
+              .then((back) => (m.pinned ? api.updateMemory(back.id, { pinned: true }) : back))
               .then(refresh)
               .catch(toastError),
         },
@@ -88,12 +225,31 @@ export function MemorySection() {
     onSuccess: refresh,
     onError: toastError,
   });
-  const user = memory.filter((m) => m.scope === 'user');
-  const groups = botNoteGroups(memory, bots, archived);
+  const searching = query.trim() !== '';
+  const hit = (m: Memory) => noteMatches(m, query);
+  const user = pinnedFirst(memory.filter((m) => m.scope === 'user' && hit(m)));
+  const groups = botNoteGroups(memory.filter(hit), bots, archived).map((g) => ({
+    ...g,
+    notes: pinnedFirst(g.notes),
+  }));
+  const roomGroups = placeNoteGroups(memory.filter(hit), t, rooms);
+  const staleHits = stale.filter(hit);
+  const noteProps = {
+    onSave: (m: Memory, content: string) => save.mutateAsync({ m, content }),
+    onPin: (m: Memory) => pin.mutate(m),
+    onForget: (m: Memory) => forget.mutate(m),
+  };
+  const reviewEvery = settings?.memoryReviewEvery;
   const botName = (id: string | null) =>
     [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
   const staleDetail = (m: Memory) =>
-    `${m.scope === 'user' ? t('memory.staleShared') : botName(m.botId)} · ${
+    `${
+      m.scope === 'user'
+        ? t('memory.staleShared')
+        : m.scope === 'room'
+          ? placeLabel(m.place, t, rooms)
+          : botName(m.botId)
+    } · ${
       m.lastUsedAt
         ? t('memory.lastUsed', { when: fmt.dayLabel(m.lastUsedAt) })
         : t('memory.neverUsed', { when: fmt.dayLabel(m.updatedAt) })
@@ -141,6 +297,17 @@ export function MemorySection() {
           disabled={!text.trim()}
         />
       </View>
+      <View style={styles.search}>
+        <Field
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t('memory.search')}
+          accessibilityLabel={t('memory.search')}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
+      </View>
+      <Lead>{t('memory.pinHint')}</Lead>
       {changes.length > 0 ? (
         <Section title={t('memory.pending')}>
           <Rows>
@@ -187,13 +354,13 @@ export function MemorySection() {
           </Rows>
         </Section>
       ) : null}
-      {stale.length > 0 ? (
+      {staleHits.length > 0 ? (
         <Section title={t('memory.stale')}>
           <Rows>
             <Pad>
               <Hint>{t('memory.staleHint', { days: STALE_MEMORY_DAYS })}</Hint>
             </Pad>
-            {stale.map((m) => (
+            {staleHits.map((m) => (
               <Row key={m.id} label={label(m)} detail={staleDetail(m)} right={trash(m)} />
             ))}
             {stale.length > 1 ? (
@@ -206,11 +373,11 @@ export function MemorySection() {
         <Rows>
           {user.length === 0 ? (
             <Pad>
-              <Hint>{t('memory.empty')}</Hint>
+              <Hint>{t(searching ? 'memory.searchEmpty' : 'memory.empty')}</Hint>
             </Pad>
           ) : null}
           {user.map((m) => (
-            <Row key={m.id} label={label(m)} right={trash(m)} />
+            <NoteLine key={m.id} m={m} {...noteProps} />
           ))}
         </Rows>
       </Section>
@@ -218,11 +385,12 @@ export function MemorySection() {
         <Rows>
           {groups.length === 0 ? (
             <Pad>
-              <Hint>{t('memory.empty')}</Hint>
+              <Hint>{t(searching ? 'memory.searchEmpty' : 'memory.empty')}</Hint>
             </Pad>
           ) : null}
           {groups.map((g) => {
-            const isOpen = open.has(g.botId);
+            // A search opens the bots with hits, so the notes found are in sight.
+            const isOpen = searching || open.has(g.botId);
             return (
               // The bot's line and its open notes share the card's dividers.
               <Rows key={g.botId}>
@@ -239,13 +407,99 @@ export function MemorySection() {
                     />
                   }
                 />
-                {isOpen ? g.notes.map((m) => <Row key={m.id} label={label(m)} right={trash(m)} />) : null}
-                {isOpen && g.notes.length > 1 ? (
+                {isOpen ? g.notes.map((m) => <NoteLine key={m.id} m={m} {...noteProps} />) : null}
+                {isOpen && !searching && g.notes.length > 1 ? (
                   <Row label={t('memory.deleteAll')} destructive onPress={() => void clear(g)} />
                 ) : null}
               </Rows>
             );
           })}
+        </Rows>
+      </Section>
+      {roomGroups.length > 0 ? (
+        <Section title={t('memory.rooms')}>
+          <Rows>
+            {searching ? null : (
+              <Pad>
+                <Hint>{t('memory.roomsHint')}</Hint>
+              </Pad>
+            )}
+            {roomGroups.map((g) => {
+              const isOpen = searching || open.has(g.place);
+              return (
+                <Rows key={g.place}>
+                  <Row
+                    label={g.label}
+                    detail={t('memory.noteCount', { count: g.notes.length })}
+                    onPress={() => toggle(g.place)}
+                    chevron={false}
+                    right={
+                      <Feather
+                        name={isOpen ? 'chevron-up' : 'chevron-down'}
+                        size={22}
+                        color={c.mutedForeground}
+                      />
+                    }
+                  />
+                  {isOpen ? g.notes.map((m) => <NoteLine key={m.id} m={m} {...noteProps} />) : null}
+                </Rows>
+              );
+            })}
+          </Rows>
+        </Section>
+      ) : null}
+      {/* The server's setting: only those who look after the server may change it. */}
+      {reviewEvery !== undefined && managesServer ? (
+        <Section>
+          <SwitchRow
+            label={t('memory.learn')}
+            detail={t('memory.learnHint')}
+            value={reviewEvery > 0}
+            onChange={(on) => saveSettings.mutate({ memoryReviewEvery: on ? REVIEW_DEFAULT : 0 })}
+          />
+          {reviewEvery > 0 ? (
+            <ChoiceRow
+              label={t('memory.learnEvery')}
+              value={String(reviewEvery)}
+              options={MEMORY_REVIEW_STEPS.filter((n) => n > 0).map((n) => ({
+                value: String(n),
+                label: t('memory.learnEveryChoice', { count: n }),
+              }))}
+              onChange={(v) => saveSettings.mutate({ memoryReviewEvery: Number(v) })}
+            />
+          ) : null}
+        </Section>
+      ) : null}
+      <Section title={t('memory.history')}>
+        <Rows>
+          <Row
+            label={t('memory.history')}
+            onPress={() => setHistoryOpen(!historyOpen)}
+            chevron={false}
+            right={
+              <Feather
+                name={historyOpen ? 'chevron-up' : 'chevron-down'}
+                size={22}
+                color={c.mutedForeground}
+              />
+            }
+          />
+          {historyOpen && !historyPending && history.length === 0 ? (
+            <Pad>
+              <Hint>{t('memory.historyEmpty')}</Hint>
+            </Pad>
+          ) : null}
+          {historyOpen
+            ? [...history]
+                .reverse()
+                .map((l) => (
+                  <Row
+                    key={l.id}
+                    label={historyText(l, t)}
+                    detail={`${historyWho(l, me, bots, t)} · ${fmt.dayLabel(l.createdAt)}`}
+                  />
+                ))
+            : null}
         </Rows>
       </Section>
     </>
@@ -257,4 +511,5 @@ const styles = StyleSheet.create({
   // The box and its button share a row, as on the web.
   form: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   grow: { flex: 1 },
+  search: { marginTop: 8 },
 });

@@ -43,6 +43,7 @@ import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
+import { placeOf } from '../services/memory';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
 import { catastrophic, readsOnlyWithin } from './safety';
 import { TurnWatchdog, type Stall } from './watchdog';
@@ -829,7 +830,9 @@ export class TurnManager {
       paths,
       cwd: sandbox.cwd,
       // A bot with memory off sees none, not even the person's shared notes.
-      memory: bot.memory ? await memory.visibleTo(bot.id, own) : { user: [], bot: [] },
+      memory: bot.memory
+        ? await memory.visibleTo(bot.id, own, await placeOf(this.ctx, thread))
+        : { user: [], bot: [], room: [] },
       profile: {
         name: settings.userName,
         addressAs: settings.addressAs,
@@ -1609,6 +1612,9 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // What the turn changed in memory straight away is kept only if it completed; otherwise it
+    // goes back and waits for the person (see `settleTurn`).
+    await this.services.memory.settleTurn(turn.id, outcome.ok);
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

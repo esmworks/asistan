@@ -418,6 +418,25 @@ export interface GateVerdict {
   costUsd: number | null;
 }
 
+/**
+ * One answer from a model without tools, for work that belongs to no turn (the memory review): it
+ * has no session, shows nothing in a conversation and reaches no chat app.
+ */
+export interface CompleteRequest {
+  /** The bot's own model; an engine may answer with a smaller one of the same account. */
+  model: string;
+  system: string;
+  user: string;
+  signal: AbortSignal;
+  locale: Locale;
+}
+
+export interface Completion {
+  text: string;
+  /** What it cost in US dollars; null when the engine did not say. */
+  costUsd: number | null;
+}
+
 export interface Engine {
   readonly kind: string;
   run(req: TurnRequest): Promise<TurnOutcome>;
@@ -431,6 +450,8 @@ export interface Engine {
   review?(req: ReviewRequest): Promise<ReviewVerdict>;
   /** Looks at one routine run with a small model before the bot starts on it. */
   gate?(req: GateRequest): Promise<GateVerdict>;
+  /** One answer without tools or a session; throws when the model cannot answer. */
+  complete?(req: CompleteRequest): Promise<Completion>;
 }
 
 export type ModelTest = { ok: true } | { ok: false; detail: string };

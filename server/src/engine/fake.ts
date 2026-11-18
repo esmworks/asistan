@@ -4,6 +4,8 @@ import {
   runCost,
   SILENT_REPLY,
   toolPermName,
+  type CompleteRequest,
+  type Completion,
   type Engine,
   type ModelTest,
   type GateRequest,
@@ -49,6 +51,14 @@ export class FakeEngine implements Engine {
   public requests: TurnRequest[] = [];
   public reviews: ReviewRequest[] = [];
   public gates: GateRequest[] = [];
+  /** The requests of `complete`, and what answers them (the memory review); a test sets `completer`. */
+  public completions: CompleteRequest[] = [];
+  public completer: (req: CompleteRequest) => string | Promise<string> = () => '{"operations":[]}';
+
+  async complete(req: CompleteRequest): Promise<Completion> {
+    this.completions.push(req);
+    return { text: await this.completer(req), costUsd: 0.001 };
+  }
 
   /**
    * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of

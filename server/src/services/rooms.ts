@@ -188,6 +188,8 @@ export class RoomService {
     if (!(await this.roomRow(id))) throw notFound('room');
     await this.stop(id);
     await this.ctx.db.delete(schema.threads).where(eq(schema.threads.id, id));
+    // The room's own notes are for that room only; with it gone nobody reaches them.
+    await this.services.memory.removePlace(`room:${id}`);
     this.ctx.bus.refresh({ scope: 'rooms' });
   }
 
