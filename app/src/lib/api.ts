@@ -79,6 +79,10 @@ import type {
   TicketCreate,
   TicketUpdate,
   SessionUser,
+  PersonInfo,
+  PersonCreate,
+  PersonUpdate,
+  BotAccess,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -233,6 +237,11 @@ export const api = {
   disconnectWhatsapp: () => http.del<WhatsAppStatus>('/api/whatsapp'),
   settings: () => http.get<Settings>('/api/settings'),
   updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
+  people: () => http.get<PersonInfo[]>('/api/people'),
+  addPerson: (p: PersonCreate) => http.post<PersonInfo>('/api/people', p),
+  updatePerson: (id: string, p: PersonUpdate) => http.patch<PersonInfo>(`/api/people/${id}`, p),
+  removePerson: (id: string) => http.del<{ ok: true }>(`/api/people/${id}`),
+  setBotAccess: (id: string, access: BotAccess) => http.put<Bot>(`/api/bots/${id}/access`, access),
   providers: () => http.get<ProviderInfo[]>('/api/providers'),
   providerModels: (id: string) => http.get<string[]>(`/api/providers/${encodeURIComponent(id)}/models`),
   setProviderKey: (id: string, key: string) =>

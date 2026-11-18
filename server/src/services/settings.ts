@@ -114,6 +114,8 @@ export const PERSONAL_SETTINGS = [
   'helpWith',
   'aboutMe',
   'onboarded',
+  // The language the app and the bots speak with the person.
+  'language',
 ] as const satisfies readonly (keyof Settings)[];
 export type Profile = Pick<Settings, (typeof PERSONAL_SETTINGS)[number]>;
 const Profile = Settings.pick({
@@ -124,6 +126,7 @@ const Profile = Settings.pick({
   helpWith: true,
   aboutMe: true,
   onboarded: true,
+  language: true,
 });
 
 /** Whether a setting is one each person has for themselves. */
@@ -209,7 +212,8 @@ export class SettingsService {
         .where(eq(schema.users.id, userId));
     }
     for (const [k, v] of Object.entries(valid)) {
-      if (v === undefined || isPersonal(k)) continue;
+      // The owner's own are also the server's, for what runs for nobody in particular.
+      if (v === undefined || (isPersonal(k) && userId !== OWNER_ID)) continue;
       await this.ctx.db
         .insert(schema.kv)
         .values({ key: `setting.${k}`, value: v })

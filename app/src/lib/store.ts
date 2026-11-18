@@ -3,6 +3,7 @@ import { create } from 'zustand';
 
 export type SettingsTab =
   | 'profile'
+  | 'people'
   | 'general'
   | 'connection'
   | 'channels'

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { useBots, useVault } from '@/lib/queries';
+import { useBots, useManagesServer, useSession, useVault } from '@/lib/queries';
 import { ApiKeys } from './ApiKeys';
 import { ApiSources } from './ApiSources';
 import { ContentSeal } from './ContentSeal';
@@ -20,6 +20,8 @@ export function VaultTab() {
   const { data: logins = [], isLoading } = useVault();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<VaultLogin | 'new' | null>(null);
+  const manages = useManagesServer();
+  const isOwner = useSession().data?.user?.role === 'owner';
   const q = query.trim().toLowerCase();
   const shown = q ? logins.filter((l) => l.site.includes(q) || l.username.toLowerCase().includes(q)) : logins;
 
@@ -60,10 +62,10 @@ export function VaultTab() {
         )}
       </div>
       <p className="px-1 text-xs text-muted-foreground">{t('vault.note')}</p>
-      <ApiKeys />
-      <ApiSources />
+      {manages && <ApiKeys />}
+      {manages && <ApiSources />}
       <SharedPages />
-      <ContentSeal />
+      {isOwner && <ContentSeal />}
     </div>
   );
 }
@@ -72,6 +74,9 @@ function LoginRow({ login, onEdit }: { login: VaultLogin; onEdit(): void }) {
   const t = useT();
   const { dayLabel } = useFormat();
   const qc = useQueryClient();
+  const manages = useManagesServer();
+  // The team's are changed only by those who look after the server.
+  const mayChange = manages || !!login.userId;
   const remove = useMutation({
     mutationFn: () => api.removeVaultLogin(login.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['vault'] }),
@@ -86,32 +91,37 @@ function LoginRow({ login, onEdit }: { login: VaultLogin; onEdit(): void }) {
         <div className="truncate text-sm font-medium">{login.site}</div>
         <div className="truncate text-xs text-muted-foreground">
           {login.username || t('vault.noUsername')}
+          {` · ${login.userId === null ? t('owned.team') : t('owned.yours')}`}
           {login.hasTotp ? ` · ${t('vault.hasTotp')}` : ''}
           {login.botIds ? ` · ${t('vault.someBots', { count: login.botIds.length })}` : ''}
           {login.lastUsedAt ? ` · ${t('vault.lastUsed', { when: dayLabel(login.lastUsedAt) })}` : ''}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        onClick={onEdit}
-        aria-label={t('vault.edit')}
-      >
-        <Pencil />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        disabled={remove.isPending}
-        onClick={() => {
-          if (confirm(t('vault.confirmDelete', { site: login.site }))) remove.mutate();
-        }}
-        aria-label={t('common.delete')}
-      >
-        <Trash2 />
-      </Button>
+      {mayChange && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={onEdit}
+            aria-label={t('vault.edit')}
+          >
+            <Pencil />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={remove.isPending}
+            onClick={() => {
+              if (confirm(t('vault.confirmDelete', { site: login.site }))) remove.mutate();
+            }}
+            aria-label={t('common.delete')}
+          >
+            <Trash2 />
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -127,6 +137,8 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
   const [clearTotp, setClearTotp] = useState(false);
   // Null: every bot may use it.
   const [botIds, setBotIds] = useState<string[] | null>(login?.botIds ?? null);
+  const manages = useManagesServer();
+  const [team, setTeam] = useState(login ? login.userId === null : false);
   const save = useMutation({
     mutationFn: () =>
       login
@@ -134,10 +146,18 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
             site,
             username,
             botIds,
+            ...(manages && team !== (login.userId === null) && { team }),
             ...(password && { password }),
             ...(totp.trim() ? { totp: totp.trim() } : clearTotp ? { totp: '' } : {}),
           })
-        : api.addVaultLogin({ site, username, password, botIds, ...(totp.trim() && { totp: totp.trim() }) }),
+        : api.addVaultLogin({
+            site,
+            username,
+            password,
+            botIds,
+            ...(totp.trim() && { totp: totp.trim() }),
+            ...(team && { team }),
+          }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['vault'] });
       onDone();
@@ -188,6 +208,7 @@ function LoginForm({ login, onDone }: { login?: VaultLogin; onDone(): void }) {
         </label>
       )}
       <BotAccess botIds={botIds} onChange={setBotIds} />
+      {manages && <TeamChoice team={team} onChange={setTeam} />}
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
           {t('common.cancel')}
@@ -237,5 +258,22 @@ export function BotAccess({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Whether a saved sign-in or a connection is the whole team's, for those who look after the
+ * server; anyone else's are their own, used only when a bot works for them.
+ */
+export function TeamChoice({ team, onChange }: { team: boolean; onChange(team: boolean): void }) {
+  const t = useT();
+  return (
+    <label className="flex items-start gap-2 rounded-xl border px-3 py-2 text-sm">
+      <input type="checkbox" className="mt-1" checked={team} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        {t('owned.forTeam')}
+        <span className="block text-xs text-muted-foreground">{t('owned.forTeamHint')}</span>
+      </span>
+    </label>
   );
 }

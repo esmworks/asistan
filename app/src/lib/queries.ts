@@ -3,6 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from './api';
 
 export const useBots = () => useQuery({ queryKey: ['bots'], queryFn: api.bots });
+/** Who this device is signed in as. */
+export const useSession = () => useQuery({ queryKey: ['session'], queryFn: api.session, staleTime: 60_000 });
+/** Whether the one signed in looks after the server: its owner or an admin. */
+export const useManagesServer = () => {
+  const role = useSession().data?.user?.role;
+  return role === 'owner' || role === 'admin';
+};
+export const usePeople = () => useQuery({ queryKey: ['people'], queryFn: api.people });
 export const useGroups = () => useQuery({ queryKey: ['groups'], queryFn: api.groups });
 export const useRooms = () => useQuery({ queryKey: ['rooms'], queryFn: api.rooms });
 export const useSummaries = () => useQuery({ queryKey: ['summaries'], queryFn: api.summaries });
