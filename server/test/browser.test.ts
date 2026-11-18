@@ -220,6 +220,13 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
           <script>document.getElementById('b').onclick = () => {
             document.getElementById('out').textContent = confirm('Kayıt silinsin mi?') ? 'Silindi' : 'Vazgeçildi'; };</script>`);
       }
+      if (req.url === '/acilir') {
+        return res.end(`<title>Ana</title><h1>Ana sayfa</h1>
+          <button onclick="window.open('/kapanir', '_blank')">Pencere aç</button>`);
+      }
+      if (req.url === '/kapanir') {
+        return res.end('<title>Açılır</title><button onclick="window.close()">Bitir</button>');
+      }
       if (req.url === '/donuk') {
         // Loads, then its main thread never comes back.
         return res.end(
@@ -446,6 +453,30 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
       ),
     );
     expect(status).toBe('reddedildi');
+  });
+
+  it('üzerinde olunan sekmeyi site kendisi kapatırsa bota söyler; botun kapattığını söylemez', async () => {
+    const bot = await t.bot();
+    await t.send((await main(bot.id)).id, 'merhaba');
+    await t.services.turns.idle();
+    const home = await text('browser_open', { url: `${base}/acilir` });
+    await text('browser_click', { ref: refOf(home, 'Pencere aç'), element: 'Pencere aç' });
+    const popup = await waitFor(async () => {
+      const s = await text('browser_snapshot', {});
+      return s.includes('Bitir') ? s : null;
+    });
+    await text('browser_click', { ref: refOf(popup, 'Bitir'), element: 'Bitir' });
+    const after = await waitFor(async () => {
+      const s = await text('browser_snapshot', {});
+      return s.includes('Ana sayfa') || s.includes('kendisi kapattı') ? s : null;
+    });
+    const said = after.includes('kendisi kapattı') ? after : await text('browser_snapshot', {});
+    expect(`${after}\n${said}`).toContain('/kapanir');
+    // A tab the bot closes itself is not news.
+    const browser = t.services.ctx.browser;
+    const extra = await browser.newPage(bot.id);
+    await browser.closePage(bot.id, extra);
+    expect(browser.takeClosedTabs(bot.id)).toEqual([]);
   });
 
   it('sekme çökerse aynı adres yeni sekmede açılır', async () => {

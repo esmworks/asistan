@@ -1,4 +1,11 @@
-import { outsideTrigger, quoteExcerpt, type Bot, type Message, type ReplyQuote } from '@yumakbot/shared';
+import {
+  outsideTrigger,
+  quoteExcerpt,
+  subagentOf,
+  type Bot,
+  type Message,
+  type ReplyQuote,
+} from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +31,7 @@ import {
   OpenedFrom,
   OpenedThread,
   PlanCard,
+  SubagentCard,
   SignInCard,
   type PlanItem,
 } from './Cards';
@@ -144,6 +152,10 @@ function MessageBody({
 function NoteRow({ m, botId, retry, room }: { m: Message; botId?: string; retry: boolean; room?: boolean }) {
   const c = useColors();
   if (Array.isArray(m.props.plan)) return <PlanCard items={m.props.plan as PlanItem[]} />;
+  if (m.props.subagent) {
+    const sub = subagentOf(m.props);
+    if (sub) return <SubagentCard sub={sub} />;
+  }
   if (typeof m.props.connectionSignIn === 'string')
     return <SignInCard connectionId={m.props.connectionSignIn} text={m.text} botId={botId} />;
   if (m.props.app && typeof m.props.app === 'object') return <McpAppView m={m} />;

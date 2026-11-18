@@ -1,4 +1,12 @@
-import { wallClock, zonedTime, type TodayReport, type UsageRange, type UsageReport } from '@yumakbot/shared';
+import {
+  PlanWindow,
+  wallClock,
+  zonedTime,
+  type TodayReport,
+  type UsageRange,
+  type UsageReport,
+} from '@yumakbot/shared';
+import { z } from 'zod';
 import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -35,6 +43,9 @@ export function csvCell(v: string | number | null): string {
   const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
   return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
+
+const PLAN_KEY = 'usage.plan';
+const StoredPlan = z.object({ at: z.string(), windows: z.array(PlanWindow) });
 
 /** What the bots cost and did over a period, read from the finished turns. */
 export class UsageService {
@@ -101,6 +112,46 @@ export class UsageService {
       bots: [...bots.values()].sort((a, b) => b.turns - a.turns),
       runs: runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString() })),
     };
+  }
+
+  /** Plan windows being kept, one after another, so two turns ending together both count. */
+  private planWrites: Promise<void> = Promise.resolve();
+
+  /**
+   * Keeps the plan's usage windows a Claude turn saw, each by its kind: a turn that heard of one
+   * window leaves the others as they were.
+   */
+  notePlan(windows: PlanWindow[]): Promise<void> {
+    const write = this.planWrites.then(() => this.writePlan(windows));
+    this.planWrites = write.catch(() => {});
+    return write;
+  }
+
+  private async writePlan(windows: PlanWindow[]) {
+    const now = this.clock().toISOString();
+    const before = await this.plan(false);
+    const byKind = new Map((before?.windows ?? []).map((w) => [w.kind, w]));
+    for (const w of windows) byKind.set(w.kind, PlanWindow.parse(w));
+    const value = { at: now, windows: [...byKind.values()].slice(0, 12) };
+    await this.ctx.db
+      .insert(schema.kv)
+      .values({ key: PLAN_KEY, value })
+      .onConflictDoUpdate({ target: schema.kv.key, set: { value } });
+  }
+
+  /**
+   * The plan's usage windows last seen. With `current`, a window whose reset has passed is left
+   * out: what it said is no longer true.
+   */
+  async plan(current = true): Promise<UsageReport['plan']> {
+    const [row] = await this.ctx.db.select().from(schema.kv).where(eq(schema.kv.key, PLAN_KEY)).limit(1);
+    const parsed = StoredPlan.safeParse(row?.value);
+    if (!parsed.success) return undefined;
+    const now = this.clock().getTime();
+    const windows = current
+      ? parsed.data.windows.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now)
+      : parsed.data.windows;
+    return windows.length || !current ? { at: parsed.data.at, windows } : undefined;
   }
 
   /** Spending since the start of this calendar month, and the limit set for it (0: none). */
@@ -213,6 +264,11 @@ export class UsageService {
       days,
       timezone,
       month: await this.month(),
+      plan: await this.plan(),
+      parallel: {
+        max: (await this.settings.get('maxTurns')) ?? 0,
+        serverDefault: this.ctx.config.maxConcurrentTurns,
+      },
       total,
       bots: [...perBot.entries()]
         .map(([botId, sum]) => ({

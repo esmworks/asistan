@@ -36,10 +36,10 @@ import {
   summarize,
 } from '../services/approvals';
 import { publicHost } from '../services/skill-link';
-import type { PlanItem } from '../engine/types';
+import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerWords, personAsked, quoteFound } from './owner-words';
+import { browses, markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
+import { ownerAnswers, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -506,6 +506,11 @@ export class TurnManager {
     await Promise.allSettled([...this.emits]);
   }
 
+  /** How many turns are running now. */
+  runningCount() {
+    return this.running.size;
+  }
+
   /** Wait until nothing is running or queued (tests). */
   async idle(timeoutMs = 20_000) {
     const start = Date.now();
@@ -528,7 +533,8 @@ export class TurnManager {
 
   private async fill() {
     if (this.stopped) return;
-    const free = this.ctx.config.maxConcurrentTurns - this.running.size;
+    const max = (await this.services.settings.get('maxTurns')) || this.ctx.config.maxConcurrentTurns;
+    const free = max - this.running.size;
     if (free <= 0) return;
     const queued = await this.ctx.db
       .select()
@@ -865,9 +871,10 @@ export class TurnManager {
         })
       : '';
 
-    // Whether the work goes back to the person's own message; read once, when it first matters.
-    let personRooted: Promise<boolean> | null = null;
-    const rootedInPerson = () => (personRooted ??= personAsked(this.ctx, turn));
+    // Who asked for the work: the person's message, their routine, or nobody just now; read once,
+    // when it first matters.
+    let asker: Promise<'message' | 'routine' | null> | null = null;
+    const askedBy = () => (asker ??= requestedBy(this.ctx, turn));
 
     let streamed = '';
     let shown = 0;
@@ -946,8 +953,11 @@ export class TurnManager {
           turn.modeCap,
         ),
         !!outside(),
-        !!outside() && (await rootedInPerson()),
+        !!outside() && !!(await askedBy()),
       );
+      // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
+      // the card says what started the run. In the person's own request they count as always.
+      const locked = !!outside() && !(await askedBy());
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -969,7 +979,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: !!outside(),
+        outside: locked,
       });
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
@@ -987,7 +997,10 @@ export class TurnManager {
       }
       // In work the person asked for, they said no to this very step and have not written since:
       // another card would only ask them the same thing again. A routine's later run still asks.
-      if ((await rootedInPerson()) && (await approvals.refusedLately(bot.id, ask.toolName, ask.input))) {
+      if (
+        (await askedBy()) === 'message' &&
+        (await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
         return { behavior: 'deny', message: t('turn.refusedLately') };
       }
       // Review mode: a small model may let a clearly safe request through. Never for what an
@@ -999,8 +1012,9 @@ export class TurnManager {
         !gated &&
         ask.input.sends !== true &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
-        // After outside text, a step that can reach another host is the person's to allow.
-        !(outside() && reachesOut(ask.toolName, ask.input, appTool))
+        // After outside text, a step that can send to another host is the person's to allow;
+        // looking something up on the web goes to the review.
+        !(outside() && reachesOut(ask.toolName, ask.input, appTool) && !browses(ask.toolName, appTool))
       ) {
         const review = await this.reviewed({
           bot,
@@ -1033,7 +1047,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: !!outside(),
+        outside: locked,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -1044,7 +1058,7 @@ export class TurnManager {
               approvalId: a.id,
               ...held,
               // The card says what started the run, and offers no "always allow".
-              ...(outside() ? { outside: outside() } : {}),
+              ...(locked && outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
@@ -1123,6 +1137,32 @@ export class TurnManager {
     };
     // The bot's plan is one message per turn, rewritten as the plan changes.
     let planMessage: Promise<string> | null = null;
+    // A card in the chat for each subagent the bot starts, kept up to date as it works.
+    const subagentCards = new Map<string, Promise<string>>();
+    const showSubagent = async (sub: SubagentState) => {
+      const props = { subagent: { description: sub.description, state: sub.state, steps: sub.steps } };
+      try {
+        const card = subagentCards.get(sub.id);
+        if (!card) {
+          const created = threads
+            .addMessage({
+              threadId: thread.id,
+              role: 'system',
+              author: `bot:${bot.id}`,
+              text: '',
+              props,
+              turnId: turn.id,
+            })
+            .then((r) => r.message.id);
+          subagentCards.set(sub.id, created);
+          await created;
+        } else {
+          await threads.updateMessage(await card, { props });
+        }
+      } catch (err) {
+        console.warn('subagent', err);
+      }
+    };
     const showPlan = async (items: PlanItem[]) => {
       try {
         if (!planMessage) {
@@ -1184,6 +1224,8 @@ export class TurnManager {
       waiting: () => approvals.waitingOn(turn.id),
       onStall: () => controller.abort(),
     });
+    // The same call failing the same way, again after the bot was told: the turn ends with why.
+    let looped: { tool: string; count: number } | null = null;
     // What the last run on the bot's own model was asked, for a second try of the same request.
     let lastPrompt = '';
     /** `backup`: a run on the backup model, which leaves the thread's own session alone. */
@@ -1245,6 +1287,10 @@ export class TurnManager {
           return answer;
         },
         onReach: () => void readOutside('web'),
+        onRepeatedFailure: (tool, count) => {
+          looped ??= { tool, count };
+          controller.abort();
+        },
         onActivity: (tool) => {
           watchdog.activity(tool);
           if (tool) showTool(tool);
@@ -1263,7 +1309,12 @@ export class TurnManager {
           session = sessionId;
         },
         onPlan: (items) => void showPlan(items),
+        onSubagent: (sub) => void showSubagent(sub),
         onLimitNear: (info) => void this.warnLimit(turn, info),
+        onPlanUsage: (windows) =>
+          void this.services.usage
+            .notePlan(windows)
+            .catch((err: unknown) => console.warn(`Could not keep the plan's usage: ${String(err)}`)),
         // A line in the chat marks where the bot's memory of the conversation became a summary.
         onCompacted: () =>
           void threads.addMessage({
@@ -1344,8 +1395,12 @@ export class TurnManager {
       }
       const backup = settings.backupModel;
       // A turn that already changed something is never run again from the start: the backup would
-      // repeat what was done (a sent mail, a written file). It ends with its error instead.
-      const blocked = !outcome.ok && (outcome.kind === 'limit' || outcome.transient === true) && !acted;
+      // repeat what was done (a sent mail, a written file). It ends with its error instead. A spent
+      // limit, a model that is down and a sign-in that no longer works all leave the backup to it.
+      const blocked =
+        !outcome.ok &&
+        (outcome.kind === 'limit' || outcome.kind === 'auth' || outcome.transient === true) &&
+        !acted;
       if (!outcome.ok && blocked && backup && backup !== model && !controller.signal.aborted) {
         // The usage limit is spent: the backup model carries this turn with the recent exchange, so
         // the work goes on instead of waiting for the limit to lift. The thread keeps its own session.
@@ -1353,7 +1408,14 @@ export class TurnManager {
           threadId: thread.id,
           role: 'system',
           author: 'system',
-          text: t(outcome.kind === 'limit' ? 'turn.backupModel' : 'turn.backupBusy', { model: backup }),
+          text: t(
+            outcome.kind === 'limit'
+              ? 'turn.backupModel'
+              : outcome.kind === 'auth'
+                ? 'turn.backupAuth'
+                : 'turn.backupBusy',
+            { model: backup },
+          ),
           props: { kind: 'backupModel' },
           turnId: turn.id,
         });
@@ -1372,6 +1434,12 @@ export class TurnManager {
     }
     if (watchdog.stalled && !outcome.ok && outcome.kind === 'interrupted') {
       outcome = { ...outcome, kind: 'stalled', message: stallText(watchdog.stalled, t) };
+    }
+    // Set from the engine's callback, which the compiler does not follow.
+    const loop = looped as { tool: string; count: number } | null;
+    if (loop && !outcome.ok && outcome.kind === 'interrupted') {
+      const tool = loop.tool.split('__').at(-1) || loop.tool;
+      outcome = { ...outcome, kind: 'stalled', message: t('turn.looped', { tool, count: loop.count }) };
     }
     if (!outcome.ok && !outcome.text && streamed) outcome.text = streamed;
     if (spent) outcome = { ...outcome, costUsd: (outcome.costUsd ?? 0) + spent };
@@ -1395,7 +1463,9 @@ export class TurnManager {
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
     const words = await ownerWords(this.ctx, o.turn);
-    if (!words.length) return { allowed: false, reason: t('review.noWords') };
+    // What they chose on the bot's question cards is theirs too; the question is the bot's.
+    const answers = await ownerAnswers(this.ctx, o.turn);
+    if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
     let verdict;
     try {
       verdict = await engine.review({
@@ -1403,6 +1473,7 @@ export class TurnManager {
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
         words,
+        answers,
         outside: o.outside,
         locale: o.locale,
         signal: o.signal,
@@ -1414,7 +1485,9 @@ export class TurnManager {
     if (o.signal.aborted) return no;
     if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
     // The reviewer must point at what the person said; a quote that is not there does not count.
-    if (!quoteFound(verdict.quote, words)) return { allowed: false, reason: t('review.noQuote') };
+    // Only the person's own text can be quoted: their messages and answers, never a card's question.
+    const own = [...words, ...answers.map((a) => a.answer)];
+    if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
     const action = summarize(o.ask.toolName, o.ask.input);
     await this.services.threads.addMessage({
       threadId: o.thread.id,

@@ -11,6 +11,7 @@ import { OWNER_ID } from '../src/users';
 import { isSilentReply, maybeSilentReply, planItems } from '../src/engine/types';
 import { resetTime } from '../src/engine/claude';
 import { CONTEXT_FULL } from '../src/runtime/turns';
+import { OVERLOADED } from '../src/engine/types';
 import { sql } from 'drizzle-orm';
 import { schema } from '../src/db';
 import { testServer, waitFor, type TestServer } from './helpers';
@@ -1081,6 +1082,59 @@ describe('sohbet', () => {
     const msgs = await t.messages(thread.id);
     expect(msgs.find((m) => m.props.kind === 'backupModel')!.text).toContain('yanıt veremiyor');
     expect(msgs.some((m) => m.role === 'error')).toBe(false);
+  });
+
+  it('Claude girişi geçersizse yedek model işi sürdürür ve yeniden girişi söyler', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.api('PATCH', '/api/settings', { backupModel: 'openrouter/yedek' });
+    await t.send(thread.id, '[giriş-yok] bak');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.model).toBe('openrouter/yedek');
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.kind === 'backupModel')!.text).toContain('yeniden giriş');
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
+  });
+
+  it('botun başlattığı alt ajan sohbette tek bir kartta izlenir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[alt-ajan] araştır');
+    await t.services.turns.idle();
+    const cards = (await t.messages(thread.id)).filter((m) => m.props.subagent);
+    expect(cards).toHaveLength(1);
+    await waitFor(async () => {
+      const [card] = (await t.messages(thread.id)).filter((m) => m.props.subagent);
+      return (card!.props.subagent as { state: string }).state === 'done' ? card : null;
+    });
+    const [card] = (await t.messages(thread.id)).filter((m) => m.props.subagent);
+    expect(card!.props.subagent).toEqual({ description: 'Kaynakları tara', state: 'done', steps: 2 });
+  });
+
+  it('aynı hatayı tekrar tekrar alan tur durdurulur ve nedeni yazılır', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[döngü] ara');
+    await t.services.turns.idle();
+    const last = (await t.messages(thread.id)).at(-1)!;
+    expect(last.role).toBe('error');
+    expect(last.text).toContain('search');
+    expect(last.text).toContain('5 kez');
+  });
+
+  it('sunucu hatası (500, 502, 504) geçici sayılır', () => {
+    for (const raw of [
+      'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+      '502 Bad Gateway',
+      'Gateway Timeout',
+    ])
+      expect(OVERLOADED.test(raw)).toBe(true);
+    expect(OVERLOADED.test('400 invalid_request_error')).toBe(false);
+    // The same numbers in another error are not a server's.
+    expect(OVERLOADED.test('max_tokens: 500 is more than this model allows')).toBe(false);
+    expect(OVERLOADED.test('the file has more than 500 lines')).toBe(false);
+    expect(OVERLOADED.test('HTTP 504 from the provider')).toBe(true);
+    expect(OVERLOADED.test('request failed with status code 502')).toBe(true);
   });
 
   it('bir şey değiştirmiş tur yedek modelde baştan çalıştırılmaz', async () => {

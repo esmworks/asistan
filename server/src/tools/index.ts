@@ -1161,7 +1161,10 @@ export class ToolFactory {
           });
           return t(expect_reply ? 'tool.sent' : 'tool.notified', { to: to.name, id: job.id });
         },
-        'internal',
+        // Handing work to another of the person's bots changes nothing by itself: that bot acts at
+        // its own level, with what this run read marked on the work. So it goes like a read,
+        // without a card, at every level.
+        'read',
         // Asking a bot with looser permissions to act would bypass this bot's own limits.
         async ({ bot: ref }) => {
           const to = await reachBot(ref, 'chat').catch(() => null);
@@ -1436,7 +1439,9 @@ export class ToolFactory {
               groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
               color: a.color ?? '#4f6bed',
               avatar: 'shape:blob',
-              permissionMode: 'ask',
+              // The level a bot the person creates starts at: the review asks only for what their
+              // words do not cover. Loosening it further still takes the person's card.
+              permissionMode: 'review',
               internet: false,
               projectDir: null,
               memory: true,
@@ -1450,7 +1455,7 @@ export class ToolFactory {
           await audit('create', created.id, null, created);
           return t('tool.created', { name: created.name, id: created.id });
         },
-        // A new bot always starts with the strictest settings: it asks before acting, no internet.
+        // A new bot starts on the review and off the internet; loosening either takes a card.
         'internal',
       ),
       def(

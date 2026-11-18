@@ -46,7 +46,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { ComputerCard, useBrowserAvailable } from './Computer';
 import { canPreview, usePreview } from './FilePreview';
-import { BotSteps, BotSuggestions } from './BotSteps';
+import { BotSuggestions } from './BotSteps';
 import { BotTables } from './BotTables';
 import { InstructionsDocNotice } from './InstructionsDoc';
 import { AppLogo, openTo, useToggleBot } from './Connections';
@@ -130,7 +130,6 @@ export function RightPanel({ bot, beside }: { bot: Bot; beside?: boolean }) {
           <InstructionsDocNotice bot={bot} />
           <BotSuggestions bot={bot} />
           <Upcoming bot={bot} />
-          <BotSteps bot={bot} />
           <BotApps bot={bot} />
           <BotSkills bot={bot} />
           <BotTables bot={bot} />

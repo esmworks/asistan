@@ -154,6 +154,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/search': 'self',
   'GET /api/today': 'self',
   'GET /api/turns/:id/result': read('turn'),
+  // How much work stopping the whole server would stop: for those who look after it.
+  'GET /api/turns/running': 'admin',
 
   // A bot's tables.
   'GET /api/bots/:id/tables': chat(),

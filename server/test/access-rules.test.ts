@@ -22,7 +22,7 @@ describe('erişim kuralları', () => {
     const open = new Set(['/api/health', '/api/access', '/api/login', '/api/pair', '/api/session']);
     const missing = signedIn().filter((r) => {
       const path = r.slice(r.indexOf(' ') + 1);
-      if (open.has(path) || path.startsWith('/api/hooks/') || path === '/api/connections/oauth/callback')
+      if (open.has(path) || path.startsWith('/api/hooks/') || path.startsWith('/api/connections/oauth/'))
         return false;
       if (path.startsWith('/api/email/inbound')) return false;
       return !(r in ROUTE_RULES);

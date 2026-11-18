@@ -3,7 +3,7 @@
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts",
@@ -28,6 +28,7 @@
     "postal-mime": "2.4.4",
     "postgres": "4.1.1",
     "qrcode": "1.5.4",
+    "sharp": "0.35.5",
     "socket.io": "4.8.4",
     "tldts": "6.1.86",
     "ws": "8.22.2",

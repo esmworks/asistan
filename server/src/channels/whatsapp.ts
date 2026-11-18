@@ -10,7 +10,7 @@ import {
   type WhatsAppSet,
   type WhatsAppStatus,
 } from '@yumakbot/shared';
-import { eq, like } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { T } from '../i18n';
@@ -23,7 +23,24 @@ import { whatsappMessages } from './format';
 import { qrImage } from './qr';
 
 type Row = typeof schema.channels.$inferSelect;
-type Settings = { mode?: WhatsAppSet['mode']; phone?: string; notices?: boolean; threadId?: string };
+type Settings = {
+  mode?: WhatsAppSet['mode'];
+  phone?: string;
+  notices?: boolean;
+  threadId?: string;
+  /** When the newest message read here was written, in seconds: older ones handed again are not new. */
+  seenAt?: number;
+};
+
+/** How old a message WhatsApp held while this device was away may be and still be answered. */
+const HELD_MAX_S = 24 * 3600;
+
+/** When a WhatsApp message was written, in seconds since the epoch; 0 when it does not say. */
+export const stampOf = (m: WaMessage): number => {
+  const v = m.messageTimestamp;
+  const n = typeof v === 'number' ? v : v && typeof v === 'object' ? v.toNumber() : 0;
+  return Number.isFinite(n) ? n : 0;
+};
 
 /** How long a QR setup may wait to be scanned before it is given up on. */
 const LINK_MS = 5 * 60_000;
@@ -122,11 +139,29 @@ const numberOf = (jid: string | null | undefined) =>
   /^(\d+)(?::\d+)?@s\.whatsapp\.net$/.exec(jid ?? '')?.[1] ?? null;
 const bareJid = (jid: string) => jid.replace(/:\d+@/, '@');
 
-/** The text and the kind of file a WhatsApp message carries, and whether it was forwarded. */
+type WaMedia = { kind: string; mime?: string; name?: string; size?: number };
+
+/**
+ * The message a WhatsApp message answers: its id, its text and file, whether it was forwarded, and
+ * the message itself.
+ */
+type WaQuoted = {
+  id: string | null;
+  text: string;
+  media: WaMedia | null;
+  forwarded: boolean;
+  message: Record<string, unknown>;
+};
+
+/**
+ * The text and the kind of file a WhatsApp message carries, whether it was forwarded, and the
+ * message it answers when the person replied to one.
+ */
 export function contentOf(m: WaMessage): {
   text: string;
-  media: { kind: string; mime?: string; name?: string; size?: number } | null;
+  media: WaMedia | null;
   forwarded: boolean;
+  quoted: WaQuoted | null;
 } {
   let msg = (m.message ?? {}) as Record<string, Record<string, unknown> | undefined>;
   // Disappearing and view-once messages wrap the real one.
@@ -143,6 +178,22 @@ export function contentOf(m: WaMessage): {
   const size = (v: unknown) =>
     typeof v === 'number' ? v : typeof v === 'object' && v ? Number(v) : undefined;
   const text = str(msg.conversation) || str(msg.extendedTextMessage?.text);
+  // A reply names the message it answers and carries a copy of it.
+  let quoted: WaQuoted | null = null;
+  for (const part of Object.values(msg)) {
+    const info = part?.contextInfo as { stanzaId?: unknown; quotedMessage?: unknown } | undefined;
+    if (!info?.quotedMessage || typeof info.quotedMessage !== 'object') continue;
+    const message = info.quotedMessage as Record<string, unknown>;
+    const inner = contentOf({ key: {}, message });
+    quoted = {
+      id: typeof info.stanzaId === 'string' ? info.stanzaId : null,
+      text: inner.text,
+      media: inner.media,
+      forwarded: inner.forwarded,
+      message,
+    };
+    break;
+  }
   // A forward is someone else's words, whichever account passed it on.
   const forwarded = Object.values(msg).some((part) => {
     const info = part?.contextInfo as { isForwarded?: unknown; forwardingScore?: unknown } | undefined;
@@ -168,9 +219,10 @@ export function contentOf(m: WaMessage): {
         size: size(f.fileLength),
       },
       forwarded,
+      quoted,
     };
   }
-  return { text, media: null, forwarded };
+  return { text, media: null, forwarded, quoted };
 }
 
 /**
@@ -357,9 +409,13 @@ export class WhatsAppChannel {
       void this.connection(socket, u).catch((err: unknown) => console.warn('whatsapp', err));
     });
     socket.ev.on('messages.upsert', (u) => {
-      if (this.socket !== socket || u.type !== 'notify') return;
+      // New messages come as `notify`. Ones WhatsApp held while this device was away may come as
+      // `append` after it connects again; those are read only when newer than the last one read.
+      if (this.socket !== socket || (u.type !== 'notify' && u.type !== 'append')) return;
       for (const m of u.messages) {
-        void this.received(socket, m).catch((err: unknown) => console.warn('whatsapp message', err));
+        void this.received(socket, m, u.type === 'append').catch((err: unknown) =>
+          console.warn('whatsapp message', err),
+        );
       }
     });
   }
@@ -468,14 +524,20 @@ export class WhatsAppChannel {
     return bareJid(jid);
   }
 
-  private async received(socket: WaSocket, m: WaMessage) {
+  private async received(socket: WaSocket, m: WaMessage, held = false) {
     const row = await this.row();
     if (!row) return;
     const settings = row.settings as Settings;
     const jid = await this.from(socket, m, settings);
     if (!jid) return;
+    const stamp = stampOf(m);
+    if (held) {
+      // Only what came after the last message read, and not long ago: never old history.
+      const seen = settings.seenAt ?? 0;
+      if (!seen || stamp <= seen || Date.now() / 1000 - stamp > HELD_MAX_S) return;
+    }
     const t = await this.services.settings.translator();
-    const { text: raw, media, forwarded } = contentOf(m);
+    const { text: raw, media, forwarded, quoted } = contentOf(m);
     const text = raw.trim();
     // `/bot` names the bot the messages go to; a forwarded `/bot` is only text.
     const pick = forwarded ? null : /^\/bot(?:\s+(.+))?$/i.exec(text);
@@ -522,15 +584,82 @@ export class WhatsAppChannel {
         }
       }
     }
+    // A reply to a message: one of ours is quoted by the app; another one's text and file come along.
+    const replyTo = quoted?.id ? await this.ours(row.id, quoted.id) : null;
+    let quote = '';
+    if (quoted && !replyTo) {
+      quote = quoted.text.trim();
+      if (quoted.media) {
+        const name = receivedName(
+          quoted.media.kind,
+          quoted.id ?? newId().slice(0, 8),
+          quoted.media.mime,
+          quoted.media.name,
+        );
+        if ((quoted.media.size ?? 0) > RECEIVE_MAX) {
+          await this.say(jid, t('channel.fileTooLarge', { name }));
+        } else {
+          try {
+            const body = await this.lib!.download({
+              key: { remoteJid: m.key.remoteJid, id: quoted.id },
+              message: quoted.message,
+            });
+            files.push((await saveUpload(stagingDir(this.ctx.config.dataDir, thread.id), name, body)).name);
+          } catch (err) {
+            console.warn('whatsapp quoted file', errorText(err));
+            await this.say(jid, t('channel.fileFailed', { name }));
+          }
+        }
+      }
+    }
     if (!text && !files.length) return;
-    await this.saveSettings(row, { threadId: thread.id });
-    await this.services.inbox.send(thread.id, {
-      text,
+    // A quoted message not known here may be anyone's words (a forward, a message from before this
+    // device): the message carries it as outside text, so it is never taken as the person's request.
+    const outside = forwarded || quoted?.forwarded ? 'forward' : quoted && !replyTo ? 'stored' : null;
+    const quoteBlock = quote
+      ? `${quote
+          .split('\n')
+          .map((l) => `> ${l}`)
+          .join('\n')}\n\n`
+      : '';
+    // Against the settings as they are now: a message handled alongside may have moved it on.
+    await this.saveSettings(row, (now) => ({
+      threadId: thread.id,
+      seenAt: Math.max(now.seenAt ?? 0, stamp) || undefined,
+    }));
+    const { message } = await this.services.inbox.send(thread.id, {
+      text: `${quoteBlock}${text}`,
       files,
       clientId: `whatsapp:${(m.key.id ?? newId()).slice(0, 48)}`,
       userId: row.userId,
-      props: { via: 'whatsapp', ...(forwarded && { outside: 'forward' }) },
+      ...(replyTo && { replyTo }),
+      props: { via: 'whatsapp', ...(outside && { outside }) },
     });
+    if (m.key.id) await this.remember(row.id, m.key.id, message.id);
+  }
+
+  /** Keeps which message here a WhatsApp message is, so a reply to it can be found. */
+  private async remember(channelId: string, externalId: string, messageId: string) {
+    await this.ctx.db
+      .insert(schema.channelMessages)
+      .values({ channelId, externalId, messageId })
+      .onConflictDoNothing()
+      .catch(() => {});
+  }
+
+  /** The message here that a WhatsApp message is, when it is one we know. */
+  private async ours(channelId: string, externalId: string): Promise<string | null> {
+    const [found] = await this.ctx.db
+      .select({ messageId: schema.channelMessages.messageId })
+      .from(schema.channelMessages)
+      .where(
+        and(
+          eq(schema.channelMessages.channelId, channelId),
+          eq(schema.channelMessages.externalId, externalId),
+        ),
+      )
+      .limit(1);
+    return found?.messageId ?? null;
   }
 
   private async pickBot(jid: string, row: Row, name: string | undefined, t: T) {
@@ -642,7 +771,7 @@ export class WhatsAppChannel {
     if (!here) {
       if (settings.notices === false || thread.botId !== row.botId) return;
       if (!report || m.role !== 'assistant' || !m.text.trim()) return;
-      await this.sends.run('wa', () => this.markdown(jid, headed()));
+      await this.sends.run('wa', () => this.markdown(jid, headed(), m.id));
       return;
     }
     await this.sends.run('wa', async () => {
@@ -667,7 +796,7 @@ export class WhatsAppChannel {
       }
       if (m.role === 'error') return this.markdown(jid, `⚠️ ${m.text}`);
       if (m.author !== `bot:${thread.botId}`) return;
-      if (m.text.trim()) await this.markdown(jid, report ? headed() : m.text);
+      if (m.text.trim()) await this.markdown(jid, report ? headed() : m.text, m.id);
       for (const f of messageFiles(m)) {
         const path = join(this.ctx.config.dataDir, 'workspaces', f.path);
         const size = await stat(path).then(
@@ -680,7 +809,12 @@ export class WhatsAppChannel {
           continue;
         }
         try {
-          await this.send(jid, { document: { url: path }, fileName: f.name, mimetype: mimeOf(f.name) });
+          const id = await this.send(jid, {
+            document: { url: path },
+            fileName: f.name,
+            mimetype: mimeOf(f.name),
+          });
+          if (id) await this.mark(id, m.id);
         } catch (err) {
           console.warn('whatsapp send file', errorText(err));
           await this.markdown(jid, t('channel.fileInApp', { name: f.name }));
@@ -689,8 +823,18 @@ export class WhatsAppChannel {
     });
   }
 
-  private async markdown(jid: string, md: string) {
-    for (const part of whatsappMessages(md)) await this.send(jid, { text: part });
+  /** Sends Markdown as WhatsApp text; with `messageId`, a reply to what was sent finds that message. */
+  private async markdown(jid: string, md: string, messageId?: string) {
+    for (const part of whatsappMessages(md)) {
+      const id = await this.send(jid, { text: part });
+      if (id && messageId) await this.mark(id, messageId);
+    }
+  }
+
+  /** Keeps a message sent to WhatsApp as the message here it came from. */
+  private async mark(externalId: string, messageId: string) {
+    const row = await this.row();
+    if (row) await this.remember(row.id, externalId, messageId);
   }
 
   /** A short line outside the order of replies (a command's answer). */
@@ -698,9 +842,9 @@ export class WhatsAppChannel {
     await this.sends.run('wa', () => this.markdown(jid, text));
   }
 
-  private async send(jid: string, content: Record<string, unknown>) {
+  private async send(jid: string, content: Record<string, unknown>): Promise<string | null> {
     const socket = this.socket;
-    if (!socket) return;
+    if (!socket) return null;
     const sent = await socket.sendMessage(jid, content);
     const id = sent?.key?.id;
     this.lastSent = id ?? newId();
@@ -709,6 +853,7 @@ export class WhatsAppChannel {
       // Only recent ones matter: WhatsApp hands a sent message back at once.
       if (this.sentIds.size > 500) this.sentIds.delete(this.sentIds.values().next().value!);
     }
+    return id ?? null;
   }
 
   private async turnState(e: TurnEvent) {
@@ -766,11 +911,16 @@ export class WhatsAppChannel {
     return row ?? null;
   }
 
-  private async saveSettings(row: Row, patch: Record<string, unknown>) {
+  /** Changes some settings; `patch` may be worked out from the settings as they are when saved. */
+  private async saveSettings(
+    row: Row,
+    patch: Record<string, unknown> | ((now: Settings) => Record<string, unknown>),
+  ) {
     const latest = (await this.row()) ?? row;
+    const changes = typeof patch === 'function' ? patch(latest.settings as Settings) : patch;
     await this.ctx.db
       .update(schema.channels)
-      .set({ settings: { ...latest.settings, ...patch } })
+      .set({ settings: { ...latest.settings, ...changes } })
       .where(eq(schema.channels.id, row.id));
   }
 

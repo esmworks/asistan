@@ -279,7 +279,14 @@ const ROWS: Record<CatalogCategory, Row[]> = {
       'oauth',
       { client: { help: 'https://discord.com/developers/applications', secretOptional: true } },
     ],
-    ['Gmail', 'https://gmailmcp.googleapis.com/mcp/v1', 'oauth', { ...google('gmail.modify'), ...FEATURED }],
+    [
+      'Gmail',
+      'https://gmailmcp.googleapis.com/mcp/v1',
+      'oauth',
+      // Signed in with modify alone, the server lists no tool that sends, replies, forwards or
+      // changes a draft; its setup guide asks for these three scopes.
+      { ...google('gmail.readonly', 'gmail.compose', 'gmail.modify'), ...FEATURED },
+    ],
     [
       'Google Chat',
       'https://chatmcp.googleapis.com/mcp/v1',

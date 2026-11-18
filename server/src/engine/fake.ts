@@ -52,7 +52,8 @@ export class FakeEngine implements Engine {
 
   /**
    * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of
-   * the person's latest message; "uydurma-alıntı" lets it run with a quote nobody wrote;
+   * the person's latest message; "cevaba-dayalı" quotes their latest card answer and
+   * "soruya-dayalı" that card's question; "uydurma-alıntı" lets it run with a quote nobody wrote;
    * "inceleme-hatası" fails the review; anything else goes to the person.
    */
   async review(req: ReviewRequest): Promise<ReviewVerdict> {
@@ -64,6 +65,18 @@ export class FakeEngine implements Engine {
         decision: 'allow',
         reason: 'Sahte inceleme: istenmiş.',
         quote: 'her şeyi yapmana izin veriyorum',
+      };
+    if (action.includes('cevaba-dayalı'))
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: kartta istendi.',
+        quote: req.answers?.at(-1)?.answer ?? '',
+      };
+    if (action.includes('soruya-dayalı'))
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: soruda yazıyor.',
+        quote: req.answers?.at(-1)?.question ?? '',
       };
     if (action.includes('güvenli'))
       return {
@@ -153,10 +166,24 @@ export class FakeEngine implements Engine {
         resetsAt: new Date(Date.now() - 29_800),
       };
     }
+    // A helper the bot starts for part of the work: it takes two steps and finishes.
+    if (req.prompt.includes('[alt-ajan]')) {
+      const sub = { id: 'fake-sub', description: 'Kaynakları tara', state: 'running' as const, steps: 0 };
+      req.onSubagent?.(sub);
+      req.onSubagent?.({ ...sub, steps: 1 });
+      req.onSubagent?.({ ...sub, steps: 2 });
+      req.onSubagent?.({ ...sub, steps: 2, state: 'done' });
+    }
+    // A call that keeps failing the same way, past the warning: the turn is stopped.
+    if (req.prompt.includes('[döngü]')) {
+      req.onRepeatedFailure?.('mcp__notion__search', 5);
+      if (req.signal.aborted)
+        return { ok: false, kind: 'interrupted', message: 'Durduruldu', text: '', sessionId };
+    }
     if (req.prompt.includes('[adım-sınırı]')) {
       return { ok: false, kind: 'engine', message: 'Adım sınırı', text: '', sessionId, stepLimit: true };
     }
-    if (req.prompt.includes('[giriş-yok]')) {
+    if (req.prompt.includes('[giriş-yok]') && !req.model.includes('/')) {
       return { ok: false, kind: 'auth', message: 'Not logged in', text: '', sessionId };
     }
     // The usage limit is the Claude account's; a `provider/model` (a backup) is not under it.

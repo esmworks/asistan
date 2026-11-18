@@ -1,4 +1,11 @@
-import { ROUTINE_GATE_MODES, USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
+import {
+  planPace,
+  ROUTINE_GATE_MODES,
+  USAGE_RANGES,
+  type PlanWindow,
+  type UsageRange,
+  type UsageReport,
+} from '@yumakbot/shared';
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { Loading, Note, PillButton, Row, Section, Segments } from '@/components/page';
@@ -6,7 +13,8 @@ import { shareFile } from '@/components/panel/files';
 import { ChoiceRow, Hint, Pad, Rows, useSaveSettings } from './common/controls';
 import { usd } from './more/money';
 import { BotMark, DailyChart, ShareBar, UsageCard, UsageLine } from './more/usageParts';
-import { t } from '@/i18n';
+import { locale, t } from '@/i18n';
+import { formatters } from '@/lib/format';
 import { useBots, useSettings, useUsage } from '@/lib/queries';
 import { useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
@@ -15,6 +23,8 @@ import { useColors } from '@/lib/theme';
 const ALL = '*';
 
 /** The "usage" settings section's content: a total, the cost per day, per bot, model and routine. */
+const fmt = formatters(locale, t);
+
 export function UsageSection() {
   const c = useColors();
   const { origin } = useServer();
@@ -56,8 +66,10 @@ export function UsageSection() {
       ) : (
         <Report data={data} filtered={botId !== null} onPickBot={setBotId} />
       )}
+      <PlanUsage plan={data?.plan} />
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
+      <Parallel parallel={data?.parallel} />
       <PillButton
         icon="download"
         label={t('usage.downloadCsv')}
@@ -128,6 +140,76 @@ function MonthLimit({ month }: { month?: UsageReport['month'] }) {
   );
 }
 
+const PLAN_LABELS = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'] as const;
+
+function planLabel(w: PlanWindow): string {
+  if (w.label) return w.label;
+  const known = PLAN_LABELS.find((k) => k === w.kind);
+  return known ? t(`usage.plan.${known}`) : w.kind;
+}
+
+/** The Claude plan's usage windows, each a bar with a line where the window's time stands. */
+function PlanUsage({ plan }: { plan?: UsageReport['plan'] }) {
+  const c = useColors();
+  // The time the page opened: the marks stay put while it is read.
+  const [now] = useState(() => Date.now());
+  if (!plan?.windows.length) return null;
+  return (
+    <Section title={t('usage.plan')}>
+      <Pad>
+        {plan.windows.map((w) => {
+          const pace = planPace(w, now);
+          const used = w.used ?? 0;
+          const color = used >= 0.9 ? c.destructive : pace !== null && used > pace ? '#f59e0b' : c.primary;
+          return (
+            <View key={w.kind} style={styles.planRow}>
+              <Text style={[styles.planName, { color: c.foreground }]}>{planLabel(w)}</Text>
+              <Text style={[styles.small, { color: c.mutedForeground }]}>
+                {w.used === null ? '–' : t('usage.plan.used', { percent: Math.round(used * 100) })}
+                {w.resetsAt ? ` · ${t('usage.plan.resets', { time: fmt.dayLabel(w.resetsAt) })}` : ''}
+              </Text>
+              <View>
+                <ShareBar share={used} color={color} />
+                {pace !== null ? (
+                  <View
+                    style={[styles.paceMark, { left: `${pace * 100}%`, backgroundColor: c.foreground }]}
+                  />
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+        <Hint>{t('usage.plan.hint')}</Hint>
+        <Hint>{t('usage.plan.seen', { time: fmt.dayLabel(plan.at) })}</Hint>
+      </Pad>
+    </Section>
+  );
+}
+
+/** How many turns may run at once; 0 leaves it to the server. */
+function Parallel({ parallel }: { parallel?: UsageReport['parallel'] }) {
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  // A server older than the setting does not offer it.
+  if (!parallel || settings?.maxTurns === undefined) return null;
+  return (
+    <Section>
+      <ChoiceRow
+        icon="layers"
+        label={t('usage.parallel')}
+        value={String(settings.maxTurns)}
+        options={[0, 1, 2, 3, 4, 5, 6, 8, 10].map((n) => ({
+          value: String(n),
+          label: n === 0 ? t('usage.parallel.default', { count: parallel.serverDefault }) : String(n),
+        }))}
+        onChange={(v) => save.mutate({ maxTurns: Number(v) })}
+      />
+      <Pad>
+        <Hint>{t('usage.parallel.hint')}</Hint>
+      </Pad>
+    </Section>
+  );
+}
 /**
  * The small-model check before routine runs that a watched page, an app's check or a webhook
  * started: off, watching only, or on; and over the period, what it cost and what it would have saved.
@@ -240,6 +322,17 @@ function Report({
 
 const styles = StyleSheet.create({
   small: { fontSize: 15 },
+  planRow: { gap: 6, marginBottom: 14 },
+  planName: { fontSize: 16, fontWeight: '500' },
+  paceMark: {
+    position: 'absolute',
+    top: -3,
+    bottom: -3,
+    width: 2,
+    marginLeft: -1,
+    borderRadius: 1,
+    opacity: 0.6,
+  },
   total: { fontSize: 32, fontWeight: '600', fontVariant: ['tabular-nums'] },
   limit: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
