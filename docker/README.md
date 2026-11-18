@@ -316,9 +316,49 @@ docker network ls -q | xargs docker network inspect -f '{{.Name}} {{index .Optio
 
 Ağ eski bir kurulumdan kaldıysa ve kapsayıcısı yoksa (son sayı 0) `docker network rm <ad>` ile silip yeniden
 yayınlayın. İki kurulumu aynı sunucuda birlikte çalıştırmak istiyorsanız ikincisine panelde
-`YUMAKBOT_BRIDGE=yumakbot1` gibi başka bir ad verin (en çok 15 karakter) ve güvenlik duvarını o köprü için de
-kurun: `sudo BRIDGE=yumakbot1 /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh`. Kurallar köprüye göre
-eklenir; biri ötekininkini silmez.
+`YUMAKBOT_BRIDGE=yumakbot1` gibi başka bir ad verin (en çok 15 karakter). Öteki kurulum `127.0.0.1:4319`'u
+tuttuğu için `YUMAKBOT_PORT=4329` gibi başka bir port da verin; panelde alan adının hedef portu `4319` kalır.
+
+Panel güvenlik duvarını kurmaz. Yayından sonra her kurulum için, kendi köprüsüyle, bir kez:
+
+```bash
+sudo BRIDGE=yumakbot0 /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh
+```
+
+Kurallar köprüye göre eklenir; iki kurulumun kuralları birbirini silmez, başka kapsayıcıların trafiğine de
+dokunmaz. Yeniden başlatmadan sonra da kalmaları için her kuruluma bir servis yazın; Docker yeniden
+başladığında da çalışır, panel yeniden yayınlayınca köprü aynı adla geri geldiği için kurallar geçerli kalır:
+
+```bash
+sudo tee /etc/systemd/system/yumakbot-firewall-<uygulama>.service <<'EOF'
+[Unit]
+Description=Yumak Bot egress firewall (<uygulama>)
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=BRIDGE=yumakbot0
+ExecStart=/bin/sh /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh --wait
+
+[Install]
+WantedBy=multi-user.target docker.service
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now yumakbot-firewall-<uygulama>.service
+```
+
+Uygulamayı panelden silerseniz servisini de kaldırın (`systemctl disable --now …` ve dosyayı silin); yoksa
+açılışta betiği bulamaz ve başarısız görünür.
+
+Panelde bir alan adı bağlanınca Dokploy `yumakbot` servisini kendi `dokploy-network` ağına ve projenin
+`default` ağına da ekler. Sunucu kapsayıcısı internete artık bu ağlardan çıkar, `egress` köprüsünden değil;
+bu yüzden güvenlik duvarı burada yalnızca `computer` kapsayıcısını (botların masaüstlerini) korur. Sunucu
+kapsayıcısı ayrıca `dokploy-network` üzerinden paneldeki öteki uygulamalara (Dokploy'un kendi veritabanı
+dahil) ulaşabilir. Botların komutları buna rağmen kapalı kalır: internet açık bir botun komutları sunucunun
+kendi vekilinden geçer ve o vekil yalnızca genel adreslere bağlanır.
 
 ## Botların bilgisayarı
 
