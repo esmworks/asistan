@@ -779,7 +779,7 @@ export const tr = {
   'email.status.denied.send': 'Gönderilmedi',
   'email.status.denied.draft': 'Kaydedilmedi',
   'email.status.expired': 'Yanıtsız kaldı, gönderilmedi',
-  'approval.neverHint': 'Bu aracı bundan sonra engeller; Ayarlar → İzinler’den kaldırabilirsin',
+  'approval.neverHint': 'Bu adımı bu botta bundan sonra engeller; Ayarlar → İzinler’den kaldırabilirsin',
   'approval.expired': 'İzin isteği yanıtsız kaldı',
   'approval.timedOut': 'İzin isteği zamanında yanıtlanmadı; işlem yapılmadı',
   'approval.show': 'Neyi?',

@@ -142,7 +142,7 @@ describe('the way out through the person computer', () => {
 
 describe('the desktop app connection', () => {
   it('shows the connected computer and the switch in the server info', async () => {
-    const t = await testServer();
+    const t = await testServer({ onUserComputer: false });
     const url = await t.listen();
     const socket: IoSocket = io(`${url}/egress`, {
       transports: ['websocket'],
@@ -175,7 +175,7 @@ describe('the desktop app connection', () => {
 
   it('carries a browser connection over the app connection to the computer and back', async () => {
     const far = await answering('through the app');
-    const t = await testServer();
+    const t = await testServer({ onUserComputer: false });
     const url = await t.listen();
     // The desktop app's part: an exit on its end of the socket.
     const asked: string[] = [];
@@ -217,7 +217,7 @@ describe('the desktop app connection', () => {
   });
 
   it("the desktop app's exit refuses the person's own network and ports other than the web's", async () => {
-    const t = await testServer();
+    const t = await testServer({ onUserComputer: false });
     const url = await t.listen();
     const stop = startEgress({
       url,
@@ -245,7 +245,7 @@ describe('the desktop app connection', () => {
   });
 
   it('turns away a connection without the access key', async () => {
-    const t = await testServer();
+    const t = await testServer({ onUserComputer: false });
     const url = await t.listen();
     const socket = io(`${url}/egress`, { transports: ['websocket'], reconnection: false });
     try {

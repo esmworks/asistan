@@ -20,6 +20,7 @@ import type { VaultService } from './vault';
 import { OWNER_ID } from '../users';
 import { botLevel } from './access';
 import { commandParts, freePart } from './shell-parts';
+import { redactSecrets } from './secrets';
 
 /** Built-in tools that only read inside the allowed folders. */
 export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite', 'NotebookRead']);
@@ -129,6 +130,17 @@ const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
  * covers no more than it (a pattern character in it): the answer then counts for this time only.
  */
 export function rememberedPattern(toolName: string, input: Record<string, unknown>): string | null {
+  const pattern = widestPattern(toolName, input);
+  return pattern && !holdsSecret(pattern) ? pattern : null;
+}
+
+/**
+ * Whether a rule would keep a key, token or password: rules are listed in the settings and kept as
+ * they are, so a step that carries one counts for this time only.
+ */
+const holdsSecret = (pattern: string) => redactSecrets(pattern, '').redacted;
+
+function widestPattern(toolName: string, input: Record<string, unknown>): string | null {
   const pick = (k: string) => (typeof input[k] === 'string' ? (input[k] as string).trim() : '');
   const plain = (s: string) => !!s && !/[*?]/.test(s);
   if (toolName === 'Bash') {
@@ -160,6 +172,19 @@ export function rememberedPattern(toolName: string, input: Record<string, unknow
     }
   }
   return toolName;
+}
+
+/**
+ * The block rule a card's "never allow" keeps: the command as "always allow" would keep it
+ * (`Bash(git push:*)`), the very file, or the step's own words. Never null: a pattern character
+ * left in it, or a secret turned into one, only blocks more, which a block may.
+ */
+export function blockedPattern(toolName: string, input: Record<string, unknown>): string {
+  const subject = ruleSubject(toolName, input).trim();
+  const pattern = FILE_TOOLS.has(toolName)
+    ? subject && `${toolName}(${subject})`
+    : (widestPattern(toolName, input) ?? (subject && `${toolName}(${subject})`));
+  return redactSecrets(pattern || toolName, '*').text;
 }
 
 /** A step an "always allow" keeps: the rule's pattern, and the call it covers. */
@@ -200,7 +225,7 @@ export function rememberedSteps(toolName: string, input: Record<string, unknown>
     const steps = new Map<string, RememberedStep>();
     for (const command of needed) {
       const pattern = partPattern(command);
-      if (!pattern) return null;
+      if (!pattern || holdsSecret(pattern)) return null;
       if (!steps.has(pattern)) steps.set(pattern, { pattern, input: { command } });
     }
     return [...steps.values()];
@@ -731,10 +756,21 @@ export class ApprovalService {
     for (const step of remembered ? (steps ?? []) : []) {
       added.push(await this.addRule({ list: 'allow', pattern: step.pattern, note, botId: stored.botId }));
     }
-    // "Never allow": the tool is refused from now on, in every mode, without a card.
-    if (d.remember && d.decision === 'deny' && current.kind === 'tool') {
+    // "Never allow": the step is refused from now on, in every mode, without a card. As narrow as
+    // the step, and for the bot that asked: one refused command does not take the whole tool from
+    // every bot.
+    const blocked =
+      d.remember && d.decision === 'deny' && current.kind === 'tool'
+        ? blockedPattern(current.toolName, current.input)
+        : null;
+    if (blocked) {
       const t = await serverTranslator(this.ctx);
-      await this.addRule({ list: 'block', pattern: current.toolName, note: t('approval.blockNote') });
+      await this.addRule({
+        list: 'block',
+        pattern: blocked,
+        note: t('approval.blockNote'),
+        botId: stored.botId,
+      });
     }
     this.waiters.get(id)?.resolve({ status, answer: given ?? answer, ...(login && { login }) });
     this.waiters.delete(id);

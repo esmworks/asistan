@@ -15,6 +15,7 @@ import {
   type Approval,
   type Connection,
   type ConnectionAuthStart,
+  type PermissionRule,
   type Thread,
 } from '@yumakbot/shared';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -1017,6 +1018,44 @@ describe('bağlantılar', () => {
     await t.services.turns.idle();
     await new Promise((r) => setTimeout(r, 200));
     expect((await t.messages(thread.id)).filter((m) => m.props.app)).toHaveLength(1);
+  });
+
+  it('başka sunucuya taşınan ya da silinen bağlantının "hep izin ver" kuralları gider; sor ve engel kalır', async () => {
+    const [a, b] = [await fixture(), await fixture()];
+    const conn = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Notlar', url: a.url, auth: 'none' })
+    ).body;
+    const bot = await t.bot();
+    const add = (list: string, pattern: string, botId?: string) =>
+      t.api<PermissionRule>('POST', '/api/rules', { list, pattern, ...(botId && { botId }) });
+    await add('allow', 'mcp__notlar__create_note', bot.id);
+    await add('allow', 'mcp__notlar__*');
+    await add('ask', 'mcp__notlar__search');
+    await add('block', 'mcp__notlar__delete');
+    await add('allow', 'mcp__notlarx__create_note');
+    await add('allow', 'Bash(ls:*)');
+    const patterns = async () =>
+      (await t.api<PermissionRule[]>('GET', '/api/rules')).body.map((r) => `${r.list} ${r.pattern}`).sort();
+    // A new name, or another way into the same server, keeps them.
+    await t.api('PATCH', `/api/connections/${conn.id}`, { name: 'Notlarım' });
+    await t.api('PATCH', `/api/connections/${conn.id}`, { auth: 'token', token: 'abc' });
+    await t.api('PATCH', `/api/connections/${conn.id}`, { auth: 'none', token: '' });
+    expect(await patterns()).toHaveLength(6);
+    await t.api('PATCH', `/api/connections/${conn.id}`, { url: b.url });
+    expect(await patterns()).toEqual([
+      'allow Bash(ls:*)',
+      'allow mcp__notlarx__create_note',
+      'ask mcp__notlar__search',
+      'block mcp__notlar__delete',
+    ]);
+    await add('allow', 'mcp__notlar__create_note', bot.id);
+    expect((await t.api('DELETE', `/api/connections/${conn.id}`)).status).toBe(200);
+    expect(await patterns()).toEqual([
+      'allow Bash(ls:*)',
+      'allow mcp__notlarx__create_note',
+      'ask mcp__notlar__search',
+      'block mcp__notlar__delete',
+    ]);
   });
 
   it('ulaşılamayan sunucu hata olarak görünür; silinen bağlantının araçları gider', async () => {

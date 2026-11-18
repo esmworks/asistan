@@ -71,6 +71,8 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
       port: 0,
       // Tests never reach the public model catalog.
       modelCatalogUrl: null,
+      // Steps ask as they do on the person's own computer; a test of a server of its own says so.
+      onUserComputer: true,
       ...overrides,
     },
   );
