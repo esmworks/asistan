@@ -1,6 +1,6 @@
 import { pickSkill, skillQuery } from '@yumakbot/app/src/lib/skillTag';
 import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@yumakbot/app/src/lib/slash';
-import type { Message } from '@yumakbot/shared';
+import { hasSecretShape, type Message } from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sheet } from '@/components/page';
 import { toast, toastError } from '@/components/overlay';
 import { t } from '@/i18n';
+import { nav } from '@/lib/nav';
 import { useSkills } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { writeStored, useStored } from '@/lib/stored';
@@ -318,6 +319,20 @@ export function Composer({
         </View>
       ) : null}
       {error ? <Text style={[styles.error, { color: c.destructive }]}>{error}</Text> : null}
+      {hasSecretShape(text) ? (
+        // A key typed here reaches the model and stays in the conversation; the vault keeps it
+        // where no bot sees it. Sending is still the person's call.
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint={t('chat.secretToVault')}
+          onPress={() => nav.settings('vault')}
+          style={[styles.secret, { borderColor: '#f59e0b66', backgroundColor: '#f59e0b14' }]}
+        >
+          <Feather name="shield" size={18} color="#f59e0b" />
+          <Text style={[styles.secretText, { color: c.foreground }]}>{t('chat.secretWarning')}</Text>
+          <Text style={[styles.secretText, { color: c.primary, flex: 0 }]}>{t('chat.secretToVault')}</Text>
+        </Pressable>
+      ) : null}
       <View style={[styles.card, { borderColor: c.border, backgroundColor: c.card }]}>
         {replyTo ? (
           <View style={[styles.reply, { backgroundColor: c.muted }]}>
@@ -486,6 +501,17 @@ function useKeyboardShown(): boolean {
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 12, paddingTop: 4, gap: 6 },
   error: { fontSize: 15, textAlign: 'center' },
+  secret: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  secretText: { flex: 1, fontSize: 13 },
   menu: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   menuScroll: { maxHeight: 232 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 14 },

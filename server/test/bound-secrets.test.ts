@@ -118,13 +118,16 @@ describe('satırına ve adresine bağlı sırlar', () => {
     }) as unknown as typeof fetch;
     const keys = new ApiCredentialService(t.services.ctx, t.services.vault, fetcher);
     const bot = await t.bot();
-    const made = await keys.create({
-      name: 'hava',
-      origin: 'https://api.hava.example',
-      auth: { type: 'bearer' },
-      value: 'anahtar-123456',
-    });
-    await keys.call(bot.id, 'hava', { method: 'GET', url: '/bugun' });
+    const made = await keys.create(
+      {
+        name: 'hava',
+        origin: 'https://api.hava.example',
+        auth: { type: 'bearer' },
+        value: 'anahtar-123456',
+      },
+      null,
+    );
+    await keys.call(bot.id, null, 'hava', { method: 'GET', url: '/bugun' });
     expect(sent.at(-1)).toEqual({ url: 'https://api.hava.example/bugun', auth: 'Bearer anahtar-123456' });
 
     // The origin changed in the database: the key no longer opens, and nothing is sent.
@@ -132,7 +135,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
       .update(schema.apiCredentials)
       .set({ origin: 'https://kotu.example' })
       .where(eq(schema.apiCredentials.id, made.id));
-    await expect(keys.call(bot.id, 'hava', { method: 'GET', url: '/topla' })).rejects.toThrow();
+    await expect(keys.call(bot.id, null, 'hava', { method: 'GET', url: '/topla' })).rejects.toThrow();
     expect(sent).toHaveLength(1);
 
     // Changed through the app, the key is sealed again for the new origin.
@@ -141,7 +144,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
       .set({ origin: 'https://api.hava.example' })
       .where(eq(schema.apiCredentials.id, made.id));
     await keys.update(made.id, { origin: 'https://yeni.hava.example' });
-    await keys.call(bot.id, 'hava', { method: 'GET', url: '/bugun' });
+    await keys.call(bot.id, null, 'hava', { method: 'GET', url: '/bugun' });
     expect(sent.at(-1)).toEqual({ url: 'https://yeni.hava.example/bugun', auth: 'Bearer anahtar-123456' });
 
     // Once the table is bound, an unbound key put in afterwards (copied from another secret) is
@@ -156,7 +159,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
         auth: { type: 'bearer' },
         secret: t.services.vault.seal('claude-jetonu-99'),
       });
-    await expect(keys.call(bot.id, 'kopya', { method: 'GET', url: '/' })).rejects.toThrow();
+    await expect(keys.call(bot.id, null, 'kopya', { method: 'GET', url: '/' })).rejects.toThrow();
     expect(sent).toHaveLength(2);
   });
 
@@ -178,7 +181,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
       });
     const keys = new ApiCredentialService(t.services.ctx, t.services.vault, fetcher);
     const bot = await t.bot();
-    await keys.call(bot.id, 'eski', { method: 'GET', url: '/' });
+    await keys.call(bot.id, null, 'eski', { method: 'GET', url: '/' });
     expect(sent).toEqual(['Bearer eski-anahtar-99']);
     const [row] = await db().select().from(schema.apiCredentials).where(eq(schema.apiCredentials.id, old));
     expect(row!.secret.startsWith('v2:')).toBe(true);

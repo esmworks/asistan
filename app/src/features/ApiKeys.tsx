@@ -1,6 +1,6 @@
 import type { ApiAuth, ApiCredential } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeySquare, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileUp, KeySquare, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -9,26 +9,41 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { BotAccess } from './VaultTab';
+import { useManagesServer } from '@/lib/queries';
+import { EnvImport } from './VaultImport';
+import { BotAccess, TeamChoice } from './VaultTab';
 
 type AuthType = ApiAuth['type'];
 
 /**
  * API keys bots call services with. Listed without their values: a key only ever goes from the
- * server to its own address, added to a request the bot names it in.
+ * server to its own address, added to a request the bot names it in. Each is the person's own or
+ * the team's; the team's are changed only by those who look after the server.
  */
 export function ApiKeys() {
   const t = useT();
   const { data: keys = [] } = useQuery({ queryKey: ['api-keys'], queryFn: api.apiKeys });
   const [editing, setEditing] = useState<ApiCredential | 'new' | null>(null);
+  const [importing, setImporting] = useState(false);
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2 px-1">
         <h3 className="flex-1 text-sm font-medium">{t('apiKeys.title')}</h3>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-full"
+          onClick={() => setImporting(true)}
+          aria-label={t('envImport.open')}
+          title={t('envImport.open')}
+        >
+          <FileUp />
+        </Button>
         <Button size="sm" variant="secondary" className="rounded-full" onClick={() => setEditing('new')}>
           <Plus /> {t('common.add')}
         </Button>
       </div>
+      {importing && <EnvImport onDone={() => setImporting(false)} />}
       {editing === 'new' && <KeyForm onDone={() => setEditing(null)} />}
       <div className="divide-y rounded-2xl border bg-card/50">
         {!keys.length && (
@@ -56,6 +71,8 @@ function KeyRow({ k, onEdit }: { k: ApiCredential; onEdit(): void }) {
   const t = useT();
   const { dayLabel } = useFormat();
   const qc = useQueryClient();
+  const manages = useManagesServer();
+  const mayChange = manages || !!k.userId;
   const remove = useMutation({
     mutationFn: () => api.removeApiKey(k.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['api-keys'] }),
@@ -71,31 +88,36 @@ function KeyRow({ k, onEdit }: { k: ApiCredential; onEdit(): void }) {
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {k.origin}
+          {k.userId !== undefined && ` · ${k.userId === null ? t('owned.team') : t('owned.yours')}`}
           {k.botIds ? ` · ${t('vault.someBots', { count: k.botIds.length })}` : ''}
           {k.lastUsedAt ? ` · ${t('vault.lastUsed', { when: dayLabel(k.lastUsedAt) })}` : ''}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        onClick={onEdit}
-        aria-label={t('vault.edit')}
-      >
-        <Pencil />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        disabled={remove.isPending}
-        onClick={() => {
-          if (confirm(t('apiKeys.confirmDelete', { name: k.name }))) remove.mutate();
-        }}
-        aria-label={t('common.delete')}
-      >
-        <Trash2 />
-      </Button>
+      {mayChange && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={onEdit}
+            aria-label={t('vault.edit')}
+          >
+            <Pencil />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={remove.isPending}
+            onClick={() => {
+              if (confirm(t('apiKeys.confirmDelete', { name: k.name }))) remove.mutate();
+            }}
+            aria-label={t('common.delete')}
+          >
+            <Trash2 />
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -114,6 +136,10 @@ function KeyForm({ current, onDone }: { current?: ApiCredential; onDone(): void 
     a?.type === 'header' ? a.header : a?.type === 'query' ? a.param : a?.type === 'basic' ? a.username : '',
   );
   const [botIds, setBotIds] = useState<string[] | null>(current?.botIds ?? null);
+  const manages = useManagesServer();
+  // Those who look after the server add the team's keys unless they say otherwise.
+  const wasTeam = current ? current.userId == null : manages;
+  const [team, setTeam] = useState(wasTeam);
   const auth = (): ApiAuth =>
     type === 'header'
       ? { type, header: extra.trim() }
@@ -125,8 +151,15 @@ function KeyForm({ current, onDone }: { current?: ApiCredential; onDone(): void 
   const save = useMutation({
     mutationFn: () =>
       current
-        ? api.updateApiKey(current.id, { origin, label, auth: auth(), botIds, ...(value && { value }) })
-        : api.addApiKey({ name, origin, label, auth: auth(), value, botIds }),
+        ? api.updateApiKey(current.id, {
+            origin,
+            label,
+            auth: auth(),
+            botIds,
+            ...(value && { value }),
+            ...(manages && team !== wasTeam && { team }),
+          })
+        : api.addApiKey({ name, origin, label, auth: auth(), value, botIds, team: manages && team }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['api-keys'] });
       onDone();
@@ -197,6 +230,7 @@ function KeyForm({ current, onDone }: { current?: ApiCredential; onDone(): void 
         required={!current}
       />
       <BotAccess botIds={botIds} onChange={setBotIds} />
+      {manages && <TeamChoice team={team} onChange={setTeam} />}
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
           {t('common.cancel')}

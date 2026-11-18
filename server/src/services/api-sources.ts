@@ -265,6 +265,8 @@ export class ApiSourceService {
    */
   async call(
     botId: string,
+    /** Whom the bot works for (null in a team conversation): their own key goes before the team's. */
+    userId: string | null,
     name: string,
     operation: string,
     args: { params?: Record<string, unknown>; body?: unknown },
@@ -295,7 +297,7 @@ export class ApiSourceService {
     const url = `${row.baseUrl}${path}${query.size ? `?${query}` : ''}`;
     const req = { method: op.method, url, headers, body: args.body };
     return row.credential
-      ? this.keys.call(botId, row.credential, req, signal)
+      ? this.keys.call(botId, userId, row.credential, req, signal)
       : this.keys.callOpen(base.origin, req, signal);
   }
 }

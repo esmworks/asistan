@@ -3,12 +3,24 @@ import { hkdfSync, randomBytes } from 'node:crypto';
 import { openWith, sealWith } from '../crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { VaultLogin, VaultLoginCreate, VaultLoginUpdate } from '@yumakbot/shared';
-import { VaultLoginCreate as CreateSchema, VaultLoginUpdate as UpdateSchema } from '@yumakbot/shared';
+import type {
+  VaultImport,
+  VaultImportResult,
+  VaultImportSkip,
+  VaultLogin,
+  VaultLoginCreate,
+  VaultLoginUpdate,
+} from '@yumakbot/shared';
+import {
+  VaultImport as ImportSchema,
+  VaultLoginCreate as CreateSchema,
+  VaultLoginUpdate as UpdateSchema,
+} from '@yumakbot/shared';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { totpSecret } from '../totp';
+import { importedTotp, loginsFromCsv } from './vault-import';
 import { HttpError, isUniqueViolation, newId, notFound } from '../util';
 
 type Row = typeof schema.vaultLogins.$inferSelect;
@@ -41,6 +53,14 @@ export interface Credential {
   password: string;
   /** The authenticator secret, when the sign-in keeps one. */
   totp: string | null;
+}
+
+/** The ids of the sign-ins a password manager gives start with this, so they are never taken for the vault's. */
+export const MANAGER_ID_PREFIX = 'pm:';
+
+/** Sign-ins kept somewhere other than the vault (a password manager), offered after its own. */
+export interface OtherLogins {
+  forHost(host: string, botId: string | undefined, userId: string | null): Promise<Credential[]>;
 }
 
 /** `facebook.com` is used on facebook.com and its subdomains (www, m), never on other sites. */
@@ -94,8 +114,14 @@ const toLogin = (r: Row): VaultLogin => ({
 export class VaultService {
   private key: Buffer | null = null;
   private upgrades = new Map<string, Promise<void>>();
+  private others: OtherLogins | null = null;
 
   constructor(private ctx: Ctx) {}
+
+  /** Where sign-ins the vault does not keep itself are found: the password managers. */
+  useOthers(others: OtherLogins) {
+    this.others = others;
+  }
 
   private cipherKey(): Buffer {
     if (this.key) return this.key;
@@ -323,6 +349,82 @@ export class VaultService {
     }
   }
 
+  /**
+   * Sign-ins from a file a browser or a password manager exported, for `userId` or the team when
+   * null. Each is saved under its site's registrable domain, as a sign-in typed on a card is. Only
+   * https sign-ins with a password are taken; one the vault already has for the same owner, site
+   * and username stays as it is. Without `apply` nothing is saved.
+   */
+  async importCsv(raw: VaultImport, userId: string | null): Promise<VaultImportResult> {
+    const input = ImportSchema.parse(raw);
+    const read = loginsFromCsv(input.csv);
+    if (read.unknown) throw new HttpError(400, 'error.vaultImportUnknown');
+    if (read.tooMany) throw new HttpError(400, 'error.vaultImportTooMany');
+    const skipped: VaultImportSkip[] = [...read.skipped];
+    const have = new Set(
+      (
+        await this.ctx.db
+          .select({ site: schema.vaultLogins.site, username: schema.vaultLogins.username })
+          .from(schema.vaultLogins)
+          .where(userId ? eq(schema.vaultLogins.userId, userId) : isNull(schema.vaultLogins.userId))
+      ).map((r) => `${r.site}\n${r.username}`),
+    );
+    const seen = new Set<string>();
+    const add: (VaultImportResult['add'][number] & { password: string; totp: string | null })[] = [];
+    let totpDropped = 0;
+    for (const l of read.logins) {
+      let url: URL | null = null;
+      try {
+        url = new URL(l.url.includes('://') ? l.url : `https://${l.url}`);
+      } catch {
+        url = null;
+      }
+      const host = url && /^https?:$/.test(url.protocol) ? url.hostname : '';
+      const site = host ? registrableSite(host) : '';
+      const skip = (reason: VaultImportSkip['reason']) =>
+        skipped.push({ line: l.line, site: site || l.url, username: l.username, reason });
+      if (!site || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site)) skip('noSite');
+      else if (url!.protocol !== 'https:') skip('notHttps');
+      else if (l.username.length > 500 || l.password.length > 500) skip('tooLong');
+      else if (seen.has(`${site}\n${l.username}`)) skip('duplicate');
+      else if (have.has(`${site}\n${l.username}`)) skip('exists');
+      else {
+        seen.add(`${site}\n${l.username}`);
+        const totp = importedTotp(l.totp);
+        if (l.totp && !totp) totpDropped++;
+        add.push({ line: l.line, site, username: l.username, hasTotp: !!totp, password: l.password, totp });
+      }
+    }
+    skipped.sort((a, b) => a.line - b.line);
+    let saved = 0;
+    if (input.apply) {
+      await this.ready();
+      for (const a of add) {
+        const id = newId();
+        await this.ctx.db
+          .insert(schema.vaultLogins)
+          .values({
+            id,
+            userId,
+            site: a.site,
+            username: a.username,
+            secret: this.seal(a.password, passwordBinding(id, a.site)),
+            totp: a.totp ? this.seal(a.totp, totpBinding(id, a.site)) : null,
+            botIds: input.botIds ?? null,
+          })
+          .onConflictDoNothing();
+        saved++;
+      }
+      if (saved) this.ctx.bus.refresh({ scope: 'vault' });
+    }
+    return {
+      add: add.map(({ line, site, username, hasTotp }) => ({ line, site, username, hasTotp })),
+      skipped,
+      totpDropped,
+      saved,
+    };
+  }
+
   async remove(id: string) {
     await this.ctx.db.delete(schema.vaultLogins).where(eq(schema.vaultLogins.id, id));
     this.ctx.bus.refresh({ scope: 'vault' });
@@ -336,7 +438,7 @@ export class VaultService {
   async forHost(host: string, botId: string | undefined, userId: string | null): Promise<Credential[]> {
     await this.ready();
     const rows = await this.ctx.db.select().from(schema.vaultLogins).where(usableBy(userId));
-    return rows
+    const own = rows
       .filter((r) => siteMatches(host, r.site))
       .filter((r) => !r.botIds || (botId !== undefined && r.botIds.includes(botId)))
       .sort((a, b) => b.site.length - a.site.length || a.username.localeCompare(b.username))
@@ -357,9 +459,20 @@ export class VaultService {
           return [];
         }
       });
+    if (!this.others) return own;
+    // The vault's own sign-in for a username wins over a manager's for the same one.
+    const taken = new Set(own.map((c) => c.username));
+    const others = (await this.others.forHost(host, botId, userId).catch(() => [])).filter((c) => {
+      if (taken.has(c.username)) return false;
+      taken.add(c.username);
+      return true;
+    });
+    return [...own, ...others];
   }
 
   async used(id: string) {
+    // A password manager's sign-in has no row here to mark.
+    if (id.startsWith(MANAGER_ID_PREFIX)) return;
     await this.ctx.db
       .update(schema.vaultLogins)
       .set({ lastUsedAt: new Date() })

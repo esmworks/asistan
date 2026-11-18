@@ -670,6 +670,63 @@ export const vaultLogins = pgTable(
   (t) => [uniqueIndex('vault_logins_site_user_uq').on(t.site, t.username, sql`coalesce(${t.userId}, '')`)],
 );
 
+/**
+ * A password manager the vault reads sign-ins from, besides its own. What it is signed in with (a
+ * token, or an account's key and master password) is sealed bound to the row and the kind; the
+ * sign-ins themselves stay in the manager and are read when a bot is about to use one.
+ */
+export const passwordManagers = pgTable(
+  'password_managers',
+  {
+    id: text('id').primaryKey(),
+    /** Whose it is: a person's own, read only for them; null for the team's. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** `onepassword`, `bitwarden` or `protonpass`. */
+    kind: text('kind').notNull(),
+    /** The vault or folder bots may read, by its name in the manager; empty for all it shows. */
+    scope: text('scope').notNull().default(''),
+    /** Where the account lives, for a manager that is not only on its maker's servers. */
+    server: text('server'),
+    secret: text('secret').notNull(),
+    /** The bots that may use its sign-ins; null lets every bot. */
+    botIds: jsonb('bot_ids').$type<string[]>(),
+    /** Why reading it failed last, as a code (`PasswordManagerProblem`); null when it worked. */
+    problem: text('problem'),
+    /** How many sign-ins it gave the last time it was read. */
+    count: integer('count'),
+    readAt: ts('read_at'),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('password_managers_kind_user_uq').on(t.kind, sql`coalesce(${t.userId}, '')`)],
+);
+
+/**
+ * Payment cards a bot may fill into a checkout page for the person they belong to. The number,
+ * security code and name on the card are sealed together, bound to the row; so are the sites the
+ * person agreed it may be used on, so no one who can only write to the database adds a site.
+ */
+export const paymentCards = pgTable('payment_cards', {
+  id: text('id').primaryKey(),
+  /** Whose it is; null for the team's, which only those who look after the server add. */
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  label: text('label').notNull().default(''),
+  brand: text('brand').notNull(),
+  last4: text('last4').notNull(),
+  expMonth: integer('exp_month').notNull(),
+  expYear: integer('exp_year').notNull(),
+  /** Number, security code and name on the card, sealed bound to the row. */
+  secret: text('secret').notNull(),
+  /** Whether a security code is kept with it: shown without opening the sealed values. */
+  hasCvc: boolean('has_cvc').notNull().default(false),
+  /** The approved sites, sealed bound to the row; null before any. */
+  sites: text('sites'),
+  botIds: jsonb('bot_ids').$type<string[]>(),
+  lastUsedAt: ts('last_used_at'),
+  createdAt: created(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
 export const kv = pgTable('kv', {
   key: text('key').primaryKey(),
   value: jsonb('value').notNull(),
@@ -1030,6 +1087,11 @@ export const apiCredentials = pgTable(
   'api_credentials',
   {
     id: text('id').primaryKey(),
+    /**
+     * Whose key it is: a person's own, sent only for turns that work for them; null for the team's.
+     * A person's own key outranks the team's under the same name.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     /** The reference name bots use, e.g. `github` or `weather_api`. */
     name: text('name').notNull(),
     /** The only origin the key is sent to, e.g. `https://api.example.com`. */
@@ -1044,7 +1106,8 @@ export const apiCredentials = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastUsedAt: ts('last_used_at'),
   },
-  (t) => [uniqueIndex('api_credentials_name_uq').on(t.name)],
+  // One key per name for each person, and one for the team.
+  (t) => [uniqueIndex('api_credentials_name_user_uq').on(t.name, sql`coalesce(${t.userId}, '')`)],
 );
 
 /**

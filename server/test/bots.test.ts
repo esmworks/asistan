@@ -587,6 +587,34 @@ describe('arşiv', () => {
     expect((await t.api('GET', `/api/threads/${thread.id}`)).status).toBe(404);
     expect(existsSync(folder)).toBe(false);
   });
+
+  it('kalıcı silinen bot kasadaki giriş ve anahtarların bot listelerinden çıkar', async () => {
+    const bot = await t.bot({ name: 'Gidecek' });
+    const kalan = await t.bot({ name: 'Kalan' });
+    const login = await t.services.vault.save(
+      { site: 'ornek.com', username: 'a', password: 'sifre-123', botIds: [bot.id, kalan.id] },
+      null,
+    );
+    const yalniz = await t.services.vault.save(
+      { site: 'tek.example', username: 'b', password: 'sifre-456', botIds: [bot.id] },
+      null,
+    );
+    const key = await t.services.apiCredentials.create(
+      { name: 'servis', origin: 'https://api.example.com', value: 'anahtar-123', botIds: [bot.id] },
+      null,
+    );
+    const herkes = await t.services.vault.save(
+      { site: 'acik.example', username: 'c', password: 'sifre-789' },
+      null,
+    );
+    await t.api('POST', `/api/bots/${bot.id}/archive`);
+    expect((await t.api('DELETE', `/api/bots/${bot.id}`)).status).toBe(200);
+    expect((await t.services.vault.get(login.id)).botIds).toEqual([kalan.id]);
+    // Kept for the gone bot alone: now open to none, never to every bot.
+    expect((await t.services.vault.get(yalniz.id)).botIds).toEqual([]);
+    expect((await t.services.apiCredentials.get(key.id)).botIds).toEqual([]);
+    expect((await t.services.vault.get(herkes.id)).botIds).toBeNull();
+  });
 });
 
 describe('sohbetleri temizle', () => {

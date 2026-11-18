@@ -2,15 +2,38 @@ import {
   ApiAuth,
   ApiCredentialCreate,
   ApiCredentialUpdate,
+  ApiKeyImport,
+  type ApiKeyImportResult,
   type ApiCredential,
   type ApiCredentialCreate as CreateInput,
   type ApiCredentialUpdate as UpdateInput,
 } from '@yumakbot/shared';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
 import type { VaultService } from './vault';
+import { envEntries } from './vault-import';
+
+/**
+ * The key name a `.env` entry would get: lower case, with the usual endings that only say it is a
+ * key taken off (`OPENWEATHER_API_KEY` is `openweather`).
+ */
+export function keyNameOf(env: string): string {
+  const base = env
+    .toLowerCase()
+    .replace(/[_-]?(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|key)$/, '')
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^[_-]+|[_-]+$/g, '');
+  return (
+    base ||
+    env
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '_')
+      .replace(/^[_-]+/, '') ||
+    'key'
+  ).slice(0, 64);
+}
 
 type Row = typeof schema.apiCredentials.$inferSelect;
 
@@ -24,6 +47,29 @@ export const GITHUB_ORIGIN = 'https://github.com';
  */
 const keyBinding = (id: string, origin: string) => ['api_credentials.secret', id, origin];
 
+/** The keys a person may use: the team's and their own; with null (a team conversation), the team's. */
+const usableBy = (userId: string | null) =>
+  userId
+    ? or(isNull(schema.apiCredentials.userId), eq(schema.apiCredentials.userId, userId))!
+    : isNull(schema.apiCredentials.userId);
+
+/** Rows of `owner` alone: a person's own, or the team's for null. */
+const ownedBy = (owner: string | null) =>
+  owner ? eq(schema.apiCredentials.userId, owner) : isNull(schema.apiCredentials.userId);
+
+/**
+ * One key per name, as a bot sees them: a person's own outranks the team's under the same name, so
+ * someone can use their own account where the team keeps a shared one.
+ */
+function ownFirst(rows: Row[]): Row[] {
+  const byName = new Map<string, Row>();
+  for (const r of rows) {
+    const had = byName.get(r.name);
+    if (!had || (!had.userId && r.userId)) byName.set(r.name, r);
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const toCredential = (r: Row): ApiCredential => ({
   id: r.id,
   name: r.name,
@@ -31,6 +77,7 @@ const toCredential = (r: Row): ApiCredential => ({
   auth: ApiAuth.parse(r.auth),
   label: r.label,
   botIds: r.botIds ?? null,
+  userId: r.userId,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
@@ -92,17 +139,31 @@ export class ApiCredentialService {
     private fetcher: typeof fetch = fetch,
   ) {}
 
-  async list(): Promise<ApiCredential[]> {
+  /** Every key; with `userId`, the team's and that person's own. */
+  async list(userId?: string): Promise<ApiCredential[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.apiCredentials)
+      .where(userId ? usableBy(userId) : undefined)
       .orderBy(asc(schema.apiCredentials.name));
     return rows.map(toCredential);
   }
 
-  /** The keys a bot may use. */
-  async forBot(botId: string): Promise<ApiCredential[]> {
-    return (await this.list()).filter((c) => !c.botIds || c.botIds.includes(botId));
+  async get(id: string): Promise<ApiCredential> {
+    return toCredential(await this.row(id));
+  }
+
+  /**
+   * The keys a bot may use while it works for `userId` (null in a team conversation): one per name,
+   * the person's own before the team's.
+   */
+  async forBot(botId: string, userId: string | null): Promise<ApiCredential[]> {
+    return (await this.usable(botId, userId)).map(toCredential);
+  }
+
+  private async usable(botId: string, userId: string | null): Promise<Row[]> {
+    const rows = await this.ctx.db.select().from(schema.apiCredentials).where(usableBy(userId));
+    return ownFirst(rows.filter((r) => !r.botIds || r.botIds.includes(botId)));
   }
 
   private async row(id: string): Promise<Row> {
@@ -115,11 +176,17 @@ export class ApiCredentialService {
     return row;
   }
 
-  private async byName(name: string): Promise<Row | null> {
+  /** The key `owner` keeps under `name`: a person's own, or the team's for null. */
+  async owned(name: string, owner: string | null): Promise<ApiCredential | null> {
+    const row = await this.byName(name, owner);
+    return row ? toCredential(row) : null;
+  }
+
+  private async byName(name: string, owner: string | null): Promise<Row | null> {
     const [row] = await this.ctx.db
       .select()
       .from(schema.apiCredentials)
-      .where(eq(schema.apiCredentials.name, name.trim().toLowerCase()))
+      .where(and(eq(schema.apiCredentials.name, name.trim().toLowerCase()), ownedBy(owner)))
       .limit(1);
     return row ?? null;
   }
@@ -139,14 +206,16 @@ export class ApiCredentialService {
     });
   }
 
-  async create(raw: CreateInput): Promise<ApiCredential> {
+  /** Saves a key, `userId`'s own or the team's when null. */
+  async create(raw: CreateInput, userId: string | null): Promise<ApiCredential> {
     const input = ApiCredentialCreate.parse(raw);
-    if (await this.byName(input.name)) throw new HttpError(409, 'error.apiKeyNameTaken');
+    if (await this.byName(input.name, userId)) throw new HttpError(409, 'error.apiKeyNameTaken');
     const id = newId();
     const [row] = await this.ctx.db
       .insert(schema.apiCredentials)
       .values({
         id,
+        userId,
         name: input.name,
         origin: input.origin,
         auth: input.auth,
@@ -161,13 +230,15 @@ export class ApiCredentialService {
   }
 
   /**
-   * Saves the key a bot asked for under its name: a new one, or a new value (and origin and way
-   * of sending) for the one already under that name. The bots that may use it stay as they were.
+   * Saves the key a person typed on a bot's card under its name, as their own: a new one, or a new
+   * value (and origin and way of sending) for their own one already under that name. The team's key
+   * of that name is never touched; theirs outranks it from then on. The bots that may use an
+   * existing key stay as they were.
    */
-  async put(raw: CreateInput): Promise<ApiCredential> {
+  async put(raw: CreateInput, userId: string): Promise<ApiCredential> {
     const input = ApiCredentialCreate.parse(raw);
-    const existing = await this.byName(input.name);
-    if (!existing) return this.create(input);
+    const existing = await this.byName(input.name, userId);
+    if (!existing) return this.create(input, userId);
     return this.update(existing.id, {
       origin: input.origin,
       auth: input.auth,
@@ -176,7 +247,8 @@ export class ApiCredentialService {
     });
   }
 
-  async update(id: string, raw: UpdateInput): Promise<ApiCredential> {
+  /** Changes a key; `owner` moves it to that person, or to the team when null. */
+  async update(id: string, raw: UpdateInput, owner?: string | null): Promise<ApiCredential> {
     const input = ApiCredentialUpdate.parse(raw);
     await this.ready();
     const old = await this.row(id);
@@ -188,6 +260,8 @@ export class ApiCredentialService {
         : origin !== old.origin
           ? this.vault.reseal(old.secret, keyBinding(id, old.origin), keyBinding(id, origin))
           : undefined;
+    if (owner !== undefined && owner !== old.userId && (await this.byName(old.name, owner)))
+      throw new HttpError(409, 'error.apiKeyNameTaken');
     const [row] = await this.ctx.db
       .update(schema.apiCredentials)
       .set({
@@ -196,6 +270,7 @@ export class ApiCredentialService {
         ...(input.label !== undefined && { label: input.label }),
         ...(secret !== undefined && { secret }),
         ...(input.botIds !== undefined && { botIds: input.botIds }),
+        ...(owner !== undefined && { userId: owner }),
         updatedAt: new Date(),
       })
       .where(eq(schema.apiCredentials.id, id))
@@ -203,6 +278,45 @@ export class ApiCredentialService {
     this.ctx.bus.refresh({ scope: 'info' });
     this.keysChanged();
     return toCredential(row!);
+  }
+
+  /**
+   * Keys from a `.env` file, for `userId` or the team when null. Without `keys` it only names the
+   * file's entries; with them, each chosen entry is saved under its name for its origin, unless the
+   * owner already has a key by that name. A value never comes back.
+   */
+  async importEnv(raw: ApiKeyImport, userId: string | null): Promise<ApiKeyImportResult> {
+    const input = ApiKeyImport.parse(raw);
+    const entries = envEntries(input.env);
+    const result: ApiKeyImportResult = {
+      entries: entries.map((e) => ({ line: e.line, env: e.name, name: keyNameOf(e.name) })),
+      saved: [],
+      skipped: [],
+    };
+    for (const k of input.keys ?? []) {
+      const entry = entries.find((e) => e.name === k.env);
+      if (!entry || entry.value.length > 8000) {
+        result.skipped.push({ env: k.env, reason: 'missing' });
+        continue;
+      }
+      if (await this.byName(k.name, userId)) {
+        result.skipped.push({ env: k.env, reason: 'exists' });
+        continue;
+      }
+      await this.create(
+        {
+          name: k.name,
+          origin: k.origin,
+          auth: k.auth,
+          label: k.label,
+          value: entry.value,
+          botIds: input.botIds,
+        },
+        userId,
+      );
+      result.saved.push(k.name);
+    }
+    return result;
   }
 
   async remove(id: string): Promise<void> {
@@ -213,15 +327,35 @@ export class ApiCredentialService {
   }
 
   /**
-   * Calls a service with the key saved under `name`, for a bot that may use it. The request must go
-   * to the key's origin; redirects are not followed, since a header of the service's own (unlike
-   * Authorization) would be carried to wherever the redirect points.
+   * Calls a service with the key saved under `name`, for a bot that may use it while it works for
+   * `userId` (null in a team conversation): that person's own key under the name, else the team's.
+   * The request must go to the key's origin; redirects are not followed, since a header of the
+   * service's own (unlike Authorization) would be carried to wherever the redirect points.
    */
-  async call(botId: string, name: string, req: ApiCall, signal?: AbortSignal): Promise<ApiResult> {
+  async call(
+    botId: string,
+    userId: string | null,
+    name: string,
+    req: ApiCall,
+    signal?: AbortSignal,
+  ): Promise<ApiResult> {
     await this.ready();
-    const row = await this.byName(name);
-    if (!row) throw new ApiCallError('noKey', name);
-    if (row.botIds && !row.botIds.includes(botId)) throw new ApiCallError('notAllowed', name);
+    const key = name.trim().toLowerCase();
+    const named = (
+      await this.ctx.db
+        .select()
+        .from(schema.apiCredentials)
+        .where(and(eq(schema.apiCredentials.name, key), usableBy(userId)))
+    ).filter((r) => !r.botIds || r.botIds.includes(botId));
+    const row = ownFirst(named)[0];
+    if (!row) {
+      const any = await this.ctx.db
+        .select({ id: schema.apiCredentials.id })
+        .from(schema.apiCredentials)
+        .where(and(eq(schema.apiCredentials.name, key), usableBy(userId)))
+        .limit(1);
+      throw new ApiCallError(any.length ? 'notAllowed' : 'noKey', name);
+    }
     const auth = ApiAuth.parse(row.auth);
     const value = this.vault.open(row.secret, keyBinding(row.id, row.origin));
     const result = await this.send(row.origin, { auth, value }, req, signal);
@@ -238,16 +372,18 @@ export class ApiCredentialService {
   }
 
   /**
-   * The key git on the bot's desktop uses for GitHub: one saved for `https://github.com` that the
-   * bot may use (the first by name when there are several). Only the computer service's relay gets
-   * it, and sends it to GitHub alone, the origin it was saved for.
+   * The key git on the bot's desktop uses for GitHub: one of the team's saved for
+   * `https://github.com` that the bot may use (the first by name when there are several). A
+   * person's own key is left out: the desktop is the bot's, and everyone who talks with the bot
+   * works on it. Only the computer service's relay gets it, and sends it to GitHub alone, the
+   * origin it was saved for.
    */
   async gitToken(botId: string): Promise<string | null> {
     await this.ready();
     const rows = await this.ctx.db
       .select()
       .from(schema.apiCredentials)
-      .where(eq(schema.apiCredentials.origin, GITHUB_ORIGIN))
+      .where(and(eq(schema.apiCredentials.origin, GITHUB_ORIGIN), isNull(schema.apiCredentials.userId)))
       .orderBy(asc(schema.apiCredentials.name));
     const row = rows.find((r) => !r.botIds || r.botIds.includes(botId));
     if (!row) return null;

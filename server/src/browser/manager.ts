@@ -125,6 +125,45 @@ export interface Frame {
 /** How much slower the tabs the bot is not on run. */
 const BACKGROUND_CPU_RATE = 4;
 
+/** The function a page calls, through the wall below, to say it asked for a passkey. */
+const PASSKEY_BINDING = '__yumakbotPasskey';
+
+/**
+ * Run in every frame before the page's own scripts. The bot's browser holds no passkeys, and a
+ * passkey request would otherwise wait on a browser window no one sees (a security key, a phone)
+ * until the site gives up, which can take minutes. A request the page makes is refused at once, as
+ * a person cancelling it would, and the bot hears of it. A quiet request the page leaves waiting
+ * for the person to pick a passkey from the sign-in field (conditional mediation) waits as it
+ * would in any browser with none saved, and is not reported: many sign-in pages make one on load.
+ */
+export const PASSKEY_WALL = `(() => {
+  const c = typeof navigator !== 'undefined' ? navigator.credentials : undefined;
+  if (!c) return;
+  for (const kind of ['get', 'create']) {
+    const own = c[kind];
+    if (typeof own !== 'function') continue;
+    const call = own.bind(c);
+    Object.defineProperty(c, kind, {
+      configurable: true,
+      writable: true,
+      value: function (options) {
+        if (!options || !options.publicKey) return call(options);
+        const signal = options.signal;
+        if (options.mediation === 'conditional') {
+          return new Promise((_, reject) => {
+            if (!signal) return;
+            const stop = () => reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
+            if (signal.aborted) stop();
+            else signal.addEventListener('abort', stop, { once: true });
+          });
+        }
+        try { window.${PASSKEY_BINDING}?.(kind); } catch {}
+        return Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));
+      },
+    });
+  }
+})();`;
+
 interface Live {
   botId: string;
   /** Set when connected to a browser that runs elsewhere (the bot's desktop); closing disconnects. */
@@ -147,6 +186,11 @@ interface Live {
    * hidden from everything the bot reads.
    */
   secrets: Map<string, number>;
+  /**
+   * Values too short to hide in free text (a card's security code) that the server filled into a
+   * field: hidden where a page shows them as a field's value, until the browser closes.
+   */
+  fieldSecrets: Set<string>;
   lastUsed: number;
   /** Bot actions run one after another, even from two threads of the same bot. */
   queue: Promise<unknown>;
@@ -158,6 +202,8 @@ interface Live {
   refused: Set<string>;
   /** Addresses of tabs the bot was on that the site closed itself, since the bot last heard. */
   closedBySite: string[];
+  /** Sites that asked for a passkey, which was refused, since the bot last heard. */
+  passkeys: string[];
   /** Tabs the site tried to open over the limit, which were closed, since the bot last heard. */
   refusedTabs: number;
   /** Downloads done or refused since the bot last heard. */
@@ -481,6 +527,15 @@ export class BrowserManager {
     return out;
   }
 
+  /** Sites that asked for a passkey since the bot last heard; heard once. */
+  takePasskeys(botId: string): string[] {
+    const l = this.live.get(botId);
+    if (!l) return [];
+    const out = l.passkeys;
+    l.passkeys = [];
+    return out;
+  }
+
   /** Tabs the bot was on that the site closed itself, since the bot last heard; heard once. */
   takeClosedTabs(botId: string): string[] {
     const l = this.live.get(botId);
@@ -522,6 +577,15 @@ export class BrowserManager {
     const l = this.live.get(botId);
     if (!l) return;
     l.secrets.set(secret, Math.max(l.secrets.get(secret) ?? 0, Date.now() + ttlMs));
+  }
+
+  /** Remember a short value filled into a field (see `fieldSecrets`). */
+  rememberFieldSecret(botId: string, value: string) {
+    this.live.get(botId)?.fieldSecrets.add(value);
+  }
+
+  fieldSecrets(botId: string): string[] {
+    return [...(this.live.get(botId)?.fieldSecrets ?? [])];
   }
 
   secrets(botId: string): string[] {
@@ -920,6 +984,29 @@ export class BrowserManager {
     return this.userAgent;
   }
 
+  /**
+   * Refuses passkey requests at once (see PASSKEY_WALL) and notes the site for the bot. Pages
+   * already open got no wall: they run on as they are, as do browsers that refuse the script.
+   */
+  private async wallPasskeys(live: Live, context: BrowserContext) {
+    try {
+      await context.exposeBinding(PASSKEY_BINDING, ({ page }) => {
+        let site = '';
+        try {
+          site = new URL(page.url()).hostname;
+        } catch {
+          // A page without an address of its own (about:blank) is named by nothing.
+        }
+        if (live.passkeys.includes(site)) return;
+        live.passkeys.push(site);
+        if (live.passkeys.length > 5) live.passkeys.shift();
+      });
+      await context.addInitScript(PASSKEY_WALL);
+    } catch {
+      // Without it a passkey request waits until the site gives up, as before.
+    }
+  }
+
   private async adopt(botId: string, context: BrowserContext, remote: Browser | null): Promise<Live> {
     context.setDefaultTimeout(15_000);
     // On a desktop the last tab is the one most likely in front.
@@ -938,12 +1025,14 @@ export class BrowserManager {
       modifiers: new Set(),
       inputs: Promise.resolve(),
       secrets: new Map(),
+      fieldSecrets: new Set(),
       lastUsed: Date.now(),
       queue: Promise.resolve(),
       dialogs: [],
       nextAnswer: null,
       refused: new Set(),
       closedBySite: [],
+      passkeys: [],
       refusedTabs: 0,
       downloads: [],
       saving: new Map(),
@@ -953,6 +1042,7 @@ export class BrowserManager {
       logs: new WeakMap(),
     };
     await this.guardNetwork(live, context);
+    await this.wallPasskeys(live, context);
     for (const p of context.pages()) this.track(live, p);
     context.on('page', (p) => {
       // On the person's desktop the browser is theirs too: their own tabs are never closed.

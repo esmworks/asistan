@@ -21,6 +21,9 @@ await build({
     'sharp',
     // Loaded only once WhatsApp is set up; it brings its own protocol files and native helpers.
     '@whiskeysockets/baileys',
+    // Loaded only once 1Password is connected; its core is a WebAssembly file read from its package.
+    '@1password/sdk',
+    '@1password/sdk-core',
   ],
   banner: {
     js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",

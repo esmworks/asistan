@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
 import { internalHost } from './ai-endpoints';
+import { luhn } from './secret-shapes';
 
 /**
  * The app's own green, a darker shade of its icon's so white text on it reads well: the accent of the
@@ -514,6 +515,201 @@ export const VaultLoginUpdate = z.object({
   team: z.boolean().optional(),
 });
 export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
+
+/** A password manager the vault reads sign-ins from. */
+export const PasswordManagerKind = z.enum(['onepassword', 'bitwarden', 'protonpass']);
+export type PasswordManagerKind = z.infer<typeof PasswordManagerKind>;
+
+/** Why a password manager could not be read, the last time it was tried. */
+export const PasswordManagerProblem = z.enum([
+  // The token, key or master password was refused.
+  'auth',
+  // The vault or folder named is not there, or the account cannot see it.
+  'scope',
+  // The manager's command-line program is not installed on the server.
+  'noCli',
+  // Anything else: the service did not answer, or answered in a way not understood.
+  'failed',
+]);
+export type PasswordManagerProblem = z.infer<typeof PasswordManagerProblem>;
+
+/** A connected password manager as the app sees it: never what it is signed in with. */
+export const PasswordManager = z.object({
+  id: Id,
+  kind: PasswordManagerKind,
+  /** The vault or folder bots may read; empty for everything the account shows. */
+  scope: z.string(),
+  server: z.string().nullable(),
+  botIds: z.array(Id).nullable(),
+  userId: z.string().nullable(),
+  problem: PasswordManagerProblem.nullable(),
+  /** How many sign-ins it gave when last read; null before it was. */
+  count: z.number().nullable(),
+  readAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type PasswordManager = z.infer<typeof PasswordManager>;
+
+const ManagerScope = z.string().trim().max(200).default('');
+const ManagerShared = {
+  botIds: z.array(Id).max(500).nullable().optional(),
+  /** For the whole team rather than the person connecting it; only those who look after the server. */
+  team: z.boolean().optional(),
+};
+
+/** What a password manager is connected with; sealed on the server, never sent back. */
+export const PasswordManagerCreate = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('onepassword'),
+    /** A service account's token, which sees only the vaults it was given. */
+    token: z.string().trim().min(20).max(5000),
+    scope: ManagerScope,
+    ...ManagerShared,
+  }),
+  z.object({
+    kind: z.literal('bitwarden'),
+    /** A server of one's own, or the EU one; left out for the main one. */
+    server: z.string().trim().url().max(500).startsWith('https://').optional(),
+    clientId: z.string().trim().min(1).max(500),
+    clientSecret: z.string().trim().min(1).max(500),
+    password: z.string().min(1).max(1000),
+    /** The folder bots may read; a folder is required, so the rest of the account stays out of reach. */
+    scope: z.string().trim().min(1).max(200),
+    ...ManagerShared,
+  }),
+  z.object({
+    kind: z.literal('protonpass'),
+    /** A personal access token, given access to the vaults bots may read. */
+    token: z.string().trim().min(20).max(5000),
+    scope: ManagerScope,
+    ...ManagerShared,
+  }),
+]);
+export type PasswordManagerCreate = z.input<typeof PasswordManagerCreate>;
+
+export const PasswordManagerUpdate = z.object({
+  scope: z.string().trim().max(200).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+  team: z.boolean().optional(),
+});
+export type PasswordManagerUpdate = z.input<typeof PasswordManagerUpdate>;
+
+export const CardBrandSchema = z.enum(['visa', 'mastercard', 'amex', 'troy', 'discover', 'other']);
+
+/**
+ * A saved payment card as the app and the bots see it: never its number, security code or the
+ * name on it. Bots fill it into a checkout page on the server, the way a password is typed.
+ */
+export const PaymentCard = z.object({
+  id: Id,
+  label: z.string(),
+  brand: CardBrandSchema,
+  last4: z.string(),
+  expMonth: z.number(),
+  expYear: z.number(),
+  hasCvc: z.boolean(),
+  /** The sites the person agreed it may be filled on without being asked again. */
+  sites: z.array(z.string()),
+  botIds: z.array(Id).nullable(),
+  userId: z.string().nullable(),
+  lastUsedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type PaymentCard = z.infer<typeof PaymentCard>;
+
+const ExpMonth = z.coerce.number().int().min(1).max(12);
+/** Two digits are taken as this century's. */
+const ExpYear = z.coerce
+  .number()
+  .int()
+  .min(0)
+  .max(2100)
+  .transform((y) => (y < 100 ? 2000 + y : y))
+  .pipe(z.number().min(2000));
+const Cvc = z
+  .string()
+  .trim()
+  .regex(/^\d{3,4}$/, 'error.cardCvc');
+
+export const PaymentCardCreate = z.object({
+  label: z.string().trim().max(100).default(''),
+  number: z
+    .string()
+    .transform((v) => v.replace(/[\s-]/g, ''))
+    .refine((v) => /^\d{12,19}$/.test(v) && luhn(v), 'error.cardNumber'),
+  expMonth: ExpMonth,
+  expYear: ExpYear,
+  cvc: Cvc.optional(),
+  holder: z.string().trim().max(200).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+  team: z.boolean().optional(),
+});
+export type PaymentCardCreate = z.input<typeof PaymentCardCreate>;
+
+export const PaymentCardUpdate = z.object({
+  label: z.string().trim().max(100).optional(),
+  expMonth: ExpMonth.optional(),
+  expYear: ExpYear.optional(),
+  /** Empty forgets it. */
+  cvc: z.union([Cvc, z.literal('')]).optional(),
+  holder: z.string().trim().max(200).optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+  /** Sites to take back from those it may be filled on without asking; none can be added here. */
+  forgetSites: z.array(z.string().max(300)).max(500).optional(),
+  team: z.boolean().optional(),
+});
+export type PaymentCardUpdate = z.input<typeof PaymentCardUpdate>;
+
+/** Why a line of an imported passwords file was not taken. */
+export const VaultImportReason = z.enum([
+  // A card, a note or another kind of item in a password manager's export.
+  'notLogin',
+  'noPassword',
+  // No web address: an app's sign-in, or an empty address.
+  'noSite',
+  // Over plain http the bots neither type nor ask for a password.
+  'notHttps',
+  // The file has the same site and username more than once; the first is taken.
+  'duplicate',
+  // Already in the vault for the same owner: left as it is there.
+  'exists',
+  'tooLong',
+]);
+export type VaultImportReason = z.infer<typeof VaultImportReason>;
+
+export const VaultImportSkip = z.object({
+  line: z.number(),
+  site: z.string(),
+  username: z.string(),
+  reason: VaultImportReason,
+});
+export type VaultImportSkip = z.infer<typeof VaultImportSkip>;
+
+/**
+ * A passwords file exported from a browser or a password manager. Without `apply` nothing is saved:
+ * the answer says what would be added and what would be left out, and why.
+ */
+export const VaultImport = z.object({
+  csv: z
+    .string()
+    .min(1)
+    .max(4 * 1024 * 1024),
+  apply: z.boolean().default(false),
+  botIds: z.array(Id).max(500).nullable().optional(),
+  /** For the whole team rather than the person importing; only those who look after the server. */
+  team: z.boolean().optional(),
+});
+export type VaultImport = z.input<typeof VaultImport>;
+
+export const VaultImportResult = z.object({
+  add: z.array(z.object({ line: z.number(), site: z.string(), username: z.string(), hasTotp: z.boolean() })),
+  skipped: z.array(VaultImportSkip),
+  /** Sign-ins taken without their authenticator setup, which could not be read. */
+  totpDropped: z.number(),
+  /** How many were saved; 0 for a preview. */
+  saved: z.number(),
+});
+export type VaultImportResult = z.infer<typeof VaultImportResult>;
 
 /** `block`: refused in every mode, without a card; it outranks every other rule. */
 export const RuleList = z.enum(['ask', 'allow', 'block']);
@@ -1253,6 +1449,11 @@ export const ApiCredential = z.object({
   label: z.string(),
   /** The bots that may use it; null lets every bot. */
   botIds: z.array(Id).nullable(),
+  /**
+   * Whose it is: a person's own, sent only for turns that work for them; null for the team's.
+   * Missing on older servers, where every key was the team's.
+   */
+  userId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
@@ -1266,6 +1467,12 @@ export const ApiCredentialCreate = z.object({
   label: z.string().trim().max(200).default(''),
   value: z.string().min(1).max(8000),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /**
+   * For the whole team rather than the person saving it; only those who look after the server.
+   * Left out, it is the team's for them (as every key was before keys had owners) and the person's
+   * own for everyone else.
+   */
+  team: z.boolean().optional(),
 });
 export type ApiCredentialCreate = z.input<typeof ApiCredentialCreate>;
 
@@ -1276,8 +1483,46 @@ export const ApiCredentialUpdate = z.object({
   /** A new value; left out keeps the saved one. */
   value: z.string().min(1).max(8000).optional(),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /** Moves it to the team, or back to the person changing it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type ApiCredentialUpdate = z.input<typeof ApiCredentialUpdate>;
+
+/**
+ * API keys from a `.env` file. Without `keys` nothing is saved and the answer names the entries
+ * (never their values); with them, the chosen entries are saved, each for the origin given.
+ */
+export const ApiKeyImport = z.object({
+  env: z
+    .string()
+    .min(1)
+    .max(256 * 1024),
+  keys: z
+    .array(
+      z.object({
+        /** The name in the file. */
+        env: z.string().max(200),
+        name: ApiCredentialName,
+        origin: ApiOrigin,
+        auth: ApiAuth.default({ type: 'bearer' }),
+        label: z.string().trim().max(200).default(''),
+      }),
+    )
+    .max(200)
+    .optional(),
+  botIds: z.array(Id).max(500).nullable().optional(),
+  team: z.boolean().optional(),
+});
+export type ApiKeyImport = z.input<typeof ApiKeyImport>;
+
+export const ApiKeyImportResult = z.object({
+  /** The file's entries: where each is, its name there, and the key name it would get. */
+  entries: z.array(z.object({ line: z.number(), env: z.string(), name: z.string() })),
+  saved: z.array(z.string()),
+  /** Entries asked for that were not saved: missing from the file, or a key name already used. */
+  skipped: z.array(z.object({ env: z.string(), reason: z.enum(['missing', 'exists']) })),
+});
+export type ApiKeyImportResult = z.infer<typeof ApiKeyImportResult>;
 
 /** A mail that arrived at a bot's address. */
 export const BotEmail = z.object({

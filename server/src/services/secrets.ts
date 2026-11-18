@@ -1,3 +1,5 @@
+import { maskCardNumbers, SECRET_TOKENS } from '@yumakbot/shared';
+
 /**
  * Secrets a bot might copy into a note: memory reaches the model on every turn and shows in the
  * memory screen, so a key or password written there leaks wherever the note goes. Credentials
@@ -6,28 +8,7 @@
  * Each pattern either is a whole token with a recognisable shape (its prefix tells what it is), or
  * a label such as `password:` followed by a value; for the latter only the value is replaced.
  */
-const TOKENS: RegExp[] = [
-  // PEM private keys, header to footer.
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
-  // Anthropic, OpenAI and other `sk-` keys.
-  /\bsk-(?:ant-|proj-|or-)?[A-Za-z0-9_-]{20,}/g,
-  // GitHub tokens.
-  /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g,
-  // Slack tokens.
-  /\bxox[abposr]-[A-Za-z0-9-]{10,}/g,
-  // AWS access key ids.
-  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
-  // Google API keys.
-  /\bAIza[0-9A-Za-z_-]{35}/g,
-  // Discord bot tokens: the bot's id in base64, a time stamp and a signature.
-  /\b[MNO][A-Za-z0-9_-]{23,27}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,40}\b/g,
-  // Stripe secret and restricted keys.
-  /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/g,
-  // JSON web tokens.
-  /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
-  // A bearer token in a header.
-  /(?<=\bBearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi,
-];
+const TOKENS = SECRET_TOKENS;
 
 /**
  * A label naming a secret, then `:` or `=` (or "is"), then the value. The labels are English and
@@ -48,6 +29,7 @@ const VARIABLE =
 export function redactSecrets(text: string, marker: string): { text: string; redacted: boolean } {
   let out = text;
   for (const re of TOKENS) out = out.replace(re, marker);
+  out = maskCardNumbers(out, marker);
   out = out.replace(VARIABLE, (whole, name: string, sep: string, quote: string, value: string) =>
     value === marker ? whole : `${name}${sep}${quote}${marker}${quote}`,
   );

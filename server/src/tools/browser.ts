@@ -28,7 +28,9 @@ import { waitOutWall, type WallState } from '../browser/wall';
 import type { AppTool, ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import type { LoginAnswer } from '../services/approvals';
+import type { OpenCard, PaymentCardService } from '../services/payment-cards';
 import { registrableSite, siteMatches, siteOf, type VaultService } from '../services/vault';
+import { maskCardNumbers } from '@yumakbot/shared';
 import { totp } from '../totp';
 import { botFile } from './files';
 import type { Define } from './index';
@@ -419,6 +421,87 @@ export type AskLogin = (
   host?: string,
 ) => Promise<{ ok: true; login: LoginAnswer } | { ok: false; message: string }>;
 
+/**
+ * Asks the person whether a card may be filled on a site it was not used on before: `once`, or
+ * `always` for that site from now on; otherwise what the bot is told. `frames` are the other sites
+ * whose frames inside the page hold some of the fields (a payment provider's).
+ */
+export type AskCard = (o: {
+  card: string;
+  site: string;
+  frames: string[];
+  /** The card is the team's: only those who look after the server may allow it for good. */
+  team: boolean;
+}) => Promise<'once' | 'always' | { message: string }>;
+
+/**
+ * What an approval of a card is kept under: the page's site, and the other sites whose frames got
+ * some of its values. A site allowed with its own fields does not let a frame of another site in.
+ */
+export const cardApproval = (site: string, frames: readonly string[]) =>
+  frames.length ? `${site} (${[...frames].sort().join(', ')})` : site;
+
+type CardPart = 'number' | 'expiry' | 'month' | 'year' | 'cvc' | 'name';
+
+/**
+ * What each part of a card form is called: its `autocomplete` value, or words in its name, id,
+ * placeholder or label. A card value goes only into a field that says it is that part, never into a
+ * comment box or a search field the bot names by mistake.
+ */
+const CARD_PARTS: Record<CardPart, { autocomplete: RegExp; words: RegExp; select?: boolean }> = {
+  number: {
+    autocomplete: /^cc-number$/,
+    words: /(card|cc|kart)[\s_-]*(num|no\b|numara)|cardnumber|ccnum|\bpan\b/,
+  },
+  expiry: { autocomplete: /^cc-exp$/, words: /expir|exp[\s_-]*date|son[\s_-]*kullanma|\bskt\b|mm\s*\/\s*yy/ },
+  month: { autocomplete: /^cc-exp-month$/, words: /month|exp[\s_-]*m|\bmm\b|\bay\b/, select: true },
+  year: { autocomplete: /^cc-exp-year$/, words: /year|exp[\s_-]*y|\byy(yy)?\b|yil/, select: true },
+  cvc: {
+    autocomplete: /^cc-csc$/,
+    words: /cvc|cvv|csc|cv2|security[\s_-]*code|card[\s_-]*code|g\u00fcvenlik/,
+  },
+  name: {
+    autocomplete: /^cc-name$/,
+    words: /holder|name[\s_-]*on|card[\s_-]*name|cc[\s_-]*name|sahib|ad[\s_-]*soyad/,
+  },
+};
+
+/** Runs in the page, on a field: what it is and what it is called. */
+const cardFieldInfo = (node: unknown) => {
+  type El = {
+    tagName: string;
+    type?: unknown;
+    labels?: ArrayLike<{ textContent: string | null }> | null;
+    getAttribute(name: string): string | null;
+    closest(selector: string): unknown;
+    form?: { action: string } | null;
+  };
+  const el = node as El;
+  // Lower case without the language's own rules: Turkish "YIL" and "y\u0131l" both become "yil",
+  // and "\u0130" loses the dot the plain lower case gives it.
+  const fold = (v: string) =>
+    v
+      .toLowerCase()
+      .replace(/\u0131/g, 'i')
+      .replace(/\u0307/g, '');
+  const attr = (n: string) => fold(el.getAttribute(n) || '');
+  const labels = fold(
+    Array.from(el.labels ?? [])
+      .map((l) => l.textContent ?? '')
+      .join(' '),
+  );
+  return {
+    tag: el.tagName.toLowerCase(),
+    type: typeof el.type === 'string' ? el.type.toLowerCase() : attr('type') || 'text',
+    autocomplete: attr('autocomplete'),
+    words: `${attr('name')} ${attr('id')} ${attr('placeholder')} ${attr('aria-label')} ${attr('data-elements-stable-field-name')} ${labels}`,
+    placeholder: attr('placeholder'),
+    maxLength: Number(attr('maxlength')) || 0,
+    search: attr('type') === 'search' || attr('role') === 'searchbox' || !!el.closest('[role=search]'),
+    action: el.form?.action ?? '',
+  };
+};
+
 /** The element that has focus in the page, as `tag "label"`; run in the page, so written as text. */
 const FOCUSED = `(() => {
   const el = document.activeElement;
@@ -513,6 +596,11 @@ export function browserTools(opts: {
   /** Whom the bot works for: only the team's sign-ins and theirs are typed; null for the team's alone. */
   person: string | null;
   askLogin: AskLogin;
+  /** The person's payment cards; without them the bot has no card step. */
+  cards?: PaymentCardService;
+  askCard?: AskCard;
+  /** Whether the person is in the conversation, having started this turn: a card is filled only then. */
+  attended?: boolean;
   /** What the bot noted earlier about how a site works. */
   siteNotes?: (host: string) => Promise<string[]>;
   /** Where the browser's traffic now leaves, if that changed since the bot last heard. */
@@ -557,7 +645,7 @@ export function browserTools(opts: {
     }
     // The outline shows what is typed in fields, password fields too, and a form sent with get
     // carries them in the address and the title: hide every password, wherever it shows.
-    return maskSecrets(
+    return maskCardFields(
       [
         t('browser.address', { url: page.url() }),
         t('browser.title', { title: title || '-' }),
@@ -568,11 +656,43 @@ export function browserTools(opts: {
       [...typed, ...browser.secrets(bot.id)],
     );
   };
+  /**
+   * `text` with the secrets taken out, and the short values the server filled into fields (a
+   * card's security code) hidden where the outline shows them as a field's value.
+   */
+  const maskCardFields = (text: string, secrets: string[]) => {
+    let out = maskSecrets(text, secrets);
+    for (const v of browser.fieldSecrets(bot.id)) {
+      // The outline quotes a field's value, or leaves it bare.
+      const value = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(
+        new RegExp(`^(\\s*- (?:textbox|spinbutton)\\b[^\\n]*?: )("?)${value}\\2$`, 'gm'),
+        `$1$2${MASK}$2`,
+      );
+    }
+    return out;
+  };
+  /** Whether a short card value shows in a field of the page, where a picture would carry it. */
+  const cardShortShown = async (page: Page) => {
+    const short = new Set(browser.fieldSecrets(bot.id));
+    if (!short.size) return false;
+    const values = await Promise.all(
+      page
+        .frames()
+        .map((f) =>
+          f
+            .$$eval('input', (els) => els.map((e) => (e as unknown as { value: string }).value))
+            .catch(() => [] as string[]),
+        ),
+    );
+    return values.flat().some((v) => short.has(v.trim()));
+  };
   /** A step's result with every vault secret taken out, whatever part of the page carried it. */
   const hide = (r: ToolResult): ToolResult => {
     const secrets = browser.secrets(bot.id);
-    if (!secrets.length) return r;
-    return typeof r === 'string' ? maskSecrets(r, secrets) : { ...r, text: maskSecrets(r.text, secrets) };
+    // Any payment card number goes too, however the page groups its digits.
+    const mask = (text: string) => maskCardNumbers(secrets.length ? maskSecrets(text, secrets) : text, MASK);
+    return typeof r === 'string' ? mask(r) : { ...r, text: mask(r.text) };
   };
 
   /**
@@ -633,6 +753,8 @@ export function browserTools(opts: {
     // Tabs the site closed itself while the bot was on them, and tabs it opened past the limit.
     const closed = browser.takeClosedTabs(bot.id);
     const extraTabs = browser.takeRefusedTabs(bot.id);
+    // Sites that asked for a passkey, which this browser cannot give.
+    const passkeys = browser.takePasskeys(bot.id);
     return [
       ...(exit ? [t(exit === 'computer' ? 'browser.exitComputer' : 'browser.exitServer')] : []),
       ...closed.map((url) => t('browser.tabClosedBySite', { url: url || '-' })),
@@ -644,6 +766,7 @@ export function browserTools(opts: {
         }),
       ),
       ...(refused.length ? [t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })] : []),
+      ...passkeys.map((site) => t('browser.passkeyRefused', { site: site || '-' })),
       ...downloads,
       ...(running.length ? [t('browser.downloadRunning', { names: running.join(', ') })] : []),
     ];
@@ -837,6 +960,206 @@ export function browserTools(opts: {
       }
     }
     return { field };
+  };
+  /**
+   * The field a part of a card goes into: an input (or, for the month and year, a list) that says
+   * it is that part, in an https frame of the page. A payment provider's fields live in frames of
+   * its own site inside the shop's page, so the frame may be another site's; the shop's site is the
+   * one the person agreed to.
+   */
+  const cardField = async (
+    page: Page,
+    r: string,
+    part: CardPart,
+  ): Promise<
+    { field: ElementHandle; info: ReturnType<typeof cardFieldInfo>; frameSite: string } | { refused: string }
+  > => {
+    const field = await (await fresh(page, r)).elementHandle({ timeout: 5_000 });
+    const refuse = async (refused: string) => {
+      await field.dispose().catch(() => {});
+      return { refused };
+    };
+    const info = await field.evaluate(cardFieldInfo);
+    const kind = CARD_PARTS[part];
+    const tagOk =
+      (info.tag === 'input' && ['text', 'tel', 'number', 'password', ''].includes(info.type)) ||
+      (info.tag === 'select' && kind.select);
+    const named = kind.autocomplete.test(info.autocomplete) || kind.words.test(info.words);
+    if (!tagOk || info.search || !named)
+      return refuse(t('browser.cardNotField', { part: t(`browser.cardPart.${part}`) }));
+    const frame: Frame | null = await field.ownerFrame();
+    const where = parsed(frame?.url() ?? '');
+    if (!where || !secure(where)) return refuse(t('browser.cardFrame', { origin: where?.origin ?? '-' }));
+    const to = info.action ? parsed(info.action) : null;
+    if (info.action && to?.protocol !== 'javascript:' && (!to || !secure(to))) {
+      return refuse(t('browser.cardFrame', { origin: to?.origin ?? info.action.slice(0, 100) }));
+    }
+    return { field, info, frameSite: registrableSite(where.hostname) };
+  };
+  /** A card as the bot and the person see it: its name, network and last four digits. */
+  const cardName = (c: OpenCard) =>
+    `${c.label ? `${c.label} · ` : ''}${t(`browser.cardBrand.${c.brand}`)} •••• ${c.last4}`;
+  const fillCard = async (
+    a: {
+      number_ref: string;
+      expiry_ref?: string;
+      month_ref?: string;
+      year_ref?: string;
+      cvc_ref?: string;
+      name_ref?: string;
+      card?: string;
+    },
+    cards: PaymentCardService,
+    askCard: AskCard,
+  ): Promise<ToolResult> => {
+    // Only for the person who owns the card, while they are there: never in a routine, for another
+    // bot, or in a team conversation.
+    if (!person) return t('browser.cardTeam');
+    if (!opts.attended) return t('browser.cardUnattended');
+    let host: string;
+    try {
+      const url = await browser.use(bot.id, async (page) => new URL(page.url()));
+      if (!secure(url)) return t('browser.cardInsecure');
+      host = url.hostname;
+    } catch (err) {
+      return browserErrorText(err, t);
+    }
+    const site = registrableSite(host);
+    const all = await cards.forBot(bot.id, person);
+    if (!all.length) return t('browser.cardNone');
+    const wanted = a.card?.trim().toLowerCase();
+    const matching = wanted ? all.filter((c) => c.last4 === wanted || c.label.toLowerCase() === wanted) : all;
+    if (matching.length !== 1) {
+      return t('browser.cardChoose', { cards: all.map(cardName).join(', ') });
+    }
+    const c = matching[0]!;
+    const now = new Date();
+    if (
+      c.expYear < now.getFullYear() ||
+      (c.expYear === now.getFullYear() && c.expMonth < now.getMonth() + 1)
+    ) {
+      return t('browser.cardExpired', { card: cardName(c) });
+    }
+    const mm = String(c.expMonth).padStart(2, '0');
+    const yyyy = String(c.expYear);
+    const yy = yyyy.slice(-2);
+    const parts: [CardPart, string | undefined, string | null][] = [
+      ['number', a.number_ref, c.number],
+      ['expiry', a.expiry_ref, null],
+      ['month', a.month_ref, mm],
+      ['year', a.year_ref, null],
+      ['cvc', a.cvc_ref, c.cvc],
+      ['name', a.name_ref, c.holder],
+    ];
+    type Found = {
+      part: CardPart;
+      field: ElementHandle;
+      info: ReturnType<typeof cardFieldInfo>;
+      frameSite: string;
+      value: string | null;
+    };
+    const keyOf = (fields: Found[]) =>
+      cardApproval(site, [...new Set(fields.map((f) => f.frameSite).filter((x) => x !== site))]);
+    /** The fields named, each checked to be the part it is given for; or why one is not. */
+    const find = async (page: Page, fields: Found[]): Promise<string | null> => {
+      // The page may have moved while the person answered: only fill on the site they agreed to.
+      const here = new URL(page.url());
+      if (!secure(here) || !siteMatches(here.hostname, site)) {
+        return t('browser.loginMoved', { host: here.hostname, site });
+      }
+      for (const [part, r, value] of parts) {
+        if (!r) continue;
+        if ((part === 'cvc' || part === 'name') && !value) return t(`browser.cardMissing.${part}`);
+        const f = await cardField(page, r, part);
+        if ('refused' in f) return f.refused;
+        fields.push({ part, field: f.field, info: f.info, frameSite: f.frameSite, value });
+      }
+      return null;
+    };
+    // The fields are checked before the person is asked, so a wrong one costs them no question.
+    let checked: { wrong: string } | { key: string; frames: string[] };
+    try {
+      checked = await browser.use(bot.id, async (page) => {
+        const fields: Found[] = [];
+        try {
+          const wrong = await find(page, fields);
+          if (wrong) return { wrong };
+          const frames = [...new Set(fields.map((f) => f.frameSite).filter((x) => x !== site))];
+          return { key: keyOf(fields), frames };
+        } finally {
+          for (const f of fields) await f.field.dispose().catch(() => {});
+        }
+      });
+    } catch (err) {
+      return browserErrorText(err, t);
+    }
+    if ('wrong' in checked) return checked.wrong;
+    const { key } = checked;
+    if (!c.sites.includes(key)) {
+      const answer = await askCard({ card: cardName(c), site, frames: checked.frames, team: c.team });
+      if (typeof answer !== 'string') return answer.message;
+      if (answer === 'always') await cards.allowSite(c.id, key);
+    }
+    return step(async (page) => {
+      const fields: Found[] = [];
+      try {
+        const refused = await find(page, fields);
+        if (refused) return refused;
+        // Fields that moved to another site's frame while the person answered were not agreed to.
+        if (keyOf(fields) !== key) return t('browser.cardFramesChanged', { site });
+        // Kept out of what the bot reads of the page, however the page shows them.
+        const groups = c.number.length === 15 ? [4, 6, 5] : [4, 4, 4, 4, 4];
+        for (const sep of [' ', '-']) {
+          let at = 0;
+          const parts: string[] = [];
+          for (const g of groups) {
+            if (at >= c.number.length) break;
+            parts.push(c.number.slice(at, at + g));
+            at += g;
+          }
+          browser.rememberSecret(bot.id, parts.join(sep));
+        }
+        browser.rememberSecret(bot.id, c.number);
+        if (c.cvc) browser.rememberFieldSecret(bot.id, c.cvc);
+        for (const f of fields) {
+          const { info } = f;
+          const value =
+            f.part === 'expiry'
+              ? `${mm}/${/yyyy/.test(info.placeholder) ? yyyy : yy}`
+              : f.part === 'year'
+                ? info.maxLength === 2 || /\byy\b/.test(info.placeholder)
+                  ? yy
+                  : yyyy
+                : f.value!;
+          if (info.tag === 'select') {
+            // The option is found first: asked for one the list does not have, Playwright would
+            // wait its whole timeout for it to appear. "3", "03" and "March 03" all name month 3;
+            // "2034" and "34" both name the year.
+            const options = await f.field.evaluate((el) =>
+              Array.from(
+                (el as unknown as { options: ArrayLike<{ value: string; text: string }> }).options,
+                (o) => ({
+                  value: o.value,
+                  text: o.text,
+                }),
+              ),
+            );
+            const wanted = f.part === 'month' ? [c.expMonth] : [c.expYear, c.expYear % 100];
+            const names = (o: { value: string; text: string }) =>
+              [o.value, o.text].flatMap((x) => x.match(/\d+/g) ?? []).map(Number);
+            const hit = options.find((o) => names(o).some((n) => wanted.includes(n)));
+            if (!hit) return t('browser.cardNotField', { part: t(`browser.cardPart.${f.part}`) });
+            await f.field.selectOption({ value: hit.value });
+          } else await f.field.fill(value);
+        }
+      } finally {
+        for (const f of fields) await f.field.dispose().catch(() => {});
+      }
+      void cards.used(c.id).catch(() => {});
+      await settle(page);
+      const out = await outline(browser.pages(bot.id)?.active ?? page);
+      return `${t('browser.cardFilled', { card: cardName(c), site })}\n\n${out}`;
+    });
   };
   /** What the bot is told when the page is still a bot check or a refusal after the wait. */
   const wallNote = (out: ToolResult, wall: WallState): ToolResult => {
@@ -1257,6 +1580,32 @@ export function browserTools(opts: {
       },
       'internal',
     ),
+    ...(opts.cards && opts.askCard
+      ? [
+          def(
+            'browser_card',
+            {
+              number_ref: ref.describe('ref of the card number field'),
+              expiry_ref: ref.optional().describe('ref of a single expiry field (MM/YY)'),
+              month_ref: ref
+                .optional()
+                .describe('ref of the expiry month field, when month and year are apart'),
+              year_ref: ref
+                .optional()
+                .describe('ref of the expiry year field, when month and year are apart'),
+              cvc_ref: ref.optional().describe('ref of the security code field'),
+              name_ref: ref.optional().describe('ref of the name on card field'),
+              card: z
+                .string()
+                .max(100)
+                .optional()
+                .describe('which saved card, by its name or last four digits, when there are several'),
+            },
+            async (a) => fillCard(a, opts.cards!, opts.askCard!),
+            'internal',
+          ),
+        ]
+      : []),
     def(
       'browser_select',
       { ref, element, values: z.array(z.string().max(500)).min(1).max(20) },
@@ -1362,7 +1711,9 @@ export function browserTools(opts: {
         step(async (page) => {
           // Text can be masked, a picture cannot: none is taken while a vault secret shows in plain
           // text (a "show password" switch, a field it was typed into, the address).
-          if (await secretShown(page, browser.secrets(bot.id))) return t('browser.screenshotSecret');
+          if ((await secretShown(page, browser.secrets(bot.id))) || (await cardShortShown(page))) {
+            return t('browser.screenshotSecret');
+          }
           // In page points: a sharper screen would only make the picture larger, not clearer to the bot.
           const options = { type: 'jpeg', quality: 70, timeout: 15_000, scale: 'css' } as const;
           const shot = r ? await (await fresh(page, r)).screenshot(options) : await page.screenshot(options);

@@ -25,5 +25,6 @@ export * from './app-mentions';
 export * from './tables';
 export * from './stream-parts';
 export * from './email-preview';
+export * from './secret-shapes';
 export * from './upload-retry';
 export * from './storage';

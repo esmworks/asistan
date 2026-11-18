@@ -267,21 +267,27 @@ describe('botun bilgisayarı', () => {
     expect(gits(bot.id)).toEqual([null]);
 
     // A key for another address is not git's; one for github.com is, for the bots it is open to.
-    await t.services.apiCredentials.create({
-      name: 'github_api',
-      origin: 'https://api.github.com',
-      auth: { type: 'bearer' },
-      value: 'github_pat_api_0123456789',
-    });
+    await t.services.apiCredentials.create(
+      {
+        name: 'github_api',
+        origin: 'https://api.github.com',
+        auth: { type: 'bearer' },
+        value: 'github_pat_api_0123456789',
+      },
+      null,
+    );
     await look(bot.id);
     expect(gits(bot.id)).toEqual([null]);
-    const key = await t.services.apiCredentials.create({
-      name: 'github_git',
-      origin: 'github.com',
-      auth: { type: 'bearer' },
-      value: 'github_pat_git_0123456789',
-      botIds: [bot.id],
-    });
+    const key = await t.services.apiCredentials.create(
+      {
+        name: 'github_git',
+        origin: 'github.com',
+        auth: { type: 'bearer' },
+        value: 'github_pat_git_0123456789',
+        botIds: [bot.id],
+      },
+      null,
+    );
     // A running desktop gets it right away, before any step of the bot.
     await waitFor(async () => gits(bot.id).length === 2);
     await look(bot.id);
