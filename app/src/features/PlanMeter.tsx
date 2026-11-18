@@ -121,8 +121,13 @@ function PlanRow({ w, now }: { w: PlanWindow; now: number }) {
           )}
         </span>
       </div>
+      {/* The share left, as the ring and the words beside it say, not the share used. */}
       <div className="h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden>
-        <div className={cn('h-full rounded-full', PLAN_TONE_BAR[tone])} style={{ width: `${100 - left}%` }} />
+        <div
+          className={cn('h-full rounded-full', PLAN_TONE_BAR[tone])}
+          style={{ width: `${left}%` }}
+          data-plan-bar
+        />
       </div>
     </div>
   );
