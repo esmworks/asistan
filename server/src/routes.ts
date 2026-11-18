@@ -1386,6 +1386,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await s.connections.remove(id);
     return { ok: true };
   });
+  app.get('/api/connections/:id/sender', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, false);
+    return s.connections.mailSender(id);
+  });
   app.post('/api/connections/:id/refresh', async (req) => {
     const { id } = IdParams.parse(req.params);
     await connectionFor(req, id, true);

@@ -11,6 +11,8 @@ export default tseslint.config(
       '**/out/**',
       '**/.stage/**',
       '**/node_modules/**',
+      // Agent worktrees and settings: other checkouts of this repository, linted in their own place.
+      '.claude/**',
       'data/**',
       'server/drizzle/**',
       'app/src/components/ui/**',

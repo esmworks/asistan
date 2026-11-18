@@ -10,10 +10,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useT, type T } from '@/i18n';
 import { htmlPreviewDocument } from '@/lib/preview';
+import { useMailSender } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 
 /** The tallest a mail's formatted body is drawn before it scrolls inside the card. */
 const MAX_BODY_HEIGHT = 480;
+/** A signature with a banner runs tall; it shows whole up to this. */
+const MAX_SIGNATURE_HEIGHT = 900;
 
 /**
  * A mail a bot asks to send through a connected app, shown as the mail itself: who gets it, the
@@ -24,6 +27,7 @@ export function EmailApprovalCard({
   a,
   mail,
   service,
+  connectionId,
   notes,
   offerAlways,
   busy,
@@ -33,6 +37,8 @@ export function EmailApprovalCard({
   mail: EmailPreview;
   /** The connection the mail goes from. */
   service?: string;
+  /** Its id, to ask who it sends as. */
+  connectionId?: string;
   /** Why the card asks: a rule, the review's reason, outside text. */
   notes?: ReactNode;
   /** "Always allow" is offered: no rule asks for every time, and no outside text started the run. */
@@ -45,7 +51,7 @@ export function EmailApprovalCard({
   const draft = mail.kind === 'draft';
   if (a.status !== 'pending') {
     return (
-      <div className="max-w-(--bubble-width) rounded-3xl border bg-background">
+      <div className="max-w-(--bubble-width) rounded-3xl border bg-card">
         <button
           type="button"
           aria-expanded={open}
@@ -63,18 +69,18 @@ export function EmailApprovalCard({
         </button>
         {open && (
           <div className="border-t px-5 pt-3 pb-4">
-            <MailBody mail={mail} service={service} />
+            <MailBody mail={mail} service={service} connectionId={connectionId} />
           </div>
         )}
       </div>
     );
   }
   return (
-    <div className="max-w-(--bubble-width) space-y-4 rounded-3xl border bg-background px-5 py-4">
+    <div className="max-w-(--bubble-width) space-y-4 rounded-3xl border bg-card px-5 py-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Mail className="size-4" /> {t(`email.kind.${mail.kind}`)}
       </div>
-      <MailBody mail={mail} service={service} />
+      <MailBody mail={mail} service={service} connectionId={connectionId} />
       {notes && <div className="space-y-1 text-xs text-muted-foreground">{notes}</div>}
       <RawInput raw={mail.raw} />
       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -138,21 +144,33 @@ function statusText(a: Approval, draft: boolean, t: T): string {
   return t('email.status.expired');
 }
 
-function MailBody({ mail, service }: { mail: EmailPreview; service?: string }) {
+function MailBody({
+  mail,
+  service,
+  connectionId,
+}: {
+  mail: EmailPreview;
+  service?: string;
+  connectionId?: string;
+}) {
   const t = useT();
+  const { data: sender } = useMailSender(connectionId);
   const rows: [string, string][] = [];
-  if (service) rows.push([t('email.from'), service]);
+  const from = sender?.address ?? service;
+  if (from) rows.push([t('email.from'), from]);
   if (mail.to.length) rows.push([t('email.to'), mail.to.join(', ')]);
   else if (mail.kind === 'reply')
     rows.push([t('email.to'), t(mail.replyAll ? 'email.replyAllTo' : 'email.replyTo')]);
   if (mail.cc.length) rows.push([t('email.cc'), mail.cc.join(', ')]);
   if (mail.bcc.length) rows.push([t('email.bcc'), mail.bcc.join(', ')]);
+  // A draft sent as it is has a subject of its own the card does not know: none is claimed.
   const subject =
-    mail.subject ?? (mail.kind === 'send' || mail.kind === 'draft' ? t('email.noSubject') : null);
+    mail.subject ??
+    ((mail.kind === 'send' || mail.kind === 'draft') && !mail.draftId ? t('email.noSubject') : null);
   return (
     <div className="space-y-3">
       {subject && <div className="text-lg font-medium break-words">{subject}</div>}
-      <div className="divide-y text-[15px]">
+      <div className="divide-y border-b text-[15px]">
         {rows.map(([label, value]) => (
           <div key={label} className="flex gap-3 py-2">
             <span className="shrink-0 text-muted-foreground">{label}</span>
@@ -163,12 +181,23 @@ function MailBody({ mail, service }: { mail: EmailPreview; service?: string }) {
       {mail.draftId && !mail.text && !mail.html ? (
         <div className="text-sm text-muted-foreground">{t('email.savedDraft')}</div>
       ) : mail.html ? (
-        <HtmlBody html={mail.html} />
+        <HtmlFrame html={mail.html} title={t('email.body')} maxHeight={MAX_BODY_HEIGHT} />
       ) : mail.text ? (
         <div className="scroll-thin max-h-[480px] overflow-auto text-[15px] break-words whitespace-pre-wrap">
           {mail.text}
         </div>
       ) : null}
+      {/* The signature goes right under the text, where the mail carries it. */}
+      {mail.signature &&
+        (sender?.signature ? (
+          <HtmlFrame
+            html={sender.signature}
+            title={t('email.signatureFrame')}
+            maxHeight={MAX_SIGNATURE_HEIGHT}
+          />
+        ) : (
+          <div className="text-sm text-muted-foreground">{t('email.signature')}</div>
+        ))}
       {mail.attachments.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {mail.attachments.map((name, i) => (
@@ -182,7 +211,6 @@ function MailBody({ mail, service }: { mail: EmailPreview; service?: string }) {
         <div className="text-sm text-muted-foreground">{t('email.forwardedBelow')}</div>
       )}
       {mail.inThread && <div className="text-sm text-muted-foreground">{t('email.inThread')}</div>}
-      {mail.signature && <div className="text-sm text-muted-foreground">{t('email.signature')}</div>}
     </div>
   );
 }
@@ -211,31 +239,32 @@ function RawInput({ raw }: { raw: string }) {
 }
 
 /**
- * The formatted body in a frame that runs no script and loads nothing from outside (no tracking
- * pictures, no fonts): the bot may have written it after reading someone else's text. The frame
- * shares the app's origin only so its height can be read; with scripts off it cannot reach out.
+ * HTML in a frame that runs no script and loads nothing from outside (no tracking pictures, no
+ * fonts): the bot may have written the body after reading someone else's text, and the
+ * signature's pictures come inside it from the server. The frame shares the app's origin only so
+ * its height can be read; with scripts off it cannot reach out.
  */
-function HtmlBody({ html }: { html: string }) {
-  const t = useT();
+function HtmlFrame({ html, title, maxHeight }: { html: string; title: string; maxHeight: number }) {
   const [height, setHeight] = useState(120);
   return (
     <iframe
       sandbox="allow-same-origin"
       referrerPolicy="no-referrer"
       srcDoc={htmlPreviewDocument(
-        `<style>body{margin:0;font:15px/1.5 system-ui,sans-serif;color:#111;background:#fff;overflow-wrap:anywhere}img{max-width:100%}</style>${html}`,
+        `<style>body{margin:0;font:15px/1.5 system-ui,sans-serif;color:#111;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>${html}`,
       )}
-      title={t('email.body')}
+      title={title}
       onLoad={(e) => {
         const doc = e.currentTarget.contentDocument;
         if (!doc) return;
         const full = doc.documentElement.scrollHeight;
-        // A body that fits shows whole: a fraction of a pixel would otherwise draw a scroll bar.
-        if (full <= MAX_BODY_HEIGHT) doc.documentElement.style.overflow = 'hidden';
-        setHeight(Math.min(MAX_BODY_HEIGHT, full));
+        // What fits shows whole: a fraction of a pixel would otherwise draw a scroll bar.
+        if (full <= maxHeight) doc.documentElement.style.overflow = 'hidden';
+        setHeight(Math.min(maxHeight, full));
       }}
       style={{ height }}
-      className="w-full rounded-xl bg-white"
+      // Square corners: the card is white too, and a rounded one would clip the first letter.
+      className="w-full bg-white"
     />
   );
 }
