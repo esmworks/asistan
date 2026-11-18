@@ -492,6 +492,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.get('/api/providers', async () => s.keys.list());
   app.get('/api/providers/:id/models', async (req) => s.keys.models(ProviderParams.parse(req.params).id));
+  app.get('/api/providers/:id/model-info', async (req) =>
+    s.keys.modelInfo(ProviderParams.parse(req.params).id),
+  );
   app.put('/api/providers/:id/key', async (req) => {
     await s.keys.set(ProviderParams.parse(req.params).id, ProviderKeyInput.parse(req.body).key);
     return { ok: true };
@@ -682,6 +685,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
+  // The plan's windows alone, for the meter beside the chat: everyone who talks with a Claude bot
+  // spends the same plan, and its limit warnings already reach their conversations.
+  app.get('/api/usage/plan', async () => ({ plan: (await s.usage.plan()) ?? null }));
   app.get('/api/today', async (req) => {
     // Every bot's level is read once, for what the person may talk with and what they may change.
     const levels = [...(await s.access.levels(me(req)))];

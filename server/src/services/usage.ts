@@ -137,6 +137,8 @@ export class UsageService {
       .insert(schema.kv)
       .values({ key: PLAN_KEY, value })
       .onConflictDoUpdate({ target: schema.kv.key, set: { value } });
+    // The chat's plan meter shows what is left as it changes.
+    this.ctx.bus.refresh({ scope: 'plan' });
   }
 
   /**

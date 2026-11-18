@@ -33,7 +33,7 @@ import {
   useClaudeModels,
   useGroups,
   useInfo,
-  useProviderModels,
+  useProviderModelInfo,
   useProviders,
   useSettings,
 } from '@/lib/queries';
@@ -44,6 +44,7 @@ import { InstructionsDocStatus } from './InstructionsDoc';
 import { availableStarters, starterBot, type StarterId } from './onboarding/profile';
 import { MissingApps } from './MissingApps';
 import { Field } from './RoutineDialog';
+import { connectionName, ModelSearch, type ModelOption } from './ProviderConnect';
 
 export const COLORS = [
   BRAND_COLOR,
@@ -142,6 +143,8 @@ const DEFAULT_EFFORT = '*';
 const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku'].map((value) => ({ value, name: '' }));
 /** The CLI's own "default" row means "no model named", which an empty field already says. */
 const CLI_DEFAULT = 'default';
+/** The connection select's value for Claude; no provider id takes this form. */
+const CLAUDE = '__claude__';
 
 export function BotDialog() {
   const t = useT();
@@ -212,6 +215,8 @@ function BotForm({
     defaultValues: { ...initial(bot, newBotEngine(settings)), ...preset },
   });
   const v = useWatch({ control: form.control }) as Form;
+  const efforts = useModelEfforts(v);
+  const effortOptions: readonly Effort[] = efforts ?? EFFORTS;
   const { isDirty } = form.formState;
   // Instructions taken from the document while the form is open replace the ones it opened with,
   // so unlinking later does not write the old text back.
@@ -272,7 +277,8 @@ function BotForm({
         permissionMode: f.permissionMode,
         isManager: f.isManager,
         memory: f.memory,
-        effort: f.effort as Effort | '',
+        // A level the model does not take would be changed by the engine; the model's own is kept.
+        effort: (efforts && f.effort && !efforts.includes(f.effort as Effort) ? '' : f.effort) as Effort | '',
         toolSelection: {
           only: f.toolsOnly,
           allow: selectorLines(f.toolsAllow),
@@ -405,10 +411,10 @@ function BotForm({
             }
           }}
         />
-        {(v.engine === 'claude' || v.engine === 'pi') && (
+        {(v.engine === 'claude' || v.engine === 'pi') && efforts?.length !== 0 && (
           <Field label={t('model.effort')}>
             <Select
-              value={v.effort || DEFAULT_EFFORT}
+              value={v.effort && effortOptions.includes(v.effort as Effort) ? v.effort : DEFAULT_EFFORT}
               onValueChange={(e) =>
                 form.setValue('effort', e === DEFAULT_EFFORT ? '' : e, { shouldDirty: true })
               }
@@ -420,7 +426,7 @@ function BotForm({
                 <SelectItem value={DEFAULT_EFFORT}>
                   {t(v.engine === 'claude' ? 'bot.effortDefault' : 'bot.effortModelDefault')}
                 </SelectItem>
-                {EFFORTS.map((e) => (
+                {effortOptions.map((e) => (
                   <SelectItem key={e} value={e}>
                     {t(`effort.${e}`)}
                   </SelectItem>
@@ -570,6 +576,22 @@ function BotForm({
   );
 }
 
+/**
+ * The thinking levels the bot's model takes: Claude's from its model list, another provider's from
+ * the server's. Null while unknown (an older server, a model off the list): every level is offered.
+ */
+function useModelEfforts(v: Pick<Form, 'engine' | 'provider' | 'model'>): Effort[] | null {
+  const pi = v.engine === 'pi';
+  const { data: claudeModels = [] } = useClaudeModels(!pi);
+  const { data: models = [] } = useProviderModelInfo(pi ? v.provider : null);
+  if (pi) return models.find((m) => m.id === v.model)?.efforts ?? null;
+  return claudeModels.find((m) => m.value === (v.model || CLI_DEFAULT))?.efforts ?? null;
+}
+
+/**
+ * Where the bot's model comes from, then which model: Claude, or any provider connected under
+ * Settings → Connection, each with its own models by name.
+ */
 function ModelPicker({
   value,
   error,
@@ -580,67 +602,59 @@ function ModelPicker({
   onChange(patch: Partial<Pick<Form, 'engine' | 'provider' | 'model'>>): void;
 }) {
   const t = useT();
-  const { data: providers = [] } = useProviders();
+  const { data: providers = [], isSuccess: providersLoaded } = useProviders();
   const pi = value.engine === 'pi';
-  const { data: models = [] } = useProviderModels(pi ? value.provider : null);
+  const { data: models = [] } = useProviderModelInfo(pi ? value.provider : null);
   const { data: claudeModels = [] } = useClaudeModels(!pi);
   const { data: info } = useInfo();
+  // The bot's own provider stays listed after its key is gone, with the warning below.
+  const connections = providers.filter((p) => p.configured || (pi && p.id === value.provider));
   const keyMissing =
     pi && providers.length > 0 && !providers.find((p) => p.id === value.provider)?.configured;
   // Only a definite "not signed in"; an unchecked or failing connection is not worth a warning here.
   const claudeLoggedOut = !pi && info?.claude.status === 'logged-out';
   const named = claudeModels.filter((m) => m.value !== CLI_DEFAULT);
-  const options = pi ? models.map((value) => ({ value, name: '' })) : named.length ? named : CLAUDE_MODELS;
-  const listId = 'bot-model-options';
+  const options: ModelOption[] = pi
+    ? models.map((m) => ({ value: m.id, name: m.name }))
+    : (named.length ? named : CLAUDE_MODELS).map((m) => ({ value: m.value, name: m.name || undefined }));
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field label={t('bot.engine')}>
+      <Field label={t('bot.connection')}>
         <Select
-          value={value.engine}
-          onValueChange={(e) => onChange({ engine: e as Form['engine'], model: '' })}
+          value={pi ? value.provider : CLAUDE}
+          onValueChange={(c) =>
+            onChange(
+              c === CLAUDE ? { engine: 'claude', model: '' } : { engine: 'pi', provider: c, model: '' },
+            )
+          }
         >
           <SelectTrigger className="w-full rounded-xl">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="claude">{t('bot.engine.claude')}</SelectItem>
-            <SelectItem value="pi">{t('bot.engine.pi')}</SelectItem>
+          <SelectContent className="max-h-72">
+            <SelectItem value={CLAUDE}>{t('bot.engine.claude')}</SelectItem>
+            {connections.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {connectionName(p)}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
           {pi ? t('bot.engineHint.pi') : t('bot.engineHint.claude')}
         </p>
+        {providersLoaded && connections.length === 0 && (
+          <p className="text-xs text-muted-foreground">{t('bot.connectionHint')}</p>
+        )}
       </Field>
       <Field label={t('bot.model')} error={error}>
-        <div className="flex gap-2">
-          {pi && (
-            <Select value={value.provider} onValueChange={(p) => onChange({ provider: p, model: '' })}>
-              <SelectTrigger className="w-36 shrink-0 rounded-xl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {providers.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.custom?.name ?? p.id}
-                    {p.configured ? ' ✓' : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Input
-            value={value.model}
-            onChange={(e) => onChange({ model: e.target.value })}
-            list={listId}
-            className="rounded-xl"
-            placeholder={pi ? t('bot.modelPlaceholder.pi') : t('bot.modelPlaceholder.claude')}
-          />
-          <datalist id={listId}>
-            {options.map((m) => (
-              <option key={m.value} value={m.value} label={m.name || undefined} />
-            ))}
-          </datalist>
-        </div>
+        <ModelSearch
+          value={value.model}
+          models={options}
+          onChange={(m) => onChange({ model: m })}
+          placeholder={pi ? t('bot.modelPlaceholder.pi') : t('bot.modelPlaceholder.claude')}
+          className="rounded-xl"
+        />
         {keyMissing && <p className="text-xs text-amber-500">{t('bot.keyMissing')}</p>}
         {claudeLoggedOut && <p className="text-xs text-amber-500">{t('bot.claudeLoggedOut')}</p>}
       </Field>

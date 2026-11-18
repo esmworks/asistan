@@ -203,6 +203,9 @@ export const tr = {
   'usage.plan.hint':
     'Çizgi pencerenin ne kadarının geçtiğini gösterir; çubuk çizgiyi geçtiyse plan, pencere bitmeden dolacak hızda kullanılıyor.',
   'usage.plan.seen': 'Son Claude turundaki bilgi: {time}',
+  'planMeter.left': '%{percent} kaldı',
+  'planMeter.none': 'Sınıra ulaşıldı',
+  'planMeter.label': 'Claude planı: %{percent} kaldı ({window})',
   'usage.parallel.hint':
     'Botların aynı anda en fazla kaç işi yürüttüğü. Azı harcamayı yavaşlatır, fazlası daha çok işi birlikte bitirir; geri kalanlar sırada bekler.',
   'usage.parallel.default': 'Varsayılan ({count})',
@@ -1126,6 +1129,8 @@ export const tr = {
   'bot.engine.pi': 'Başka sağlayıcı (API anahtarı)',
   'bot.engineHint.claude': 'Ayarlar → Bağlantı bölümündeki Claude bağlantısını kullanır.',
   'bot.engineHint.pi': 'Komut satırı yok; dosya araçları botun klasörüyle sınırlı.',
+  'bot.connection': 'Bağlantı',
+  'bot.connectionHint': 'OpenAI, Gemini, xAI ve diğer sağlayıcıları Ayarlar → Bağlantı bölümünden bağlayın.',
   'bot.model': 'Model',
   'bot.modelRequired': 'Model adı gerekli',
   'bot.modelPlaceholder.claude': 'Varsayılan',
