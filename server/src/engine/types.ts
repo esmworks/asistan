@@ -275,6 +275,11 @@ export interface ReviewRequest {
    * the question is the bot's text, the answer the person's own.
    */
   answers?: { question: string; answer: string }[];
+  /**
+   * The bot's last reply, which the person's latest message answers (see `ownerProposal`): it
+   * says what a short "ok, do it" agrees to, but is the bot's text, never the person's words.
+   */
+  proposal?: string;
   /** The run has read text someone else wrote (a page, an API's answer, a mail). */
   outside?: boolean;
   /** Language of the reason the person reads. */

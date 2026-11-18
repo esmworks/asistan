@@ -1,5 +1,5 @@
 import { outsideIn, parseAnswers, questionItems } from '@yumakbot/shared';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import type { GateRequest } from '../engine/types';
 import { schema } from '../db';
@@ -207,6 +207,43 @@ async function personAnswers(ctx: Ctx, threadId: string): Promise<CardAnswer[]> 
     });
   }
   return answers;
+}
+
+/**
+ * The bot's last reply before the person's latest message in the turn's own conversation, when the
+ * person wrote that message there just now: what a short "ok, do it" agrees to. It is the bot's
+ * text, shown to the person before they answered; the reviewer reads it to know what the answer
+ * covers, and may never quote it.
+ */
+export async function ownerProposal(ctx: Ctx, turn: TurnRow): Promise<string | null> {
+  if (turn.source !== 'user' && turn.source !== 'reaction') return null;
+  const [said] = await ctx.db
+    .select({ at: schema.messages.createdAt })
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.threadId, turn.threadId),
+        eq(schema.messages.role, 'user'),
+        eq(schema.messages.author, 'user'),
+      ),
+    )
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(1);
+  if (!said) return null;
+  const [reply] = await ctx.db
+    .select({ text: schema.messages.text })
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.threadId, turn.threadId),
+        eq(schema.messages.role, 'assistant'),
+        lt(schema.messages.createdAt, said.at),
+      ),
+    )
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(1);
+  const text = reply?.text.trim();
+  return text ? truncate(text, EACH * 2) : null;
 }
 
 /** Text compared loosely: case, spacing, quote marks and punctuation do not matter. */

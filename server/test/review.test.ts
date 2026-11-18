@@ -118,7 +118,7 @@ describe('otomatik inceleme', () => {
     expect(t.engine.reviews).toHaveLength(1);
   });
 
-  it('"Her zaman sor" kuralı ve gönderen adımlar incelemeye hiç gitmez', async () => {
+  it('"Her zaman sor" kuralı incelemeye hiç gitmez', async () => {
     t = await testServer();
     const bot = await t.bot({ permissionMode: 'review' });
     const thread = await main(t, bot.id);
@@ -127,15 +127,10 @@ describe('otomatik inceleme', () => {
     const card = await waitFor(async () => (await pending(t))[0]);
     await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
     await t.services.turns.idle();
-
-    await t.send(thread.id, '[izin:mcp__yumakbot__browser_act {"sends":true,"text":"güvenli"}]');
-    const card2 = await waitFor(async () => (await pending(t))[0]);
-    await t.api('POST', `/api/approvals/${card2.id}`, { decision: 'deny' });
-    await t.services.turns.idle();
     expect(t.engine.reviews).toHaveLength(0);
   });
 
-  it('yalnızca kişinin onaylayabileceği adım (tarayıcıda gönderen adım) incelemeye gitmez', async () => {
+  it('kişinin turunda tarayıcıda gönderen adım incelemeye gider; emin olmayan inceleme kişiye bırakır', async () => {
     // A browser that is never started: the request stops at the card.
     t = await testServer({ browserPath: '/yok/chromium' });
     const bot = await t.bot({ permissionMode: 'review' });
@@ -148,7 +143,7 @@ describe('otomatik inceleme', () => {
     expect(card.toolName).toBe('mcp__yumakbot__browser_click');
     await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
     await t.services.turns.idle();
-    expect(t.engine.reviews).toHaveLength(0);
+    expect(t.engine.reviews).toHaveLength(1);
   });
 
   it('okuma araçları ve "Her zaman sor" modundaki bot incelemeye gitmez', async () => {
