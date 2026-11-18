@@ -218,6 +218,8 @@ class Gmail {
   constructor(
     private target: ClientTarget,
     private signal?: AbortSignal,
+    /** Off for a read nobody asked for: see `fetchSignedIn`. */
+    private noteScope = true,
   ) {}
 
   async request<T>(method: string, url: string, body?: { json: unknown } | { raw: string; type: string }) {
@@ -229,7 +231,7 @@ class Gmail {
       init.headers = { 'Content-Type': body.type };
       init.body = body.raw;
     }
-    const res = await fetchSignedIn(this.target, url, init);
+    const res = await fetchSignedIn(this.target, url, init, { noteScope: this.noteScope });
     const out = await res.text();
     if (!res.ok) throw new GmailError(res.status, out);
     if (!out) return {} as T;
@@ -848,7 +850,7 @@ export function withGmailTools(
 
 /** Who the account sends as, for the mail card: its default address and that address's signature. */
 export async function gmailSender(target: ClientTarget, signal?: AbortSignal): Promise<MailSender> {
-  const s = await new Gmail(target, signal).sendAs();
+  const s = await new Gmail(target, signal, false).sendAs();
   return { address: s.address, signature: s.signature.trim() || null };
 }
 

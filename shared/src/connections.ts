@@ -64,6 +64,8 @@ export const Connection = z.object({
   botIds: z.array(Id),
   /** Its tools' views (MCP apps) show in the conversation. */
   showApps: z.boolean().optional(),
+  /** A call was refused for lack of scope: signing in again asks for it. */
+  needsScope: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

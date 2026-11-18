@@ -154,6 +154,10 @@ const tr = {
   'connection.signedOutCall':
     '{name} bağlantısının oturumu kapanmış. Kullanıcıdan Ayarlar → Bağlantılar bölümünde yeniden oturum açmasını iste.',
   'connection.callFailed': '{name} servisine ulaşılamadı: {message}',
+  'connection.needsScopeCall':
+    '{name} bu iş için daha fazla izin istiyor. Kullanıcıdan Ayarlar → Bağlantılar bölümünde yeniden oturum açıp izni vermesini iste.',
+  'connection.needsScope':
+    '{host} bu iş için daha fazla izin istiyor. Oturum aç’a basın; servis istenen izni onayınıza sunacak.',
   'connection.forbidden':
     '{host} isteği reddetti (HTTP 403): oturum açık, ama bu hesap ya da uygulama bu servisi kullanamıyor. Servisteki uygulama ayarlarını ve izinleri denetleyin, sonra Yenile’ye basın.',
   'connection.forbiddenGoogle':
@@ -1261,6 +1265,10 @@ const en: Catalog<ServerKey> = {
   'connection.signedOutCall':
     'The {name} connection is signed out. Ask the person to sign in again in Settings → Connections.',
   'connection.callFailed': 'Could not reach {name}: {message}',
+  'connection.needsScopeCall':
+    'The {name} connection needs more access for this. Ask the person to sign in again in Settings → Connections and allow it.',
+  'connection.needsScope':
+    '{host} asks for more access for this. Press Sign in; the service will ask you to allow it.',
   'connection.forbidden':
     '{host} refused the request (HTTP 403): the sign-in holds, but this account or app may not use the service. Check the app and its permissions with the service, then press Refresh.',
   'connection.forbiddenGoogle':
