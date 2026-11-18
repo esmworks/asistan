@@ -17,11 +17,14 @@ import {
 import type { ElicitForm } from './elicit';
 import { MAX_CONNECTION_TOOLS } from '@yumakbot/shared';
 import type { StoredConnectionTool } from '../db/schema';
+import { Agent } from 'undici';
+import { privateHost, publicLookup } from '../services/skill-link';
 
 /**
- * This server as an MCP client of a connection's server: one client per connection, made on first
- * use (two asking at once share it) and closed after IDLE_MS unused or when the connection changes.
- * Calls and sign-ins run one at a time per connection, so two turns can't both refresh a token
+ * This server as an MCP client of a connection's server. Each connection keeps a few clients, one
+ * per call under way, so a long call or a question waiting for the person holds up no other call;
+ * an unused client closes after IDLE_MS, and all close when the connection changes. Sign-ins and
+ * token renewals run one at a time per connection, so two calls can't both spend a refresh token
  * that may be used only once.
  */
 
@@ -43,6 +46,13 @@ export interface ConnectionSecrets {
     discovery?: unknown;
     /** The redirect address the sign-in used; a refresh must name the same one. */
     redirectUrl?: string;
+    /**
+     * Scopes the service said a call needs beyond what the sign-in gave (a 403 with
+     * `insufficient_scope`); the next sign-in asks for them too.
+     */
+    wantScope?: string;
+    /** A call was refused for lack of scope since the last sign-in the person made. */
+    scopePending?: boolean;
   };
 }
 
@@ -67,13 +77,28 @@ export interface ClientTarget {
   store: SecretStore;
   /** Scopes to ask for at sign-in, when not all the service lists. */
   scope?: string;
+  /**
+   * Whether every address the connection and its sign-in reach must be a public one. True for a
+   * connection of someone who may not point the server at its own machine or network: the check
+   * when it was added covers only the address as it resolved then, not where its sign-in leads or
+   * what the name resolves to later.
+   */
+  publicOnly?: () => Promise<boolean>;
+  /**
+   * The scopes a sign-in asks for are set by the catalog. A refusal for scope then asks the person
+   * to sign in again with them (they may have left one out at the consent), without asking for
+   * more: a service may name every scope that would do, the broadest among them.
+   */
+  scopeFixed?: boolean;
 }
 
 /**
  * `forbidden` is a 403: the sign-in holds but the service will not serve this account or app, so
- * signing in again alone seldom helps.
+ * signing in again alone seldom helps. `scope` is a 403 that names what the sign-in lacks: a new
+ * sign-in that asks for it does help.
  */
-export type ClientErrorCode = 'unauthorized' | 'forbidden' | 'unreachable' | 'notMcp' | 'timeout' | 'tool';
+export type ClientErrorCode =
+  'unauthorized' | 'forbidden' | 'scope' | 'unreachable' | 'notMcp' | 'timeout' | 'tool';
 
 export class ConnectionClientError extends Error {
   constructor(
@@ -197,9 +222,14 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
     const own = this.secrets.ownClient;
     if (own) return { ...own };
     const saved = this.secrets.oauth?.client;
-    if (!saved) return undefined;
-    const uris = (saved as { redirect_uris?: string[] }).redirect_uris;
-    return !uris || uris.includes(this.redirect) ? saved : undefined;
+    const uris = (saved as { redirect_uris?: string[] } | undefined)?.redirect_uris;
+    const usable = saved && (!uris || uris.includes(this.redirect)) ? saved : undefined;
+    // With nobody there, a registration the service dropped (invalid_client) is not made anew:
+    // the SDK would register this server again on every call, and no sign-in could follow it.
+    if (!usable && this.background) {
+      throw new ConnectionClientError('unauthorized', 'The service asks to sign in again');
+    }
+    return usable;
   }
 
   async saveClientInformation(client: OAuthClientInformationMixed) {
@@ -215,7 +245,11 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
   async saveTokens(tokens: OAuthTokens) {
     // A refresh may leave out the refresh token; the one we have stays good.
     const refresh = tokens.refresh_token ?? this.secrets.oauth?.tokens?.refresh_token;
-    await this.patch({ tokens: { ...tokens, ...(refresh ? { refresh_token: refresh } : {}) } });
+    await this.patch({
+      tokens: { ...tokens, ...(refresh ? { refresh_token: refresh } : {}) },
+      // A sign-in the person made (never a renewal) answers a refusal for scope.
+      ...(!this.background && { scopePending: false }),
+    });
   }
 
   redirectToAuthorization(url: URL) {
@@ -267,12 +301,16 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
 export async function startOAuth(target: ClientTarget, redirectUrl: string) {
   const provider = new ConnectionOAuthProvider(target.store, redirectUrl);
   const result = await inLane(target, () =>
-    auth(provider, { serverUrl: target.url, ...(target.scope ? { scope: target.scope } : {}) }),
+    auth(provider, {
+      serverUrl: target.url,
+      fetchFn: authFetch(target),
+      ...(target.scope ? { scope: target.scope } : {}),
+    }),
   ).catch((err: unknown) => {
     throw classify(err);
   });
   if (result === 'AUTHORIZED') {
-    // A kept refresh token was used and may now be spent; the open client still holds it.
+    // A kept refresh token was used: the connection's clients start over with the new one.
     dropClient(target.id);
     return null;
   }
@@ -290,7 +328,7 @@ export async function startOAuth(target: ClientTarget, redirectUrl: string) {
 export async function finishOAuth(target: ClientTarget, redirectUrl: string, verifier: string, code: string) {
   const provider = new ConnectionOAuthProvider(target.store, redirectUrl, verifier);
   const result = await inLane(target, () =>
-    auth(provider, { serverUrl: target.url, authorizationCode: code }),
+    auth(provider, { serverUrl: target.url, authorizationCode: code, fetchFn: authFetch(target) }),
   ).catch((err: unknown) => {
     throw classify(err);
   });
@@ -352,16 +390,9 @@ export function classify(error: unknown): ConnectionClientError {
   return new ConnectionClientError('notMcp', message);
 }
 
-// ---------------------------------------------------------------------------------------- pool
+// --------------------------------------------------------------------------------------- lanes
 
-interface Entry {
-  client: Promise<Client>;
-  usedAt: number;
-  version: string;
-}
-const entries = new Map<string, Entry>();
 const queues = new Map<string, Promise<unknown>>();
-let sweeper: NodeJS.Timeout | undefined;
 
 /** Runs `fn` after whatever runs on the same connection. */
 function serialized<T>(id: string, fn: () => Promise<T>): Promise<T> {
@@ -384,70 +415,243 @@ function inLane<T>(target: ClientTarget, fn: () => Promise<T>): Promise<T> {
   });
 }
 
+// ----------------------------------------------------------------------------------- addresses
+
+/** How long one request of a sign-in (metadata, registration, token) may take. */
+const AUTH_REQUEST_MS = 20_000;
+/** How many redirects a sign-in's request follows. */
+const AUTH_REDIRECTS = 5;
+
+let publicAgent: Agent | undefined;
+
+/** Connects only to the addresses its name lookup checked and found public. */
+export function publicDispatcher(): Agent {
+  return (publicAgent ??= new Agent({ connect: { lookup: publicLookup() } }));
+}
+
 /**
- * Fetch for a connection's transport that never opens the standalone GET stream. Only calls and
- * tool lists are used, while that stream would sign in again on its own, outside the connection's
- * turn, and two refreshes at once spend a refresh token that may be used only once. A server
- * answers 405 when it has no such stream, which the SDK takes as such.
+ * Sends a request of a connection. One that must stay public is refused an address on this
+ * machine or a private network: first by looking the name up, for an error that says why, then by
+ * connecting only to the addresses that lookup checked, so a name that points elsewhere a moment
+ * later reaches nothing.
  */
-function withoutGetStream(endpoint: URL): typeof fetch {
-  return (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-    if (
-      method.toUpperCase() === 'GET' &&
-      new URL(url).href === endpoint.href &&
-      !new Headers(init?.headers).has('last-event-id')
-    ) {
-      return Promise.resolve(new Response(null, { status: 405 }));
+async function reach(target: ClientTarget, input: string | URL | Request, init?: RequestInit) {
+  if (!(await target.publicOnly?.())) return fetch(input, init);
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  if (await privateHost(url.hostname)) {
+    throw new ConnectionClientError('unreachable', `${url.host} is on this computer or a private network`);
+  }
+  return fetch(input, { ...init, dispatcher: publicDispatcher() } as RequestInit);
+}
+
+/**
+ * A metadata address that answers with a web page instead of a JSON object reads as absent: many
+ * hosts answer every path with their own page, and the SDK would stop at parsing it instead of
+ * looking where else the metadata may be.
+ */
+async function metadataJson(url: URL, res: Response): Promise<Response> {
+  if (!res.ok || !url.pathname.startsWith('/.well-known/')) return res;
+  const text = await res.text();
+  let body: unknown = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON: read as absent below.
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return new Response(null, { status: 404 });
+  return new Response(text, { status: res.status, headers: { 'content-type': 'application/json' } });
+}
+
+/**
+ * Fetch for a sign-in's own requests (metadata, registration, tokens). Redirects are followed here,
+ * each address checked like the first (see `reach`), since the metadata of a public service could
+ * otherwise lead the server to an address of its own network.
+ */
+export function authFetch(target: ClientTarget): typeof fetch {
+  return async (input, init) => {
+    let url = new URL(input instanceof Request ? input.url : String(input));
+    let next: RequestInit = { ...init };
+    for (let hop = 0; ; hop++) {
+      const res = await reach(target, url, {
+        ...next,
+        redirect: 'manual',
+        signal: next.signal ?? AbortSignal.timeout(AUTH_REQUEST_MS),
+      });
+      const location = res.headers.get('location');
+      if (res.status < 300 || res.status >= 400 || !location) return metadataJson(url, res);
+      await res.body?.cancel();
+      if (hop >= AUTH_REDIRECTS) {
+        throw new ConnectionClientError('unreachable', `${url.host} redirected too many times`);
+      }
+      url = new URL(location, url);
+      // Only 307 and 308 send the same request on; the others go on as a GET.
+      if (res.status !== 307 && res.status !== 308) next = { ...next, method: 'GET', body: null };
     }
-    return fetch(input, init);
   };
 }
 
-function providerOf(target: ClientTarget) {
-  if (target.auth === 'token') {
-    const token = target.store.get().token;
-    return { headers: token ? { Authorization: `Bearer ${token}` } : undefined, authProvider: undefined };
-  }
-  if (target.auth === 'oauth') {
-    const redirect = target.store.get().oauth?.redirectUrl;
-    // Never signed in: requests go without a token, and the server answers 401.
-    if (!redirect) return { headers: undefined, authProvider: undefined };
-    return {
-      headers: undefined,
-      authProvider: new ConnectionOAuthProvider(target.store, redirect, null, true),
-    };
-  }
-  return { headers: undefined, authProvider: undefined };
+// ---------------------------------------------------------------------------------------- scope
+
+/** Scope lists joined, each scope once; undefined when there is none. */
+export function joinScopes(...lists: (string | undefined)[]): string | undefined {
+  const all = [...new Set(lists.flatMap((l) => (l ?? '').split(/\s+/).filter(Boolean)))];
+  return all.length ? all.join(' ') : undefined;
 }
+
+/** The scopes a 403 challenge says are missing; null when it is no `insufficient_scope` challenge. */
+export function missingScope(challenge: string | null): string | null {
+  if (!challenge || !/\berror\s*=\s*"?insufficient_scope\b/i.test(challenge)) return null;
+  return /\bscope\s*=\s*"([^"]*)"/i.exec(challenge)?.[1]?.trim() ?? '';
+}
+
+/**
+ * Notes that a call was refused for scope, with the scopes it names unless the catalog sets them
+ * (see `scopeFixed`), so the next sign-in asks for them, and says so as a `scope` error. Renewing
+ * the token cannot widen what it may do: only a new consent can.
+ */
+async function needScope(target: ClientTarget, res: Response): Promise<never> {
+  const wanted = missingScope(res.headers.get('www-authenticate')) ?? '';
+  await res.body?.cancel();
+  await inLane(target, async () => {
+    const s = target.store.get();
+    const wantScope = target.scopeFixed ? s.oauth?.wantScope : joinScopes(s.oauth?.wantScope, wanted);
+    await target.store.save({
+      ...s,
+      oauth: { ...s.oauth, scopePending: true, ...(wantScope ? { wantScope } : {}) },
+    });
+  });
+  throw new ConnectionClientError('scope', `The service asks for more access${wanted ? `: ${wanted}` : ''}`);
+}
+
+const refusedForScope = (target: ClientTarget, res: Response) =>
+  target.auth === 'oauth' && res.status === 403 && missingScope(res.headers.get('www-authenticate')) !== null;
+
+// ---------------------------------------------------------------------------------------- tokens
+
+/** The token a connection's requests carry now. */
+function bearerOf(target: ClientTarget): string | undefined {
+  if (target.auth === 'token') return target.store.get().token;
+  if (target.auth === 'oauth') return target.store.get().oauth?.tokens?.access_token;
+  return undefined;
+}
+
+/**
+ * Renews a refused OAuth token on the connection's turn. A call that waited for its turn finds
+ * the token another call renewed meanwhile and uses that, instead of spending the refresh token
+ * again. Throws a ConnectionClientError when only a new sign-in helps or the renewal failed on
+ * the way.
+ */
+async function renew(target: ClientTarget, refused: string | undefined) {
+  await inLane(target, async () => {
+    const now = target.store.get().oauth?.tokens?.access_token;
+    if (now && now !== refused) return;
+    const redirect = target.store.get().oauth?.redirectUrl;
+    if (!redirect) throw new ConnectionClientError('unauthorized', 'The service asks to sign in');
+    try {
+      await auth(new ConnectionOAuthProvider(target.store, redirect, null, true), {
+        serverUrl: target.url,
+        fetchFn: authFetch(target),
+      });
+    } catch (err) {
+      throw classify(err);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------- pool
 
 /** Answers a server's question in the middle of a tool call; set only while such a call runs. */
 export type Elicit = (form: ElicitForm) => Promise<ElicitResult>;
-/**
- * Who answers for each connection right now. Calls to one connection run one at a time (its
- * lane), so a question that arrives belongs to the call under way.
- */
-const askers = new Map<string, Elicit>();
 
 /**
- * Opens a connection, once more after a moment when the first try met a dropped network or a
- * server error: a passing fault would otherwise leave the app out of the bot's turn.
+ * Who a client works for right now: the connection as the call holding it read it, and who
+ * answers a question its server asks during that call. A client runs one call at a time, so a
+ * question that arrives belongs to that call.
  */
-async function connect(target: ClientTarget): Promise<Client> {
+interface Holder {
+  target: ClientTarget;
+  ask?: Elicit;
+}
+interface Pooled {
+  client: Client;
+  holder: Holder;
+  usedAt: number;
+  createdAt: number;
+}
+interface Pool {
+  version: string;
+  free: Pooled[];
+  busy: number;
+  waiters: (() => void)[];
+  closed: boolean;
+}
+
+/** At most this many calls run on one connection at once; more wait for one to end. */
+const MAX_CLIENTS = 4;
+const pools = new Map<string, Pool>();
+let sweeper: NodeJS.Timeout | undefined;
+
+/** Told when a connection's server says its list of tools changed. */
+let toolsChanged: ((id: string) => void) | undefined;
+export function onToolsChanged(fn: ((id: string) => void) | undefined) {
+  toolsChanged = fn;
+}
+
+/**
+ * Fetch for a connection's transport. It never opens the standalone GET stream: only calls and
+ * tool lists are used, and a server answers 405 when it has no such stream, which the SDK takes as
+ * such. Each request carries the connection's token as it is then; a refused OAuth token is
+ * renewed once (see `renew`) and the request sent again, and a 403 naming missing scopes becomes a
+ * `scope` error.
+ */
+function connectionFetch(endpoint: URL, holder: Holder): typeof fetch {
+  return async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+    if (
+      method.toUpperCase() === 'GET' &&
+      url.href === endpoint.href &&
+      !new Headers(init?.headers).has('last-event-id')
+    ) {
+      return new Response(null, { status: 405 });
+    }
+    const target = holder.target;
+    const send = (token: string | undefined) => {
+      const headers = new Headers(init?.headers);
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return reach(target, input, { ...init, headers });
+    };
+    const used = bearerOf(target);
+    let res = await send(used);
+    if (target.auth !== 'oauth') return res;
+    if (res.status === 401 && target.store.get().oauth?.redirectUrl) {
+      await res.body?.cancel();
+      await renew(target, used);
+      res = await send(bearerOf(target));
+    }
+    if (refusedForScope(target, res)) await needScope(target, res);
+    return res;
+  };
+}
+
+/**
+ * Opens a client, once more after a moment when the first try met a dropped network or a server
+ * error: a passing fault would otherwise leave the app out of the bot's turn.
+ */
+async function connect(holder: Holder): Promise<Client> {
   try {
-    return await connectOnce(target);
+    return await connectOnce(holder);
   } catch (error) {
     if (!(error instanceof ConnectionClientError) || !(error as { passing?: boolean }).passing) throw error;
     await new Promise((r) => setTimeout(r, CONNECT_RETRY_MS));
-    return connectOnce(target);
+    return connectOnce(holder);
   }
 }
 
 /** How long a connection that failed in passing waits before its second try. */
 const CONNECT_RETRY_MS = 1000;
 
-async function connectOnce(target: ClientTarget): Promise<Client> {
+async function connectOnce(holder: Holder): Promise<Client> {
   // Forms only: a server asking to open a web page is declined.
   const client = new Client(
     { name: 'YumakBot', version: '0.4.1' },
@@ -457,21 +661,20 @@ async function connectOnce(target: ClientTarget): Promise<Client> {
         // MCP apps: the conversation can show a tool's own view.
         extensions: { [UI_EXTENSION]: { mimeTypes: [APP_MIME] } },
       },
+      // A server that says its tools changed gets them listed again by the connection's owner.
+      listChanged: {
+        tools: { autoRefresh: false, debounceMs: 2000, onChanged: () => toolsChanged?.(holder.target.id) },
+      },
     },
   );
   client.setRequestHandler(ElicitRequestSchema, async (req) => {
-    const ask = askers.get(target.id);
+    const ask = holder.ask;
     const params = req.params as Partial<ElicitForm> & { mode?: string };
     if (!ask || params.mode === 'url' || !params.requestedSchema?.properties) return { action: 'decline' };
     return ask({ message: params.message ?? '', requestedSchema: params.requestedSchema });
   });
-  const { headers, authProvider } = providerOf(target);
-  const endpoint = new URL(target.url);
-  const transport = new StreamableHTTPClientTransport(endpoint, {
-    fetch: withoutGetStream(endpoint),
-    ...(authProvider ? { authProvider } : {}),
-    ...(headers ? { requestInit: { headers } } : {}),
-  });
+  const endpoint = new URL(holder.target.url);
+  const transport = new StreamableHTTPClientTransport(endpoint, { fetch: connectionFetch(endpoint, holder) });
   try {
     await client.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
   } catch (error) {
@@ -486,55 +689,119 @@ async function connectOnce(target: ClientTarget): Promise<Client> {
   return client;
 }
 
+const closeQuietly = (p: Pooled) => void p.client.close().catch(() => undefined);
+
 function sweepIdle() {
   const now = Date.now();
-  for (const [id, entry] of entries) if (now - entry.usedAt > IDLE_MS) dropClient(id);
-  if (!entries.size && sweeper) {
+  for (const [id, pool] of pools) {
+    const idle = pool.free.filter((p) => now - p.usedAt > IDLE_MS);
+    pool.free = pool.free.filter((p) => now - p.usedAt <= IDLE_MS);
+    idle.forEach(closeQuietly);
+    if (!pool.free.length && !pool.busy) {
+      pools.delete(id);
+      pool.closed = true;
+    }
+  }
+  if (!pools.size && sweeper) {
     clearInterval(sweeper);
     sweeper = undefined;
   }
 }
 
-function clientFor(target: ClientTarget): Promise<Client> {
-  const entry = entries.get(target.id);
-  if (entry && entry.version === target.version) {
-    entry.usedAt = Date.now();
-    return entry.client;
+function poolFor(target: ClientTarget): Pool {
+  let pool = pools.get(target.id);
+  if (pool && pool.version !== target.version) {
+    dropClient(target.id);
+    pool = undefined;
   }
-  if (entry) dropClient(target.id);
-  const client = connect(target);
-  entries.set(target.id, { client, usedAt: Date.now(), version: target.version });
-  client.catch(() => {
-    if (entries.get(target.id)?.client === client) entries.delete(target.id);
-  });
-  sweeper ??= setInterval(sweepIdle, 60_000);
-  sweeper.unref?.();
-  return client;
+  if (!pool) {
+    pool = { version: target.version, free: [], busy: 0, waiters: [], closed: false };
+    pools.set(target.id, pool);
+    sweeper ??= setInterval(sweepIdle, 60_000);
+    sweeper.unref?.();
+  }
+  return pool;
 }
 
-/** Closes a connection's client (it changed, was signed out of or removed). */
+const wake = (pool: Pool) => pool.waiters.shift()?.();
+
+/** A client of the connection for one call: an idle one, else a new one. */
+async function lease(target: ClientTarget): Promise<{ pool: Pool; pooled: Pooled }> {
+  const pool = poolFor(target);
+  while (pool.busy >= MAX_CLIENTS) await new Promise<void>((r) => pool.waiters.push(r));
+  pool.busy++;
+  try {
+    // The oldest client first: a server that keeps state per session finds the calls that don't
+    // overlap on one session, and the others close when they go unused.
+    const oldest = pool.free.reduce<Pooled | undefined>(
+      (a, b) => (!a || b.createdAt < a.createdAt ? b : a),
+      undefined,
+    );
+    let pooled = oldest;
+    if (pooled) {
+      pool.free.splice(pool.free.indexOf(pooled), 1);
+      pooled.holder.target = target;
+    } else {
+      const holder: Holder = { target };
+      const now = Date.now();
+      pooled = { client: await connect(holder), holder, usedAt: now, createdAt: now };
+    }
+    return { pool, pooled };
+  } catch (error) {
+    pool.busy--;
+    wake(pool);
+    throw error;
+  }
+}
+
+/** Gives a client back; one that failed, or of a connection that changed meanwhile, is closed. */
+function release(pool: Pool, pooled: Pooled, keep: boolean) {
+  pool.busy--;
+  pooled.holder.ask = undefined;
+  if (keep && !pool.closed) {
+    pooled.usedAt = Date.now();
+    pool.free.push(pooled);
+  } else closeQuietly(pooled);
+  wake(pool);
+}
+
+/**
+ * Closes a connection's idle clients (it changed, was signed out of or removed); a call under way
+ * ends first, then its client closes.
+ */
 export function dropClient(id: string) {
-  const entry = entries.get(id);
-  if (!entry) return;
-  entries.delete(id);
-  void entry.client.then((c) => c.close()).catch(() => undefined);
+  const pool = pools.get(id);
+  if (!pool) return;
+  pools.delete(id);
+  pool.closed = true;
+  pool.free.splice(0).forEach(closeQuietly);
 }
 
 /** Closes every client (server shutdown, tests). */
 export function dropAllClients() {
-  for (const id of [...entries.keys()]) dropClient(id);
+  for (const id of [...pools.keys()]) dropClient(id);
 }
 
-async function withClient<T>(target: ClientTarget, fn: (client: Client) => Promise<T>): Promise<T> {
-  return inLane(target, async () => {
-    try {
-      return await fn(await clientFor(target));
-    } catch (error) {
-      const failure = classify(error);
-      if (failure.code !== 'tool') dropClient(target.id);
-      throw failure;
-    }
-  });
+async function withClient<T>(
+  target: ClientTarget,
+  fn: (client: Client, holder: Holder) => Promise<T>,
+): Promise<T> {
+  let leased;
+  try {
+    leased = await lease(target);
+  } catch (error) {
+    throw classify(error);
+  }
+  let keep = true;
+  try {
+    return await fn(leased.pooled.client, leased.pooled.holder);
+  } catch (error) {
+    const failure = classify(error);
+    keep = failure.code === 'tool';
+    throw failure;
+  } finally {
+    release(leased.pool, leased.pooled, keep);
+  }
 }
 
 // --------------------------------------------------------------------------------------- tools
@@ -542,7 +809,6 @@ async function withClient<T>(target: ClientTarget, fn: (client: Client) => Promi
 export const hintedKind = (tool: Pick<Tool, 'annotations'>): 'read' | 'write' =>
   tool.annotations?.readOnlyHint === true ? 'read' : 'write';
 
-/** Lists the server's tools, keeping the person's choices for tools it still has. */
 export const UI_EXTENSION = 'io.modelcontextprotocol/ui';
 export const APP_MIME = 'text/html;profile=mcp-app';
 
@@ -586,6 +852,7 @@ export async function readAppResource(target: ClientTarget, uri: string): Promis
   });
 }
 
+/** Lists the server's tools, keeping the person's choices for tools it still has. */
 export async function listTools(
   target: ClientTarget,
   kept: StoredConnectionTool[] = [],
@@ -624,50 +891,49 @@ export async function callTool(
   signal?: AbortSignal,
   elicit?: Elicit,
 ): Promise<CallToolResult> {
-  return withClient(target, async (client) => {
-    if (elicit) askers.set(target.id, elicit);
-    try {
-      return (await client.callTool({ name, arguments: args }, undefined, {
-        // A question to the person may take a while; the call waits for the answer.
-        timeout: elicit ? ELICIT_TIMEOUT_MS : toolCallMs,
-        maxTotalTimeout: elicit ? ELICIT_TIMEOUT_MS : toolCallMs,
-        ...(signal ? { signal } : {}),
-      })) as CallToolResult;
-    } finally {
-      if (askers.get(target.id) === elicit) askers.delete(target.id);
-    }
+  return withClient(target, async (client, holder) => {
+    holder.ask = elicit;
+    return (await client.callTool({ name, arguments: args }, undefined, {
+      // A question to the person may take a while; the call waits for the answer.
+      timeout: elicit ? ELICIT_TIMEOUT_MS : toolCallMs,
+      maxTotalTimeout: elicit ? ELICIT_TIMEOUT_MS : toolCallMs,
+      ...(signal ? { signal } : {}),
+    })) as CallToolResult;
   });
 }
 
 /**
- * Calls the service's own API (not its MCP server) with the connection's sign-in, on the
- * connection's turn. A refused access token is renewed once with the refresh token, the way the
- * MCP client renews it; refused again, the connection needs a new sign-in.
+ * Calls the service's own API (not its MCP server) with the connection's sign-in. A refused access
+ * token is renewed once, the way the MCP client renews it; refused again, the connection needs a
+ * new sign-in. `noteScope` off leaves a refusal for scope as the answer it is, for a read nobody
+ * asked for (the sender shown on a mail card), which should not send the person to sign in again.
  */
-export function fetchSignedIn(target: ClientTarget, url: string, init: RequestInit = {}): Promise<Response> {
-  return inLane(target, async () => {
-    const redirect = target.store.get().oauth?.redirectUrl;
-    if (target.auth !== 'oauth' || !redirect) {
-      throw new ConnectionClientError('unauthorized', 'The service asks to sign in');
-    }
-    const send = () => {
-      const headers = new Headers(init.headers);
-      const token = target.store.get().oauth?.tokens?.access_token;
-      if (token) headers.set('Authorization', `Bearer ${token}`);
-      return fetch(url, { ...init, headers });
-    };
-    const first = await send();
-    if (first.status !== 401) return first;
-    try {
-      await auth(new ConnectionOAuthProvider(target.store, redirect, null, true), { serverUrl: target.url });
-    } catch (err) {
-      throw classify(err);
-    }
-    // The open MCP client may hold the old token.
-    dropClient(target.id);
-    const second = await send();
-    if (second.status === 401)
+export async function fetchSignedIn(
+  target: ClientTarget,
+  url: string,
+  init: RequestInit = {},
+  { noteScope = true }: { noteScope?: boolean } = {},
+): Promise<Response> {
+  if (target.auth !== 'oauth' || !target.store.get().oauth?.redirectUrl) {
+    throw new ConnectionClientError('unauthorized', 'The service asks to sign in');
+  }
+  const send = () => {
+    const headers = new Headers(init.headers);
+    const token = bearerOf(target);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return reach(target, url, { ...init, headers });
+  };
+  const used = bearerOf(target);
+  let res = await send();
+  if (res.status === 401) {
+    await res.body?.cancel();
+    await renew(target, used);
+    res = await send();
+    if (res.status === 401) {
+      await res.body?.cancel();
       throw new ConnectionClientError('unauthorized', 'The service asks to sign in again');
-    return second;
-  });
+    }
+  }
+  if (noteScope && refusedForScope(target, res)) await needScope(target, res);
+  return res;
 }

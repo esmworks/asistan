@@ -94,6 +94,8 @@ export interface YumakBotServer {
 
 /** How often, and how long after its last try, a failed app connection is tried again. */
 const CONNECTION_RETRY_MS = 5 * 60_000;
+/** How old a connected app's list of tools may get before it is read again. */
+const TOOL_LIST_MAX_AGE_MS = 6 * 60 * 60_000;
 
 /** The socket room of one person's devices. */
 const personRoom = (userId: string) => `user:${userId}`;
@@ -316,11 +318,14 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   const sweepTimer = setInterval(sweep, 60 * 60_000);
   sweepTimer.unref();
 
-  // A connected app that failed is tried again every few minutes until it answers.
-  const retryApps = setInterval(
-    () => void services.connections.retryFailed(CONNECTION_RETRY_MS).catch(() => {}),
-    CONNECTION_RETRY_MS,
-  );
+  // A connected app that failed is tried again every few minutes until it answers, and the tools of
+  // one that works are listed again now and then, since most services don't say when they change.
+  const retryApps = setInterval(() => {
+    void services.connections
+      .retryFailed(CONNECTION_RETRY_MS)
+      .then(() => services.connections.refreshStale(TOOL_LIST_MAX_AGE_MS))
+      .catch(() => {});
+  }, CONNECTION_RETRY_MS);
   retryApps.unref();
 
   // Notes are indexed for search by meaning a little after start, and now and then after that,

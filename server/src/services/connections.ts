@@ -13,12 +13,15 @@ import {
 } from '@yumakbot/shared';
 import { and, asc, eq, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import {
+  authFetch,
   callTool,
   classify,
   ConnectionClientError,
   dropClient,
   finishOAuth,
+  joinScopes,
   listTools,
+  onToolsChanged,
   readAppResource,
   startOAuth,
   type AppResource,
@@ -35,10 +38,13 @@ import type { StoredConnectionTool } from '../db/schema';
 import type { AppTool, ToolImage, ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import { HttpError, newId, truncate } from '../util';
+import { managesServer } from './access';
 import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
 
 type Row = typeof schema.connections.$inferSelect;
+/** An app a connection signs in as: registered by the person, or by this server with the service. */
+type OwnClientLike = { client_id: string; client_secret?: string };
 
 /** What a tool's answer may hand the model, in characters. */
 const MAX_RESULT = 25_000;
@@ -98,11 +104,90 @@ export function exposedNames(slug: string, names: string[]): Map<string, string>
 const usable = (userId: string) =>
   or(isNull(schema.connections.userId), eq(schema.connections.userId, userId))!;
 
+/** How long a revocation request may take; the sign-in is already gone here either way. */
+const REVOKE_MS = 5_000;
+
+/** The shortest piece of a secret that is taken out; shorter values are not secrets. */
+const MIN_SECRET = 8;
+
+/**
+ * Text with the given secret values taken out, and the start of one where the text was cut short
+ * in the middle of it.
+ */
+export function maskSecrets(text: string, values: (string | null | undefined)[]): string {
+  let out = text;
+  for (const v of values) {
+    if (!v || v.length < MIN_SECRET) continue;
+    out = out.split(v).join('••••');
+    for (let k = v.length - 1; k >= MIN_SECRET; k--) {
+      const cut = /…$/.test(out) ? out.slice(0, -1) : out;
+      if (cut.endsWith(v.slice(0, k))) {
+        out = `${cut.slice(0, -k)}••••${cut === out ? '' : '…'}`;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
+/**
+ * A tool's input schema as model APIs take it: without `$schema`, which names a draft some refuse
+ * inside a tool's parameters, and without `anyOf`/`oneOf`/`allOf` at the top, which some refuse
+ * outright, failing the whole turn and not just the tool. Such alternatives become one object with
+ * every field they name; a field is required when `allOf` or every alternative requires it.
+ */
+export function modelSchema(raw: Record<string, unknown>): Record<string, unknown> {
+  const COMBINED = ['$schema', 'anyOf', 'oneOf', 'allOf'];
+  const top = Object.fromEntries(Object.entries(raw).filter(([k]) => !COMBINED.includes(k)));
+  // A branch may name a definition of the same schema; one named elsewhere cannot be merged.
+  const defs = {
+    ...(isRecord(raw.definitions) ? raw.definitions : {}),
+    ...(isRecord(raw.$defs) ? raw.$defs : {}),
+  };
+  let unresolved = false;
+  const resolve = (b: Record<string, unknown>): Record<string, unknown> => {
+    if (typeof b.$ref !== 'string') return b;
+    const m = /^#\/(?:\$defs|definitions)\/([^/]+)$/.exec(b.$ref);
+    const found = m ? defs[m[1]!] : undefined;
+    if (isRecord(found)) return found;
+    unresolved = true;
+    return b;
+  };
+  const branches = (key: string) => (Array.isArray(raw[key]) ? raw[key].filter(isRecord).map(resolve) : []);
+  const alternatives = [...branches('anyOf'), ...branches('oneOf')];
+  const all = branches('allOf');
+  if (!alternatives.length && !all.length) return top;
+  // Merging would leave the tool with fewer fields than it takes: the schema goes as it came.
+  if (unresolved) return Object.fromEntries(Object.entries(raw).filter(([k]) => k !== '$schema'));
+  const properties: Record<string, unknown> = { ...(isRecord(top.properties) ? top.properties : {}) };
+  for (const branch of [...all, ...alternatives]) {
+    const own = isRecord(branch.properties) ? branch.properties : {};
+    for (const [name, field] of Object.entries(own)) if (!(name in properties)) properties[name] = field;
+  }
+  const required = new Set([...strings(top.required), ...all.flatMap((b) => strings(b.required))]);
+  if (alternatives.length) {
+    const [first, ...rest] = alternatives.map((b) => new Set(strings(b.required)));
+    for (const name of first!) if (rest.every((r) => r.has(name))) required.add(name);
+  }
+  const out: Record<string, unknown> = { ...top, type: 'object', properties };
+  if (required.size) out.required = [...required];
+  else delete out.required;
+  return out;
+}
+
 export class ConnectionService {
   constructor(
     private ctx: Ctx,
     private vault: VaultService,
-  ) {}
+  ) {
+    // A server that says its tools changed has them listed again, so the bots see the new list.
+    onToolsChanged((id) => void this.refresh(id).catch(() => undefined));
+  }
 
   // ------------------------------------------------------------------------------ reading
 
@@ -186,6 +271,7 @@ export class ConnectionService {
       allBots: row.allBots,
       userId: row.userId,
       showApps: row.showApps,
+      needsScope: !!secrets.oauth?.scopePending,
       botIds: row.allBots ? [] : botIds,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -210,15 +296,45 @@ export class ConnectionService {
 
   // ------------------------------------------------------------------------------ changing
 
+  /**
+   * The scopes a sign-in asks for: the catalog's, else what the service gave or lists, together
+   * with any a call was refused for. Nothing beyond the catalog's until a call needed more.
+   */
+  private signInScope(row: Pick<Row, 'catalogId'>, s: ConnectionSecrets): string | undefined {
+    const base = catalogEntry(row.catalogId)?.scope;
+    const want = s.oauth?.wantScope;
+    if (!want) return base;
+    const listed = (
+      s.oauth?.discovery as { resourceMetadata?: { scopes_supported?: string[] } } | undefined
+    )?.resourceMetadata?.scopes_supported?.join(' ');
+    return joinScopes(base ?? s.oauth?.tokens?.scope ?? listed, want);
+  }
+
+  /**
+   * Whether a connection may reach only public addresses: one of a person who may not point the
+   * server at its own machine or network. The team's are added by those who look after it.
+   */
+  private async mustStayPublic(row: Pick<Row, 'userId'>): Promise<boolean> {
+    if (!row.userId) return false;
+    const [owner] = await this.ctx.db
+      .select({ role: schema.users.role })
+      .from(schema.users)
+      .where(eq(schema.users.id, row.userId));
+    return !owner || !managesServer(owner.role);
+  }
+
   private target(row: Row): ClientTarget {
     let current = this.secretsOf(row);
     const version = `${row.url}|${row.auth}|${row.auth === 'token' ? (row.secrets ?? '') : ''}`;
+    let publicOnly: Promise<boolean> | undefined;
     return {
       id: row.id,
       url: row.url,
       auth: row.auth,
       version,
-      scope: catalogEntry(row.catalogId)?.scope,
+      scope: this.signInScope(row, current),
+      scopeFixed: !!catalogEntry(row.catalogId)?.scope,
+      publicOnly: () => (publicOnly ??= this.mustStayPublic(row)),
       store: {
         get: () => current,
         save: async (next) => {
@@ -351,29 +467,103 @@ export class ConnectionService {
   }
 
   async remove(id: string) {
-    await this.row(id);
+    const row = await this.row(id);
     dropClient(id);
     await this.ctx.db.delete(schema.connections).where(eq(schema.connections.id, id));
+    void this.revoke(row, this.secretsOf(row));
     this.changed();
+  }
+
+  /**
+   * Asks the service to end a sign-in dropped here (RFC 7009), in the background: it is gone here
+   * either way, and a service that cannot be reached is left as it is. Left out while another
+   * connection holds a sign-in through the same registered app, since a service may end every
+   * sign-in of an app and account at once.
+   */
+  private async revoke(row: Row, secrets: ConnectionSecrets): Promise<void> {
+    try {
+      const tokens = secrets.oauth?.tokens;
+      const endpoint = (
+        secrets.oauth?.discovery as
+          { authorizationServerMetadata?: { revocation_endpoint?: string } } | undefined
+      )?.authorizationServerMetadata?.revocation_endpoint;
+      const client = secrets.ownClient ?? (secrets.oauth?.client as OwnClientLike | undefined);
+      if (!tokens || !endpoint || !client?.client_id) return;
+      if (secrets.ownClient) {
+        const others = await this.ctx.db
+          .select({ secrets: schema.connections.secrets })
+          .from(schema.connections)
+          .where(ne(schema.connections.id, row.id));
+        const shared = others.some((o) => {
+          const s = this.secretsOf(o);
+          return s.ownClient?.client_id === client.client_id && !!s.oauth?.tokens;
+        });
+        if (shared) return;
+      }
+      const send = authFetch(this.target(row));
+      const given: [string | undefined, string][] = [
+        [tokens.refresh_token, 'refresh_token'],
+        [tokens.access_token, 'access_token'],
+      ];
+      for (const [token, hint] of given) {
+        if (!token) continue;
+        const body = new URLSearchParams({ token, token_type_hint: hint, client_id: client.client_id });
+        if (client.client_secret) body.set('client_secret', client.client_secret);
+        const res = await send(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body,
+          signal: AbortSignal.timeout(REVOKE_MS),
+        });
+        await res.body?.cancel();
+      }
+    } catch (err) {
+      // Only the kind: a service's answer may quote the token it was sent.
+      console.warn('connection revoke', err instanceof Error ? err.name : 'error');
+    }
+  }
+
+  /** Text a service sent, without this connection's secrets in it: a service may quote what it got. */
+  private async masked(id: string, text: string, extra: (string | undefined)[] = []): Promise<string> {
+    const [row] = await this.ctx.db
+      .select({ secrets: schema.connections.secrets })
+      .from(schema.connections)
+      .where(eq(schema.connections.id, id));
+    const s = row ? this.secretsOf(row) : {};
+    return maskSecrets(text, [
+      s.token,
+      s.ownClient?.client_secret,
+      (s.oauth?.client as OwnClientLike | undefined)?.client_secret,
+      s.oauth?.tokens?.access_token,
+      s.oauth?.tokens?.refresh_token,
+      ...extra,
+    ]);
   }
 
   /**
    * Why an OAuth sign-in ended, kept so a sign-in that drops on its own says why. A wrong token
    * needs no more than the status.
    */
-  private signOutReason(row: Pick<Row, 'auth'>, e: ConnectionClientError): string | null {
-    return row.auth === 'oauth' ? truncate(e.message, 500) : null;
+  private async signOutReason(
+    row: Pick<Row, 'id' | 'auth' | 'url'>,
+    e: ConnectionClientError,
+  ): Promise<string | null> {
+    return row.auth === 'oauth' ? truncate(await this.masked(row.id, e.message), 500) : null;
   }
 
   /** What went wrong, as the person reads it under the connection. */
-  private async failureText(row: Pick<Row, 'url' | 'catalogId'>, e: ConnectionClientError): Promise<string> {
-    if (e.code !== 'forbidden') return truncate(e.message, 500);
+  private async failureText(
+    row: Pick<Row, 'id' | 'url' | 'catalogId'>,
+    e: ConnectionClientError,
+  ): Promise<string> {
+    const message = await this.masked(row.id, e.message);
+    if (e.code !== 'forbidden') return truncate(message, 500);
     const t = await serverTranslator(this.ctx);
     const key =
       catalogEntry(row.catalogId)?.client?.family === 'google'
         ? 'connection.forbiddenGoogle'
         : 'connection.forbidden';
-    const said = e.message.replace(/^HTTP 403:?\s*/, '');
+    const said = message.replace(/^HTTP 403:?\s*/, '');
     return truncate(`${t(key, { host: new URL(row.url).host })}${said ? `\n${said}` : ''}`, 500);
   }
 
@@ -384,8 +574,12 @@ export class ConnectionService {
       .where(eq(schema.connections.id, id));
   }
 
-  /** Lists the server's tools again; marks the connection by how that went. */
-  async refresh(id: string): Promise<Connection> {
+  /**
+   * Lists the server's tools again; marks the connection by how that went. `quiet` is for a check
+   * nobody asked for: a connection that works stays connected through a failure in passing, and
+   * the next turn's call or retry finds out whether it lasts.
+   */
+  async refresh(id: string, { quiet = false }: { quiet?: boolean } = {}): Promise<Connection> {
     const row = await this.row(id);
     try {
       const tools = withGmailTools(row.url, await listTools(this.target(row), row.tools), row.tools);
@@ -395,11 +589,58 @@ export class ConnectionService {
         .where(eq(schema.connections.id, id));
     } catch (err) {
       const e = classify(err);
-      if (e.code === 'unauthorized') await this.setStatus(id, 'signed-out', this.signOutReason(row, e));
+      if (e.code === 'unauthorized') await this.signInNeeded(row, e);
+      else if (e.code === 'scope') await this.scopeNeeded(row);
+      else if (quiet && row.status === 'connected') console.warn('connection refresh', e.code);
       else await this.setStatus(id, 'error', await this.failureText(row, e));
     }
     this.changed();
     return this.get(id);
+  }
+
+  /**
+   * Marks a connection as one to sign in to again, with why. A server added as needing no sign-in
+   * that asks for one becomes a sign-in connection, so the person gets a Sign in button rather
+   * than a sign-out nothing can undo.
+   */
+  private async signInNeeded(row: Row, e: ConnectionClientError) {
+    const auth = row.auth === 'none' ? 'oauth' : row.auth;
+    if (auth !== row.auth) {
+      await this.ctx.db.update(schema.connections).set({ auth }).where(eq(schema.connections.id, row.id));
+    }
+    await this.setStatus(row.id, 'signed-out', await this.signOutReason({ ...row, auth }, e));
+  }
+
+  /**
+   * A call was refused for lack of scope: the connection stays as it is (its other tools may well
+   * work) and says why, and its card offers a sign-in that asks again.
+   */
+  private async scopeNeeded(row: Pick<Row, 'id' | 'url'>) {
+    const t = await serverTranslator(this.ctx);
+    await this.ctx.db
+      .update(schema.connections)
+      .set({ error: t('connection.needsScope', { host: new URL(row.url).host }), updatedAt: new Date() })
+      .where(eq(schema.connections.id, row.id));
+  }
+
+  /**
+   * Lists again the tools of connections that are connected but were last looked at `maxAgeMs`
+   * ago or longer, so tools a service added since show up and those it dropped go.
+   */
+  async refreshStale(maxAgeMs: number): Promise<number> {
+    const rows = await this.ctx.db
+      .select({ id: schema.connections.id })
+      .from(schema.connections)
+      .where(
+        and(
+          eq(schema.connections.status, 'connected'),
+          lt(schema.connections.updatedAt, new Date(Date.now() - maxAgeMs)),
+        ),
+      );
+    for (const r of rows) {
+      await this.refresh(r.id, { quiet: true }).catch((err) => console.warn('connection refresh', err));
+    }
+    return rows.length;
   }
 
   async setTool(id: string, name: string, patch: ConnectionToolPatch): Promise<Connection> {
@@ -474,10 +715,11 @@ export class ConnectionService {
       throw new HttpError(400, 'error.connectionNeedsClient');
     }
     const target = this.target(row);
-    // Asked to sign in while not connected: a kept token would only be renewed and turned down
-    // as before, so the sign-in starts afresh, with a new consent.
+    // Asked to sign in while not connected, or after a call was refused for scope: a kept token
+    // would only be renewed and turned down as before, so the sign-in starts afresh, with a new
+    // consent.
     const kept = this.secretsOf(row);
-    if (row.status !== 'connected' && kept.oauth?.tokens) {
+    if ((row.status !== 'connected' || kept.oauth?.scopePending) && kept.oauth?.tokens) {
       const oauth = { ...kept.oauth };
       delete oauth.tokens;
       await target.store.save({ ...kept, oauth });
@@ -487,15 +729,22 @@ export class ConnectionService {
     try {
       started = await startOAuth(target, redirectUrl);
     } catch (err) {
-      const e = classify(err);
-      await this.setStatus(id, 'error', truncate(e.message, 500));
+      const message = await this.masked(id, classify(err).message);
+      await this.setStatus(id, 'error', truncate(message, 500));
       this.changed();
-      throw new HttpError(502, 'error.connectionSignIn', { message: truncate(e.message, 300) });
+      throw new HttpError(502, 'error.connectionSignIn', { message: truncate(message, 300) });
     }
     if (!started) return { url: null, connection: await this.refresh(id) };
+    // A sign-in begun earlier for the same connection ends: only the newest one may finish, so an
+    // older page left open in another tab cannot sign the connection in as another account.
     await this.ctx.db
       .delete(schema.connectionSignins)
-      .where(lt(schema.connectionSignins.createdAt, new Date(Date.now() - SIGNIN_TTL_MS)));
+      .where(
+        or(
+          eq(schema.connectionSignins.connectionId, id),
+          lt(schema.connectionSignins.createdAt, new Date(Date.now() - SIGNIN_TTL_MS)),
+        ),
+      );
     await this.ctx.db.insert(schema.connectionSignins).values({
       state: started.state,
       connectionId: id,
@@ -522,13 +771,15 @@ export class ConnectionService {
         message: truncate(input.error ?? '', 200),
       });
     }
+    const verifier = this.vault.open(pending.verifier);
     try {
-      await finishOAuth(this.target(row), pending.redirectUrl, this.vault.open(pending.verifier), input.code);
+      await finishOAuth(this.target(row), pending.redirectUrl, verifier, input.code);
     } catch (err) {
-      const e = classify(err);
-      await this.setStatus(row.id, 'signed-out', truncate(e.message, 500));
+      // A token endpoint may quote the code and verifier it turned down.
+      const message = await this.masked(row.id, classify(err).message, [input.code, verifier]);
+      await this.setStatus(row.id, 'signed-out', truncate(message, 500));
       this.changed();
-      throw new HttpError(502, 'error.connectionSignIn', { message: truncate(e.message, 300) });
+      throw new HttpError(502, 'error.connectionSignIn', { message: truncate(message, 300) });
     }
     await this.refresh(row.id);
     return row.name;
@@ -549,6 +800,7 @@ export class ConnectionService {
       .set({ secrets: this.sealed(next), status: 'signed-out', error: null, updatedAt: new Date() })
       .where(eq(schema.connections.id, id));
     dropClient(id);
+    void this.revoke(row, secrets);
     this.changed();
     return this.get(id);
   }
@@ -794,8 +1046,7 @@ export class ConnectionService {
       server: row.slug,
       description: truncate(`[${row.name}] ${about}`, 4000),
       input: {},
-      // `$schema` names a draft; some model APIs refuse it inside a tool's parameters.
-      jsonSchema: Object.fromEntries(Object.entries(tool.inputSchema).filter(([k]) => k !== '$schema')),
+      jsonSchema: modelSchema(tool.inputSchema),
       readOnly: kind === 'read',
       // Only the app's own word makes it a read until the person says so.
       ...(kind === 'read' && tool.kind !== 'read' && { readOnlyClaimed: true }),
@@ -839,16 +1090,15 @@ export class ConnectionService {
           return await toResult(result, t, keep && ((text) => keep(`${row.slug}-${tool.name}`, text)));
         } catch (err) {
           const e = err instanceof ConnectionClientError ? err : classify(err);
+          if (e.code === 'scope') {
+            await this.scopeNeeded(current);
+            this.changed();
+            return t('connection.needsScopeCall', { name: row.name });
+          }
           if (e.code === 'unauthorized') {
-            // A server that lists its tools to anyone but wants a sign-in for calls becomes a sign-in
-            // connection, so the person gets a Sign in button rather than an unexplained sign-out.
-            if (current.auth === 'none') {
-              await this.ctx.db
-                .update(schema.connections)
-                .set({ auth: 'oauth' })
-                .where(eq(schema.connections.id, row.id));
-            }
-            await this.setStatus(row.id, 'signed-out', this.signOutReason(current, e));
+            // A server that lists its tools to anyone but wants a sign-in for calls becomes a
+            // sign-in connection (see signInNeeded).
+            await this.signInNeeded(current, e);
             this.changed();
             return t('connection.signedOutCall', { name: row.name });
           }
