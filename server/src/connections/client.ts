@@ -581,3 +581,36 @@ export async function callTool(
     }
   });
 }
+
+/**
+ * Calls the service's own API (not its MCP server) with the connection's sign-in, on the
+ * connection's turn. A refused access token is renewed once with the refresh token, the way the
+ * MCP client renews it; refused again, the connection needs a new sign-in.
+ */
+export function fetchSignedIn(target: ClientTarget, url: string, init: RequestInit = {}): Promise<Response> {
+  return inLane(target, async () => {
+    const redirect = target.store.get().oauth?.redirectUrl;
+    if (target.auth !== 'oauth' || !redirect) {
+      throw new ConnectionClientError('unauthorized', 'The service asks to sign in');
+    }
+    const send = () => {
+      const headers = new Headers(init.headers);
+      const token = target.store.get().oauth?.tokens?.access_token;
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return fetch(url, { ...init, headers });
+    };
+    const first = await send();
+    if (first.status !== 401) return first;
+    try {
+      await auth(new ConnectionOAuthProvider(target.store, redirect, null, true), { serverUrl: target.url });
+    } catch (err) {
+      throw classify(err);
+    }
+    // The open MCP client may hold the old token.
+    dropClient(target.id);
+    const second = await send();
+    if (second.status === 401)
+      throw new ConnectionClientError('unauthorized', 'The service asks to sign in again');
+    return second;
+  });
+}

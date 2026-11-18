@@ -274,8 +274,8 @@ const ROWS: Record<CatalogCategory, Row[]> = {
       'Gmail',
       'https://gmailmcp.googleapis.com/mcp/v1',
       'oauth',
-      // Signed in with modify alone, the server lists no tool that sends, replies, forwards or
-      // changes a draft; its setup guide asks for these three scopes.
+      // The server's setup guide asks for these three scopes. Compose also lets the Gmail API send
+      // mail, which this server does itself while the MCP server lists no tool that sends.
       { ...google('gmail.readonly', 'gmail.compose', 'gmail.modify'), ...FEATURED },
     ],
     [
