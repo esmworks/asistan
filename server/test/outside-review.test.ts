@@ -94,6 +94,18 @@ describe('dış metin okumuş, kişinin isteğinden gelen iş', () => {
     expect(t.engine.reviews).toHaveLength(0);
   });
 
+  it('dış metinden sonra web sayfası açmak incelemeye gider', async () => {
+    await handOver(
+      { permissionMode: 'review', internet: true },
+      '[izin:WebFetch {"url":"https://93.184.216.34/guvenli"}]',
+    );
+    await waitFor(async () => t.engine.reviews.find((r) => r.toolName === 'WebFetch'));
+    for (const card of await pending(t))
+      await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
+    expect(t.engine.reviews.at(-1)).toMatchObject({ toolName: 'WebFetch', outside: true });
+  });
+
   it('"Sorarak" çalışan bot yine sorar', async () => {
     await handOver({ permissionMode: 'ask' }, '[izin:Write {"file_path":"güvenli.txt"}]');
     expect((await cardAsked()).toolName).toBe('Write');

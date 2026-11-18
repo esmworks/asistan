@@ -38,7 +38,7 @@ import {
 import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
+import { browses, markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
 import { ownerAnswers, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
@@ -953,8 +953,9 @@ export class TurnManager {
         !gated &&
         ask.input.sends !== true &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
-        // After outside text, a step that can reach another host is the person's to allow.
-        !(outside() && reachesOut(ask.toolName, ask.input, appTool))
+        // After outside text, a step that can send to another host is the person's to allow;
+        // looking something up on the web goes to the review.
+        !(outside() && reachesOut(ask.toolName, ask.input, appTool) && !browses(ask.toolName, appTool))
       ) {
         const review = await this.reviewed({
           bot,
