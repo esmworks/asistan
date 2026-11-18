@@ -318,7 +318,9 @@ export class RoomService {
       .from(schema.roomMembers)
       .where(and(eq(schema.roomMembers.roomId, roomId), eq(schema.roomMembers.botId, bot.id)))
       .limit(1);
-    const settings = await this.services.settings.all();
+    // The room is its person's: their name is the one the bots read.
+    const room = await this.services.threads.row(roomId);
+    const settings = await this.services.settings.all(room.userId ?? undefined);
     const bots = await this.services.bots.list({ includeArchived: true });
     const name = (m: Message) =>
       m.author === 'user'

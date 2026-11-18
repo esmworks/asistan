@@ -477,6 +477,8 @@ export const VaultLogin = z.object({
   hasTotp: z.boolean(),
   /** The bots that may use it; null lets every bot. */
   botIds: z.array(Id).nullable(),
+  /** Whose it is: a person's own, typed only for them; null for the team's. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
@@ -490,6 +492,8 @@ export const VaultLoginCreate = z.object({
   /** The base32 text or `otpauth://` link of the site's authenticator setup. */
   totp: z.string().trim().max(1000).optional(),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /** For the whole team rather than the person saving it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type VaultLoginCreate = z.input<typeof VaultLoginCreate>;
 
@@ -500,6 +504,8 @@ export const VaultLoginUpdate = z.object({
   /** A new authenticator secret; empty removes it. */
   totp: z.string().trim().max(1000).optional(),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /** Moves it to the team, or back to the person changing it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
 
@@ -544,6 +550,8 @@ export const Memory = z.object({
   id: Id,
   scope: MemoryScope,
   botId: Id.nullable(),
+  /** Whose note about themselves it is; null for a bot's note. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   content: z.string(),
   /** The site the note is about (`example.com`); it reaches the bot when it opens that site. */
   site: z.string().nullable(),
@@ -578,8 +586,13 @@ export interface MemoryChange {
   content: string;
   before: string | null;
   proposedBy: string;
-  /** `outside`: a run of the bot `name` that had read outside text, though the person was there. */
-  origin: { kind: 'routine' | 'bot' | 'outside'; name: string };
+  /**
+   * `outside`: a run of the bot `name` that had read outside text, though the person was there.
+   * `person`: someone who may talk with the bot but not change it asked for it; `name` is theirs.
+   */
+  origin: { kind: 'routine' | 'bot' | 'outside' | 'person'; name: string };
+  /** The person the work was for. Missing on older servers. */
+  userId?: string | null;
   threadId: string | null;
   /** The page the bot said the fact came from. */
   sourceUrl: string | null;

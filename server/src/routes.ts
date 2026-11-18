@@ -1,6 +1,7 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
+import { seesHistory, type MemoryReach } from './services/memory';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
@@ -102,12 +103,12 @@ import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile } from './services/skill-link';
-import { serverLocale, Settings } from './services/settings';
+import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
 import { OWNER_ID } from './users';
 import { HttpError, notFound, truncate } from './util';
-import { atLeast } from './services/access';
+import { atLeast, managesServer } from './services/access';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
@@ -360,8 +361,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/info', async () => d.info());
   app.post('/api/info/claude-check', async () => d.checkClaude());
 
-  app.get('/api/settings', async () => s.settings.all());
-  app.patch('/api/settings', async (req) => s.settings.update(patchOf(Settings).parse(req.body)));
+  // Each person reads the server's settings with their own profile in them, and changes their own
+  // profile; the server's settings are changed by those who look after it.
+  app.get('/api/settings', async (req) => s.settings.all(me(req).userId));
+  app.patch('/api/settings', async (req) => {
+    const patch = patchOf(Settings).parse(req.body);
+    if (Object.keys(patch).some((k) => !isPersonal(k))) requireAdmin(me(req));
+    return s.settings.update(patch, me(req).userId);
+  });
 
   // API keys for the Pi engine; responses carry only a hint of each key.
   const ProviderParams = z.object({ id: z.string().regex(/^[a-z0-9-]{2,60}$/) });
@@ -591,8 +598,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     ...(await s.usage.today(
       canAdminister(me(req).role) ? undefined : await s.access.botIds(me(req), 'chat'),
     )),
-    staleMemory: (await s.memory.stale()).length,
-    pendingMemory: (await s.memory.pending()).length,
+    staleMemory: (await s.memory.stale(new Date(), await memoryReach(req))).length,
+    pendingMemory: (await s.memory.pending(await memoryReach(req))).length,
   }));
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
@@ -670,14 +677,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       skills++;
     }
     for (const c of found.servers.filter((x) => body.servers.includes(x.url))) {
-      await s.connections.create({
-        name: c.name,
-        url: c.url,
-        auth: 'none',
-        catalogId: null,
-        allBots: false,
-        botIds: [],
-      });
+      await s.connections.create(
+        { name: c.name, url: c.url, auth: 'none', catalogId: null, allBots: false, botIds: [] },
+        me(req).userId,
+      );
       servers++;
     }
     return { skills, servers };
@@ -809,7 +812,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/plugins/preview', async (req) =>
     s.plugins.preview(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
   );
-  app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
+  app.post('/api/plugins/install', async (req) =>
+    s.plugins.install(PluginInstall.parse(req.body), me(req).userId),
+  );
   app.get('/api/skills', async () => s.skills.list());
   app.post('/api/skills', async (req) => {
     const body = SkillCreate.parse(req.body);
@@ -1231,33 +1236,83 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
           secure: d.config.secureCookies,
         });
   const ToolParams = z.object({ id: z.string().min(1), name: z.string().min(1).max(500) });
-  app.get('/api/connections', async () => s.connections.list());
+  /**
+   * A connection a person may see: the team's or their own; another person's is not found. To
+   * change the team's, they must look after the server.
+   */
+  const connectionFor = async (req: FastifyRequest, id: string, change: boolean) => {
+    const c = await s.connections.get(id);
+    const who = me(req);
+    if (c.userId && c.userId !== who.userId) throw new HttpError(404, 'error.notFound.connection');
+    if (change && !c.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return c;
+  };
+  /** Who a connection or sign-in goes to: the team's only for those who look after the server. */
+  const ownerFor = (req: FastifyRequest, team: boolean | undefined): string | null | undefined => {
+    if (team === undefined) return undefined;
+    if (!team) return me(req).userId;
+    if (!managesServer(me(req).role)) throw new HttpError(403, 'error.adminOnly');
+    return null;
+  };
+  /** Whose a new connection or sign-in is: the team's when asked for, otherwise the person's. */
+  const ownerOrSelf = (req: FastifyRequest, team: boolean | undefined): string | null => {
+    const given = ownerFor(req, team);
+    return given === undefined ? me(req).userId : given;
+  };
+  /** The bots a person opens their own connection or sign-in to must be ones they may talk with. */
+  const checkOwnBots = async (req: FastifyRequest, botIds: readonly string[] | null | undefined) => {
+    for (const botId of botIds ?? []) await s.access.requireBot(me(req), botId, 'chat');
+  };
+  app.get('/api/connections', async (req) => s.connections.list(me(req).userId));
   app.get('/api/connections/redirect-url', async (req) => ({ url: redirectUrl(req) }));
-  app.post('/api/connections', async (req) => s.connections.create(ConnectionCreate.parse(req.body)));
-  app.get('/api/connections/:id', async (req) => s.connections.get(IdParams.parse(req.params).id));
-  app.patch('/api/connections/:id', async (req) =>
-    s.connections.update(IdParams.parse(req.params).id, ConnectionUpdate.parse(req.body)),
-  );
+  app.post('/api/connections', async (req) => {
+    const body = ConnectionCreate.parse(req.body);
+    const owner = ownerOrSelf(req, body.team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.connections.create(body, owner);
+  });
+  app.get('/api/connections/:id', async (req) => connectionFor(req, IdParams.parse(req.params).id, false));
+  app.patch('/api/connections/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    const { team, ...patch } = ConnectionUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    const changed = await s.connections.update(id, patch);
+    return owner === undefined ? changed : s.connections.setOwner(id, owner);
+  });
   app.delete('/api/connections/:id', async (req) => {
-    await s.connections.remove(IdParams.parse(req.params).id);
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    await s.connections.remove(id);
     return { ok: true };
   });
-  app.post('/api/connections/:id/refresh', async (req) =>
-    s.connections.refresh(IdParams.parse(req.params).id),
-  );
-  app.post('/api/connections/:id/signin', async (req) =>
-    s.connections.startSignIn(IdParams.parse(req.params).id, redirectUrl(req)),
-  );
-  app.post('/api/connections/:id/signout', async (req) =>
-    s.connections.signOut(IdParams.parse(req.params).id),
-  );
+  app.post('/api/connections/:id/refresh', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.refresh(id);
+  });
+  app.post('/api/connections/:id/signin', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.startSignIn(id, redirectUrl(req));
+  });
+  app.post('/api/connections/:id/signout', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.signOut(id);
+  });
   app.patch('/api/connections/:id/tools/:name', async (req) => {
     const { id, name } = ToolParams.parse(req.params);
+    await connectionFor(req, id, true);
     return s.connections.setTool(id, name, ConnectionToolPatch.parse(req.body));
   });
-  app.put('/api/connections/:id/bots', async (req) =>
-    s.connections.setBots(IdParams.parse(req.params).id, ConnectionBots.parse(req.body)),
-  );
+  app.put('/api/connections/:id/bots', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const c = await connectionFor(req, id, true);
+    const body = ConnectionBots.parse(req.body);
+    if (c.userId) await checkOwnBots(req, body.allBots ? [] : body.botIds);
+    return s.connections.setBots(id, body);
+  });
   // The service sends the person's browser back here, without the app's cookie: the one-time
   // state stands for the session that began the sign-in.
   app.get(OAUTH_CALLBACK_PATH, async (req, reply) => {
@@ -1340,13 +1395,33 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await s.apiCredentials.remove(IdParams.parse(req.params).id);
     return { ok: true };
   });
-  app.get('/api/vault', async () => s.vault.list());
-  app.post('/api/vault', async (req) => s.vault.save(VaultLoginCreate.parse(req.body)));
-  app.patch('/api/vault/:id', async (req) =>
-    s.vault.update(IdParams.parse(req.params).id, VaultLoginUpdate.parse(req.body)),
-  );
+  /** A sign-in a person may change: their own, or the team's when they look after the server. */
+  const loginFor = async (req: FastifyRequest, id: string) => {
+    const v = await s.vault.get(id);
+    const who = me(req);
+    if (v.userId && v.userId !== who.userId) throw notFound('vault');
+    if (!v.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return v;
+  };
+  app.get('/api/vault', async (req) => s.vault.list(me(req).userId));
+  app.post('/api/vault', async (req) => {
+    const { team, ...body } = VaultLoginCreate.parse(req.body);
+    const owner = ownerOrSelf(req, team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.vault.save(body, owner);
+  });
+  app.patch('/api/vault/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const v = await loginFor(req, id);
+    const { team, ...body } = VaultLoginUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    if ((owner === undefined ? v.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
+    return s.vault.update(id, body, owner);
+  });
   app.delete('/api/vault/:id', async (req) => {
-    await s.vault.remove(IdParams.parse(req.params).id);
+    const { id } = IdParams.parse(req.params);
+    await loginFor(req, id);
+    await s.vault.remove(id);
     return { ok: true };
   });
 
@@ -1374,7 +1449,24 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/whatsapp/link', async () => s.whatsapp.link());
   app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
 
-  // Memory
+  // Memory: each person's notes about themselves, and the notes of the bots they may change.
+  const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({
+    userId: me(req).userId,
+    botIds: await s.access.botIds(me(req), 'edit'),
+  });
+  /** A note the person reaches; another's reads as missing. */
+  const ownNote = async (req: FastifyRequest, id: string) => {
+    const reach = await memoryReach(req);
+    const note = await s.memory.get(id);
+    if (!s.memory.canEdit(note, reach.botIds, reach.userId)) throw notFound('memory');
+    return note;
+  };
+  /** A waiting change the person decides on; another's reads as missing. */
+  const ownChange = async (req: FastifyRequest, id: string) => {
+    const change = (await s.memory.pending(await memoryReach(req))).find((c) => c.id === id);
+    if (!change) throw notFound('memory');
+    return change;
+  };
   app.get('/api/memory', async (req) => {
     const q = z
       .object({
@@ -1382,41 +1474,56 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         botId: z.string().optional(),
       })
       .parse(req.query);
-    return s.memory.list(q);
+    return s.memory.list({ ...q, reach: await memoryReach(req) });
   });
   app.post('/api/memory', async (req) => {
     const b = MemoryCreate.parse(req.body);
-    return s.memory.create({ ...b, source: 'user' });
+    // A bot's note needs its bot, and leave to change it.
+    if (b.scope === 'bot') await s.access.requireBot(me(req), b.botId ?? '', 'edit');
+    return s.memory.create({ ...b, userId: me(req).userId, source: 'user' });
   });
-  app.patch('/api/memory/:id', async (req) =>
-    s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), actorOf(req)),
-  );
+  app.patch('/api/memory/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ownNote(req, id);
+    return s.memory.update(id, MemoryUpdate.parse(req.body), actorOf(req));
+  });
   // Every note one bot keeps for itself.
   app.delete('/api/bots/:id/memory', async (req) =>
     s.memory.removeForBot(IdParams.parse(req.params).id, actorOf(req)),
   );
   app.delete('/api/memory/:id', async (req) => {
-    await s.memory.remove(IdParams.parse(req.params).id, actorOf(req));
+    const id = IdParams.parse(req.params).id;
+    await ownNote(req, id);
+    await s.memory.remove(id, actorOf(req));
     return { ok: true };
   });
-  app.get('/api/memory-history', async () => s.memory.history());
-  // Memory changes bots asked for while nobody watched; they wait for the person.
-  app.get('/api/memory-changes', async () => s.memory.pending());
+  // What happened to the notes the person reaches now.
+  app.get('/api/memory-history', async (req) => {
+    const reach = await memoryReach(req);
+    return (await s.memory.history()).filter((h) => seesHistory(reach, h.owner));
+  });
+  // Memory changes waiting for a person: a bot asked while nobody watched, or someone who may only
+  // talk with the bot asked for a change to its notes.
+  app.get('/api/memory-changes', async (req) => s.memory.pending(await memoryReach(req)));
   app.post('/api/memory-changes/:id/accept', async (req) => {
+    const id = IdParams.parse(req.params).id;
     const { content } = z.object({ content: z.string().trim().max(2000).optional() }).parse(req.body ?? {});
-    await s.memory.accept(IdParams.parse(req.params).id, content);
+    await ownChange(req, id);
+    await s.memory.accept(id, content);
     return { ok: true };
   });
   app.delete('/api/memory-changes/:id', async (req) => {
-    await s.memory.reject(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ownChange(req, id);
+    await s.memory.reject(id);
     return { ok: true };
   });
   // Notes no bot uses any more, offered to the user to keep or delete.
-  app.get('/api/memory-stale', async () => s.memory.stale());
+  app.get('/api/memory-stale', async (req) => s.memory.stale(new Date(), await memoryReach(req)));
   // Deletes the ones of `ids` that are still unused; a note a bot used since the list was shown stays.
   app.post('/api/memory-stale/delete', async (req) => {
     const { ids } = z.object({ ids: z.array(z.string().min(1).max(64)).max(5000) }).parse(req.body);
-    const still = new Set((await s.memory.stale()).map((m) => m.id));
+    const still = new Set((await s.memory.stale(new Date(), await memoryReach(req))).map((m) => m.id));
     return s.memory.removeMany(
       ids.filter((id) => still.has(id)),
       actorOf(req),
@@ -1722,6 +1829,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.connections.callFromApp({
       connectionId: view.connectionId,
       bot,
+      userId: me(req).userId,
       name: body.name,
       args: body.arguments,
     });

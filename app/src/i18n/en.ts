@@ -1779,6 +1779,7 @@ export const en: Catalog<MessageKey> = {
   'memory.origin.routine': 'the “{name}” routine',
   'memory.origin.bot': 'a request from {name}',
   'memory.origin.outside': 'work of {name} after it read text from outside',
+  'memory.origin.person': 'a request from {name}, who may not change the bot',
   'memory.origin.unknown': 'work nobody watched',
   'memory.accept': 'Accept',
   'memory.reject': 'Reject',

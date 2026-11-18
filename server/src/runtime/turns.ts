@@ -47,6 +47,7 @@ import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText
 import { catastrophic, readsOnlyWithin } from './safety';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
+import { OWNER_ID } from '../users';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
@@ -652,9 +653,14 @@ export class TurnManager {
       internet: bot.internet,
       readOnly: bot.permissionMode === 'readonly',
     });
+    // Whom the turn works for: their profile and notes go in, and the bots it may ask are theirs.
+    const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    const reached = new Set(
+      await this.services.access.botIds(await this.services.access.viewerOf(person), 'chat'),
+    );
     const allBots = await bots.list();
-    const peers = allBots.filter((b) => bots.canMessage(bot, b));
-    const settings = await this.services.settings.all();
+    const peers = allBots.filter((b) => bots.canMessage(bot, b) && reached.has(b.id));
+    const settings = await this.services.settings.all(person);
     const timezone = settings.timezone;
     const locale = await this.services.settings.locale();
     const t = translator(locale);
@@ -731,7 +737,7 @@ export class TurnManager {
       paths,
       cwd: sandbox.cwd,
       // A bot with memory off sees none, not even the person's shared notes.
-      memory: bot.memory ? await memory.visibleTo(bot.id) : { user: [], bot: [] },
+      memory: bot.memory ? await memory.visibleTo(bot.id, person) : { user: [], bot: [] },
       profile: {
         name: settings.userName,
         addressAs: settings.addressAs,
@@ -769,6 +775,7 @@ export class TurnManager {
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
+        person,
         t,
         controller.signal,
         async (form, connection) => {
@@ -840,7 +847,7 @@ export class TurnManager {
     if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
-    const down = await this.services.connections.unavailableFor(bot.id);
+    const down = await this.services.connections.unavailableFor(bot.id, person);
     const appsDown = down.length
       ? t('prompt.appsDown', {
           apps: down.map((c) => `${c.name} (${t(`prompt.appDown.${c.status}`)})`).join(', '),

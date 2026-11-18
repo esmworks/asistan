@@ -1,5 +1,5 @@
 import type { Role } from '@yumakbot/shared';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from './account';
 import { schema, type Db } from './db';
 import type { PasswordHash } from './db/schema';
@@ -37,6 +37,7 @@ const userOf = (r: Row): User => ({
  */
 export async function adoptLegacyAccount(db: Db): Promise<void> {
   await db.insert(schema.users).values({ id: OWNER_ID, role: 'owner' }).onConflictDoNothing();
+  await adoptLegacyProfile(db);
   const [row] = await db.select().from(schema.kv).where(eq(schema.kv.key, LEGACY_ACCOUNT)).limit(1);
   if (!row) return;
   const v = row.value as Partial<PasswordHash & { username: string }>;
@@ -48,6 +49,34 @@ export async function adoptLegacyAccount(db: Db): Promise<void> {
       .where(eq(schema.users.id, OWNER_ID));
   }
   await db.delete(schema.kv).where(eq(schema.kv.key, LEGACY_ACCOUNT));
+}
+
+/** Settings that became each person's own; before people came in they were the server's. */
+const LEGACY_PROFILE = ['userName', 'addressAs', 'occupation', 'focus', 'helpWith', 'aboutMe', 'onboarded'];
+
+/**
+ * What the single account told about themselves was kept with the server's settings: an owner
+ * with nothing of their own yet takes it. The server's copy stays, for an older version to read.
+ */
+async function adoptLegacyProfile(db: Db): Promise<void> {
+  const [owner] = await db
+    .select({ profile: schema.users.profile })
+    .from(schema.users)
+    .where(eq(schema.users.id, OWNER_ID))
+    .limit(1);
+  if (!owner || Object.keys(owner.profile).length) return;
+  const rows = await db
+    .select()
+    .from(schema.kv)
+    .where(
+      inArray(
+        schema.kv.key,
+        LEGACY_PROFILE.map((k) => `setting.${k}`),
+      ),
+    );
+  if (!rows.length) return;
+  const profile = Object.fromEntries(rows.map((r) => [r.key.slice('setting.'.length), r.value]));
+  await db.update(schema.users).set({ profile }).where(eq(schema.users.id, OWNER_ID));
 }
 
 /** The people who sign in to this server, and their usernames and passwords. */

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { VaultLogin, VaultLoginCreate, VaultLoginUpdate } from '@yumakbot/shared';
 import { VaultLoginCreate as CreateSchema, VaultLoginUpdate as UpdateSchema } from '@yumakbot/shared';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { totpSecret } from '../totp';
@@ -68,12 +68,17 @@ export function siteOf(host: string): string {
     .replace(/^www\./, '');
 }
 
+/** The sign-ins a person may use: the team's and their own. */
+const usableBy = (userId: string) =>
+  or(isNull(schema.vaultLogins.userId), eq(schema.vaultLogins.userId, userId))!;
+
 const toLogin = (r: Row): VaultLogin => ({
   id: r.id,
   site: r.site,
   username: r.username,
   hasTotp: !!r.totp,
   botIds: r.botIds ?? null,
+  userId: r.userId,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
@@ -205,12 +210,18 @@ export class VaultService {
     });
   }
 
-  async list(): Promise<VaultLogin[]> {
+  /** Every sign-in; with `userId`, the team's and that person's own. */
+  async list(userId?: string): Promise<VaultLogin[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.vaultLogins)
+      .where(userId ? usableBy(userId) : undefined)
       .orderBy(asc(schema.vaultLogins.site), asc(schema.vaultLogins.username));
     return rows.map(toLogin);
+  }
+
+  async get(id: string): Promise<VaultLogin> {
+    return toLogin(await this.row(id));
   }
 
   private async row(id: string): Promise<Row> {
@@ -232,14 +243,23 @@ export class VaultService {
     return this.seal(secret, totpBinding(id, site));
   }
 
-  /** Saves a sign-in; the same site and username replaces the old password. */
-  async save(input: VaultLoginCreate): Promise<VaultLogin> {
+  /**
+   * Saves a sign-in, `userId`'s own or the team's when null; the same site and username of the
+   * same owner replaces the old password.
+   */
+  async save(input: VaultLoginCreate, userId: string | null): Promise<VaultLogin> {
     const v = CreateSchema.parse(input);
     await this.ready();
     const [existing] = await this.ctx.db
       .select()
       .from(schema.vaultLogins)
-      .where(and(eq(schema.vaultLogins.site, v.site), eq(schema.vaultLogins.username, v.username)))
+      .where(
+        and(
+          eq(schema.vaultLogins.site, v.site),
+          eq(schema.vaultLogins.username, v.username),
+          userId ? eq(schema.vaultLogins.userId, userId) : isNull(schema.vaultLogins.userId),
+        ),
+      )
       .limit(1);
     const id = existing?.id ?? newId();
     const secret = this.seal(v.password, passwordBinding(id, v.site));
@@ -253,13 +273,14 @@ export class VaultService {
           .returning()
       : await this.ctx.db
           .insert(schema.vaultLogins)
-          .values({ id, site: v.site, username: v.username, secret, totp: totp ?? null, ...access })
+          .values({ id, userId, site: v.site, username: v.username, secret, totp: totp ?? null, ...access })
           .returning();
     this.ctx.bus.refresh({ scope: 'vault' });
     return toLogin(row!);
   }
 
-  async update(id: string, input: VaultLoginUpdate): Promise<VaultLogin> {
+  /** Changes a sign-in; `owner` moves it to that person, or to the team when null. */
+  async update(id: string, input: VaultLoginUpdate, owner?: string | null): Promise<VaultLogin> {
     const v = UpdateSchema.parse(input);
     await this.ready();
     const old = await this.row(id);
@@ -287,6 +308,7 @@ export class VaultService {
           ...(secret !== undefined && { secret }),
           ...(totp !== undefined && { totp }),
           ...(v.botIds !== undefined && { botIds: v.botIds }),
+          ...(owner !== undefined && { userId: owner }),
           updatedAt: new Date(),
         })
         .where(eq(schema.vaultLogins.id, id))
@@ -305,12 +327,13 @@ export class VaultService {
   }
 
   /**
-   * Sign-ins for a page's host that the bot may use, with their passwords. Server-side only. A
-   * sign-in kept for some bots stays out of reach of the others.
+   * Sign-ins for a page's host that the bot may use while it works for `userId`, with their
+   * passwords. Server-side only. A sign-in kept for some bots stays out of reach of the others,
+   * and a person's own is typed only for them.
    */
-  async forHost(host: string, botId?: string): Promise<Credential[]> {
+  async forHost(host: string, botId: string | undefined, userId: string): Promise<Credential[]> {
     await this.ready();
-    const rows = await this.ctx.db.select().from(schema.vaultLogins);
+    const rows = await this.ctx.db.select().from(schema.vaultLogins).where(usableBy(userId));
     return rows
       .filter((r) => siteMatches(host, r.site))
       .filter((r) => !r.botIds || (botId !== undefined && r.botIds.includes(botId)))

@@ -1775,6 +1775,7 @@ export const tr = {
   'memory.origin.routine': '“{name}” rutini',
   'memory.origin.bot': '{name} botunun isteği',
   'memory.origin.outside': '{name} botunun dışarıdan gelen bir metni okuduktan sonraki işi',
+  'memory.origin.person': '{name} adlı kişinin isteği',
   'memory.origin.unknown': 'kimsenin izlemediği bir iş',
   'memory.accept': 'Kabul et',
   'memory.reject': 'Reddet',

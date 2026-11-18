@@ -1,6 +1,8 @@
 import type { Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { schema } from '../src/db';
+import { OWNER_ID } from '../src/users';
 import { testServer, type TestServer } from './helpers';
 
 describe('profil', () => {
@@ -67,11 +69,11 @@ describe('profil', () => {
   });
 
   it('başka sürümden kalan geçersiz değerler ayarları bozmaz', async () => {
-    await t.db.db.insert(schema.kv).values([
-      { key: 'setting.focus', value: 'hobby' },
-      { key: 'setting.helpWith', value: ['research', 'cooking'] },
-      { key: 'setting.addressAs', value: 'x'.repeat(500) },
-    ]);
+    // A person's profile is kept with them.
+    await t.db.db
+      .update(schema.users)
+      .set({ profile: { focus: 'hobby', helpWith: ['research', 'cooking'], addressAs: 'x'.repeat(500) } })
+      .where(eq(schema.users.id, OWNER_ID));
     const res = await t.api<Record<string, unknown>>('GET', '/api/settings');
     expect(res.status).toBe(200);
     expect(res.body.focus).toBeUndefined();

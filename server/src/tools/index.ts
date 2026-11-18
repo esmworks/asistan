@@ -346,16 +346,41 @@ export class ToolFactory {
         }
         return { kind: 'bot', name: '' };
       })());
-    type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId'>;
+    type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId' | 'userId'>;
     const propose = async (change: Change) => {
       await s.memory.propose({
         ...change,
         proposedBy: bot.id,
         origin: await awayFrom(),
         threadId: thread.id,
+        userId: person,
       });
       return t(fromUser ? 'tool.memoryProposedOutside' : 'tool.memoryProposed');
     };
+    /**
+     * A bot's notes reach everyone who uses the bot: a change to them asked by someone who may
+     * only talk with it waits for those who may change it.
+     */
+    const forReview = async (change: Change) => {
+      const [who] = await this.ctx.db
+        .select({ name: schema.users.displayName, username: schema.users.username })
+        .from(schema.users)
+        .where(eq(schema.users.id, person))
+        .limit(1);
+      await s.memory.propose({
+        ...change,
+        proposedBy: bot.id,
+        origin: { kind: 'person', name: who?.name || who?.username || '' },
+        threadId: thread.id,
+        userId: person,
+      });
+      return t('tool.memoryProposedReview');
+    };
+    /** Whether the person may change the bot whose notes a change is about. */
+    const mayChangeNotesOf = async (botId: string) =>
+      botId === bot.id
+        ? mayChange()
+        : atLeast(await s.access.level(await s.access.viewerOf(person), botId), 'edit');
     /**
      * How a memory change goes: made now, or waiting for the person. A turn nobody watches, or one
      * that read outside text, only proposes it: what it read may be behind it. The memory every
@@ -364,6 +389,9 @@ export class ToolFactory {
      * answer to give the bot.
      */
     const memoryGate = async (change: Change): Promise<string | null> => {
+      if (change.scope === 'bot' && change.botId && !(await mayChangeNotesOf(change.botId))) {
+        return forReview(change);
+      }
       if (!fromUser || reads()) return propose(change);
       const shared = change.scope === 'user' || (!!change.botId && change.botId !== bot.id);
       if (!shared) return null;
@@ -447,7 +475,11 @@ export class ToolFactory {
     const memoryOwners = async (): Promise<Map<string, string>> => {
       if (!bot.isManager) return new Map([[bot.id, bot.name]]);
       const all = await s.bots.list({ includeArchived: true });
-      return new Map(all.filter((b) => b.id === bot.id || !b.isManager).map((b) => [b.id, b.name]));
+      // Another bot's notes only where the person may change that bot.
+      const editable = await reachable('edit');
+      return new Map(
+        all.filter((b) => b.id === bot.id || (!b.isManager && editable.has(b.id))).map((b) => [b.id, b.name]),
+      );
     };
     const tools: AppTool[] = [
       def(
@@ -545,7 +577,7 @@ export class ToolFactory {
             CONNECTION_CATALOG.find((e) => e.name.toLowerCase() === wanted) ??
             searchCatalog(wanted, (c) => c)[0];
           if (!entry) return t('tool.appUnknown', { app });
-          const connected = (await s.connections.list()).find(
+          const connected = (await s.connections.list(person)).find(
             (c) =>
               c.catalogId === entry.id &&
               c.status === 'connected' &&
@@ -589,10 +621,10 @@ export class ToolFactory {
           if (!(await mayChange())) return t('tool.changeNotAllowed');
           const input = ConnectionCreate.safeParse({ name, url, auth: 'none' });
           if (!input.success) return t('tool.appBadUrl', { url });
-          const known = (await s.connections.list()).find((c) => c.url === input.data.url);
+          const known = (await s.connections.list(person)).find((c) => c.url === input.data.url);
           if (known) return t('tool.appKnown', { name: known.name });
-          // Open to this bot only; the person can open it to others in the apps window.
-          let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] });
+          // The person's own, open to this bot only; they can open it to others in the apps window.
+          let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] }, person);
           if (c.status === 'signed-out') {
             // The server wants a sign-in: it becomes an OAuth connection for the person to sign in to.
             c = await s.connections.update(c.id, { auth: 'oauth' });
@@ -648,7 +680,7 @@ export class ToolFactory {
           const own = await s.routines.list(bot.id);
           const same = own.find((r) => r.name.toLowerCase() === a.name.trim().toLowerCase());
           if (same) return t('tool.routineExists', { name: same.name });
-          const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool) : null;
+          const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool, person) : null;
           if (a.check_tool && !check) return t('tool.routineBadCheck', { tool: a.check_tool });
           const settings = await s.settings.all();
           const r = await s.routines.create(
@@ -724,7 +756,7 @@ export class ToolFactory {
           let check: RoutineCheck | null | undefined;
           if (a.check_tool) {
             // The check runs as the routine's own bot, which may be another one for a manager.
-            const named = await s.connections.checkFromName(r.botId, a.check_tool);
+            const named = await s.connections.checkFromName(r.botId, a.check_tool, person);
             if (!named) return t('tool.routineBadCheck', { tool: a.check_tool });
             check = { ...named, args: a.check_args ?? {} };
           } else if (a.check_tool === '') {
@@ -912,7 +944,7 @@ export class ToolFactory {
             if (!ids.length) return t('tool.memoryNotYours');
           }
           // Narrowed to one bot, the list is that bot's notes alone.
-          const found = await s.memory.search(ids, query?.trim() || undefined, !botRef?.trim());
+          const found = await s.memory.search(ids, person, query?.trim() || undefined, !botRef?.trim());
           if (!found.length) return t('tool.notFound');
           const whose = (m: Memory) =>
             m.scope === 'user'
@@ -949,7 +981,13 @@ export class ToolFactory {
             }
           }
           const clean = redactSecrets(content, t('memory.redacted'));
-          const note = { scope, botId: scope === 'bot' ? bot.id : null, content: clean.text, site: host };
+          const note = {
+            scope,
+            botId: scope === 'bot' ? bot.id : null,
+            userId: scope === 'user' ? person : null,
+            content: clean.text,
+            site: host,
+          };
           const same = await s.memory.findSame(note);
           if (same) {
             // The fact came up again: the note is in use, though no new one is written.
@@ -989,7 +1027,7 @@ export class ToolFactory {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
           const m = await s.memory.get(id);
-          if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
+          if (!s.memory.canEdit(m, (await memoryOwners()).keys(), person)) return t('tool.memoryNotYours');
           const clean = redactSecrets(content, t('memory.redacted'));
           const held = await memoryGate({
             action: 'update',
@@ -1019,7 +1057,7 @@ export class ToolFactory {
         async ({ id }) => {
           const m = await s.memory.get(id);
           const owners = await memoryOwners();
-          if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
+          if (!s.memory.canEdit(m, owners.keys(), person)) return t('tool.memoryNotYours');
           const held = await memoryGate({
             action: 'forget',
             memoryId: m.id,
@@ -1238,9 +1276,10 @@ export class ToolFactory {
           t,
           browser: this.ctx.browser,
           vault: s.vault,
+          person,
           askLogin,
           siteNotes: async (host) =>
-            bot.memory ? (await s.memory.forSite(bot.id, host)).map((m) => m.content) : [],
+            bot.memory ? (await s.memory.forSite(bot.id, host, person)).map((m) => m.content) : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
         }),
       );
@@ -1528,7 +1567,7 @@ export class ToolFactory {
           const groups = await s.bots.listGroups();
           const skills = (await s.skills.forBot(target.id)).map((k) => k.name);
           const routines = await s.routines.list(target.id);
-          const apps = (await s.connections.list())
+          const apps = (await s.connections.list(person))
             .filter((c) => c.allBots || c.botIds.includes(target.id))
             .map((c) => c.name);
           return [

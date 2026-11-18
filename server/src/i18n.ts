@@ -912,6 +912,8 @@ const tr = {
   'browser.loginSkipped':
     'Kullanıcı giriş bilgilerini vermedi. Giriş yapmadan devam et ya da ne yapmak istediğini sor.',
   'tool.notFound': 'Bulunamadı.',
+  'tool.memoryProposedReview':
+    'Not hemen kaydedilmedi: bu kişi botla yalnızca konuşabiliyor, değişikliği botu değiştirme izni olanlar onaylayınca geçerli olur. Kişiye bunu söyle.',
   'tool.changeNotAllowed':
     'Bu değişikliği yalnızca botu değiştirme izni olan biri isteyebilir; bu kişi botla yalnızca konuşabiliyor.',
   'tool.reacted': 'Mesaja {emoji} bırakıldı. Yazıyla yanıt gerekmiyorsa başka bir şey yazmadan bitir.',
@@ -1974,6 +1976,8 @@ const en: Catalog<ServerKey> = {
   'browser.loginSkipped':
     "The user did not give sign-in details. Continue without signing in, or ask what they'd like.",
   'tool.notFound': 'Nothing found.',
+  'tool.memoryProposedReview':
+    'The note was not saved yet: this person can only talk with the bot, so it takes effect once someone allowed to change the bot accepts it. Tell the person so.',
   'tool.changeNotAllowed':
     'Only someone allowed to change this bot can ask for this change; this person can only talk with it.',
   'tool.reacted':

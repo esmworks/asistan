@@ -203,7 +203,7 @@ export class RoutineService {
   /** A new routine; its runs work for `userId`, or for the bot's owner when null. */
   async create(input: RoutineCreate, userId: string | null = null): Promise<Routine> {
     await this.services.bots.get(input.botId);
-    if (input.check) await this.checkCheck(input.botId, input.check);
+    if (input.check) await this.checkCheck(input.botId, input.check, userId);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
     // The routine and the first line of its history are written together, or neither is.
@@ -233,7 +233,7 @@ export class RoutineService {
     const enabled = patch.enabled ?? current.enabled;
     const last = current.lastRunAt ? new Date(current.lastRunAt) : null;
     if (patch.schedule) this.checkOnce(schedule, timezone, this.clock());
-    if (patch.check) await this.checkCheck(current.botId, patch.check);
+    if (patch.check) await this.checkCheck(current.botId, patch.check, current.createdByUserId ?? null);
     // A changed instruction goes into the history in the same write: a failed save leaves none.
     const row = await this.ctx.db.transaction(async (tx) => {
       const [saved] = await tx
@@ -308,8 +308,10 @@ export class RoutineService {
    * A check must be a tool the bot itself may call without asking: of an app open to it, switched
    * on, and one that only reads. It runs with no one watching, so it may never change anything.
    */
-  private async checkCheck(botId: string, check: RoutineCheck) {
-    const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool);
+  private async checkCheck(botId: string, check: RoutineCheck, userId: string | null) {
+    // The check runs for the routine's person: only the team's apps and theirs.
+    const person = userId ?? (await this.services.access.botOwner(botId));
+    const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool, person);
     if (!tool) throw new HttpError(400, 'error.routineCheckTool');
   }
 
@@ -413,7 +415,7 @@ export class RoutineService {
           }
           if (r.check) {
             const check = r.check as RoutineCheck;
-            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash);
+            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash, r.createdByUserId);
             if (changed) {
               news.push(
                 t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }),
@@ -490,10 +492,12 @@ export class RoutineService {
     botId: string,
     check: RoutineCheck,
     before: string | null,
+    userId: string | null = null,
   ): Promise<{ app: string; text: string } | null> {
     let app: string, text: string;
     try {
-      ({ app, text } = await this.services.connections.callCheck(botId, check));
+      const person = userId ?? (await this.services.access.botOwner(botId));
+      ({ app, text } = await this.services.connections.callCheck(botId, check, person));
     } catch (err) {
       console.warn(`Check of routine ${routineId} could not be called: ${String(err)}`);
       return null;

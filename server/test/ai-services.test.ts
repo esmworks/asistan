@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { AiEndpoints, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { aiEndpointsFrom } from '../src/config';
 import { stagingDir } from '../src/uploads';
 import { AUTH, testServer, type TestServer } from './helpers';
@@ -104,7 +105,7 @@ describe('yapay zekâ servisleri', () => {
       source: 'user',
     });
     // By words alone, "eşim" finds nothing.
-    expect(await t.services.memory.search([], 'eşim')).toEqual([]);
+    expect(await t.services.memory.search([], OWNER_ID, 'eşim')).toEqual([]);
 
     const set = await t.api('PUT', '/api/ai-endpoints/embeddings', {
       baseUrl: base,
@@ -121,17 +122,19 @@ describe('yapay zekâ servisleri', () => {
     });
     expect(JSON.stringify(listed)).not.toContain('gizli-anahtar');
 
-    const found = await t.services.memory.search([], 'eşim kim');
+    const found = await t.services.memory.search([], OWNER_ID, 'eşim kim');
     expect(found.map((m) => m.content)).toEqual(['Ayşe benim karım']);
     expect(svc.calls.find((c) => c.path === '/v1/embeddings')!.auth).toBe('Bearer gizli-anahtar');
     // Words still count: a note holding the query comes first.
-    expect((await t.services.memory.search([], 'Pamuk')).map((m) => m.content)).toEqual([
+    expect((await t.services.memory.search([], OWNER_ID, 'Pamuk')).map((m) => m.content)).toEqual([
       'Kedimin adı Pamuk',
     ]);
     // A changed note is indexed again before the next search.
     const cat = (await t.services.memory.list()).find((m) => m.content.startsWith('Kedimin'))!;
     await t.services.memory.update(cat.id, { content: 'Arabam kırmızı' }, 'user');
-    expect((await t.services.memory.search([], 'car')).map((m) => m.content)).toEqual(['Arabam kırmızı']);
+    expect((await t.services.memory.search([], OWNER_ID, 'car')).map((m) => m.content)).toEqual([
+      'Arabam kırmızı',
+    ]);
     expect(
       (await t.api<{ memoryIndex: { indexed: number } }>('GET', '/api/ai-endpoints')).body.memoryIndex,
     ).toEqual({
@@ -147,7 +150,9 @@ describe('yapay zekâ servisleri', () => {
 
     // The service down: search goes by words again instead of failing.
     await svc.close();
-    expect((await t.services.memory.search([], 'Arabam')).map((m) => m.content)).toEqual(['Arabam kırmızı']);
+    expect((await t.services.memory.search([], OWNER_ID, 'Arabam')).map((m) => m.content)).toEqual([
+      'Arabam kırmızı',
+    ]);
     svc = fakeService();
   });
 

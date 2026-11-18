@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { PassThrough, Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
-import { and, getTableColumns, getTableName, inArray, is, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, getTableName, inArray, is, isNull, notInArray, sql } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
@@ -150,6 +150,9 @@ export function tablesInOrder(): PgTable[] {
  * rows are in memory at a time: together they can be far larger than the server's memory. The
  * sessions of this server stay; those of a person the backup does not have end.
  */
+/** Tables whose rows name a person since people came in; an older backup's rows were the owner's. */
+const OWNED_BEFORE_PEOPLE = new Set<PgTable>([schema.connections, schema.vaultLogins]);
+
 export async function replaceRows(db: Db, files: Map<string, string>) {
   const order = tablesInOrder().filter((t) => !KEEP_TABLES.has(getTableName(t)));
   const rowsOf = async (table: PgTable): Promise<Record<string, unknown>[]> => {
@@ -162,7 +165,13 @@ export async function replaceRows(db: Db, files: Map<string, string>) {
       throw new HttpError(400, 'error.backupDamaged');
     }
     if (!Array.isArray(rows)) throw new HttpError(400, 'error.backupDamaged');
-    return revive(table, rows as Record<string, unknown>[]);
+    const list = rows as Record<string, unknown>[];
+    // A backup from before people came in has no owner on what was set up; it was the owner's
+    // own, as the migration that brought people in decided, not the team's.
+    if (OWNED_BEFORE_PEOPLE.has(table)) {
+      for (const r of list) if (!('userId' in r)) r.userId = OWNER_ID;
+    }
+    return revive(table, list);
   };
   await db.transaction(async (tx) => {
     // The sessions stay while the people they belong to are replaced: their link is checked once,
@@ -185,6 +194,15 @@ export async function replaceRows(db: Db, files: Map<string, string>) {
       .update(schema.threads)
       .set({ userId: OWNER_ID })
       .where(and(isNull(schema.threads.userId), inArray(schema.threads.kind, ['user', 'room', 'api'])));
+    // So were its notes about the person and the changes waiting for them.
+    await tx
+      .update(schema.memories)
+      .set({ userId: OWNER_ID })
+      .where(and(isNull(schema.memories.userId), eq(schema.memories.scope, 'user')));
+    await tx
+      .update(schema.memoryChanges)
+      .set({ userId: OWNER_ID })
+      .where(isNull(schema.memoryChanges.userId));
     // A device signed in as someone the backup does not have is signed out.
     await tx
       .delete(schema.sessions)

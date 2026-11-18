@@ -343,6 +343,8 @@ export const memories = pgTable(
     id: text('id').primaryKey(),
     scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
+    /** For a note about the person, whose: each person's notes reach only bots working for them. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     content: sealedText('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
@@ -364,7 +366,7 @@ export const memories = pgTable(
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('memories_scope_idx').on(t.scope, t.botId)],
+  (t) => [index('memories_scope_idx').on(t.scope, t.botId), index('memories_user_idx').on(t.userId)],
 );
 
 export const auditLog = pgTable(
@@ -377,6 +379,11 @@ export const auditLog = pgTable(
     targetId: text('target_id').notNull(),
     before: sealedJson('before'),
     after: sealedJson('after'),
+    /**
+     * Whose the target was, for a memory note: `user:<id>` for a person's own, `bot:<id>` for a
+     * bot's. Kept on the line, so a deleted note's history still goes only to those it was for.
+     */
+    owner: text('owner'),
     createdAt: created(),
   },
   (t) => [index('audit_target_idx').on(t.targetType, t.targetId)],
@@ -558,6 +565,11 @@ export const users = pgTable(
     password: jsonb('password').$type<PasswordHash>(),
     createdAt: created(),
     /** Set when the person may no longer sign in; their sessions stop working. */
+    /**
+     * What the person told about themselves, which the bots read when they work for them (name,
+     * how to address them, about me), and whether they went through the first-run questions.
+     */
+    profile: jsonb('profile').$type<Record<string, unknown>>().notNull().default({}),
     disabledAt: ts('disabled_at'),
   },
   (t) => [
@@ -606,6 +618,8 @@ export const vaultLogins = pgTable(
   'vault_logins',
   {
     id: text('id').primaryKey(),
+    /** Whose sign-in it is: a person's own, typed only for them; null for the team's. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     /** Domain the sign-in belongs to, e.g. facebook.com; also used on its subdomains. */
     site: text('site').notNull(),
     username: text('username').notNull(),
@@ -618,7 +632,8 @@ export const vaultLogins = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastUsedAt: ts('last_used_at'),
   },
-  (t) => [uniqueIndex('vault_logins_site_user_uq').on(t.site, t.username)],
+  // One sign-in per site and username for each person, and one for the team.
+  (t) => [uniqueIndex('vault_logins_site_user_uq').on(t.site, t.username, sql`coalesce(${t.userId}, '')`)],
 );
 
 export const kv = pgTable('kv', {
@@ -634,6 +649,11 @@ export const connections = pgTable(
   'connections',
   {
     id: text('id').primaryKey(),
+    /**
+     * Whose it is: a person's own, used only when a bot works for them; null for the team's,
+     * which those who look after the server set up for everyone.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     catalogId: text('catalog_id'),
@@ -817,8 +837,18 @@ export const memoryChanges = pgTable(
     proposedBy: text('proposed_by')
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
-    /** Why nobody was watching: a routine's run or another bot's request, with its name. */
-    origin: jsonb('origin').$type<{ kind: 'routine' | 'bot' | 'outside'; name: string }>().notNull(),
+    /**
+     * Why it waits: a routine's run, another bot's request, outside text read, or a person who may
+     * talk with the bot but not change it; with its name.
+     */
+    origin: jsonb('origin')
+      .$type<{ kind: 'routine' | 'bot' | 'outside' | 'person'; name: string }>()
+      .notNull(),
+    /**
+     * The person the work was for. A change to their own notes is theirs to accept; one to a
+     * bot's notes, for those who may change the bot.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     threadId: text('thread_id'),
     /** The page the bot said the fact came from; kept on the note once accepted. */
     sourceUrl: sealedText('source_url'),

@@ -17,6 +17,7 @@ import { HttpError, newId, notFound, truncate } from '../util';
 import { toApproval, toRule } from './mappers';
 import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
+import { OWNER_ID } from '../users';
 
 /** Built-in tools that only read inside the allowed folders. */
 export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite', 'NotebookRead']);
@@ -562,7 +563,11 @@ export class ApprovalService {
       const exact = d.login.exact && typeof current.input.host === 'string' ? current.input.host : null;
       const site = exact ?? (typeof current.input.site === 'string' ? current.input.site : '');
       const saved = d.login.save
-        ? await this.vault.save({ site, username: d.login.username, password: d.login.password })
+        ? // Kept as the person who typed it: their own, typed only when a bot works for them.
+          await this.vault.save(
+            { site, username: d.login.username, password: d.login.password },
+            by ?? OWNER_ID,
+          )
         : null;
       login = { username: d.login.username, password: d.login.password, savedId: saved?.id ?? null };
       // Only the username is kept on the card.

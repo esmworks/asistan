@@ -10,7 +10,7 @@ import {
   type ConnectionToolPatch,
   type ConnectionUpdate,
 } from '@yumakbot/shared';
-import { and, asc, eq, inArray, lt, ne, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import {
   callTool,
   classify,
@@ -89,6 +89,10 @@ export function exposedNames(slug: string, names: string[]): Map<string, string>
   return out;
 }
 
+/** The connections a person's work may use: the team's and their own. */
+const usable = (userId: string) =>
+  or(isNull(schema.connections.userId), eq(schema.connections.userId, userId))!;
+
 export class ConnectionService {
   constructor(
     private ctx: Ctx,
@@ -148,6 +152,7 @@ export class ConnectionService {
         ...(t.ui && { app: true }),
       })),
       allBots: row.allBots,
+      userId: row.userId,
       showApps: row.showApps,
       botIds: row.allBots ? [] : botIds,
       createdAt: row.createdAt.toISOString(),
@@ -155,10 +160,12 @@ export class ConnectionService {
     };
   }
 
-  async list(): Promise<Connection[]> {
+  /** Every connection; with `userId`, the team's and that person's own. */
+  async list(userId?: string): Promise<Connection[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.connections)
+      .where(userId ? usable(userId) : undefined)
       .orderBy(asc(schema.connections.createdAt));
     const bots = await this.botIdsOf(rows.map((r) => r.id));
     return rows.map((r) => this.view(r, bots.get(r.id) ?? []));
@@ -208,8 +215,10 @@ export class ConnectionService {
     this.ctx.bus.refresh({ scope: 'connections' });
   }
 
+  /** A new connection: `userId`'s own, or the team's when null. */
   async create(
     input: ConnectionCreate & { catalogId: string | null; allBots: boolean; botIds: string[] },
+    userId: string | null,
   ): Promise<Connection> {
     const all = await this.ctx.db.select({ slug: schema.connections.slug }).from(schema.connections);
     if (all.length >= MAX_CONNECTIONS)
@@ -227,6 +236,8 @@ export class ConnectionService {
       if (input.clientName) secrets.ownClientName = input.clientName;
     } else if (input.auth === 'oauth' && input.sameAppAs) {
       const sibling = await this.row(input.sameAppAs);
+      // Another person's app registration is theirs: only the team's and one's own are shared.
+      if (sibling.userId && sibling.userId !== userId) throw new HttpError(404, 'error.notFound.connection');
       if (!sharesApp(sibling, input)) throw new HttpError(400, 'error.connectionSibling');
       const { ownClient, ownClientName } = this.secretsOf(sibling);
       if (ownClient) secrets.ownClient = ownClient;
@@ -235,6 +246,7 @@ export class ConnectionService {
     const id = newId();
     await this.ctx.db.insert(schema.connections).values({
       id,
+      userId,
       slug: connectionSlug(
         input.name,
         all.map((r) => r.slug),
@@ -380,6 +392,14 @@ export class ConnectionService {
   }
 
   /** Opens a connection to every bot, or limits it to the given ones. */
+  /** Gives a connection to a person, or to the team when null. */
+  async setOwner(id: string, userId: string | null): Promise<Connection> {
+    await this.row(id);
+    await this.ctx.db.update(schema.connections).set({ userId }).where(eq(schema.connections.id, id));
+    this.ctx.bus.refresh({ scope: 'connections' });
+    return this.get(id);
+  }
+
   async setBots(
     id: string,
     access: { allBots: boolean; botIds: string[] },
@@ -529,8 +549,11 @@ export class ConnectionService {
     bot: { id: string; permissionMode: string };
     name: string;
     args: Record<string, unknown>;
+    /** The person using the app: a connection of someone else's is not theirs to call. */
+    userId: string;
   }): Promise<CallToolResult> {
     const row = await this.row(o.connectionId);
+    if (row.userId && row.userId !== o.userId) throw new HttpError(403, 'error.appUnavailable');
     if (row.status !== 'connected') throw new HttpError(409, 'error.appUnavailable');
     if (!row.allBots) {
       const [open] = await this.ctx.db
@@ -558,11 +581,11 @@ export class ConnectionService {
    * The tool a routine's check may call for a bot: of a connected app open to the bot, switched on,
    * and one that only reads. Null when it is not such a tool.
    */
-  async checkTool(botId: string, connectionId: string, name: string) {
+  async checkTool(botId: string, connectionId: string, name: string, userId: string) {
     const [row] = await this.ctx.db
       .select()
       .from(schema.connections)
-      .where(eq(schema.connections.id, connectionId));
+      .where(and(eq(schema.connections.id, connectionId), usable(userId)));
     if (!row) return null;
     if (!row.allBots) {
       const [open] = await this.ctx.db
@@ -583,6 +606,7 @@ export class ConnectionService {
   async checkFromName(
     botId: string,
     exposed: string,
+    userId: string,
   ): Promise<{ connectionId: string; tool: string } | null> {
     // Claude sees an app's tool as `mcp__<app>__<tool>`; other engines see the tool's name alone.
     const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(exposed);
@@ -599,7 +623,7 @@ export class ConnectionService {
         row.tools.map((x) => x.name),
       );
       const tool = row.tools.find((x) => names.get(x.name) === want || x.name === want);
-      if (tool && (await this.checkTool(botId, row.id, tool.name)))
+      if (tool && (await this.checkTool(botId, row.id, tool.name, userId)))
         found.push({ connectionId: row.id, tool: tool.name });
     }
     // Two apps with a tool of that name: the bot has to say which, with the app's part.
@@ -613,8 +637,9 @@ export class ConnectionService {
   async callCheck(
     botId: string,
     check: { connectionId: string; tool: string; args: Record<string, unknown> },
+    userId: string,
   ) {
-    const found = await this.checkTool(botId, check.connectionId, check.tool);
+    const found = await this.checkTool(botId, check.connectionId, check.tool, userId);
     if (!found) throw new HttpError(400, 'error.routineCheckTool');
     if (found.row.status !== 'connected') throw new HttpError(409, 'error.appUnavailable');
     const result = await callTool(
@@ -629,7 +654,10 @@ export class ConnectionService {
   }
 
   /** The connections open to a bot that are not usable now, with why: their tools are left out. */
-  async unavailableFor(botId: string): Promise<{ name: string; status: 'signed-out' | 'error' }[]> {
+  async unavailableFor(
+    botId: string,
+    userId: string,
+  ): Promise<{ name: string; status: 'signed-out' | 'error' }[]> {
     const chosen = this.ctx.db
       .select({ id: schema.botConnections.connectionId })
       .from(schema.botConnections)
@@ -640,6 +668,7 @@ export class ConnectionService {
       .where(
         and(
           ne(schema.connections.status, 'connected'),
+          usable(userId),
           or(eq(schema.connections.allBots, true), inArray(schema.connections.id, chosen)),
         ),
       )
@@ -670,6 +699,8 @@ export class ConnectionService {
   /** `elicit` answers a server that asks the person something during a call. */
   async toolsFor(
     botId: string,
+    /** The person the bot works for: the team's connections and their own. */
+    userId: string,
     t: T,
     signal: AbortSignal,
     elicit?: TurnElicit,
@@ -688,6 +719,7 @@ export class ConnectionService {
       .where(
         and(
           eq(schema.connections.status, 'connected'),
+          usable(userId),
           or(eq(schema.connections.allBots, true), inArray(schema.connections.id, chosen)),
         ),
       )
