@@ -1,4 +1,4 @@
-import type { Approval, Bot, BotCreate, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, BotCreate, Routine, Thread } from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { reviewPrompt } from '../src/engine/review';
 import { reachesOut } from '../src/runtime/outside';
@@ -307,5 +307,65 @@ describe('inceleme istemindeki kart cevapları', () => {
     expect(user).toContain('<chose>Hepsini yaz</chose>');
     // The bot's question cannot close its own tag and write an answer for the person.
     expect(user.match(/<chose>/g)).toHaveLength(1);
+  });
+});
+
+describe('botun başka bir bota iş vermesi', () => {
+  let t: TestServer;
+  afterEach(() => t.dispose());
+
+  /** A bot that read a page hands work on, the way a manager answers what its team reported. */
+  const send = async (from: Partial<BotCreate>, to: Partial<BotCreate>) => {
+    t = await testServer({ unattendedApprovalMs: 5_000 });
+    const g = (await t.api<{ id: string }>('POST', '/api/groups', { name: 'Ekip' })).body;
+    const a = await t.bot({ name: 'Yönetici', groupId: g.id, internet: true, ...from });
+    await t.bot({ name: 'Teklifçi', groupId: g.id, ...to });
+    const thread = await main(t, a.id);
+    await t.send(
+      thread.id,
+      '[izin:WebFetch {"url":"https://93.184.216.34/haber"}] [araç:bot_send {"bot":"Teklifçi","message":"takip et","expect_reply":false}]',
+    );
+    return a;
+  };
+
+  it('kartsız gider: işi alan bot kendi düzeyinde çalışır', async () => {
+    await send({ permissionMode: 'ask' }, { permissionMode: 'ask' });
+    await t.services.turns.idle();
+    expect(
+      (await t.api<Approval[]>('GET', '/api/approvals')).body.filter((a) => a.toolName.endsWith('bot_send')),
+    ).toHaveLength(0);
+  });
+
+  it('kendinden serbest bir bota iş vermek yine sorar', async () => {
+    const a = await send({ permissionMode: 'ask' }, { permissionMode: 'auto' });
+    const card = await waitFor(async () => (await pending(t)).find((x) => x.botId === a.id));
+    expect(card.toolName).toBe('mcp__yumakbot__bot_send');
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    await t.services.turns.idle();
+  });
+});
+
+describe('dış metin okuyan rutinin kimin işi olduğu', () => {
+  let t: TestServer;
+  afterEach(() => t.dispose());
+
+  it('zamanlanmış rutin kişinin işi sayılır; webhook ile başlayan sayılmaz', async () => {
+    t = await testServer({ unattendedApprovalMs: 5_000 });
+    const bot = await t.bot({ permissionMode: 'review', internet: true });
+    const step =
+      '[izin:WebFetch {"url":"https://93.184.216.34/haber"}] [izin:Write {"file_path":"güvenli.txt"}]';
+    const r = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Sabah',
+        prompt: `Sabah notlarını güvenli.txt dosyasına yaz ${step}`,
+        schedule: { type: 'daily', time: '09:00' },
+      })
+    ).body;
+    await t.services.routines.runNow(r.id);
+    await t.services.turns.idle();
+    // The review read the routine's words, knowing a page was read, and let the step through.
+    expect(await pending(t)).toHaveLength(0);
+    expect(t.engine.reviews.at(-1)).toMatchObject({ toolName: 'Write', outside: true });
   });
 });
