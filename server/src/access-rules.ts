@@ -97,6 +97,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/usage': 'admin',
   'GET /api/usage/turns.csv': 'admin',
   'GET /api/usage/plan': 'signedIn',
+  'GET /api/storage': 'admin',
 
   // Everything at once: only the owner holds every person's data.
   'GET /api/setup-import': 'owner',
@@ -212,6 +213,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/messages/:id/reaction': write('message'),
   'POST /api/threads/:id/files': write(),
   'DELETE /api/threads/:id/files/:name': manage(),
+  'DELETE /api/threads/:id/uploads/:uploadId': write(),
   'POST /api/threads/:id/reset': manage(),
   'POST /api/threads/:id/stop': read(),
   'GET /api/apps/:id/frame': read('message'),

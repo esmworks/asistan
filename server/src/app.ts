@@ -694,6 +694,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   bus.on('tool', (e) => void toThread(e.threadId).then((to) => to.emit('tool', e)));
 
   await services.turns.recover();
+  await services.jobs.recover().catch((err: unknown) => {
+    app.log.warn({ err }, 'request recovery failed');
+  });
   await services.routines.recover();
   await services.jobs.recountMarkers().catch((err: unknown) => {
     app.log.warn({ err }, 'marker recount failed');
@@ -732,6 +735,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       services.push.stop();
       services.subscriptions.stop();
       await services.turns.shutdown();
+      await services.memoryReview.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);
       clearInterval(sweepTimer);

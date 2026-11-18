@@ -1152,7 +1152,7 @@ export class WhatsAppChannel {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
-        const view = cardView(card, m.props, t);
+        const view = cardView(card, m.props, t, await this.services.settings.locale());
         const how = (i: number) => t('channel.alwaysHow', { answer: `${i + 1} ${t('channel.alwaysWord')}` });
         const choices = view.buttons
           .map((b, i) => `${i + 1}. ${b.label}${b.data.endsWith(':r') ? ` (${how(i)})` : ''}`)

@@ -215,6 +215,11 @@ describe('Slack', () => {
     const { code } = (await p.api<SlackLink>('POST', '/api/slack/me/code')).body;
     await slack.write(slackUser, `link ${code}`, { channel: `D${slackUser}`, type: 'im' });
     await waitFor(async () => (await p.api<SlackLink>('GET', '/api/slack/me')).body.linked);
+    // The "you're linked" line is sent after the link is saved: waited for here, so a test that
+    // then turns a knob on the next post is not answered by this one.
+    await waitFor(async () =>
+      slack.sent().find((c) => c.body.channel === `D${slackUser}` && c.body.text?.includes('Bağlandın')),
+    );
   };
   const posted = (channel: string, has: string) =>
     waitFor(async () => slack.sent().find((c) => c.body.channel === channel && c.body.text?.includes(has)));

@@ -188,6 +188,8 @@ export class RoomService {
     if (!(await this.roomRow(id))) throw notFound('room');
     await this.stop(id);
     await this.ctx.db.delete(schema.threads).where(eq(schema.threads.id, id));
+    // The room's own notes are for that room only; with it gone nobody reaches them.
+    await this.services.memory.removePlace(`room:${id}`);
     this.ctx.bus.refresh({ scope: 'rooms' });
   }
 
@@ -207,13 +209,19 @@ export class RoomService {
     if (rows.length) this.ctx.bus.refresh({ scope: 'rooms' });
   }
 
-  /** Stops whoever speaks, drops who waits, and ends the discussion under way. */
+  /**
+   * Stops whoever speaks, drops who waits, ends the discussion under way, and stops the work its
+   * members gave other bots.
+   */
   async stop(id: string): Promise<boolean> {
     await this.ctx.db
       .update(schema.rooms)
       .set({ roundsLeft: 0, botTurnsLeft: 0 })
       .where(eq(schema.rooms.id, id));
-    return this.services.turns.interrupt(id);
+    const stopped = await this.services.turns.interrupt(id);
+    // The work its members handed to other bots stops with it.
+    const teammates = await this.services.jobs.stopFrom(id);
+    return stopped || teammates > 0;
   }
 
   /** The member's engine session in the room, and what it had cost by its last run. */

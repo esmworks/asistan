@@ -192,6 +192,39 @@ export interface SubagentState {
   state: 'running' | 'done' | 'failed' | 'stopped';
   /** Tool calls it has made so far. */
   steps: number;
+  /** The tool it called last, by the name cards use (`Bash`, `mcp__notion__search`). */
+  tool?: string;
+  /** What it handed back to the bot, cut short; once it has ended. */
+  result?: string;
+}
+
+/**
+ * A subagent's answer as its card shows it: the engine follows the answer with the helper's id
+ * (`agentId: …`) and its usage (`<usage>…</usage>`) for the model, which are not the answer. Only
+ * that closing part is left out; the answer's own lines stay.
+ */
+export function subagentAnswer(content: unknown): string {
+  const lines = toolResultText(content)
+    .replace(/<usage>[\s\S]*?<\/usage>/g, '')
+    .trimEnd()
+    .split('\n');
+  while (lines.length && /^\s*agentId:/.test(lines.at(-1)!)) lines.pop();
+  return lines.join('\n').trim().slice(0, SUBAGENT_RESULT_MAX);
+}
+
+/** The most of a subagent's answer its card keeps. */
+export const SUBAGENT_RESULT_MAX = 2000;
+
+/** A tool result's text, whether it came as a string or as content blocks. */
+export function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .flatMap((c) => {
+      const o = (c ?? {}) as { type?: unknown; text?: unknown };
+      return o.type === 'text' && typeof o.text === 'string' ? [o.text] : [];
+    })
+    .join('\n');
 }
 
 /** One step of a bot's plan. */
@@ -385,6 +418,25 @@ export interface GateVerdict {
   costUsd: number | null;
 }
 
+/**
+ * One answer from a model without tools, for work that belongs to no turn (the memory review): it
+ * has no session, shows nothing in a conversation and reaches no chat app.
+ */
+export interface CompleteRequest {
+  /** The bot's own model; an engine may answer with a smaller one of the same account. */
+  model: string;
+  system: string;
+  user: string;
+  signal: AbortSignal;
+  locale: Locale;
+}
+
+export interface Completion {
+  text: string;
+  /** What it cost in US dollars; null when the engine did not say. */
+  costUsd: number | null;
+}
+
 export interface Engine {
   readonly kind: string;
   run(req: TurnRequest): Promise<TurnOutcome>;
@@ -398,6 +450,8 @@ export interface Engine {
   review?(req: ReviewRequest): Promise<ReviewVerdict>;
   /** Looks at one routine run with a small model before the bot starts on it. */
   gate?(req: GateRequest): Promise<GateVerdict>;
+  /** One answer without tools or a session; throws when the model cannot answer. */
+  complete?(req: CompleteRequest): Promise<Completion>;
 }
 
 export type ModelTest = { ok: true } | { ok: false; detail: string };

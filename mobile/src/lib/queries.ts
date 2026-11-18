@@ -117,6 +117,11 @@ export const useUsage = (days: UsageRange, botId?: string) => {
     staleTime: 30_000,
   });
 };
+/** How much room the bots' folders take; read from disk, so only while it is on screen. */
+export const useStorage = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['storage', useOrigin()], queryFn: api.storage, staleTime: 60_000 });
+};
 export const useToday = () => {
   const api = useApi();
   return useQuery({ queryKey: ['today', useOrigin()], queryFn: api.today });

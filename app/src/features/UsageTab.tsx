@@ -3,10 +3,12 @@ import {
   planTone,
   ROUTINE_GATE_MODES,
   USAGE_RANGES,
+  type Bot,
+  type StorageReport,
   type UsageRange,
   type UsageReport,
 } from '@yumakbot/shared';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, RotateCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useT } from '@/i18n';
 import { useFormat } from '@/lib/format';
 import { PLAN_TONE_BAR, planLabel } from '@/lib/planUsage';
-import { useBots, useSettings, useUsage } from '@/lib/queries';
+import { useBots, useSettings, useStorage, useUsage } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Chip } from './onboarding/Chip';
 import { Card, Row, useSaveSettings } from './SettingsDialog';
@@ -80,6 +83,7 @@ export function UsageTab() {
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
       <Parallel parallel={data?.parallel} />
+      <Storage />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
         <a href={`/api/usage/turns.csv?days=${days}`} download>
           <Download /> {t('usage.downloadCsv')}
@@ -472,5 +476,177 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
         </tbody>
       </table>
     </figure>
+  );
+}
+
+/**
+ * How much room the bots' folders take on the server, largest first, with each bot's largest
+ * conversations. Read only: a conversation's folder holds the bot's work beside what was
+ * attached, so room is freed by deleting the conversation, which a row opens.
+ */
+function Storage() {
+  const t = useT();
+  const { fileSize } = useFormat();
+  const { data: bots } = useBots();
+  const { data, isPending, isError, refetch, isFetching } = useStorage();
+  const byId = new Map((bots ?? []).map((b) => [b.id, b]));
+  const open = (botId: string, threadId: string) => {
+    const ui = useUi.getState();
+    ui.openSettings(null);
+    ui.openChat(botId);
+    ui.selectThread(threadId);
+  };
+  /** A size the walk did not finish counting is at least what it says. */
+  const size = (bytes: number, partial = false) =>
+    partial ? t('storage.atLeast', { size: fileSize(bytes) }) : fileSize(bytes);
+  const largest = data ? Math.max(1, ...[...data.bots, ...data.groups, data.staged].map((r) => r.bytes)) : 1;
+  const bar = (bytes: number) => (
+    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
+      <div className="h-full rounded-full bg-primary" style={{ width: `${(bytes / largest) * 100}%` }} />
+    </div>
+  );
+
+  return (
+    <Card title={t('storage.title')}>
+      <div className="flex items-start gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium tabular-nums">{data ? size(data.total, data.capped) : '–'}</div>
+          <div className="text-xs text-muted-foreground">
+            {data?.capped ? t('storage.capped') : t('storage.hint')}
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          aria-label={t('storage.refresh')}
+          title={t('storage.refresh')}
+        >
+          <RotateCw className={cn('size-4', isFetching && 'animate-spin')} />
+        </Button>
+      </div>
+      {isPending ? (
+        <div className="flex justify-center py-6 text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : isError || !data ? (
+        <p className="px-4 py-6 text-sm text-muted-foreground">{t('storage.failed')}</p>
+      ) : (
+        <>
+          {data.bots
+            .filter((b) => b.bytes > 0 || b.partial)
+            .map((b) => (
+              <StorageBotRow
+                key={b.botId}
+                b={b}
+                bot={byId.get(b.botId)}
+                size={size}
+                bar={bar}
+                onOpen={open}
+              />
+            ))}
+          {data.groups
+            .filter((g) => g.bytes > 0 || g.partial)
+            .map((g) => (
+              <div key={g.groupId} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm">
+                    {t('storage.group', { name: g.name ?? t('storage.removedGroup') })}
+                  </div>
+                  {bar(g.bytes)}
+                </div>
+                <div className="w-24 shrink-0 text-right text-sm tabular-nums">
+                  {size(g.bytes, g.partial)}
+                </div>
+              </div>
+            ))}
+          {(data.staged.bytes > 0 || data.staged.partial) && (
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm">{t('storage.staged')}</div>
+                <div className="text-xs text-muted-foreground">{t('storage.stagedHint')}</div>
+                {bar(data.staged.bytes)}
+              </div>
+              <div className="w-24 shrink-0 text-right text-sm tabular-nums">
+                {size(data.staged.bytes, data.staged.partial)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function StorageBotRow({
+  b,
+  bot,
+  size,
+  bar,
+  onOpen,
+}: {
+  b: StorageReport['bots'][number];
+  bot?: Bot;
+  size(bytes: number, partial?: boolean): string;
+  bar(bytes: number): React.ReactNode;
+  onOpen(botId: string, threadId: string): void;
+}) {
+  const t = useT();
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-3">
+        {bot ? (
+          <BotAvatar avatar={bot.avatar} color={bot.color} seed={bot.id} size={28} />
+        ) : (
+          <span className="size-7 shrink-0 rounded-full bg-secondary" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="truncate">{b.name ?? t('storage.removedBot')}</span>
+            {b.archived && (
+              <span className="shrink-0 text-xs text-muted-foreground">{t('usage.archived')}</span>
+            )}
+          </div>
+          {bar(b.bytes)}
+        </div>
+        <div className="w-24 shrink-0 text-right text-sm font-medium tabular-nums">
+          {size(b.bytes, b.partial)}
+        </div>
+      </div>
+      <div className="mt-2 space-y-0.5 pl-10">
+        {b.own.bytes > 0 && (
+          <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">{t('storage.ownFolder')}</span>
+            <span className="shrink-0 tabular-nums">{size(b.own.bytes, b.own.partial)}</span>
+          </div>
+        )}
+        {b.threads.map((th) =>
+          b.name && th.title !== null ? (
+            <button
+              type="button"
+              key={th.threadId}
+              onClick={() => onOpen(b.botId, th.threadId)}
+              title={t('storage.openThread')}
+              className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            >
+              <span className="min-w-0 flex-1 truncate">{th.title || t('chat.newThread')}</span>
+              <span className="shrink-0 tabular-nums">{size(th.bytes, th.partial)}</span>
+            </button>
+          ) : (
+            <div key={th.threadId} className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate">{t('storage.removedThread')}</span>
+              <span className="shrink-0 tabular-nums">{size(th.bytes, th.partial)}</span>
+            </div>
+          ),
+        )}
+        {b.threadCount > b.threads.length && b.threads.length > 0 && (
+          <div className="py-1 text-xs text-muted-foreground">
+            {t('storage.moreThreads', { count: b.threadCount - b.threads.length })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

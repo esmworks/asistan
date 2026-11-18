@@ -118,7 +118,8 @@ import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile, privateHost } from './services/skill-link';
 import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
-import { attachedFiles, saveUpload, stagingDir } from './uploads';
+import { attachedFiles, cancelStagedUpload, saveStagedUpload, stagingDir } from './uploads';
+import { storageReport } from './storage';
 import { OWNER_ID } from './users';
 import { HttpError, notFound, truncate } from './util';
 import { atLeast, managesServer } from './services/access';
@@ -141,6 +142,8 @@ const MAX_PAYLOAD = 50_000;
 const WEBHOOK_BODY_MAX = 5 * 1024 * 1024;
 /** Most bytes put in one ZIP download; it is built in memory. */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+/** The app's id for one attached file, the same on each of its tries (see `saveStagedUpload`). */
+const UploadId = z.string().regex(/^[\w-]{8,64}$/);
 import { eq } from 'drizzle-orm';
 
 interface Deps {
@@ -691,6 +694,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
+  // How much room the bots' folders take; read fresh, so it is asked for only when shown.
+  app.get('/api/storage', async () => storageReport(s.ctx));
   // The plan's windows alone, for the meter beside the chat: everyone who talks with a Claude bot
   // spends the same plan, and its limit warnings already reach their conversations.
   app.get('/api/usage/plan', async () => ({ plan: (await s.usage.plan()) ?? null }));
@@ -698,7 +703,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // Every bot's level is read once, for what the person may talk with and what they may change.
     const levels = [...(await s.access.levels(me(req)))];
     const reach = (wanted: BotLevel) => levels.filter(([, l]) => atLeast(l, wanted)).map(([id]) => id);
-    const notes: MemoryReach = { userId: me(req).userId, botIds: reach('edit') };
+    const notes: MemoryReach = {
+      userId: me(req).userId,
+      botIds: reach('edit'),
+      places: await s.memory.placesFor(me(req).userId, managesServer(me(req).role)),
+    };
     return {
       ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
       staleMemory: (await s.memory.stale(new Date(), notes)).length,
@@ -1025,11 +1034,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   /** Deletes a conversation with its turns, its folder and its staged uploads. */
   const deleteThread = async (id: string, botId: string) => {
     await s.turns.interrupt(id);
+    // Work it gave other bots would answer into a conversation that is gone.
+    await s.jobs.stopFrom(id);
     await s.threads.remove(id);
     // The conversation's own folder (its attachments and what the bot made there) goes with it.
     const root = join(d.config.dataDir, 'workspaces', 'bots', botId, 'threads');
     await rm(join(root, id), { recursive: true, force: true }).catch(() => {});
     await rm(join(d.config.dataDir, 'uploads', id), { recursive: true, force: true }).catch(() => {});
+    await rm(join(d.config.dataDir, 'upload-ids', id), { recursive: true, force: true }).catch(() => {});
   };
   app.delete('/api/threads/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -1182,12 +1194,25 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.post('/api/threads/:id/files', async (req) => {
     const id = IdParams.parse(req.params).id;
-    const { name } = z.object({ name: z.string().min(1).max(500) }).parse(req.query);
+    const { name, uploadId } = z
+      .object({
+        name: z.string().min(1).max(500),
+        uploadId: UploadId.optional(),
+      })
+      .parse(req.query);
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const thread = await s.threads.row(id);
     const bot = await s.bots.get(thread.botId);
     if (bot.archivedAt) throw new HttpError(409, 'error.botArchived');
-    return saveUpload(stagingDir(d.config.dataDir, id), name, req.body);
+    return saveStagedUpload(d.config.dataDir, id, name, req.body, uploadId);
+  });
+  // A file taken off while it was still going up: removed whether its upload got through already
+  // or gets through later, so nothing is left in the staging folder.
+  app.delete('/api/threads/:id/uploads/:uploadId', async (req) => {
+    const { id, uploadId } = z.object({ id: z.string().min(1), uploadId: UploadId }).parse(req.params);
+    await s.threads.row(id);
+    await cancelStagedUpload(d.config.dataDir, id, uploadId);
+    return { ok: true };
   });
   // Removes a file attached in the composer but taken off (or left) before sending. Only staged
   // uploads: files already in the conversation folder are not reached from here.
@@ -1706,12 +1731,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({
     userId: me(req).userId,
     botIds: await s.access.botIds(me(req), 'edit'),
+    places: await s.memory.placesFor(me(req).userId, managesServer(me(req).role)),
+    managesServer: managesServer(me(req).role),
   });
   /** A note the person reaches; another's reads as missing. */
   const ownNote = async (req: FastifyRequest, id: string) => {
     const reach = await memoryReach(req);
     const note = await s.memory.get(id);
-    if (!s.memory.canEdit(note, reach.botIds, reach.userId)) throw notFound('memory');
+    if (!s.memory.canEdit(note, reach.botIds, reach.userId, reach.places)) throw notFound('memory');
     return note;
   };
   /** A waiting change the person decides on; another's reads as missing. */
@@ -1723,7 +1750,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/memory', async (req) => {
     const q = z
       .object({
-        scope: z.enum(['bot', 'user']).optional(),
+        scope: z.enum(['bot', 'user', 'room']).optional(),
         botId: z.string().optional(),
       })
       .parse(req.query);
@@ -1733,12 +1760,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const b = MemoryCreate.parse(req.body);
     // A bot's note needs its bot, and leave to change it.
     if (b.scope === 'bot') await s.access.requireBot(me(req), b.botId ?? '', 'edit');
-    return s.memory.create({ ...b, userId: me(req).userId, source: 'user' });
+    // `source` says a person wrote it; the history says which person.
+    return s.memory.create({ ...b, userId: me(req).userId, source: 'user', actor: actorOf(req) });
   });
   app.patch('/api/memory/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
     await ownNote(req, id);
-    return s.memory.update(id, MemoryUpdate.parse(req.body), actorOf(req));
+    // A change of the words may carry the version it was made on; pinning alone has none.
+    const { updatedAt, ...patch } = MemoryUpdate.parse(req.body);
+    return s.memory.update(id, { ...patch, expectedUpdatedAt: updatedAt }, actorOf(req));
   });
   // Every note one bot keeps for itself.
   app.delete('/api/bots/:id/memory', async (req) =>

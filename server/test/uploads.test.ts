@@ -24,10 +24,10 @@ describe('dosya ekleme', () => {
   afterEach(() => t.dispose());
 
   const main = async (botId: string) => (await t.api<Thread>('GET', `/api/bots/${botId}/main-thread`)).body;
-  const upload = async (threadId: string, name: string, content: string | Buffer) => {
+  const upload = async (threadId: string, name: string, content: string | Buffer, uploadId?: string) => {
     const res = await t.app.inject({
       method: 'POST',
-      url: `/api/threads/${threadId}/files?name=${encodeURIComponent(name)}`,
+      url: `/api/threads/${threadId}/files?name=${encodeURIComponent(name)}${uploadId ? `&uploadId=${uploadId}` : ''}`,
       headers: { ...AUTH, host: 'localhost', 'content-type': 'application/octet-stream' },
       payload: typeof content === 'string' ? Buffer.from(content) : content,
     });
@@ -41,6 +41,13 @@ describe('dosya ekleme', () => {
   const threadDir = (botId: string, threadId: string) =>
     join(t.dataDir, 'workspaces', 'bots', botId, 'threads', threadId);
   const staging = (threadId: string) => join(t.dataDir, 'uploads', threadId);
+  const waiting = (threadId: string) => readdirSync(staging(threadId)).sort();
+  const cancel = (threadId: string, uploadId: string) =>
+    t.app.inject({
+      method: 'DELETE',
+      url: `/api/threads/${threadId}/uploads/${uploadId}`,
+      headers: { ...AUTH, host: 'localhost' },
+    });
   const filesOf = (m: Message) => m.props.files as MessageFile[];
   const library = async (botId: string) =>
     (await t.api<{ name: string }[]>('GET', `/api/bots/${botId}/library`)).body.map((f) => f.name);
@@ -224,6 +231,92 @@ describe('dosya ekleme', () => {
     expect(readFileSync(join(staging(thread.id), 'a.txt'), 'utf8')).toBe('1');
   });
 
+  it('aynı yükleme kimliğiyle gelen tekrar ikinci bir dosya bırakmaz', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    // The first try was saved but its answer was lost; the app sends the same file again.
+    expect((await upload(thread.id, 'rapor.pdf', 'aynı', 'yukleme-1')).body).toEqual({
+      name: 'rapor.pdf',
+      size: 5,
+    });
+    expect((await upload(thread.id, 'rapor.pdf', 'aynı', 'yukleme-1')).body.name).toBe('rapor.pdf');
+    expect(waiting(thread.id)).toEqual(['rapor.pdf']);
+    // Other bytes under the same id, or another file with the same name, keep their own copy.
+    expect((await upload(thread.id, 'rapor.pdf', 'farklı', 'yukleme-1')).body.name).toBe('rapor (2).pdf');
+    expect((await upload(thread.id, 'rapor.pdf', 'aynı', 'yukleme-2')).body.name).toBe('rapor (3).pdf');
+    expect((await upload(thread.id, 'rapor.pdf', 'aynı')).body.name).toBe('rapor (4).pdf');
+    // A bad id is refused before anything is written.
+    expect((await upload(thread.id, 'rapor.pdf', 'aynı', 'a/b')).status).toBe(400);
+    expect(waiting(thread.id)).toHaveLength(4);
+  });
+
+  it('gönderilmiş ekin tekrarı yeni bir bekleyen dosya olur', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await upload(thread.id, 'not.txt', 'x', 'yukleme-3');
+    expect((await send(thread.id, { text: 'al', files: ['not.txt'] })).status).toBe(201);
+    expect((await upload(thread.id, 'not.txt', 'x', 'yukleme-3')).body.name).toBe('not.txt');
+    expect(waiting(thread.id)).toEqual(['not.txt']);
+    // Another file waiting under that name, same size, other bytes: the repeat keeps its own copy.
+    await t.app.inject({
+      method: 'DELETE',
+      url: `/api/threads/${thread.id}/files/not.txt`,
+      headers: { ...AUTH, host: 'localhost' },
+    });
+    await upload(thread.id, 'kayit.txt', 'a', 'yukleme-4');
+    expect((await send(thread.id, { text: 'al', files: ['kayit.txt'] })).status).toBe(201);
+    await upload(thread.id, 'kayit.txt', 'b');
+    expect((await upload(thread.id, 'kayit.txt', 'a', 'yukleme-4')).body.name).toBe('kayit (2).txt');
+  });
+
+  it('yükleme kimliğinin kaydı diskte, bekleyen dosyaların yanında durur; sunucu yeniden başlasa da tekrar tanınır', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await upload(thread.id, 'sozlesme.pdf', 'imza', 'yukleme-5');
+    // The staging folder holds only the waiting file; the record is in its own folder.
+    expect(readdirSync(staging(thread.id))).toEqual(['sozlesme.pdf']);
+    expect(readdirSync(join(t.dataDir, 'upload-ids', thread.id))).toEqual(['yukleme-5.json']);
+    // Nothing of the first try is kept in memory: a fresh process reads the same record.
+    const { saveStagedUpload } = await import('../src/uploads');
+    const again = await saveStagedUpload(
+      t.dataDir,
+      thread.id,
+      'sozlesme.pdf',
+      Readable.from([Buffer.from('imza')]),
+      'yukleme-5',
+    );
+    expect(again.name).toBe('sozlesme.pdf');
+    expect(readdirSync(staging(thread.id))).toEqual(['sozlesme.pdf']);
+  });
+
+  it('kayıt yazılıp dosya bekleme klasörüne konmadan durulursa tekrar yeni dosya olur', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    // A record left by a server stopped before the file appeared: it names a file that is not there.
+    const ids = join(t.dataDir, 'upload-ids', thread.id);
+    mkdirSync(ids, { recursive: true });
+    writeFileSync(join(ids, 'yukleme-9.json'), JSON.stringify({ name: 'yarim.txt', size: 1, hash: 'x' }));
+    expect((await upload(thread.id, 'yarim.txt', 'y', 'yukleme-9')).body.name).toBe('yarim.txt');
+    expect(readFileSync(join(staging(thread.id), 'yarim.txt'), 'utf8')).toBe('y');
+  });
+
+  it('yüklenirken kaldırılan ek, yüklemesi önce de sonra da bitse silinir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    // Got through, only the answer was lost: the cancel removes it.
+    await upload(thread.id, 'once.txt', 'a', 'yukleme-6');
+    expect((await cancel(thread.id, 'yukleme-6')).statusCode).toBe(200);
+    // Still on its way when the cancel came: removed as soon as it is saved.
+    expect((await cancel(thread.id, 'yukleme-7')).statusCode).toBe(200);
+    expect((await upload(thread.id, 'sonra.txt', 'b', 'yukleme-7')).status).toBe(404);
+    // Another file with the same name is not touched by a cancel.
+    await upload(thread.id, 'once.txt', 'baska', 'yukleme-8');
+    await cancel(thread.id, 'yukleme-6');
+    expect(waiting(thread.id)).toEqual(['once.txt']);
+    expect(readFileSync(join(staging(thread.id), 'once.txt'), 'utf8')).toBe('baska');
+    expect((await cancel(thread.id, 'a/b')).statusCode).toBe(404);
+  });
+
   it('olmayan ya da klasör dışını gösteren eki reddeder', async () => {
     const bot = await t.bot();
     const thread = await main(bot.id);
@@ -311,9 +404,22 @@ describe('saveUpload', () => {
       const at = new Date(now - ageMs);
       utimesSync(file, at, at);
     }
+    // The upload ids' records, and bytes a stopped server left half-way, go by the same age.
+    const ids = join(dir, 'upload-ids', 'sohbet-b');
+    mkdirSync(ids, { recursive: true });
+    for (const [file, ageMs] of [
+      [join(ids, 'eski.json'), 2 * day],
+      [join(ids, 'eski.part'), 2 * day],
+      [join(ids, 'yeni.json'), 60_000],
+    ] as const) {
+      writeFileSync(file, '{}');
+      const at = new Date(now - ageMs);
+      utimesSync(file, at, at);
+    }
     expect(await sweepUploads(dir, day, now)).toBe(2);
     expect(existsSync(a)).toBe(false);
     expect(readdirSync(b)).toEqual(['yeni.txt']);
+    expect(readdirSync(ids)).toEqual(['yeni.json']);
     // Nothing staged yet: nothing to do.
     expect(await sweepUploads(join(dir, 'yok'), day, now)).toBe(0);
   });

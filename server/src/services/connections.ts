@@ -465,6 +465,8 @@ export class ConnectionService {
       })
       .where(eq(schema.connections.id, id));
     dropClient(id);
+    // Another server's tools, not the same server reached another way: the rules go only then.
+    if (patch.url !== undefined && patch.url !== row.url) await this.dropAllowRules(row.slug);
     const changedAccess = moved || patch.token !== undefined || patch.clientId !== undefined;
     if (changedAccess && auth !== 'oauth') await this.refresh(id);
     else if (changedAccess && auth === 'oauth') await this.setStatus(id, 'signed-out', null);
@@ -476,8 +478,33 @@ export class ConnectionService {
     const row = await this.row(id);
     dropClient(id);
     await this.ctx.db.delete(schema.connections).where(eq(schema.connections.id, id));
+    // A connection added later under the same name takes the same tool names.
+    await this.dropAllowRules(row.slug);
     void this.revoke(row, this.secretsOf(row));
     this.changed();
+  }
+
+  /**
+   * "Always allow" rules for this connection's tools were given for the server it reached: another
+   * server's tool of the same name may do something else. "Always ask" and block rules stay, since
+   * they only ever ask more.
+   */
+  private async dropAllowRules(slug: string) {
+    const prefix = `mcp__${slug}__`;
+    const gone = (
+      await this.ctx.db
+        .select({ id: schema.permissionRules.id, pattern: schema.permissionRules.pattern })
+        .from(schema.permissionRules)
+        .where(eq(schema.permissionRules.list, 'allow'))
+    ).filter((r) => r.pattern.trim().startsWith(prefix));
+    if (!gone.length) return;
+    await this.ctx.db.delete(schema.permissionRules).where(
+      inArray(
+        schema.permissionRules.id,
+        gone.map((r) => r.id),
+      ),
+    );
+    this.ctx.bus.refresh({ scope: 'rules' });
   }
 
   /**

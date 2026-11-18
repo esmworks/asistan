@@ -1,13 +1,25 @@
-import { outsideTrigger, questionItems, type Approval, type Message } from '@yumakbot/shared';
+import {
+  connectionToolParts,
+  describeAction,
+  outsideTrigger,
+  questionItems,
+  type Approval,
+  type Locale,
+  type Message,
+} from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { T } from '../i18n';
 import type { Services } from '../services';
+import { redactSecrets } from '../services/secrets';
 import { truncate } from '../util';
 
 /** A chat app a message can come from; kept on the person's message as `via`. */
 export type Via = 'telegram' | 'whatsapp' | 'slack' | 'discord';
+
+/** The most of a step's detail a chat app's card shows; the app shows the rest. */
+const DETAIL_MAX = 700;
 
 /** One choice under a card; `data` is what comes back when it is pressed or typed. */
 export interface CardButton {
@@ -24,16 +36,29 @@ export function cardView(
   a: Approval,
   props: Record<string, unknown>,
   t: T,
+  locale?: Locale,
 ): { text: string; buttons: CardButton[] } {
+  // The chat app's server keeps what is posted there: a key or password in a step stays here.
+  const masked = (s: string) => redactSecrets(s, t('memory.redacted')).text;
   if (a.kind === 'tool') {
     const reason =
-      typeof props.reviewReason === 'string' && props.reviewReason ? `\n_${props.reviewReason}_` : '';
+      typeof props.reviewReason === 'string' && props.reviewReason ? `\n_${masked(props.reviewReason)}_` : '';
     // A run outside text started takes no "always allow": the step was the text's choice.
     const outside = outsideTrigger(props.outside);
     const why = outside ? `\n_${t(`channel.outside.${outside}`)}_` : '';
     const always = !props.askRule && !props.heldBy && !outside;
+    // What the app shows under "What?": the command, file or address, so the step is not
+    // allowed from the chat app without seeing it.
+    const detail = describeAction(a.toolName, a.input ?? {}, {
+      bot: '',
+      locale,
+      service: connectionToolParts(a.toolName)?.server,
+    }).detail;
+    const shown = detail
+      ? `\n\`\`\`\n${truncate(masked(detail), DETAIL_MAX).replace(/```/g, "'''")}\n\`\`\``
+      : '';
     return {
-      text: `🔐 ${a.summary}${why}${reason}`,
+      text: `🔐 ${a.summary}${shown}${why}${reason}`,
       buttons: [
         { label: t('channel.allow'), data: `a:${a.id}:y` },
         ...(always ? [{ label: t('channel.always'), data: `a:${a.id}:r` }] : []),

@@ -1558,7 +1558,11 @@ function Composer({
             </Button>
           </div>
         )}
-        <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
+        <AttachmentChips
+          items={attachments.items}
+          onRemove={attachments.remove}
+          onRetry={attachments.retry}
+        />
         <div className="flex items-end gap-1">
           <input
             ref={picker}

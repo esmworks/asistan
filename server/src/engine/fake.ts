@@ -4,6 +4,8 @@ import {
   runCost,
   SILENT_REPLY,
   toolPermName,
+  type CompleteRequest,
+  type Completion,
   type Engine,
   type ModelTest,
   type GateRequest,
@@ -49,6 +51,14 @@ export class FakeEngine implements Engine {
   public requests: TurnRequest[] = [];
   public reviews: ReviewRequest[] = [];
   public gates: GateRequest[] = [];
+  /** The requests of `complete`, and what answers them (the memory review); a test sets `completer`. */
+  public completions: CompleteRequest[] = [];
+  public completer: (req: CompleteRequest) => string | Promise<string> = () => '{"operations":[]}';
+
+  async complete(req: CompleteRequest): Promise<Completion> {
+    this.completions.push(req);
+    return { text: await this.completer(req), costUsd: 0.001 };
+  }
 
   /**
    * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of
@@ -190,9 +200,9 @@ export class FakeEngine implements Engine {
     if (req.prompt.includes('[alt-ajan]')) {
       const sub = { id: 'fake-sub', description: 'Kaynakları tara', state: 'running' as const, steps: 0 };
       req.onSubagent?.(sub);
-      req.onSubagent?.({ ...sub, steps: 1 });
-      req.onSubagent?.({ ...sub, steps: 2 });
-      req.onSubagent?.({ ...sub, steps: 2, state: 'done' });
+      req.onSubagent?.({ ...sub, steps: 1, tool: 'Grep' });
+      req.onSubagent?.({ ...sub, steps: 2, tool: 'WebSearch' });
+      req.onSubagent?.({ ...sub, steps: 2, tool: 'WebSearch', state: 'done', result: 'Üç kaynak bulundu.' });
     }
     // A call that keeps failing the same way, past the warning: the turn is stopped.
     if (req.prompt.includes('[döngü]')) {

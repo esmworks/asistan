@@ -17,11 +17,22 @@ const TOKENS = SECRET_TOKENS;
 const LABELLED =
   /(?<![\p{L}\p{N}_])(password|passwd|pwd|passcode|pin|api[ _-]?key|secret|token|access[ _-]?key|client[ _-]?secret|şifre(?:si|m)?|parola(?:sı|m)?|(?:api )?anahtar(?:ı|ım)?)(\s*(?:[:=]|\bis\b|\bwas\b)\s*)(["'`]?)([^\s"'`,;]{4,})\3/giu;
 
+/**
+ * A variable set the shell's way whose name ends in what it holds: `PGPASSWORD=…`, `GITHUB_TOKEN=…`,
+ * `AWS_SECRET_ACCESS_KEY=…`, `DB_PASS=…`. The label above wants its word to stand alone, which a
+ * name like these never lets it.
+ */
+const VARIABLE =
+  /\b([A-Z][A-Z0-9_]*?(?:PASSWORD|PASSWD|_PASS|_PWD|TOKEN|SECRET|SECRET_KEY|API_?KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)|PASS)(\s*=\s*)(["'`]?)([^\s"'`;&|]{4,})\3/g;
+
 /** `text` with every secret it holds replaced by `marker`, and whether anything was replaced. */
 export function redactSecrets(text: string, marker: string): { text: string; redacted: boolean } {
   let out = text;
   for (const re of TOKENS) out = out.replace(re, marker);
   out = maskCardNumbers(out, marker);
+  out = out.replace(VARIABLE, (whole, name: string, sep: string, quote: string, value: string) =>
+    value === marker ? whole : `${name}${sep}${quote}${marker}${quote}`,
+  );
   out = out.replace(LABELLED, (whole, label: string, sep: string, quote: string, value: string) => {
     if (value === marker) return whole;
     // After "is" a plain word is more likely prose ("the token is valid") than a password.

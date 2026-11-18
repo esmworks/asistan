@@ -33,6 +33,7 @@ import type {
   MailSender,
   Memory,
   MemoryChange,
+  MemoryHistoryLine,
   Message,
   PermissionRule,
   ProviderInfo,
@@ -101,6 +102,7 @@ import type {
   PersonCreate,
   PersonUpdate,
   BotAccess,
+  StorageReport,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -150,6 +152,60 @@ async function request<T>(
     throw new ApiError(res.status, message);
   }
   return data as T;
+}
+
+/** A request that got no answer at all: the connection dropped or the server was not there. */
+export class NoAnswerError extends Error {
+  /** Read by the shared upload retry, which sees this error as "no answer". */
+  readonly noAnswer = true;
+}
+
+/**
+ * Sends a file the way {@link request} does, but reports how much of it has gone up (`part`, 0 to
+ * 1) and can be called off with `signal`; fetch can do neither for an upload.
+ */
+function sendFile<T>(
+  path: string,
+  file: Blob,
+  opts: { onProgress?: (part: number) => void; signal?: AbortSignal },
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (opts.signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('content-type', 'application/octet-stream');
+    xhr.setRequestHeader('accept-language', useLocale.getState().locale);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) opts.onProgress?.(e.loaded / e.total);
+    };
+    const abort = () => xhr.abort();
+    opts.signal?.addEventListener('abort', abort, { once: true });
+    const done = () => opts.signal?.removeEventListener('abort', abort);
+    xhr.onabort = () => {
+      done();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new NoAnswerError(getT()('error.requestFailed', { status: 0 })));
+    };
+    xhr.onload = () => {
+      done();
+      let data: unknown = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        data = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      if (xhr.status === 401) onUnauthorized();
+      const message =
+        (data as { error?: string } | null)?.error ?? getT()('error.requestFailed', { status: xhr.status });
+      reject(new ApiError(xhr.status, message));
+    };
+    xhr.send(file);
+  });
 }
 
 export const http = {
@@ -204,6 +260,8 @@ export interface Settings {
   /** The routine pre-check; missing on older servers. */
   routineGate?: RoutineGateMode;
   maxTurns?: number;
+  /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
+  memoryReviewEvery?: number;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
@@ -366,6 +424,7 @@ export const api = {
   usage: (days: UsageRange, botId?: string) =>
     http.get<UsageReport>(`/api/usage?days=${days}${botId ? `&bot=${encodeURIComponent(botId)}` : ''}`),
   planUsage: () => http.get<{ plan: UsageReport['plan'] | null }>('/api/usage/plan'),
+  storage: () => http.get<StorageReport>('/api/storage'),
   openBrowserWindow: (botId: string, url?: string) =>
     http.post<{ ok: true }>(`/api/bots/${botId}/browser/window`, { url }),
   closeBrowserWindow: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/browser/window`),
@@ -410,11 +469,26 @@ export const api = {
   react: (messageId: string, emoji: string | null) =>
     http.put<Message>(`/api/messages/${messageId}/reaction`, { emoji }),
   /** Puts a file in the conversation's folder; the server may pick another name if it is taken. */
-  uploadFile: (threadId: string, file: File) =>
-    http.post<{ name: string; size: number }>(
-      `/api/threads/${threadId}/files?name=${encodeURIComponent(file.name)}`,
+  uploadFile: (
+    threadId: string,
+    file: File,
+    opts: { uploadId?: string; onProgress?: (part: number) => void; signal?: AbortSignal } = {},
+  ) =>
+    sendFile<{ name: string; size: number }>(
+      `/api/threads/${threadId}/files?name=${encodeURIComponent(file.name)}${
+        opts.uploadId ? `&uploadId=${encodeURIComponent(opts.uploadId)}` : ''
+      }`,
       file,
+      opts,
     ),
+  /** Calls off a file still going up; `keepalive` as for {@link api.removeFile}. */
+  cancelUpload: (threadId: string, uploadId: string, opts: { keepalive?: boolean } = {}) => {
+    const path = `/api/threads/${threadId}/uploads/${encodeURIComponent(uploadId)}`;
+    if (!opts.keepalive) return http.del<{ ok: true }>(path);
+    return fetch(path, { method: 'DELETE', credentials: 'same-origin', keepalive: true }).then(() => ({
+      ok: true as const,
+    }));
+  },
   /** `keepalive`: sent while the page closes, so the request outlives it. */
   removeFile: (threadId: string, name: string, opts: { keepalive?: boolean } = {}) => {
     const path = `/api/threads/${threadId}/files/${encodeURIComponent(name)}`;
@@ -484,7 +558,9 @@ export const api = {
   memory: () => http.get<Memory[]>('/api/memory'),
   addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
     http.post<Memory>('/api/memory', m),
-  updateMemory: (id: string, p: { content: string }) => http.patch<Memory>(`/api/memory/${id}`, p),
+  updateMemory: (id: string, p: { content?: string; pinned?: boolean; updatedAt?: string }) =>
+    http.patch<Memory>(`/api/memory/${id}`, p),
+  memoryHistory: () => http.get<MemoryHistoryLine[]>('/api/memory-history'),
   removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
   /** Deletes every note the bot keeps for itself. */
   removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),

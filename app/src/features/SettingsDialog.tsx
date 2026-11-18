@@ -56,6 +56,7 @@ import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { deviceName } from '@/lib/device';
 import { useFormat } from '@/lib/format';
+import { noteMatches, pinnedFirst, placeLabel, placeNoteGroups } from '@/lib/memoryNotes';
 import { PHONE, useMedia } from '@/lib/media';
 import {
   useBots,
@@ -64,6 +65,7 @@ import {
   useGroups,
   useInfo,
   useMemory,
+  useRooms,
   useStaleMemory,
   useRoutines,
   useRules,
@@ -74,6 +76,7 @@ import {
 import { desktop, useDesktopServer } from '@/lib/desktop';
 import { useUi, type SettingsTab } from '@/lib/store';
 import { NoteSource } from './NoteSource';
+import { LearnSetting, MemoryHistory, NoteRow } from './MemoryNote';
 import {
   allowNotifications,
   chime,
@@ -1353,8 +1356,26 @@ function MemoryTab() {
   // Notes of an archived bot stay until deleted; its name tells them apart.
   const { data: archived = [] } = useQuery({ queryKey: ['bots', 'archived'], queryFn: api.archivedBots });
   const qc = useQueryClient();
+  const { data: rooms = [] } = useRooms();
   const [text, setText] = useState('');
+  const [query, setQuery] = useState('');
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory'] });
+  // The server refuses a save over a note that changed meanwhile; the list is fetched again then.
+  const save = useMutation({
+    mutationFn: ({ m, content }: { m: Memory; content: string }) =>
+      api.updateMemory(m.id, { content, updatedAt: m.updatedAt }),
+    onSuccess: refresh,
+    onError: (e) => {
+      toast.error((e as Error).message);
+      void refresh();
+    },
+  });
+  const pin = useMutation({
+    mutationFn: (m: Memory) => api.updateMemory(m.id, { pinned: !m.pinned }),
+    onSuccess: refresh,
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const onSave = (m: Memory, content: string) => save.mutateAsync({ m, content });
   const clearBot = useMutation({
     mutationFn: api.removeBotMemory,
     onSuccess: refresh,
@@ -1376,12 +1397,17 @@ function MemoryTab() {
     },
     onSuccess: (m) => {
       void refresh();
+      // A place's note is written by the bots there, so it cannot be put back from here.
+      const { scope } = m;
+      if (scope === 'room') return;
       toast(t('memory.deleted'), {
         action: {
           label: t('memory.undo'),
           onClick: () =>
             void api
-              .addMemory({ scope: m.scope, botId: m.botId, content: m.content, site: m.site })
+              .addMemory({ scope, botId: m.botId, content: m.content, site: m.site })
+              // A pinned note comes back pinned, as it was.
+              .then((back) => (m.pinned ? api.updateMemory(back.id, { pinned: true }) : back))
               .then(refresh)
               .catch((e: Error) => toast.error(e.message)),
         },
@@ -1395,8 +1421,20 @@ function MemoryTab() {
     onSuccess: refresh,
     onError: (e) => toast.error((e as Error).message),
   });
-  const user = memory.filter((m) => m.scope === 'user');
-  const groups = botNoteGroups(memory, bots, archived);
+  const searching = query.trim() !== '';
+  const hit = (m: Memory) => noteMatches(m, query);
+  const user = pinnedFirst(memory.filter((m) => m.scope === 'user' && hit(m)));
+  const groups = botNoteGroups(memory.filter(hit), bots, archived).map((g) => ({
+    ...g,
+    notes: pinnedFirst(g.notes),
+  }));
+  const roomGroups = placeNoteGroups(memory.filter(hit), t, rooms);
+  const staleHits = stale.filter(hit);
+  const noteProps = {
+    onSave,
+    onPin: (m: Memory) => pin.mutate(m),
+    onForget: (m: Memory) => forget.mutate(m),
+  };
   const botName = (id: string | null) =>
     [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
   const name = (g: BotNoteGroup) => g.name ?? t('common.bot');
@@ -1411,7 +1449,7 @@ function MemoryTab() {
   return (
     <>
       <form
-        className="mb-6 flex gap-2"
+        className="mb-3 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (text.trim()) add.mutate();
@@ -1427,8 +1465,19 @@ function MemoryTab() {
           {t('common.add')}
         </Button>
       </form>
+      <div className="mb-2">
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('memory.search')}
+          aria-label={t('memory.search')}
+          className="rounded-full"
+        />
+      </div>
+      <p className="mb-6 px-1 text-xs text-muted-foreground">{t('memory.pinHint')}</p>
       <PendingMemory bots={[...bots, ...archived]} />
-      {stale.length > 0 && (
+      {staleHits.length > 0 && (
         <Card title={t('memory.stale')}>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <p className="min-w-40 flex-1 text-xs text-muted-foreground">
@@ -1448,11 +1497,17 @@ function MemoryTab() {
               </Button>
             )}
           </div>
-          {stale.map((m) => (
+          {staleHits.map((m) => (
             <Row
               key={m.id}
               label={m.site ? `${m.site} · ${m.content}` : m.content}
-              hint={`${m.scope === 'user' ? t('memory.staleShared') : botName(m.botId)} · ${
+              hint={`${
+                m.scope === 'user'
+                  ? t('memory.staleShared')
+                  : m.scope === 'room'
+                    ? placeLabel(m.place, t, rooms)
+                    : botName(m.botId)
+              } · ${
                 m.lastUsedAt
                   ? t('memory.lastUsed', { when: dayLabel(m.lastUsedAt) })
                   : t('memory.neverUsed', { when: dayLabel(m.updatedAt) })
@@ -1474,29 +1529,23 @@ function MemoryTab() {
       )}
       <Card title={t('memory.user')}>
         {user.length === 0 && (
-          <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>
+          <div className="px-4 py-3 text-sm text-muted-foreground">
+            {t(searching ? 'memory.searchEmpty' : 'memory.empty')}
+          </div>
         )}
         {user.map((m) => (
-          <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
-            <NoteSource m={m} />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 rounded-full"
-              onClick={() => forget.mutate(m)}
-              aria-label={t('common.delete')}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </Row>
+          <NoteRow key={m.id} m={m} {...noteProps} />
         ))}
       </Card>
       <Card title={t('memory.bots')}>
         {groups.length === 0 && (
-          <div className="px-4 py-3 text-sm text-muted-foreground">{t('memory.empty')}</div>
+          <div className="px-4 py-3 text-sm text-muted-foreground">
+            {t(searching ? 'memory.searchEmpty' : 'memory.empty')}
+          </div>
         )}
         {groups.map((g) => {
-          const isOpen = open.has(g.botId);
+          // A search opens the bots with hits, so the notes found are in sight.
+          const isOpen = searching || open.has(g.botId);
           return (
             <div key={g.botId}>
               <div className="flex min-h-14 items-center gap-2 px-4 py-2">
@@ -1521,7 +1570,7 @@ function MemoryTab() {
                     </span>
                   </span>
                 </button>
-                {isOpen && g.notes.length > 1 && (
+                {isOpen && !searching && g.notes.length > 1 && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1539,18 +1588,7 @@ function MemoryTab() {
               {isOpen && (
                 <div className="divide-y border-t">
                   {g.notes.map((m) => (
-                    <Row key={m.id} label={m.site ? `${m.site} · ${m.content}` : m.content}>
-                      <NoteSource m={m} />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 rounded-full"
-                        onClick={() => forget.mutate(m)}
-                        aria-label={t('common.delete')}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </Row>
+                    <NoteRow key={m.id} m={m} {...noteProps} />
                   ))}
                 </div>
               )}
@@ -1558,6 +1596,46 @@ function MemoryTab() {
           );
         })}
       </Card>
+      {roomGroups.length > 0 && (
+        <Card title={t('memory.rooms')}>
+          {!searching && <p className="px-4 py-3 text-xs text-muted-foreground">{t('memory.roomsHint')}</p>}
+          {roomGroups.map((g) => {
+            const isOpen = searching || open.has(g.place);
+            return (
+              <div key={g.place}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => toggle(g.place)}
+                  className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left"
+                >
+                  <ChevronRight
+                    className={cn(
+                      'size-4 shrink-0 text-muted-foreground transition-transform',
+                      isOpen && 'rotate-90',
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{g.label}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('memory.noteCount', { count: g.notes.length })}
+                    </span>
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="divide-y border-t">
+                    {g.notes.map((m) => (
+                      <NoteRow key={m.id} m={m} {...noteProps} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Card>
+      )}
+      <LearnSetting />
+      <MemoryHistory />
     </>
   );
 }

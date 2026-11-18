@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   describeAction,
   INTL_LOCALE,
+  LOCALES,
   selectsTools,
   toolPicker,
   type Bot,
@@ -42,8 +43,10 @@ import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
+import { placeOf } from '../services/memory';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
 import { catastrophic, readsOnlyWithin } from './safety';
+import { ownBoxStep } from './own-box';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
 import { OWNER_ID } from '../users';
@@ -146,6 +149,9 @@ const interrupted = (message: string): TurnOutcome => ({
 
 /** A message stopped by the usage limit runs again this long after the limit resets. */
 export const LIMIT_RETRY_DELAY_MS = 30_000;
+
+/** The longest a stop waits for the turns it stopped to end before it goes on. */
+const SETTLE_MS = 10_000;
 /**
  * Keeps a connection's answer that is too long for the model in the conversation's folder, under
  * tool-results/, where the bot can read or search it with its own tools.
@@ -201,6 +207,9 @@ export class TurnManager {
         role: 'system',
         author: 'system',
         text: t('turn.interruptedByRestart'),
+        // A person's request is marked as a stop, so it can be run again from the note; other work
+        // (a routine, a ticket, another bot's request) is not run again that way.
+        ...(turn.source === 'user' && { props: { kind: 'interrupted' } }),
         turnId: turn.id,
       });
       await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
@@ -280,11 +289,19 @@ export class TurnManager {
     this.retries.delete(note.id);
     const { retryAt: _, ...props } = note.props;
     await this.services.threads.updateMessage(note.id, { props: { ...props, retried: true } });
+    // A stopped turn may have done part of the work: the session still holds it, and the bot is
+    // told to look at it first instead of doing it all again.
+    const t = await this.services.settings.translator();
+    // In any language: the app's may have changed since the note was written.
+    const noted = LOCALES.some((l) =>
+      turn.prompt.startsWith(translator(l)('prompt.resumeCut', { text: '' })),
+    );
+    const cut = note.role === 'system' && !noted;
     return this.enqueue({
       threadId: turn.threadId,
       botId: turn.botId,
       source: 'user',
-      prompt: turn.prompt,
+      prompt: cut ? t('prompt.resumeCut', { text: turn.prompt }) : turn.prompt,
       userId: turn.userId,
     });
   }
@@ -370,12 +387,16 @@ export class TurnManager {
     return thread?.userId ?? (await this.services.access.botOwner(botId));
   }
 
-  /** Stops the work a bot-to-bot request started: its running turn, and its turns not yet started. */
-  async stopJob(jobId: string): Promise<boolean> {
+  /**
+   * Stops the work a bot-to-bot request started: its running turn, and its turns not yet started.
+   * With `threadId`, only those in that conversation, such as the target's, and not the sender's
+   * turn that reads the answer.
+   */
+  async stopJob(jobId: string, threadId?: string): Promise<boolean> {
     const t = await this.services.settings.translator();
     let found = false;
     for (const r of this.running.values()) {
-      if (r.turn.jobId === jobId) {
+      if (r.turn.jobId === jobId && (!threadId || r.turn.threadId === threadId)) {
         r.controller.abort();
         found = true;
       }
@@ -383,7 +404,13 @@ export class TurnManager {
     const dropped = await this.ctx.db
       .update(schema.turns)
       .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.stoppedByUser') })
-      .where(and(eq(schema.turns.jobId, jobId), eq(schema.turns.status, 'queued')))
+      .where(
+        and(
+          eq(schema.turns.jobId, jobId),
+          eq(schema.turns.status, 'queued'),
+          threadId ? eq(schema.turns.threadId, threadId) : undefined,
+        ),
+      )
       .returning();
     for (const turn of dropped) {
       this.emitState(turn.threadId, turn.botId);
@@ -506,6 +533,27 @@ export class TurnManager {
     if (!entry) return;
     entry.controller.abort();
     await entry.done;
+  }
+
+  /**
+   * Waits for the turns of a conversation that were told to stop to end, up to `ms`: a step under
+   * way when the stop came (a request to another bot) is then on record for whoever stops what it
+   * started.
+   */
+  async settle(threadId: string, ms = SETTLE_MS): Promise<void> {
+    const ends = [...this.running.values()]
+      .filter((r) => r.turn.threadId === threadId && r.controller.signal.aborted)
+      .map((r) => r.done);
+    if (!ends.length) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled(ends),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, ms);
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   isRunning(threadId: string) {
@@ -783,7 +831,9 @@ export class TurnManager {
       paths,
       cwd: sandbox.cwd,
       // A bot with memory off sees none, not even the person's shared notes.
-      memory: bot.memory ? await memory.visibleTo(bot.id, own) : { user: [], bot: [] },
+      memory: bot.memory
+        ? await memory.visibleTo(bot.id, own, await placeOf(this.ctx, thread))
+        : { user: [], bot: [], room: [] },
       profile: {
         name: settings.userName,
         addressAs: settings.addressAs,
@@ -1011,6 +1061,28 @@ export class TurnManager {
       ) {
         return { behavior: 'allow' };
       }
+      // On a server of its own, not the person's computer, the bot's machine is its own: building,
+      // testing, installing packages, local git work and writing in its own folders change nothing
+      // of theirs and need no card. Pushing, sending, a connected app, anything that reaches another
+      // host and the group's shared folder still go by the level. Not once the run has read text
+      // someone else wrote, which may be steering it (a package to add, a script to run), nor for
+      // a step the person turned down just now.
+      if (
+        !this.ctx.config.onUserComputer &&
+        (mode === 'ask' || mode === 'review') &&
+        !locked &&
+        !outside() &&
+        !askRuleMatches(rules, ask.toolName, ask.input) &&
+        ownBoxStep(
+          ask.toolName,
+          ask.input,
+          sandbox.cwd,
+          sandbox.writable.filter((d) => d !== paths.groupFiles),
+        ) &&
+        !(await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
+        return { behavior: 'allow', let: { how: 'level' } };
+      }
       const verdict = decide({
         mode,
         toolName: ask.toolName,
@@ -1186,11 +1258,23 @@ export class TurnManager {
     // The bot's plan is one message per turn, rewritten as the plan changes.
     let planMessage: Promise<string> | null = null;
     // A card in the chat for each subagent the bot starts, kept up to date as it works.
-    const subagentCards = new Map<string, Promise<string>>();
+    const subagentCards = new Map<string, { message: Promise<string>; startedAt: string }>();
     const showSubagent = async (sub: SubagentState) => {
-      const props = { subagent: { description: sub.description, state: sub.state, steps: sub.steps } };
+      const card = subagentCards.get(sub.id);
+      // When it started, so its card can say how long it has been at it.
+      const startedAt = card?.startedAt ?? new Date().toISOString();
+      const props = {
+        subagent: {
+          description: sub.description,
+          state: sub.state,
+          steps: sub.steps,
+          ...(sub.tool && { tool: sub.tool }),
+          ...(sub.result && { result: sub.result }),
+          startedAt,
+          ...(sub.state !== 'running' && { endedAt: new Date().toISOString() }),
+        },
+      };
       try {
-        const card = subagentCards.get(sub.id);
         if (!card) {
           const created = threads
             .addMessage({
@@ -1202,10 +1286,10 @@ export class TurnManager {
               turnId: turn.id,
             })
             .then((r) => r.message.id);
-          subagentCards.set(sub.id, created);
+          subagentCards.set(sub.id, { message: created, startedAt });
           await created;
         } else {
-          await threads.updateMessage(await card, { props });
+          await threads.updateMessage(await card.message, { props });
         }
       } catch (err) {
         console.warn('subagent', err);
@@ -1551,6 +1635,9 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // What the turn changed in memory straight away is kept only if it completed; otherwise it
+    // goes back and waits for the person (see `settleTurn`).
+    await this.services.memory.settleTurn(turn.id, outcome.ok);
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

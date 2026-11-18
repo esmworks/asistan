@@ -26,6 +26,8 @@ import {
   resultText,
   type AccountStatus,
   type AppTool,
+  type CompleteRequest,
+  type Completion,
   type Engine,
   type GateRequest,
   type GateVerdict,
@@ -34,6 +36,7 @@ import {
   type ReviewVerdict,
   type Sandbox,
   type SubagentState,
+  subagentAnswer,
   type TurnOutcome,
   type TurnRequest,
   OVERLOADED,
@@ -615,6 +618,8 @@ export class ClaudeEngine implements Engine {
             const sub = subagents.get(c.tool_use_id);
             if (sub && sub.state === 'running') {
               sub.state = c.is_error ? 'failed' : 'done';
+              const result = subagentAnswer(c.content);
+              if (result) sub.result = result;
               req.onSubagent?.({ ...sub });
             }
           }
@@ -634,6 +639,7 @@ export class ClaudeEngine implements Engine {
             if (c.type !== 'tool_use') continue;
             if (parent) {
               parent.steps += 1;
+              parent.tool = c.name;
               req.onSubagent?.({ ...parent });
             } else if (c.name === 'Task' || c.name === 'Agent') {
               const input = (c.input ?? {}) as { description?: unknown; subagent_type?: unknown };
@@ -921,6 +927,14 @@ export class ClaudeEngine implements Engine {
     const { text, costUsd } = await this.quick(system, user, req.signal);
     if (req.signal.aborted) throw new Error('aborted');
     return parseGate(text, costUsd);
+  }
+
+  /**
+   * One answer without tools or a session, from the cheapest model: the memory review reads a
+   * conversation this way, so it neither starts a turn nor reaches a chat app.
+   */
+  async complete(req: CompleteRequest): Promise<Completion> {
+    return this.quick(req.system, req.user, req.signal);
   }
 
   /** The models this login can use and their effort levels. */

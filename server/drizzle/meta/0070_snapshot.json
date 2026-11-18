@@ -1,6 +1,6 @@
 {
-  "id": "28ab46b7-fe18-4754-bf70-20bad9a84676",
-  "prevId": "2ac1ca82-0053-45bf-982e-a55b0275f964",
+  "id": "0b07767d-fbbf-4cce-89c2-c41abeeccec7",
+  "prevId": "912ecc21-14fc-4724-9149-d2e8c871d6f3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2289,6 +2289,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "place": {
+          "name": "place",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pinned": {
+          "name": "pinned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "content": {
           "name": "content",
           "type": "text",
@@ -2396,6 +2409,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "memories_place_idx": {
+          "name": "memories_place_idx",
+          "columns": [
+            {
+              "expression": "place",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2475,6 +2503,12 @@
         },
         "bot_id": {
           "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "place": {
+          "name": "place",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2598,6 +2632,58 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.memory_reviews": {
+      "name": "memory_reviews",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_at": {
+          "name": "message_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "memory_reviews_thread_id_threads_id_fk": {
+          "name": "memory_reviews_thread_id_threads_id_fk",
+          "tableFrom": "memory_reviews",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
           ],
           "columnsTo": [
             "id"

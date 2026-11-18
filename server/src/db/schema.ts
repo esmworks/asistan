@@ -349,10 +349,16 @@ export const memories = pgTable(
   'memories',
   {
     id: text('id').primaryKey(),
-    scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
+    // `room`: a note about a place (a chat app channel or a room), read by every bot that talks there
+    // and by nobody anywhere else.
+    scope: text('scope', { enum: ['bot', 'user', 'room'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
     /** For a note about the person, whose: each person's notes reach only bots working for them. */
     userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** For a room note, the place it belongs to: `slack:<channel>`, `discord:<channel>` or `room:<id>`. */
+    place: text('place'),
+    /** The person asked for this note to go into every prompt that reaches it, before the rest. */
+    pinned: boolean('pinned').notNull().default(false),
     content: sealedText('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
@@ -374,7 +380,11 @@ export const memories = pgTable(
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('memories_scope_idx').on(t.scope, t.botId), index('memories_user_idx').on(t.userId)],
+  (t) => [
+    index('memories_scope_idx').on(t.scope, t.botId),
+    index('memories_user_idx').on(t.userId),
+    index('memories_place_idx').on(t.place),
+  ],
 );
 
 export const auditLog = pgTable(
@@ -389,7 +399,7 @@ export const auditLog = pgTable(
     after: sealedJson('after'),
     /**
      * Whose the target was, for a memory note: `user:<id>` for a person's own, `bot:<id>` for a
-     * bot's. Kept on the line, so a deleted note's history still goes only to those it was for.
+     * bot's, `room:<place>` for a place's. Kept on the line, so a deleted note's history still goes only to those it was for.
      */
     owner: text('owner'),
     createdAt: created(),
@@ -1000,8 +1010,10 @@ export const memoryChanges = pgTable(
     action: text('action', { enum: ['write', 'update', 'forget'] }).notNull(),
     /** The note an update or a forget is about; the change goes when the note does. */
     memoryId: text('memory_id').references(() => memories.id, { onDelete: 'cascade' }),
-    scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
+    scope: text('scope', { enum: ['bot', 'user', 'room'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
+    /** For a room note, its place (see `memories.place`). */
+    place: text('place'),
     site: text('site'),
     /** The note's words after the change (for a forget, the words that would go). */
     content: sealedText('content').notNull(),
@@ -1013,10 +1025,12 @@ export const memoryChanges = pgTable(
       .references(() => bots.id, { onDelete: 'cascade' }),
     /**
      * Why it waits: a routine's run, another bot's request, outside text read, or a person who may
-     * talk with the bot but not change it; with its name.
+     * talk with the bot but not change it; or a turn the person stopped (or that failed) after it
+     * had changed memory: those changes were taken back and wait here instead; or the background
+     * review of a conversation; with its name.
      */
     origin: jsonb('origin')
-      .$type<{ kind: 'routine' | 'bot' | 'outside' | 'person'; name: string }>()
+      .$type<{ kind: 'routine' | 'bot' | 'outside' | 'person' | 'stopped' | 'review'; name: string }>()
       .notNull(),
     /**
      * The person the work was for. A change to their own notes is theirs to accept; one to a
@@ -1030,6 +1044,20 @@ export const memoryChanges = pgTable(
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],
 );
+
+/**
+ * How far the memory review has read each conversation: the last message it looked at, so that
+ * after a restart only what came later is read. The message's time is kept too, for when the
+ * message itself was deleted since.
+ */
+export const memoryReviews = pgTable('memory_reviews', {
+  threadId: text('thread_id')
+    .primaryKey()
+    .references(() => threads.id, { onDelete: 'cascade' }),
+  messageId: text('message_id').notNull(),
+  messageAt: ts('message_at').notNull(),
+  reviewedAt: ts('reviewed_at').notNull().defaultNow(),
+});
 
 /**
  * Pages a bot made that anyone with the link may open without signing in. The token is the whole

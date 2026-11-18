@@ -80,6 +80,8 @@ export const useRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: api.skills });
 export const useUsage = (days: UsageRange, botId?: string) =>
   useQuery({ queryKey: ['usage', days, botId], queryFn: () => api.usage(days, botId), staleTime: 30_000 });
+/** How much room the bots' folders take; read from disk, so only while it is on screen. */
+export const useStorage = () => useQuery({ queryKey: ['storage'], queryFn: api.storage, staleTime: 60_000 });
 /**
  * The Claude plan's usage windows, as the last Claude turn heard them. A turn that hears new ones
  * pushes a refresh; the slow poll keeps a page left open from showing a reset as still to come.
