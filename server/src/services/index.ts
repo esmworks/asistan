@@ -34,6 +34,7 @@ import { PushService } from './push';
 import { RoutineService } from './routines';
 import { SubscriptionService } from './subscriptions';
 import { ProviderKeyService } from './keys';
+import { ModelCatalogService } from './model-catalog';
 import { ImageService } from './images';
 import { SkillService } from './skills';
 import { ReactionNotifier } from './reactions';
@@ -60,6 +61,7 @@ export class Services {
   readonly settings: SettingsService;
   readonly botImport: BotImportService;
   readonly keys: ProviderKeyService;
+  readonly modelCatalog: ModelCatalogService;
   readonly images: ImageService;
   readonly skills: SkillService;
   readonly jobs: JobService;
@@ -113,7 +115,11 @@ export class Services {
     this.settings = new SettingsService(ctx);
     this.botImport = new BotImportService(ctx, this.settings);
     this.subscriptions = new SubscriptionService(ctx, this.vault);
-    this.keys = new ProviderKeyService(ctx, this.vault, fetch, this.subscriptions);
+    this.modelCatalog = new ModelCatalogService(ctx, () => [
+      ...this.keys.builtIn(),
+      ...this.subscriptions.providers(),
+    ]);
+    this.keys = new ProviderKeyService(ctx, this.vault, fetch, this.subscriptions, this.modelCatalog);
     this.images = new ImageService(this.keys);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);

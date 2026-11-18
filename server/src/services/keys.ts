@@ -1,10 +1,19 @@
 import { eq, like } from 'drizzle-orm';
 import type { Model, ModelAuth } from '@earendil-works/pi-ai';
 import { getModels, getProviders } from '@earendil-works/pi-ai/compat';
-import type { CustomEndpointCreate, CustomEndpointUpdate, ProviderInfo } from '@yumakbot/shared';
+import { getSupportedThinkingLevels } from '@earendil-works/pi-ai/models';
+import {
+  EFFORTS,
+  type CustomEndpointCreate,
+  type CustomEndpointUpdate,
+  type Effort,
+  type ModelInfo,
+  type ProviderInfo,
+} from '@yumakbot/shared';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError } from '../util';
+import type { CatalogModel, ModelCatalogService } from './model-catalog';
 import type { SubscriptionService } from './subscriptions';
 import type { VaultService } from './vault';
 
@@ -121,9 +130,12 @@ export class ProviderKeyService {
     private fetcher: typeof fetch = fetch,
     /** Sign-ins with the person's own plan (ChatGPT, Copilot), besides keys. */
     private plans?: SubscriptionService,
+    /** Names, thinking and limits the engine's list lacks, and models released since. */
+    private catalog?: ModelCatalogService,
   ) {}
 
-  private builtIn(): string[] {
+  /** The providers the engine has a model list for, keys or not; what the catalog is kept for. */
+  builtIn(): string[] {
     return (getProviders() as string[]).filter((p) => !NO_API_KEY.has(p));
   }
 
@@ -192,6 +204,57 @@ export class ProviderKeyService {
     // A Copilot plan opens only some models; without a key those are the ones offered.
     const open = !(await this.get(provider)) ? await this.plans?.availableModels(provider) : null;
     return open ? ids.filter((id) => open.has(id)) : ids;
+  }
+
+  /**
+   * The provider's models as the model picker shows them, newest first: the engine's list, with the
+   * names and dates the catalog gives, and the chat models the catalog lists that the engine's list
+   * does not have yet. Thinking levels are the ones the engine will send for each model.
+   */
+  async modelInfo(provider: string): Promise<ModelInfo[]> {
+    await this.check(provider);
+    const custom = await this.endpoint(provider);
+    if (custom) {
+      return custom.models.map((id) => ({
+        id,
+        name: id,
+        efforts: [],
+        images: custom.meta?.[id]?.images === true,
+        contextWindow: custom.meta?.[id]?.contextWindow ?? null,
+        released: null,
+      }));
+    }
+    const listed = getModels(provider as never) as Model<string>[];
+    const dev = (await this.catalog?.provider(provider))?.models ?? {};
+    const known = new Set(listed.map((m) => m.id));
+    const extra = Object.entries(dev)
+      .filter(([id, m]) => !known.has(id) && m.chat && m.tools && !m.deprecated)
+      .map(([id, m]) => withCatalog(unlistedModel(listed, id), m))
+      .filter((m): m is Model<string> => !!m);
+    const info = [...listed, ...extra].map((m) => ({
+      id: m.id,
+      name: dev[m.id]?.name || m.name || m.id,
+      efforts: modelEfforts(m),
+      images: m.input.includes('image'),
+      contextWindow: m.contextWindow || null,
+      released: dev[m.id]?.released ?? null,
+    }));
+    // A Copilot plan opens only some models; without a key those are the ones offered.
+    const open = !(await this.get(provider)) ? await this.plans?.availableModels(provider) : null;
+    const shown = open ? info.filter((m) => open.has(m.id)) : info;
+    // Newest first; a model of unknown date keeps its place after the dated ones.
+    return shown
+      .map((m, i) => ({ m, i }))
+      .sort((a, b) =>
+        a.m.released && b.m.released
+          ? b.m.released.localeCompare(a.m.released) || a.i - b.i
+          : a.m.released
+            ? -1
+            : b.m.released
+              ? 1
+              : a.i - b.i,
+      )
+      .map(({ m }) => m);
   }
 
   /** A stored key in the clear. One saved before keys were sealed is sealed on the way. */
@@ -460,7 +523,9 @@ export class ProviderKeyService {
     const e = await this.endpoint(provider);
     if (!e) {
       if (!this.builtIn().includes(provider)) return undefined;
-      return unlistedModel(getModels(provider as never) as Model<string>[], id);
+      const base = unlistedModel(getModels(provider as never) as Model<string>[], id);
+      const dev = (await this.catalog?.provider(provider))?.models[id];
+      return dev ? withCatalog(base, dev) : base;
     }
     return {
       id,
@@ -497,6 +562,31 @@ export function unlistedModel(listed: readonly Model<string>[], id: string): Mod
   }
   if (!best) return undefined;
   return { ...best, id, name: id, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+}
+
+/**
+ * An unlisted model with what the catalog knows of it: its name, whether it thinks, what it takes
+ * in, its limits and its price. How it is reached (API, address) stays the borrowed model's.
+ */
+export function withCatalog(base: Model<string> | undefined, m: CatalogModel): Model<string> | undefined {
+  if (!base) return undefined;
+  const contextWindow = m.contextWindow ?? base.contextWindow;
+  return {
+    ...base,
+    name: m.name,
+    reasoning: m.reasoning,
+    input: m.images ? ['text', 'image'] : ['text'],
+    contextWindow,
+    maxTokens: Math.min(m.maxTokens ?? base.maxTokens, contextWindow),
+    ...(m.cost && { cost: m.cost }),
+  };
+}
+
+/** The thinking levels the engine sends for this model, in the app's own words. */
+export function modelEfforts(m: Model<string>): Effort[] {
+  if (!m.reasoning) return [];
+  const levels = new Set<string>(getSupportedThinkingLevels(m));
+  return EFFORTS.filter((e) => levels.has(e));
 }
 
 function hint(key: string) {

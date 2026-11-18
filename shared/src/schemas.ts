@@ -849,6 +849,20 @@ export interface ClaudeModel {
   efforts: Effort[];
 }
 
+/** A model of another provider as the model picker shows it. */
+export interface ModelInfo {
+  /** What goes after `provider/`. */
+  id: string;
+  /** A readable name; the id when nothing better is known. */
+  name: string;
+  /** The thinking levels the model takes, lowest first; empty for one that does not think, null when unknown. */
+  efforts: Effort[] | null;
+  images: boolean;
+  contextWindow: number | null;
+  /** YYYY-MM-DD, when known. */
+  released: string | null;
+}
+
 /** A subagent's card in the chat: what it was asked to do, how it stands and the steps it took. */
 export interface SubagentCard {
   description: string;

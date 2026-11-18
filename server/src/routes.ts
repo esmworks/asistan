@@ -492,6 +492,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.get('/api/providers', async () => s.keys.list());
   app.get('/api/providers/:id/models', async (req) => s.keys.models(ProviderParams.parse(req.params).id));
+  app.get('/api/providers/:id/model-info', async (req) =>
+    s.keys.modelInfo(ProviderParams.parse(req.params).id),
+  );
   app.put('/api/providers/:id/key', async (req) => {
     await s.keys.set(ProviderParams.parse(req.params).id, ProviderKeyInput.parse(req.body).key);
     return { ok: true };
