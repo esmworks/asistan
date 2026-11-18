@@ -15,7 +15,7 @@ describe('kim neyi görür', () => {
   let mert: Person;
   let admin: Person;
   beforeAll(async () => {
-    t = await testServer();
+    t = await testServer({ onUserComputer: false });
     ayse = await t.person('ayse');
     mert = await t.person('mert');
     admin = await t.person('yonetici', 'admin');

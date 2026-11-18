@@ -947,7 +947,7 @@ export class DiscordChannel {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
-        const view = cardView(card, m.props, t);
+        const view = cardView(card, m.props, t, await this.services.settings.locale());
         // A step's card is the only thing between a stranger's request and the team's things: in a
         // server where anyone may write, those who may change the bot answer it in the app.
         if (card.kind === 'tool' && !this.rolesOf(row, bound.serverId).length) {

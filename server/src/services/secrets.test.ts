@@ -20,6 +20,17 @@ describe('redactSecrets', () => {
     expect(red('my password is s3cret!')).toBe(`my password is ${M}`);
   });
 
+  it('replaces the value of a variable named for a secret, as a command sets it', () => {
+    expect(red('PGPASSWORD=hunter22 psql -h db')).toBe(`PGPASSWORD=${M} psql -h db`);
+    expect(red('GITHUB_TOKEN="abc123def" gh pr list')).toBe(`GITHUB_TOKEN="${M}" gh pr list`);
+    expect(red('export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI')).toBe(`export AWS_SECRET_ACCESS_KEY=${M}`);
+    expect(red('DB_PASS=s3cret! npm start')).toBe(`DB_PASS=${M} npm start`);
+    // A folder or a switch is not a secret.
+    expect(red('OLDPWD=/home/x NODE_ENV=production BYPASS=1')).toBe(
+      'OLDPWD=/home/x NODE_ENV=production BYPASS=1',
+    );
+  });
+
   it('leaves prose alone', () => {
     const plain = 'The token is valid until Friday; Erhan prefers tea.';
     expect(redactSecrets(plain, M)).toEqual({ text: plain, redacted: false });

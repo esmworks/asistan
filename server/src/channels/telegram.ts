@@ -613,7 +613,7 @@ export class TelegramChannels {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
-        const view = cardView(card, m.props, t);
+        const view = cardView(card, m.props, t, await this.services.settings.locale());
         const sent = await this.text(
           api,
           chat,

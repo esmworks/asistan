@@ -44,6 +44,7 @@ import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
 import { catastrophic, readsOnlyWithin } from './safety';
+import { ownBoxStep } from './own-box';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
 import { OWNER_ID } from '../users';
@@ -1010,6 +1011,28 @@ export class TurnManager {
         )
       ) {
         return { behavior: 'allow' };
+      }
+      // On a server of its own, not the person's computer, the bot's machine is its own: building,
+      // testing, installing packages, local git work and writing in its own folders change nothing
+      // of theirs and need no card. Pushing, sending, a connected app, anything that reaches another
+      // host and the group's shared folder still go by the level. Not once the run has read text
+      // someone else wrote, which may be steering it (a package to add, a script to run), nor for
+      // a step the person turned down just now.
+      if (
+        !this.ctx.config.onUserComputer &&
+        (mode === 'ask' || mode === 'review') &&
+        !locked &&
+        !outside() &&
+        !askRuleMatches(rules, ask.toolName, ask.input) &&
+        ownBoxStep(
+          ask.toolName,
+          ask.input,
+          sandbox.cwd,
+          sandbox.writable.filter((d) => d !== paths.groupFiles),
+        ) &&
+        !(await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
+        return { behavior: 'allow', let: { how: 'level' } };
       }
       const verdict = decide({
         mode,

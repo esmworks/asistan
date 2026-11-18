@@ -116,6 +116,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - An "always ask" or block rule for a command also covers it inside such a line (`cd repo && git push`).
 - The auto review takes a routine's goal as asking for the reads it needs: "look at the commits that landed on main"
   covers reading their diffs, without the routine naming each commit.
+- A card in a chat app shows the step itself, as the app does under "What?": the command, file, address or what a
+  connected app is sent, cut to a few lines. Keys, tokens and passwords in it are masked, since the chat app's server
+  keeps what is posted there.
+- "Always allow" on a step that carries a key or password counts for this time only, so the secret is not kept in a
+  rule and listed in the settings.
+- "Never allow" on a card blocks that step for that bot, as narrow as "always allow" keeps one (`Bash(git push:*)`),
+  rather than the whole tool for every bot.
+- When a connection moves to another server or is removed, the "always allow" rules for its tools go with it: another
+  server's tool of the same name may do something else. "Always ask" and block rules stay.
 
 ### Settings
 

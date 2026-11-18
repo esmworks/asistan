@@ -784,7 +784,8 @@ export const en: Catalog<MessageKey> = {
   'email.status.denied.send': 'Not sent',
   'email.status.denied.draft': 'Not saved',
   'email.status.expired': 'Left unanswered; not sent',
-  'approval.neverHint': 'Blocks this tool from now on; you can lift it in Settings → Permissions',
+  'approval.neverHint':
+    'Blocks this step for this bot from now on; you can lift it in Settings → Permissions',
   'approval.expired': 'Permission request left unanswered',
   'approval.timedOut': 'Permission request timed out; the action was not taken',
   'approval.show': 'What exactly?',

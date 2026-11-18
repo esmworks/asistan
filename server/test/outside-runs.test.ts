@@ -377,7 +377,13 @@ describe('dış çalıştırmada karar', () => {
 
   it('sohbet uygulamasındaki kart nedenini söyler ve "hep izin ver" sunmaz', () => {
     const t = translator('tr');
-    const a = { id: 'a1', kind: 'tool', summary: 'notlar.txt yazmak istiyor' } as Approval;
+    const a = {
+      id: 'a1',
+      kind: 'tool',
+      toolName: 'Write',
+      input: { file_path: 'notlar.txt' },
+      summary: 'notlar.txt yazmak istiyor',
+    } as unknown as Approval;
     const own = cardView(a, {}, t);
     expect(own.buttons.map((b) => b.data)).toContain('a:a1:r');
     const outside = cardView(a, { outside: 'email' }, t);
