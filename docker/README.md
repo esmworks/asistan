@@ -305,6 +305,21 @@ Betiğin yazdırdığı `YUMAKBOT_APPARMOR=…` satırını panelde uygulamanın
 Environment) ekleyip yeniden yayınlayın. Profil `/etc/apparmor.d/` altında durduğu için yeni yayınlar onu
 silmez.
 
+Yayın `networks have same bridge name` hatasıyla durursa bu sunucuda `yumakbot0` köprüsünü kullanan başka
+bir ağ vardır: çoğunlukla aynı sunucudaki önceki bir kurulumdan ya da panelde silinip yeniden açılmış bir
+uygulamadan kalmıştır. Panel her uygulamaya kendi proje adını verdiği için ağ adları farklıdır, ama köprü
+adı güvenlik duvarı onu bulabilsin diye sabittir. Hangi ağın tuttuğunu görmek için:
+
+```bash
+docker network ls -q | xargs docker network inspect -f '{{.Name}} {{index .Options "com.docker.network.bridge.name"}} {{len .Containers}}' | grep yumakbot0
+```
+
+Ağ eski bir kurulumdan kaldıysa ve kapsayıcısı yoksa (son sayı 0) `docker network rm <ad>` ile silip yeniden
+yayınlayın. İki kurulumu aynı sunucuda birlikte çalıştırmak istiyorsanız ikincisine panelde
+`YUMAKBOT_BRIDGE=yumakbot1` gibi başka bir ad verin (en çok 15 karakter) ve güvenlik duvarını o köprü için de
+kurun: `sudo BRIDGE=yumakbot1 /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh`. Kurallar köprüye göre
+eklenir; biri ötekininkini silmez.
+
 ## Botların bilgisayarı
 
 Her botun kendi Linux masaüstü oturumu vardır: panel, tarayıcı, terminal, dosya yöneticisi, LibreOffice ve

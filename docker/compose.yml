@@ -157,10 +157,12 @@ networks:
   # Database traffic only; no route to the internet.
   internal:
     internal: true
-  # Internet access for the server; see docker/firewall.sh to block private ranges.
+  # Internet access for the server; see docker/firewall.sh to block private ranges. The bridge has a fixed
+  # name so the firewall can find it; a host keeps one bridge per name, so a second installation on the
+  # same host (or one left from an earlier deploy) needs another YUMAKBOT_BRIDGE.
   egress:
     driver_opts:
-      com.docker.network.bridge.name: yumakbot0
+      com.docker.network.bridge.name: ${YUMAKBOT_BRIDGE:-yumakbot0}
       com.docker.network.bridge.enable_icc: 'false'
   # Server to computer service only; no route out.
   computer:
