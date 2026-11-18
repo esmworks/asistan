@@ -25,7 +25,7 @@ import {
 } from '../engine/types';
 import { translator, type T } from '../i18n';
 import {
-  allowRuleFor,
+  allowRulesFor,
   askRuleFor,
   askRuleMatches,
   blockRuleFor,
@@ -1022,10 +1022,12 @@ export class TurnManager {
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
         if (free.has(ask.toolName) || READ_ONLY_TOOLS.has(ask.toolName)) return { behavior: 'allow' };
-        const rule = mode === 'auto' ? null : allowRuleFor(rules, ask.toolName, ask.input);
+        const allowedBy = mode === 'auto' ? null : allowRulesFor(rules, ask.toolName, ask.input);
         return {
           behavior: 'allow',
-          let: rule ? { how: 'rule', rule: rule.pattern } : { how: 'level' },
+          let: allowedBy
+            ? { how: 'rule', rule: allowedBy.map((r) => r.pattern).join(', ') }
+            : { how: 'level' },
         };
       }
       if (verdict === 'block')
