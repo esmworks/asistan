@@ -1,4 +1,5 @@
 import {
+  BRAND_COLOR,
   APPROVAL_TIMED_OUT,
   catalogEntry,
   connectionToolParts,
@@ -1229,7 +1230,7 @@ function ApprovalCard({
   const bot = bots.get(a.botId);
   const botName = bot?.name ?? t('common.bot');
   if (a.kind === 'question' && a.status !== 'denied' && a.status !== 'expired') {
-    return <QuestionCard a={a} color={bot?.color ?? '#4f6bed'} />;
+    return <QuestionCard a={a} color={bot?.color ?? BRAND_COLOR} />;
   }
   // A question nobody answered in time (a routine's, overnight) stays readable and can still be
   // answered: the reply quotes it and reaches the bot as an ordinary message.

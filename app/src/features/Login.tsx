@@ -5,7 +5,7 @@ import { KeyRound, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { ShapeArt } from '@/components/BotAvatar';
+import { AppMascot } from '@/components/AppMascot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLocale, useT } from '@/i18n';
@@ -29,7 +29,7 @@ export function Login() {
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="size-16">
-            <ShapeArt shape="blob" color="var(--brand)" />
+            <AppMascot />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Yumak Bot</h1>
           <p className="text-sm text-muted-foreground">

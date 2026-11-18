@@ -56,7 +56,8 @@
   /* The conversation's column and a bot message's width; wider ones are chosen in Settings. */
   --chat-width: 860px;
   --bubble-width: 730px;
-  --brand: #4f6bed;
+  /* The app's own green; see BRAND_COLOR in shared/src/schemas.ts. */
+  --brand: #2b8152;
 }
 
 .dark {

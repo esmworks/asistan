@@ -407,6 +407,12 @@ export const routines = pgTable('routines', {
   timezone: text('timezone').notNull(),
   enabled: boolean('enabled').notNull().default(true),
   nextRunAt: ts('next_run_at'),
+  /**
+   * The slot a retry was put in front of: once the retry has run, the schedule goes on from here,
+   * so an interval routine keeps its rhythm instead of counting from the retry. Null when no retry
+   * waits.
+   */
+  resumeAt: ts('resume_at'),
   lastRunAt: ts('last_run_at'),
   /**
    * When the person last opened the routine while its latest run had failed. A failure from before
@@ -480,6 +486,11 @@ export const routineRuns = pgTable(
     gateReason: text('gate_reason'),
     /** What the pre-check cost, as the engine reported it. */
     gateCostUsd: real('gate_cost_usd'),
+    /**
+     * For a run skipped because the one before was still going: how many slots in a row it stands
+     * for. A run stuck for long leaves one line, not one per slot it held up.
+     */
+    busySkips: integer('busy_skips').notNull().default(0),
     /**
      * What outside text started the run (a mail, a webhook's body, a watched page or an app's new
      * answer); null for a scheduled or manual run. Such a run may change nothing without a card.

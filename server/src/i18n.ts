@@ -227,6 +227,7 @@ const tr = {
     'Yedek, bu sunucunun açabileceğinden ya da diskte kalan yerden büyük; hiçbir şey değişmedi',
   'error.routineCheckTool':
     'Rutinin denetimi, bu bota açık bir uygulamanın açık ve yalnız okuyan bir aracı olmalı',
+  'error.routineLimit': 'Bir botun en çok {max} rutini olabilir',
   'error.appCallAsks':
     'Bu görünüm bir şey değiştirmek istiyor; bu yalnızca botun onay seviyesi "sormadan yap" iken görünümden yapılabilir. Bota sohbette söyle.',
   'app.viewShown': '{name} görünümü',
@@ -317,6 +318,8 @@ const tr = {
   'validation.fileName': 'Geçersiz dosya adı',
   'validation.date': 'YYYY-AA-GG biçiminde olmalı',
   'validation.datePast': 'Tarih ve saat geçmişte kalıyor',
+  'validation.cronTooOften':
+    'Bu cron ifadesi rutini çok sık çalıştırıyor; iki çalıştırma arasında en az {minutes} dakika olmalı',
   'validation.skillName': 'Ad küçük harf, rakam ve tirelerden oluşmalı (ör. haftalik-rapor)',
   'validation.emptyMessage': 'Mesaj boş',
   'validation.emoji': 'Simge tek bir emoji olmalı',
@@ -428,6 +431,8 @@ const tr = {
   'routine.webhookEvent': 'Olay: {event}',
   'routine.pausedWait': 'Rutin duraklatıldığı için beklemeyi bıraktı.',
   'routine.stillRunning': 'Önceki çalıştırma hâlâ sürüyor',
+  'routine.stillRunningMany': 'Önceki çalıştırma hâlâ sürüyor; art arda {count} çalıştırma atlandı',
+  'routine.startFailed': 'Çalıştırma başlatılamadı: {message}',
   'routine.queued': 'Önceki çalıştırmanın bitmesini bekliyor.',
   'routine.queuePaused': 'Çalışmadı: beklerken rutin duraklatıldı.',
   'routine.gateSkipped': 'Ön kontrol yeni bir iş görmedi: {reason}',
@@ -770,7 +775,7 @@ const tr = {
   'tool.skillCreated': '"{name}" becerisi kaydedildi ve sana açıldı.',
   'tool.skillTaken': '"{name}" adında başka bir beceri var ve sende değil; başka bir ad seç.',
   'tool.routine_create':
-    'Kendin için bir rutin kur: zamanı gelince sunucu sana prompt ile bir mesaj gönderir. prompt metnini bu sohbeti görmeden izlenebilecek biçimde yaz: hangi servis, araç ya da site, hangi hesap, adımlar ve ne zaman neyi bildireceğin. Hatırlatma ise hatırlatılacak metni açıkça yaz. schedule türleri: daily/weekdays {time:"09:00"}, weekly {days:[1,3], time}, monthly {day, time}, hourly {minute}, interval {minutes}, once {date:"2026-11-20", time}, cron {expr:"0 9 * * 1-5"} (dakika saat gün ay haftagünü). interval belirli günler ve saatlerle sınırlanabilir: {minutes:30, days:[1,2,3,4,5], from:"09:00", to:"18:00"}. Her çalıştırmanın bir öncekinin raporunu görmesi gerekiyorsa ("dünden bu yana ne değişti" gibi) carry_report:true ver. Kullanıcıyla ana sohbetinde, oradaki konuşmayı bilerek çalışması için in_main:true ver. Sunucu her açıldığında da bir kez çalışması için (masaüstünde bilgisayar açılınca) on_startup:true ver. "Bu sayfa değişince haber ver" gibi bir izleme için watch_url ver: sayfa her zamanında yapay zekâsız okunur, yalnız metni değişince çalışırsın ve yeni metni alırsın. "Yeni e-posta gelince", "yeni issue açılınca" gibi bir uygulama olayı için check_tool ile bağlı bir uygulamanın yalnız okuyan aracını (sende göründüğü adıyla, ör. mcp__gmail__search_threads) ve check_args ile argümanlarını ver: araç her zamanında yapay zekâsız çağrılır, yalnız cevabı değişince çalışırsın ve yeni cevabı alırsın; sessiz geçen zamanlar hiçbir şeye mal olmaz. Argümanları her seferinde aynı cevabı verecek biçimde seç (ör. okunmamış e-postalar), saat ya da sayaç gibi her çağrıda değişen alanlar olmasın. Rutinin çalışmaları senin modelinden başka bir modelle yürüsün istenirse (ör. sık çalışan basit bir rutini ucuz tutmak için) model ver: kendi motorundaki bir model adı, ör. "haiku" ya da "sonnet"; sen ve kullanıcıyla sohbetlerin kendi modelinde kalır. Kullanıcı kartta onaylar. on_email: true, rutini e-posta adresine posta gelince de çalıştırır (mail rutine veri olarak gelir); email_filter satırları hangi postaların başlatacağını daraltır (subject~=fatura, from=banka@ornek.com).',
+    'Kendin için bir rutin kur: zamanı gelince sunucu sana prompt ile bir mesaj gönderir. prompt metnini bu sohbeti görmeden izlenebilecek biçimde yaz: hangi servis, araç ya da site, hangi hesap, adımlar ve ne zaman neyi bildireceğin. Hatırlatma ise hatırlatılacak metni açıkça yaz. schedule türleri: daily/weekdays {time:"09:00"}, weekly {days:[1,3], time}, monthly {day, time}, hourly {minute}, interval {minutes}, once {date:"2026-11-20", time}, cron {expr:"0 9 * * 1-5"} (dakika saat gün ay haftagünü); iki çalıştırma arasında en az 5 dakika olmalı, daha sık bir zamanlama reddedilir. interval belirli günler ve saatlerle sınırlanabilir: {minutes:30, days:[1,2,3,4,5], from:"09:00", to:"18:00"}. Her çalıştırmanın bir öncekinin raporunu görmesi gerekiyorsa ("dünden bu yana ne değişti" gibi) carry_report:true ver. Kullanıcıyla ana sohbetinde, oradaki konuşmayı bilerek çalışması için in_main:true ver. Sunucu her açıldığında da bir kez çalışması için (masaüstünde bilgisayar açılınca) on_startup:true ver. "Bu sayfa değişince haber ver" gibi bir izleme için watch_url ver: sayfa her zamanında yapay zekâsız okunur, yalnız metni değişince çalışırsın ve yeni metni alırsın. "Yeni e-posta gelince", "yeni issue açılınca" gibi bir uygulama olayı için check_tool ile bağlı bir uygulamanın yalnız okuyan aracını (sende göründüğü adıyla, ör. mcp__gmail__search_threads) ve check_args ile argümanlarını ver: araç her zamanında yapay zekâsız çağrılır, yalnız cevabı değişince çalışırsın ve yeni cevabı alırsın; sessiz geçen zamanlar hiçbir şeye mal olmaz. Argümanları her seferinde aynı cevabı verecek biçimde seç (ör. okunmamış e-postalar), saat ya da sayaç gibi her çağrıda değişen alanlar olmasın. Rutinin çalışmaları senin modelinden başka bir modelle yürüsün istenirse (ör. sık çalışan basit bir rutini ucuz tutmak için) model ver: kendi motorundaki bir model adı, ör. "haiku" ya da "sonnet"; sen ve kullanıcıyla sohbetlerin kendi modelinde kalır. Kullanıcı kartta onaylar. on_email: true, rutini e-posta adresine posta gelince de çalıştırır (mail rutine veri olarak gelir); email_filter satırları hangi postaların başlatacağını daraltır (subject~=fatura, from=banka@ornek.com).',
   'tool.routine_failed':
     'Bu rutin çalışması işi yapamadıysa (bir hizmete ulaşılamadı, veri yoktu) nedenini söyleyerek çalışmayı başarısız işaretle; kullanıcı bunu kenar çubuğunda görür.',
   'tool.routineMarkedFailed': 'Çalışma başarısız olarak işaretlendi.',
@@ -1409,6 +1414,7 @@ const en: Catalog<ServerKey> = {
     'The backup is larger than this server can unpack, or than the disk space left; nothing was changed',
   'error.routineCheckTool':
     "A routine's check must be a tool that only reads, switched on, of an app open to this bot",
+  'error.routineLimit': 'A bot can have at most {max} routines',
   'error.appCallAsks':
     'This view wants to change something; from a view that runs only for a bot allowed to act without asking. Tell the bot in the chat.',
   'app.viewShown': '{name} view',
@@ -1502,6 +1508,8 @@ const en: Catalog<ServerKey> = {
   'validation.fileName': 'Invalid file name',
   'validation.date': 'Must be in YYYY-MM-DD format',
   'validation.datePast': 'The date and time are in the past',
+  'validation.cronTooOften':
+    'This cron expression runs the routine too often; runs must be at least {minutes} minutes apart',
   'validation.skillName': 'The name must be lower-case letters, digits and dashes (e.g. weekly-report)',
   'validation.emptyMessage': 'The message is empty',
   'validation.emoji': 'The icon must be a single emoji',
@@ -1609,6 +1617,8 @@ const en: Catalog<ServerKey> = {
   'routine.webhookEvent': 'Event: {event}',
   'routine.pausedWait': 'Stopped waiting because the routine was paused.',
   'routine.stillRunning': 'The previous run is still going',
+  'routine.stillRunningMany': 'The previous run is still going; {count} runs in a row were skipped',
+  'routine.startFailed': 'The run could not start: {message}',
   'routine.queued': 'Waits for the run before it to end.',
   'routine.queuePaused': 'Not run: the routine was paused while this waited.',
   'routine.gateSkipped': 'The pre-check found nothing new to work on: {reason}',
@@ -1949,7 +1959,7 @@ const en: Catalog<ServerKey> = {
   'tool.skillCreated': 'The skill "{name}" is saved and turned on for you.',
   'tool.skillTaken': 'Another skill is named "{name}" and you do not have it; pick another name.',
   'tool.routine_create':
-    'Set up a routine for yourself: when it is due, the server sends you a message with the prompt. Write the prompt so it can be followed without this chat: which service, tool or site, which account, the steps, and what to report when. For a reminder, write the text to remind of. schedule types: daily/weekdays {time:"09:00"}, weekly {days:[1,3], time}, monthly {day, time}, hourly {minute}, interval {minutes}, once {date:"2026-11-20", time}, cron {expr:"0 9 * * 1-5"} (minute hour day month weekday). interval can be limited to some days and hours: {minutes:30, days:[1,2,3,4,5], from:"09:00", to:"18:00"}. When each run needs the report of the run before it ("what changed since yesterday"), pass carry_report:true. To run it in your main conversation with the user, with what was said there, pass in_main:true. To also run it once whenever the server starts (on a desktop, when the computer is turned on), pass on_startup:true. To watch a page ("tell me when this page changes"), pass watch_url: the page is read at each time with no AI, and you run only when its text changed, with the new text. For an app event ("when a new email arrives", "when an issue is opened"), pass check_tool, a read-only tool of a connected app by the name you see it under (e.g. mcp__gmail__search_threads), and its arguments in check_args: the tool is called at each time with no AI, and you run only when its answer changed, with the new answer; quiet times cost nothing. Pick arguments that give the same answer while nothing happened (unread emails, say), with no clock or counter that changes on every call. When its runs should use another model than yours (e.g. to keep a frequent, simple routine cheap), pass model: a model name on your own engine, such as "haiku" or "sonnet"; you and your chats with the user keep your own model. The user approves it on a card. on_email: true also runs it when mail arrives at your address (the mail comes to the run as data); email_filter lines narrow which mail starts it (subject~=invoice, from=bank@example.com).',
+    'Set up a routine for yourself: when it is due, the server sends you a message with the prompt. Write the prompt so it can be followed without this chat: which service, tool or site, which account, the steps, and what to report when. For a reminder, write the text to remind of. schedule types: daily/weekdays {time:"09:00"}, weekly {days:[1,3], time}, monthly {day, time}, hourly {minute}, interval {minutes}, once {date:"2026-11-20", time}, cron {expr:"0 9 * * 1-5"} (minute hour day month weekday); runs must be at least 5 minutes apart, a more frequent schedule is refused. interval can be limited to some days and hours: {minutes:30, days:[1,2,3,4,5], from:"09:00", to:"18:00"}. When each run needs the report of the run before it ("what changed since yesterday"), pass carry_report:true. To run it in your main conversation with the user, with what was said there, pass in_main:true. To also run it once whenever the server starts (on a desktop, when the computer is turned on), pass on_startup:true. To watch a page ("tell me when this page changes"), pass watch_url: the page is read at each time with no AI, and you run only when its text changed, with the new text. For an app event ("when a new email arrives", "when an issue is opened"), pass check_tool, a read-only tool of a connected app by the name you see it under (e.g. mcp__gmail__search_threads), and its arguments in check_args: the tool is called at each time with no AI, and you run only when its answer changed, with the new answer; quiet times cost nothing. Pick arguments that give the same answer while nothing happened (unread emails, say), with no clock or counter that changes on every call. When its runs should use another model than yours (e.g. to keep a frequent, simple routine cheap), pass model: a model name on your own engine, such as "haiku" or "sonnet"; you and your chats with the user keep your own model. The user approves it on a card. on_email: true also runs it when mail arrives at your address (the mail comes to the run as data); email_filter lines narrow which mail starts it (subject~=invoice, from=bank@example.com).',
   'tool.routine_failed':
     'If this routine run could not do its task (a service was unreachable, there was no data), mark the run as failed with the reason; the user sees it in the sidebar.',
   'tool.routineMarkedFailed': 'The run is marked as failed.',
