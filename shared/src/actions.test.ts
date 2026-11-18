@@ -79,6 +79,12 @@ describe('araç isteklerinin düz dili', () => {
     );
     expect(send.want).toBe('Paşa wants to send something with "Siparişi onayla" in the browser.');
     expect(send.detail).toBe('Siparişi onayla');
+    const drag = describeAction(
+      'mcp__yumakbot__browser_drag',
+      { from_ref: 'e4', to_ref: 'e9', element: 'Kartı Bitti listesine', sends: true },
+      { bot: 'Paşa' },
+    );
+    expect(drag.want).toBe('Paşa tarayıcıda "Kartı Bitti listesine" ile bir şey göndermek istiyor.');
     const upload = describeAction(
       'mcp__yumakbot__browser_upload',
       { ref: 'e2', element: 'Özgeçmiş', paths: ['belgeler/cv.pdf'] },

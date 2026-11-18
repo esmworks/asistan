@@ -1,10 +1,18 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import type { Bot } from '@yumakbot/shared';
 import { BrowserError } from '../browser/manager';
 import type { ElementHandle, Frame, Page, Route } from 'playwright-core';
 import { z } from 'zod';
-import { VIEWPORT, webUrl, type BrowserManager } from '../browser/manager';
+import {
+  MAX_DOWNLOAD_BYTES,
+  MAX_TABS,
+  VIEWPORT,
+  webUrl,
+  type BrowserManager,
+  type PageDownload,
+} from '../browser/manager';
 import {
   formatMessages,
   formatRequests,
@@ -27,7 +35,80 @@ import type { Define } from './index';
 import { workspacePaths } from '../workspace';
 
 /** Longest page outline handed to the model; a long page is cut and the bot is told so. */
-const MAX_SNAPSHOT = 40_000;
+export const MAX_SNAPSHOT = 40_000;
+/** Most lines a search of the outline gives back, besides the lines they sit under. */
+const MAX_FOUND = 50;
+/** How long a step waits for a download it set off before answering. */
+const DOWNLOAD_WAIT_MS = 15_000;
+
+/**
+ * An outline cut into parts of at most `max` characters, at line ends. The outline covers the
+ * whole page, not only what is on screen, so scrolling does not bring the rest into it: the bot
+ * reads on by part.
+ */
+export function outlineParts(raw: string, max = MAX_SNAPSHOT): string[] {
+  const parts: string[] = [];
+  let part = '';
+  for (const line of raw.split('\n')) {
+    // A single line longer than a part (a page's one huge paragraph) is cut on its own.
+    for (let i = 0; i < Math.max(line.length, 1); i += max) {
+      const piece = line.slice(i, i + max);
+      if (part && part.length + 1 + piece.length > max) {
+        parts.push(part);
+        part = '';
+      }
+      part = part ? `${part}\n${piece}` : piece;
+    }
+  }
+  if (part || !parts.length) parts.push(part);
+  return parts;
+}
+
+const indentOf = (line: string) => line.length - line.trimStart().length;
+
+/** The line with this ref and every line under it, by indentation; null when no line has it. */
+export function outlineSection(raw: string, ref: string): string | null {
+  const lines = raw.split('\n');
+  const at = lines.findIndex((l) => l.includes(`[ref=${ref}]`));
+  if (at < 0) return null;
+  const depth = indentOf(lines[at]!);
+  let end = at + 1;
+  while (end < lines.length && (lines[end]!.trim() === '' || indentOf(lines[end]!) > depth)) end++;
+  return lines.slice(at, end).join('\n');
+}
+
+/** Letters folded so a search finds "İstanbul" with "istanbul" and "Kayıt" with "KAYIT". */
+const fold = (s: string) => s.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu, '');
+
+/**
+ * The outline's lines with these words, each with the lines it sits under (its list, its table
+ * row, its section), in page order, with "…" where lines were left out.
+ */
+export function outlineFind(raw: string, words: string): { text: string; found: number } {
+  const lines = raw.split('\n');
+  const want = fold(words.trim());
+  const keep = new Set<number>();
+  let found = 0;
+  for (let i = 0; i < lines.length && found < MAX_FOUND; i++) {
+    if (!fold(lines[i]!).includes(want)) continue;
+    found++;
+    keep.add(i);
+    let depth = indentOf(lines[i]!);
+    for (let j = i - 1; j >= 0 && depth > 0; j--) {
+      if (lines[j]!.trim() === '' || indentOf(lines[j]!) >= depth) continue;
+      keep.add(j);
+      depth = indentOf(lines[j]!);
+    }
+  }
+  const out: string[] = [];
+  let last = -1;
+  for (const i of [...keep].sort((a, b) => a - b)) {
+    if (last >= 0 && i > last + 1) out.push('…');
+    out.push(lines[i]!);
+    last = i;
+  }
+  return { text: out.join('\n'), found };
+}
 
 const ref = z
   .string()
@@ -346,11 +427,75 @@ const FOCUSED = `(() => {
   return el.tagName.toLowerCase() + (label ? ' "' + label + '"' : '');
 })()`;
 
+/**
+ * Runs in the page, on an element a click could not reach: what lies over its middle, if a person
+ * would see it there (a dialog, a banner, anything with text, controls or a background). Null for
+ * a see-through empty layer a page leaves behind, which a person would click through.
+ */
+const coverInfo = (node: unknown): string | null => {
+  type El = {
+    tagName: string;
+    innerText?: string;
+    labels?: ArrayLike<El> | null;
+    parentElement: El | null;
+    getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+    contains(other: El): boolean;
+    getAttribute(name: string): string | null;
+    querySelector(selector: string): El | null;
+  };
+  const g = globalThis as unknown as {
+    document: { elementFromPoint(x: number, y: number): El | null };
+    getComputedStyle(e: El): { backgroundColor: string; backgroundImage: string };
+  };
+  const el = node as El;
+  const box = el.getBoundingClientRect();
+  const top = g.document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  if (!top || el.contains(top) || top.contains(el)) return null;
+  // A styled box or text of the field's own label lies over a hidden checkbox or radio: a click
+  // there is the person's click on the field.
+  if (Array.from(el.labels ?? []).some((l) => l.contains(top))) return null;
+  let seen = false;
+  let outer = top;
+  for (let c: El | null = top; c && !c.contains(el); c = c.parentElement) {
+    outer = c;
+    const role = (c.getAttribute('role') || '').toLowerCase();
+    const style = g.getComputedStyle(c);
+    const clear = style.backgroundColor === 'transparent' || /^rgba\(.*,\s*0\)$/.test(style.backgroundColor);
+    if (
+      c.tagName === 'DIALOG' ||
+      role === 'dialog' ||
+      role === 'alertdialog' ||
+      c.getAttribute('aria-modal') === 'true' ||
+      !clear ||
+      style.backgroundImage !== 'none' ||
+      (c.innerText || '').trim() !== '' ||
+      c.querySelector('a[href],button,input,select,textarea,[role=button]')
+    )
+      seen = true;
+  }
+  if (!seen) return null;
+  const label = (outer.getAttribute('aria-label') || outer.innerText || '').trim().replace(/\s+/g, ' ');
+  return outer.tagName.toLowerCase() + (label ? ` "${label.slice(0, 80)}"` : '');
+};
+
 /** Lets the page settle after an action: navigation, scripts redrawing the page. */
 async function settle(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(400);
+  // A page still drawing its content (grey placeholder boxes, a region marked busy) would read as
+  // nearly empty: give it a little longer, only when it shows it is loading. A page whose script
+  // never comes back does not answer the look either, so the look itself is bounded.
+  const loading = await Promise.race([
+    page.evaluate(LOADING).catch(() => false),
+    new Promise<false>((r) => setTimeout(() => r(false), 500)),
+  ]);
+  if (loading === true) {
+    await page.waitForFunction(`!${LOADING}`, undefined, { timeout: 2_000, polling: 100 }).catch(() => {});
+  }
 }
+
+/** Whether the page shows it is still loading its content; run in the page, so written as text. */
+const LOADING = `(() => !!document.querySelector('[aria-busy="true"], [class*="skeleton" i], [class*="shimmer" i]'))()`;
 
 /**
  * The bot's browser tools, given only to a bot with the internet on. Opening sites, reading and
@@ -374,14 +519,42 @@ export function browserTools(opts: {
   exitNote?: () => 'computer' | 'server' | null;
 }): AppTool[] {
   const { def, bot, dataDir, threadId, t, browser, vault, person, askLogin } = opts;
-  const outline = async (page: Page): Promise<string> => {
+  /**
+   * The page's outline for the bot. It is always read whole, so the refs of every part stay valid
+   * (the page keeps only the refs of its last read); `view` picks what of it the bot gets: one part
+   * of a long page, the section under one ref, or the lines with some words.
+   */
+  const outline = async (
+    page: Page,
+    view: { part?: number; find?: string; ref?: string } = {},
+  ): Promise<string> => {
     const [title, raw, typed] = await Promise.all([
       page.title().catch(() => ''),
       page.ariaSnapshot({ mode: 'ai', timeout: 10_000 }).catch(() => ''),
       passwordValues(page),
     ]);
     const tabs = browser.pages(bot.id)?.pages.length ?? 1;
-    const body = raw.length > MAX_SNAPSHOT ? `${raw.slice(0, MAX_SNAPSHOT)}\n${t('browser.cut')}` : raw;
+    let base = raw;
+    if (view.ref) {
+      const section = outlineSection(raw, view.ref);
+      if (section === null) throw new BrowserError('staleRef', view.ref);
+      base = section;
+    }
+    let body: string;
+    if (view.find) {
+      const { text, found } = outlineFind(base, view.find);
+      body = found
+        ? `${t('browser.found', { text: view.find, count: String(found) })}\n${outlineParts(text)[0]}`
+        : t('browser.notFound', { text: view.find });
+    } else {
+      const parts = outlineParts(base);
+      const n = Math.min(view.part ?? 1, parts.length);
+      body = [
+        ...(parts.length > 1 ? [t('browser.part', { part: String(n), parts: String(parts.length) })] : []),
+        parts[n - 1]!,
+        ...(n < parts.length ? [t('browser.cut', { next: String(n + 1) })] : []),
+      ].join('\n');
+    }
     // The outline shows what is typed in fields, password fields too, and a form sent with get
     // carries them in the address and the title: hide every password, wherever it shows.
     return maskSecrets(
@@ -402,39 +575,93 @@ export function browserTools(opts: {
     return typeof r === 'string' ? maskSecrets(r, secrets) : { ...r, text: maskSecrets(r.text, secrets) };
   };
 
+  /**
+   * Moves a downloaded file into the conversation's folder, under the name the site gave it, or
+   * that name numbered when the folder already has one. Returns where it went.
+   */
+  const keepDownload = async (from: string, name: string): Promise<string> => {
+    const dir = workspacePaths(dataDir, bot.id, threadId, bot.groupId).threadDir;
+    await mkdir(dir, { recursive: true });
+    const ext = extname(name);
+    const stem = name.slice(0, name.length - ext.length);
+    for (let i = 1; ; i++) {
+      const to = join(dir, i === 1 ? name : `${stem} (${i})${ext}`);
+      try {
+        await copyFile(from, to, constants.COPYFILE_EXCL);
+        await rm(from, { force: true });
+        return to;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || i >= 100) throw err;
+      }
+    }
+  };
+  const sizeText = (bytes: number) =>
+    bytes < 1024 * 1024
+      ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+      : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const downloadNote = async (d: PageDownload): Promise<string> => {
+    if (d.path) {
+      try {
+        const path = await keepDownload(d.path, d.name);
+        return t('browser.downloaded', { name: d.name, size: sizeText(d.size ?? 0), path });
+      } catch {
+        return t('browser.downloadFailed', { name: d.name });
+      }
+    }
+    switch (d.error) {
+      case 'tooBig':
+        return t('browser.downloadTooBig', { name: d.name, max: String(MAX_DOWNLOAD_BYTES / 1024 / 1024) });
+      case 'tooMany':
+        return t('browser.downloadTooMany', { name: d.name });
+      case 'slow':
+        return t('browser.downloadSlow', { name: d.name });
+      default:
+        return t('browser.downloadFailed', { name: d.name });
+    }
+  };
+  /** What happened around the step that the bot should hear of, as lines; empty when nothing did. */
+  const notes = async (mark: number): Promise<string[]> => {
+    // A file the step set off is waited for a little, outside the step: the browser stays free.
+    const running = await browser.downloadsSettled(bot.id, DOWNLOAD_WAIT_MS, mark);
+    const downloads = await Promise.all(browser.takeDownloads(bot.id).map(downloadNote));
+    // What the page asked meanwhile (a confirm before deleting, an alert), and how it was answered.
+    const asked = browser.takeDialogs(bot.id);
+    // Addresses on this computer or a private network the page tried to reach, which were refused.
+    const refused = browser.takeRefused(bot.id);
+    // The connection the sites see changed: the person's computer came or went.
+    const exit = opts.exitNote?.() ?? null;
+    // Tabs the site closed itself while the bot was on them, and tabs it opened past the limit.
+    const closed = browser.takeClosedTabs(bot.id);
+    const extraTabs = browser.takeRefusedTabs(bot.id);
+    return [
+      ...(exit ? [t(exit === 'computer' ? 'browser.exitComputer' : 'browser.exitServer')] : []),
+      ...closed.map((url) => t('browser.tabClosedBySite', { url: url || '-' })),
+      ...(extraTabs ? [t('browser.tabsRefused', { count: String(extraTabs), max: String(MAX_TABS) })] : []),
+      ...asked.map((d) =>
+        t(d.accepted ? 'browser.dialogAccepted' : 'browser.dialogDismissed', {
+          type: d.type,
+          message: d.message,
+        }),
+      ),
+      ...(refused.length ? [t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })] : []),
+      ...downloads,
+      ...(running.length ? [t('browser.downloadRunning', { names: running.join(', ') })] : []),
+    ];
+  };
+
   /** Runs one step in the bot's browser; browser problems come back as text the bot can act on. */
   const step = async (fn: (page: Page) => Promise<ToolResult>): Promise<ToolResult> => {
+    let r: ToolResult;
+    const mark = browser.downloadMark(bot.id);
     try {
-      const r = hide(await browser.use(bot.id, fn));
-      // What the page asked meanwhile (a confirm before deleting, an alert), and how it was answered.
-      const asked = browser.takeDialogs(bot.id);
-      // Addresses on this computer or a private network the page tried to reach, which were refused.
-      const refused = browser.takeRefused(bot.id);
-      // The connection the sites see changed: the person's computer came or went.
-      const exit = opts.exitNote?.() ?? null;
-      // Tabs the site closed itself while the bot was on them.
-      const closed = browser.takeClosedTabs(bot.id);
-      if (!asked.length && !refused.length && !exit && !closed.length) return r;
-      const note = [
-        ...(exit ? [t(exit === 'computer' ? 'browser.exitComputer' : 'browser.exitServer')] : []),
-        ...closed.map((url) => t('browser.tabClosedBySite', { url: url || '-' })),
-        ...asked.map((d) =>
-          t(d.accepted ? 'browser.dialogAccepted' : 'browser.dialogDismissed', {
-            type: d.type,
-            message: d.message,
-          }),
-        ),
-        ...(refused.length ? [t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })] : []),
-      ].join('\n');
-      // The page's own questions may quote what was typed into it.
-      return hide(typeof r === 'string' ? `${note}\n\n${r}` : { ...r, text: `${note}\n\n${r.text}` });
+      r = await browser.use(bot.id, fn);
     } catch (err) {
-      const refused = browser.takeRefused(bot.id);
-      const text = maskSecrets(browserErrorText(err, t), browser.secrets(bot.id));
-      return refused.length
-        ? `${t('browser.refusedHosts', { hosts: refused.slice(0, 5).join(', ') })}\n${text}`
-        : text;
+      r = browserErrorText(err, t);
     }
+    const note = (await notes(mark)).join('\n');
+    // The page's own questions may quote what was typed into it.
+    if (!note) return hide(r);
+    return hide(typeof r === 'string' ? `${note}\n\n${r}` : { ...r, text: `${note}\n\n${r.text}` });
   };
   /**
    * Runs an input on the page. With `brief`, a step that left the page where it was answers with a
@@ -535,7 +762,18 @@ export function browserTools(opts: {
       return sends;
     };
   const at = (page: Page, r: string) => page.locator(`aria-ref=${r}`);
-  const control = (page: Page, r: string) => at(page, r).evaluate(controlInfo, undefined, { timeout: 2_000 });
+  /**
+   * The element a ref names, checked at once. A ref of an element the page has since removed (or of
+   * a frame that is gone) finds nothing, and Playwright would wait its whole timeout for it before
+   * failing with a bare "Timeout": the bot is told straight away to read the page again.
+   */
+  const fresh = async (page: Page, r: string) => {
+    const target = at(page, r);
+    if (!(await target.count().catch(() => 0))) throw new BrowserError('staleRef', r);
+    return target;
+  };
+  const control = async (page: Page, r: string) =>
+    (await fresh(page, r)).evaluate(controlInfo, undefined, { timeout: 2_000 });
   /** Whether Enter pressed in this field, or where the focus is, sends something. */
   const enterSendsAt = async (page: Page, r?: string) => {
     if (r) return enterSends(await control(page, r));
@@ -563,7 +801,7 @@ export function browserTools(opts: {
     kind: FieldKind,
     site: string,
   ): Promise<{ field: ElementHandle } | { refused: string }> => {
-    const field = await at(page, r).elementHandle({ timeout: 5_000 });
+    const field = await (await fresh(page, r)).elementHandle({ timeout: 5_000 });
     const refuse = async (refused: string) => {
       await field.dispose().catch(() => {});
       return { refused };
@@ -637,6 +875,20 @@ export function browserTools(opts: {
       .map((line) => `\n${line}`)
       .join('');
 
+  /**
+   * Opens an address in a tab. An address that is a file starts a download instead of a page
+   * (Playwright then fails the load): the page stays as it was and the download is reported.
+   * Null when it was a download.
+   */
+  const goto = async (page: Page, url: string) => {
+    try {
+      return await page.goto(webUrl(url).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    } catch (err) {
+      if (/Download is starting/i.test((err as Error).message)) return null;
+      throw err;
+    }
+  };
+
   return [
     def(
       'browser_open',
@@ -644,12 +896,9 @@ export function browserTools(opts: {
       async ({ url }) => {
         let wall: WallState = 'clear';
         const opened = await act(async (page) => {
-          const res = await page.goto(webUrl(url).toString(), {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-          });
+          const res = await goto(page, url);
           // A "Just a moment..." page clears by itself: wait it out here, so the bot sees the site.
-          wall = await waitOutWall(page, res?.status() ?? null);
+          if (res !== null) wall = await waitOutWall(page, res?.status() ?? null);
         });
         const out = wallNote(opened, wall);
         // The bot's notes on this site come before the page, so it works the way that worked before.
@@ -667,7 +916,27 @@ export function browserTools(opts: {
       },
       'internal',
     ),
-    def('browser_snapshot', {}, async () => step(outline), 'internal'),
+    def(
+      'browser_snapshot',
+      {
+        part: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('which part of a long page, from 1; the outline says when there is more'),
+        find: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('words to look for: only the lines with them come back, with what they sit under'),
+        ref: ref.optional().describe('ref of one section (a list, a table, a dialog) to read alone'),
+      },
+      async ({ part, find, ref: r }) => step((page) => outline(page, { part, find, ref: r })),
+      'internal',
+    ),
     def(
       'browser_click',
       { ref, element, sends, double: z.boolean().default(false) },
@@ -676,13 +945,17 @@ export function browserTools(opts: {
         const hold = !maySend('browser_click', a);
         return act(
           async (page) => {
-            const target = at(page, r);
+            const target = await fresh(page, r);
             try {
               // A dry run first: a decorative layer over the element (a banner's shadow, an empty
               // overlay) makes a real click wait out its whole timeout and fail.
               await target.click({ trial: true, timeout: 3_000 });
             } catch (err) {
               if (/intercepts pointer events/i.test((err as Error).message)) {
+                // Something a person would see lies over it (a dialog, a banner): they would not
+                // reach the element either, so the bot is told what is in the way.
+                const cover = await target.evaluate(coverInfo).catch(() => null);
+                if (cover) throw new BrowserError('covered', cover);
                 await target.evaluate(
                   (el, n) => {
                     for (let i = 0; i < n; i++) (el as { click(): void }).click();
@@ -721,7 +994,8 @@ export function browserTools(opts: {
     def(
       'browser_hover',
       { ref, element },
-      async ({ ref: r }) => act((page) => at(page, r).hover({ timeout: 5_000 }), false, true),
+      async ({ ref: r }) =>
+        act(async (page) => (await fresh(page, r)).hover({ timeout: 5_000 }), false, true),
       'internal',
     ),
     def(
@@ -739,11 +1013,12 @@ export function browserTools(opts: {
         return act(
           async (page) => {
             if (r) {
+              const target = await fresh(page, r);
               try {
-                await at(page, r).fill(text, { timeout: 5_000 });
+                await target.fill(text, { timeout: 5_000 });
               } catch {
                 // Not a plain field (a canvas or script-drawn editor): click into it and type.
-                await at(page, r).click({ timeout: 5_000 });
+                await target.click({ timeout: 5_000 });
                 await page.keyboard.type(text);
               }
             } else {
@@ -774,7 +1049,7 @@ export function browserTools(opts: {
         const out = await act(
           async (page) => {
             for (const f of fields) {
-              const field = at(page, f.ref);
+              const field = await fresh(page, f.ref);
               // Secrets are typed by the server from the vault, or by the person; never filled here.
               const secret = await field
                 .evaluate((el) => {
@@ -833,7 +1108,7 @@ export function browserTools(opts: {
           })),
         );
         return act(async (page) => {
-          const target = at(page, r);
+          const target = await fresh(page, r);
           const isField = await target
             .evaluate((e) => {
               const el = e as unknown as { tagName: string; type?: string };
@@ -988,7 +1263,7 @@ export function browserTools(opts: {
       async ({ ref: r, values }) =>
         act(
           async (page) => {
-            await at(page, r).selectOption(values);
+            await (await fresh(page, r)).selectOption(values);
           },
           true,
           // Choosing sends nothing; a page that sends its form on a change waits for a step that does.
@@ -1055,11 +1330,8 @@ export function browserTools(opts: {
             const page = await browser.newPage(bot.id);
             let wall: WallState = 'clear';
             if (url) {
-              const res = await page.goto(webUrl(url).toString(), {
-                waitUntil: 'domcontentloaded',
-                timeout: 30_000,
-              });
-              wall = await waitOutWall(page, res?.status() ?? null);
+              const res = await goto(page, url);
+              if (res !== null) wall = await waitOutWall(page, res?.status() ?? null);
             }
             await settle(page);
             return wallNote(await outline(page), wall);
@@ -1093,7 +1365,7 @@ export function browserTools(opts: {
           if (await secretShown(page, browser.secrets(bot.id))) return t('browser.screenshotSecret');
           // In page points: a sharper screen would only make the picture larger, not clearer to the bot.
           const options = { type: 'jpeg', quality: 70, timeout: 15_000, scale: 'css' } as const;
-          const shot = r ? await at(page, r).screenshot(options) : await page.screenshot(options);
+          const shot = r ? await (await fresh(page, r)).screenshot(options) : await page.screenshot(options);
           let saved = '';
           if (save_as) {
             // Into the conversation folder, where send_file and the person's library find it.
@@ -1111,23 +1383,63 @@ export function browserTools(opts: {
     ),
     def(
       'browser_wait',
-      { text: z.string().max(200).optional(), seconds: z.number().min(0.5).max(30).optional() },
-      async ({ text, seconds }) =>
+      {
+        text: z.string().max(200).optional().describe('wait until this text shows'),
+        gone: z.string().max(200).optional().describe('wait until this text is gone, e.g. "Loading"'),
+        url: z.string().max(2000).optional().describe('wait until the address contains this'),
+        seconds: z.number().min(0.5).max(30).optional(),
+      },
+      async ({ text, gone, url, seconds }) =>
         step(async (page) => {
-          if (text) {
-            const found = await page
-              .getByText(text)
-              .first()
-              .waitFor({ timeout: (seconds ?? 20) * 1000 })
-              .then(
+          if (text || gone || url) {
+            // The conditions are waited for together, so the step takes at most the time given.
+            const timeout = (seconds ?? 20) * 1000;
+            const met = (p: Promise<unknown>) =>
+              p.then(
                 () => true,
                 () => false,
               );
-            if (!found) return t('browser.textNotFound', { text });
+            const [shown, left, moved] = await Promise.all([
+              text ? met(page.getByText(text).first().waitFor({ timeout })) : true,
+              gone ? met(page.getByText(gone).first().waitFor({ state: 'hidden', timeout })) : true,
+              url
+                ? met(page.waitForURL((u) => u.toString().includes(url), { timeout, waitUntil: 'commit' }))
+                : true,
+            ]);
+            const missed = [
+              ...(shown ? [] : [t('browser.textNotFound', { text: text! })]),
+              ...(left ? [] : [t('browser.textStillThere', { text: gone! })]),
+              ...(moved ? [] : [t('browser.urlNotReached', { url: url!, now: page.url() })]),
+            ];
+            if (missed.length) return missed.join('\n');
           } else await page.waitForTimeout((seconds ?? 2) * 1000);
           return outline(page);
         }),
       'internal',
+    ),
+    def(
+      'browser_drag',
+      {
+        from_ref: ref.describe('ref of what to drag'),
+        to_ref: ref.describe('ref of where to drop it'),
+        element,
+        sends,
+      },
+      async (a) => {
+        const hold = !maySend('browser_drag', a);
+        return act(
+          async (page) => {
+            const from = await fresh(page, a.from_ref);
+            const to = await fresh(page, a.to_ref);
+            await from.dragTo(to, { timeout: 10_000 });
+          },
+          false,
+          hold,
+        );
+      },
+      'internal',
+      // A drop may save a new order or move a card to another list: the bot says when it sends.
+      gate('browser_drag', async () => false),
     ),
     // Why a page does not work as it should: a request that failed or came back with an error.
     def(

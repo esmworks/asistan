@@ -6,12 +6,30 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { OWNER_ID } from '../src/users';
 import { findBrowser } from '../src/browser/find';
 import { MASK } from '../src/browser/logs';
-import { BrowserError, SCREEN, VIEWPORT, webUrl, windowedUserAgent } from '../src/browser/manager';
+import {
+  BrowserError,
+  MAX_TABS,
+  safeFileName,
+  SCREEN,
+  VIEWPORT,
+  webUrl,
+  windowedUserAgent,
+} from '../src/browser/manager';
 import { browserErrorText } from '../src/browser/text';
 import { translator } from '../src/i18n';
 import { schema } from '../src/db';
 import type { AppTool } from '../src/engine/types';
-import { clickSends, enterSends, keySends, maskSecrets, type ControlInfo } from '../src/tools/browser';
+import {
+  clickSends,
+  enterSends,
+  keySends,
+  maskSecrets,
+  MAX_SNAPSHOT,
+  outlineFind,
+  outlineParts,
+  outlineSection,
+  type ControlInfo,
+} from '../src/tools/browser';
 import { workspacePaths } from '../src/workspace';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -110,6 +128,57 @@ describe('tarayıcı yardımcıları', () => {
     expect(keySends('Enter')).toBeNull();
     expect(keySends('Tab')).toBe(false);
     expect(keySends('Control+a')).toBe(false);
+  });
+
+  it('cuts a long outline at line ends, finds words with what they sit under, reads one section', () => {
+    const outline = [
+      '- heading "Ürünler" [level=1] [ref=e1]',
+      '- list "Liste" [ref=e2]:',
+      '  - listitem [ref=e3]:',
+      '    - link "Kırmızı kalem" [ref=e4]',
+      '  - listitem [ref=e5]:',
+      '    - link "Mavi KAYIT defteri" [ref=e6]',
+      '- button "İleri" [ref=e7]',
+    ].join('\n');
+    const parts = outlineParts(outline, 80);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((p) => p.length <= 80)).toBe(true);
+    expect(parts.join('\n')).toBe(outline);
+    // One line longer than a part is cut on its own.
+    expect(outlineParts('x'.repeat(250), 100).map((p) => p.length)).toEqual([100, 100, 50]);
+
+    const found = outlineFind(outline, 'kayıt');
+    expect(found.found).toBe(1);
+    expect(found.text).toBe(
+      [
+        '- list "Liste" [ref=e2]:',
+        '…',
+        '  - listitem [ref=e5]:',
+        '    - link "Mavi KAYIT defteri" [ref=e6]',
+      ].join('\n'),
+    );
+    expect(outlineFind(outline, 'ileri').text).toBe('- button "İleri" [ref=e7]');
+    expect(outlineFind(outline, 'yeşil').found).toBe(0);
+
+    expect(outlineSection(outline, 'e2')).toBe(outline.split('\n').slice(1, 6).join('\n'));
+    expect(outlineSection(outline, 'e7')).toBe('- button "İleri" [ref=e7]');
+    expect(outlineSection(outline, 'e99')).toBeNull();
+  });
+
+  it('keeps a downloaded file under a safe name', () => {
+    expect(safeFileName('Fatura Ocak.pdf')).toBe('Fatura Ocak.pdf');
+    expect(safeFileName('../../etc/passwd')).toBe('passwd');
+    expect(safeFileName('C:\\Users\\a\\rapor.xlsx')).toBe('rapor.xlsx');
+    expect(safeFileName('.bashrc')).toBe('bashrc');
+    expect(safeFileName('a<b>:c?.txt')).toBe('a_b__c_.txt');
+    expect(safeFileName('')).toBe('download');
+    // Not a file an agent working in the folder would read as its instructions.
+    expect(safeFileName('CLAUDE.md')).toBe('download-CLAUDE.md');
+    expect(safeFileName('agents.md')).toBe('download-agents.md');
+    expect(safeFileName('notlar.md')).toBe('notlar.md');
+    const long = safeFileName(`${'a'.repeat(300)}.pdf`);
+    expect(long.length).toBe(120);
+    expect(long.endsWith('.pdf')).toBe(true);
   });
 
   it('kurulu tarayıcıyı bilinen yerlerde arar', () => {
@@ -233,6 +302,85 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
         return res.end(
           '<title>Donuk</title><p>yüklendi</p><script>setTimeout(() => { for (;;); }, 100)</script>',
         );
+      }
+      if (req.url === '/uzun') {
+        // A page whose outline is far longer than one read: the last item is only found by part or find.
+        const items = Array.from(
+          { length: 1500 },
+          (_, i) => `<li><a href="/sonuc?ad=urun${i + 1}">Ürün numarası ${i + 1}</a></li>`,
+        ).join('');
+        return res.end(`<title>Uzun</title><h1>Liste</h1><ul aria-label="Ürünler">${items}</ul>
+          <ul aria-label="Son bölüm"><li><a href="/sonuc?ad=son">En son ürün</a></li></ul>`);
+      }
+      if (req.url === '/degisen') {
+        // A button the page draws again after a click, as script-drawn pages do.
+        return res.end(`<title>Değişen</title><div id="k"><button>Yenile</button></div><p id="out">-</p>
+          <script>const draw = () => { const k = document.getElementById('k'); k.innerHTML = '<button>Yenile</button>';
+            k.firstChild.onclick = () => { document.getElementById('out').textContent = 'Yenilendi'; draw(); }; };
+            draw();</script>`);
+      }
+      if (req.url === '/modal') {
+        // A cookie dialog over the page: a person could not press the button under it either.
+        return res.end(`<title>Modal</title><button id="b">Devam</button><p id="out">-</p>
+          <div role="dialog" aria-modal="true" style="position:fixed;inset:0;background:rgba(0,0,0,.5)">
+            <p>Çerezleri kabul ediyor musun?</p><button>Yalnızca gerekli</button></div>
+          <script>document.getElementById('b').onclick = () => {
+            document.getElementById('out').textContent = 'Tıklandı'; };</script>`);
+      }
+      if (req.url === '/kutular') {
+        // Checkboxes drawn by their label, as most styled forms do: the label lies over the box.
+        return res.end(`<title>Kutular</title>
+          <label style="position:relative;display:inline-block;width:40px;height:40px">
+            <input type="checkbox" id="a" aria-label="Bülten" style="position:absolute;left:10px;top:10px;margin:0">
+            <span style="position:absolute;inset:0;background:#ccc"></span></label>
+          <div style="position:relative;width:40px;height:40px">
+            <input type="checkbox" id="b" aria-label="Koşullar" style="position:absolute;left:10px;top:10px;margin:0">
+            <label for="b" style="position:absolute;inset:0;background:#ccc">Kabul</label></div>`);
+      }
+      if (req.url === '/yavas.bin') {
+        // A file that keeps coming for a while.
+        res.setHeader('content-type', 'application/octet-stream');
+        res.setHeader('content-disposition', 'attachment; filename="yavas.bin"');
+        let n = 0;
+        const timer = setInterval(() => {
+          res.write(Buffer.alloc(1024));
+          if (++n >= 60) {
+            clearInterval(timer);
+            res.end();
+          }
+        }, 500);
+        req.on('close', () => clearInterval(timer));
+        return;
+      }
+      if (req.url === '/indir') {
+        return res.end(
+          '<title>İndir</title><a href="/fatura.pdf">Faturayı indir</a> <a href="/yavas.bin">Büyük dosya</a>',
+        );
+      }
+      if (req.url === '/fatura.pdf') {
+        res.setHeader('content-type', 'application/pdf');
+        res.setHeader('content-disposition', 'attachment; filename="fatura.pdf"');
+        return res.end('%PDF-1.4 deneme');
+      }
+      if (req.url === '/pencereler') {
+        return res.end(`<title>Pencereler</title><button onclick="for (let i = 0; i < 14; i++) window.open('/sonuc?ad=p' + i)">
+          Aç</button>`);
+      }
+      if (req.url === '/yukleniyor') {
+        // Grey boxes first, the content a little later, as many single-page apps draw.
+        return res.end(`<title>Taslak sayfa</title><div id="k"><div class="card-skeleton"></div></div>
+          <p id="durum">Yükleniyor</p><a href="/sonuc?ad=gitti">Git</a>
+          <script>setTimeout(() => { document.getElementById('k').innerHTML = '<h2>Hazır içerik</h2>'; }, 1000);
+            setTimeout(() => { document.getElementById('durum').remove(); }, 3000);</script>`);
+      }
+      if (req.url === '/surukle') {
+        return res.end(`<title>Sürükle</title><div id="a" draggable="true">Kart A</div>
+          <div id="hedef" style="width:200px;height:100px;border:1px solid">Bitti listesi</div><p id="out">-</p>
+          <script>const h = document.getElementById('hedef');
+            document.getElementById('a').ondragstart = (e) => e.dataTransfer.setData('text/plain', 'A');
+            h.ondragover = (e) => e.preventDefault();
+            h.ondrop = (e) => { e.preventDefault();
+              document.getElementById('out').textContent = 'Bırakıldı ' + e.dataTransfer.getData('text/plain'); };</script>`);
       }
       if (req.url?.startsWith('/gunluk')) {
         // A page that logs, prints a token, gets an error from its own API and throws.
@@ -518,13 +666,14 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
       const s = await text('browser_snapshot', {});
       return s.includes('Bitir') ? s : null;
     });
-    await text('browser_click', { ref: refOf(popup, 'Bitir'), element: 'Bitir' });
+    // The step that closed it may hear of it at once, or the next read does.
+    const closing = await text('browser_click', { ref: refOf(popup, 'Bitir'), element: 'Bitir' });
     const after = await waitFor(async () => {
       const s = await text('browser_snapshot', {});
       return s.includes('Ana sayfa') || s.includes('kendisi kapattı') ? s : null;
     });
     const said = after.includes('kendisi kapattı') ? after : await text('browser_snapshot', {});
-    expect(`${after}\n${said}`).toContain('/kapanir');
+    expect(`${closing}\n${after}\n${said}`).toContain('/kapanir');
     // A tab the bot closes itself is not news.
     const browser = t.services.ctx.browser;
     const extra = await browser.newPage(bot.id);
@@ -551,6 +700,174 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     const outline = await text('browser_snapshot', {});
     const after = await text('browser_click', { ref: refOf(outline, 'button "Devam"'), element: 'Devam' });
     expect(after).toContain('Tıklandı');
+  });
+
+  it('names what lies over a button a person could not reach either, and does not click through it', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/modal"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    const after = await text('browser_click', { ref: refOf(outline, 'button "Devam"'), element: 'Devam' });
+    expect(after).toContain('Öğenin üstünde başka bir şey var');
+    expect(after).toContain('Çerezleri kabul ediyor musun?');
+    const out = await t.services.ctx.browser.use(bot.id, (p) => p.textContent('#out'));
+    expect(out).toBe('-');
+  });
+
+  it('still clicks a checkbox its own label is drawn over', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/kutular"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    for (const [label, id] of [
+      ['Bülten', '#a'],
+      ['Koşullar', '#b'],
+    ] as const) {
+      const after = await text('browser_click', {
+        ref: refOf(outline, `checkbox "${label}"`),
+        element: label,
+      });
+      expect(after, label).not.toContain('üstünde başka bir şey var');
+      expect(await t.services.ctx.browser.use(bot.id, (p) => p.isChecked(id)), label).toBe(true);
+    }
+  });
+
+  it('reads a long page on by part, by words and by section, and the refs of every part still work', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/uzun"}]`);
+    await t.services.turns.idle();
+    const first = await text('browser_snapshot', {});
+    expect(first).toContain('part: 2');
+    expect(first).not.toContain('En son ürün');
+    expect(first.length).toBeLessThan(MAX_SNAPSHOT + 2_000);
+
+    const found = await text('browser_snapshot', { find: 'en son' });
+    expect(found).toContain('link "En son ürün"');
+    expect(found).toContain('list "Son bölüm"');
+    expect(found).not.toContain('Ürün numarası 1"');
+
+    const section = await text('browser_snapshot', { ref: refOf(found, 'list "Son bölüm"') });
+    expect(section).toContain('En son ürün');
+    expect(section).not.toContain('Ürün numarası');
+
+    const parts = Number(/(\d+) parçasından/.exec(first)?.[1]);
+    expect(parts).toBeGreaterThan(1);
+    const last = await text('browser_snapshot', { part: parts });
+    expect(last).toContain('En son ürün');
+    expect(last).not.toContain('part: ');
+
+    // A ref found in a later part is clicked like any other.
+    const after = await text('browser_click', {
+      ref: refOf(found, 'link "En son ürün"'),
+      element: 'En son ürün',
+    });
+    expect(after).toContain('Merhaba son');
+  });
+
+  it('says at once that a ref is gone when the page drew the element again', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/degisen"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    const old = refOf(outline, 'button "Yenile"');
+    expect(await text('browser_click', { ref: old, element: 'Yenile' })).toContain('Yenilendi');
+    const started = Date.now();
+    const again = await text('browser_click', { ref: old, element: 'Yenile' });
+    expect(again).toContain(`${old} artık sayfada yok`);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    // Asking whether the step sends does not wait on it either, and asks no one.
+    expect(await tool('browser_click').gated!({ ref: old, element: 'Yenile' })).toBe(false);
+    expect(await text('browser_type', { ref: old, element: 'Yenile', text: 'x' })).toContain(
+      'artık sayfada yok',
+    );
+    expect(await text('browser_snapshot', { ref: old })).toContain('artık sayfada yok');
+  });
+
+  it('keeps what a page downloads in the conversation folder and tells the bot where', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/indir"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    const clicked = await text('browser_click', {
+      ref: refOf(outline, 'link "Faturayı indir"'),
+      element: 'Fatura',
+    });
+    expect(clicked).toContain('İndirildi: fatura.pdf');
+    const path = /kaydedildi: (\/[^\n]+fatura\.pdf)/.exec(clicked)?.[1];
+    expect(path).toBe(`${workspacePaths(t.dataDir, bot.id, thread.id, null).threadDir}/fatura.pdf`);
+    expect(readFileSync(path!, 'utf8')).toBe('%PDF-1.4 deneme');
+    // Opening the file's address downloads it too, under a name that keeps the first one.
+    const opened = await text('browser_open', { url: `${base}/fatura.pdf` });
+    expect(opened).toContain('İndirildi: fatura.pdf');
+    expect(opened).toContain('fatura (2).pdf');
+    expect(opened).not.toContain('Tarayıcı hatası');
+
+    // A file that keeps coming holds the step that started it a little, and no step after it.
+    await text('browser_open', { url: `${base}/indir` });
+    const page = await text('browser_snapshot', {});
+    const slow = await text('browser_click', {
+      ref: refOf(page, 'link "Büyük dosya"'),
+      element: 'Büyük dosya',
+    });
+    expect(slow).toContain('İndirme sürüyor: yavas.bin');
+    const started = Date.now();
+    expect(await text('browser_snapshot', {})).toContain('İndirme sürüyor: yavas.bin');
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 60_000);
+
+  it('closes the tabs a site opens past the limit and tells the bot', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/pencereler"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    const after = await text('browser_click', { ref: refOf(outline, 'button "Aç"'), element: 'Aç' });
+    expect(after).toContain('sekme daha açmaya çalıştı');
+    expect(t.services.ctx.browser.pages(bot.id)!.pages.length).toBe(MAX_TABS);
+    expect(await text('browser_tabs', { action: 'new' })).toContain(`En çok ${MAX_TABS} sekme`);
+    // Tabs it closed were not the site's doing: nothing is said of them as closed by the site.
+    expect(after).not.toContain('kendisi kapattı');
+  });
+
+  it('waits for a page still drawing its content, for a text to go and for the address to change', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/yukleniyor"}]`);
+    await t.services.turns.idle();
+    expect((await t.messages(thread.id)).at(-1)!.text).toContain('Hazır içerik');
+    expect(await text('browser_wait', { gone: 'Yükleniyor', seconds: 5 })).not.toContain('Yükleniyor');
+    expect(await text('browser_wait', { gone: 'Hazır içerik', seconds: 1 })).toContain('hâlâ görünüyor');
+    expect(await text('browser_wait', { url: 'gitti', seconds: 1 })).toContain('geçmedi');
+    await t.services.ctx.browser.use(bot.id, (p) =>
+      p.evaluate(() =>
+        setTimeout(
+          () => ((globalThis as unknown as { location: { href: string } }).location.href = '/sonuc?ad=gitti'),
+          300,
+        ),
+      ),
+    );
+    expect(await text('browser_wait', { url: 'gitti', seconds: 5 })).toContain('Merhaba gitti');
+  });
+
+  it('drags an element onto another', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:browser_open {"url":"${base}/surukle"}]`);
+    await t.services.turns.idle();
+    const outline = await text('browser_snapshot', {});
+    // A plain block's text follows its ref on the line.
+    const lineRef = (label: string) =>
+      /\[ref=(\w+)\]/.exec(outline.split('\n').find((l) => l.includes(label)) ?? '')?.[1] ?? '';
+    const from = lineRef('Kart A');
+    const to = lineRef('Bitti listesi');
+    expect(from && to).toBeTruthy();
+    await text('browser_drag', { from_ref: from, to_ref: to, element: 'Kart A' });
+    expect(await t.services.ctx.browser.use(bot.id, (p) => p.textContent('#out'))).toBe('Bırakıldı A');
   });
 
   it('sitelere kendini "HeadlessChrome" değil Chrome olarak, otomasyon izi olmadan tanıtır', async () => {

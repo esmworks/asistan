@@ -202,6 +202,7 @@ export type ToolName =
   | 'browser_tabs'
   | 'browser_screenshot'
   | 'browser_wait'
+  | 'browser_drag'
   | 'browser_network'
   | 'browser_console'
   | 'memory_search'
