@@ -95,6 +95,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/content-encryption': 'owner',
   'GET /api/usage': 'admin',
   'GET /api/usage/turns.csv': 'admin',
+  'GET /api/usage/plan': 'signedIn',
 
   // Everything at once: only the owner holds every person's data.
   'GET /api/setup-import': 'owner',

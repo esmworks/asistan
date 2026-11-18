@@ -1,5 +1,6 @@
 import {
   planPace,
+  planTone,
   ROUTINE_GATE_MODES,
   USAGE_RANGES,
   type PlanWindow,
@@ -160,7 +161,8 @@ function PlanUsage({ plan }: { plan?: UsageReport['plan'] }) {
         {plan.windows.map((w) => {
           const pace = planPace(w, now);
           const used = w.used ?? 0;
-          const color = used >= 0.9 ? c.destructive : pace !== null && used > pace ? '#f59e0b' : c.primary;
+          const tone = planTone(w, now);
+          const color = tone === 'near' ? c.destructive : tone === 'ahead' ? '#f59e0b' : c.primary;
           return (
             <View key={w.kind} style={styles.planRow}>
               <Text style={[styles.planName, { color: c.foreground }]}>{planLabel(w)}</Text>
