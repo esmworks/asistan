@@ -25,10 +25,17 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { schema } from '../src/db';
-import { clientMetadataUrlFor, OAUTH_CLIENT_PATH } from '../src/connections/client';
+import {
+  authFetch,
+  clientMetadataUrlFor,
+  missingScope,
+  OAUTH_CLIENT_PATH,
+  publicDispatcher,
+  type ClientTarget,
+} from '../src/connections/client';
 import { mcpServers } from '../src/engine/claude';
 import { translator } from '../src/i18n';
-import { exposedNames, oauthRedirectUrl } from '../src/services/connections';
+import { exposedNames, maskSecrets, modelSchema, oauthRedirectUrl } from '../src/services/connections';
 import { AUTH, testServer, waitFor, type TestServer } from './helpers';
 import { OWNER_ID } from '../src/users';
 
@@ -59,11 +66,24 @@ async function mcpFixture(
     failNext: 0,
     /** The client secret the last code exchange carried. */
     secret: null as string | null,
+    /** The MCP endpoint answers 403 `insufficient_scope` naming this scope, as a service does. */
+    needScope: null as string | null,
+    /** The token endpoint has forgotten the registered client (invalid_client). */
+    clientGone: false,
+    /** A refused refresh says why by quoting the refresh token it was sent. */
+    echoRefresh: false,
+    /** The authorization server's metadata is at its OpenID address, with a web page at the usual one. */
+    pageAtMetadata: false,
+    registrations: 0,
+    /** Tokens the revocation endpoint was given. */
+    revoked: [] as string[],
     /** Ends the access token, as its lifetime running out does. */
     expire() {
       oauth.access = `expired-${oauth.refreshes}`;
     },
   };
+  /** Tools the server lists besides its own, added as the test goes. */
+  const extraTools: string[] = [];
   /** Lets the `wait` tool answer. */
   const gate = { open: () => {}, opened: Promise.resolve() };
   const closeGate = () => {
@@ -91,6 +111,11 @@ async function mcpFixture(
         return { content: [{ type: 'text', text: `created ${title}` }] };
       },
     );
+    for (const name of extraTools) {
+      s.registerTool(name, { description: `The ${name} tool`, inputSchema: {} }, async () => ({
+        content: [{ type: 'text', text: name }],
+      }));
+    }
     if (opts.app) {
       // An MCP app: a tool with a view, a tool for the view alone, and the view's page.
       const view = 'ui://notes/board.html';
@@ -186,7 +211,14 @@ async function mcpFixture(
       ) {
         return json(res, 200, { resource: `${base.url}/mcp`, authorization_servers: [base.url] });
       }
-      if (path === '/.well-known/oauth-authorization-server') {
+      if (path === '/.well-known/oauth-authorization-server' && oauth.pageAtMetadata) {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end('<html><body>Welcome</body></html>');
+      }
+      if (
+        path === '/.well-known/oauth-authorization-server' ||
+        (path === '/.well-known/openid-configuration' && oauth.pageAtMetadata)
+      ) {
         return json(res, 200, {
           issuer: base.url,
           authorization_endpoint: `${base.url}/authorize`,
@@ -196,15 +228,33 @@ async function mcpFixture(
           code_challenge_methods_supported: ['S256'],
           grant_types_supported: ['authorization_code', 'refresh_token'],
           token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
+          revocation_endpoint: `${base.url}/revoke`,
+          // What an OpenID address must also list.
+          jwks_uri: `${base.url}/jwks`,
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
         });
+      }
+      if (path === '/revoke' && req.method === 'POST') {
+        oauth.revoked.push(new URLSearchParams(await readBody(req)).get('token') ?? '');
+        res.writeHead(200);
+        return res.end();
       }
       if (path === '/register' && req.method === 'POST') {
         const meta = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        oauth.registrations++;
         return json(res, 201, { ...meta, client_id: 'registered-client' });
       }
       if (path === '/token' && req.method === 'POST') {
         const form = new URLSearchParams(await readBody(req));
+        if (oauth.clientGone) return json(res, 401, { error: 'invalid_client' });
         if (form.get('grant_type') === 'refresh_token') {
+          if (oauth.echoRefresh) {
+            return json(res, 400, {
+              error: 'invalid_request',
+              error_description: `refresh token ${form.get('refresh_token')} is malformed`,
+            });
+          }
           if (oauth.refreshDown) {
             res.writeHead(503, { 'content-type': 'text/html' });
             return res.end('<h1>503 Service Unavailable</h1>');
@@ -239,6 +289,12 @@ async function mcpFixture(
       return res.end();
     }
     if (oauth.forbidden) return json(res, 403, { jsonrpc: '2.0', id: 1, result: { tools: [] } });
+    if (oauth.needScope) {
+      res.writeHead(403, {
+        'www-authenticate': `Bearer error="insufficient_scope", scope="${oauth.needScope}"`,
+      });
+      return res.end();
+    }
     // A server that asks questions keeps a session: it must remember what the client can do.
     if (opts.elicitTool) {
       const id = req.headers['mcp-session-id'];
@@ -269,6 +325,7 @@ async function mcpFixture(
     url: `${base.url}/mcp`,
     calls,
     oauth,
+    extraTools,
     gate: { close: closeGate, open: () => gate.open() },
     close: () =>
       new Promise<void>((r) => {
@@ -972,9 +1029,242 @@ describe('bağlantılar', () => {
     expect((await t.api('DELETE', `/api/connections/${r.body.id}`)).status).toBe(200);
     expect((await t.api<Connection[]>('GET', '/api/connections')).body).toEqual([]);
   });
+  it('aynı bağlantıda uzun süren bir çağrı, diğer çağrıları bekletmez', async () => {
+    const f = await fixture({ waitTool: true });
+    await t.api<Connection>('POST', '/api/connections', { name: 'Notlar', url: f.url, auth: 'none' });
+    const bot = await t.bot();
+    const tools = await t.services.connections.toolsFor(
+      bot.id,
+      OWNER_ID,
+      translator('tr'),
+      new AbortController().signal,
+    );
+    const named = (n: string) => tools.find((x) => x.name === n)!;
+    f.gate.close();
+    const slow = named('wait').handler({});
+    await waitFor(async () => f.calls.some((c) => c.name === 'wait'));
+    // The search answers while the first call still waits.
+    expect(await named('search').handler({ query: 'plan' })).toContain('found: plan');
+    f.gate.open();
+    expect(await slow).toContain('waited');
+  });
+
+  it('OAuth: daha fazla izin isteyen servis bağlı kalır, giriş önerir; giriş o izni de ister', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    const bot = await t.bot();
+    f.oauth.needScope = 'notes.write';
+    const search = (
+      await t.services.connections.toolsFor(bot.id, OWNER_ID, translator('tr'), new AbortController().signal)
+    ).find((x) => x.name === 'search')!;
+    expect(await search.handler({ query: 'x' })).toContain('daha fazla izin istiyor');
+    const c = (await t.api<Connection>('GET', `/api/connections/${id}`)).body;
+    // The other tools may still work: the connection stays, and its card offers a sign-in.
+    expect(c.status).toBe('connected');
+    expect(c.needsScope).toBe(true);
+    expect(c.error).toContain('daha fazla izin');
+    // A refresh cannot widen the sign-in: none was spent on trying.
+    expect(f.oauth.refreshes).toBe(0);
+
+    const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${id}/signin`);
+    const url = new URL(start.body.url!);
+    expect(url.searchParams.get('scope')?.split(' ')).toContain('notes.write');
+    f.oauth.needScope = null;
+    await t.app.inject({
+      method: 'GET',
+      url: `/api/connections/oauth/callback?state=${url.searchParams.get('state')}&code=good-code`,
+      headers: { host: 'localhost' },
+    });
+    const after = (await t.api<Connection>('GET', `/api/connections/${id}`)).body;
+    expect(after).toMatchObject({ status: 'connected', needsScope: false, error: null });
+  });
+
+  it('girişsiz eklenen sunucu listelerken giriş isterse, oturum açılacak bağlantı olur', async () => {
+    const f = await fixture({ oauth: true });
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Servis', url: f.url, auth: 'none' })
+    ).body;
+    expect(c).toMatchObject({ status: 'signed-out', auth: 'oauth' });
+    const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${c.id}/signin`);
+    expect(new URL(start.body.url!).pathname).toBe('/authorize');
+  });
+
+  it('bağlı bağlantının araç listesi zamanla yeniden okunur', async () => {
+    const f = await fixture();
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Notlar', url: f.url, auth: 'none' })
+    ).body;
+    f.extraTools.push('archive');
+    // Looked at just now: left alone.
+    expect(await t.services.connections.refreshStale(60 * 60_000)).toBe(0);
+    await t.db.db
+      .update(schema.connections)
+      .set({ updatedAt: new Date(Date.now() - 2 * 60 * 60_000) })
+      .where(eq(schema.connections.id, c.id));
+    expect(await t.services.connections.refreshStale(60 * 60_000)).toBe(1);
+    const after = (await t.api<Connection>('GET', `/api/connections/${c.id}`)).body;
+    expect(after.tools.map((x) => x.name)).toContain('archive');
+
+    // A failure in passing during such a check leaves a working connection as it was.
+    await t.db.db
+      .update(schema.connections)
+      .set({ updatedAt: new Date(Date.now() - 2 * 60 * 60_000) })
+      .where(eq(schema.connections.id, c.id));
+    f.oauth.failNext = 10;
+    expect(await t.services.connections.refreshStale(60 * 60_000)).toBe(1);
+    const kept = (await t.api<Connection>('GET', `/api/connections/${c.id}`)).body;
+    expect(kept.status).toBe('connected');
+    expect(kept.tools.map((x) => x.name)).toContain('archive');
+    f.oauth.failNext = 0;
+  });
+
+  it('yönetici olmayanın bağlantısı sonradan bile yerel ağa ulaşamaz; giriş adımları da', async () => {
+    const f = await fixture();
+    const member = await t.person('uye');
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Notlar', url: f.url, auth: 'none' })
+    ).body;
+    expect(c.status).toBe('connected');
+    // The same address, now a member's: as if its name had come to point at this machine.
+    await t.db.db
+      .update(schema.connections)
+      .set({ userId: member.id })
+      .where(eq(schema.connections.id, c.id));
+    const refused = await t.services.connections.refresh(c.id);
+    expect(refused.status).toBe('error');
+    expect(refused.error).toContain('private network');
+
+    const target = (publicOnly: boolean): ClientTarget => ({
+      id: 'x',
+      url: 'https://mcp.example.com/mcp',
+      auth: 'oauth',
+      version: '1',
+      store: { get: () => ({}), save: async () => {} },
+      publicOnly: async () => publicOnly,
+    });
+    await expect(authFetch(target(true))(`${new URL(f.url).origin}/.well-known/x`)).rejects.toThrow(
+      'private network',
+    );
+    expect((await authFetch(target(false))(`${new URL(f.url).origin}/token`)).status).toBe(404);
+
+    // The connection is made only to addresses the lookup found public: a name that comes to point
+    // at this machine reaches nothing even past the first check.
+    const port = new URL(f.url).port;
+    const viaPublic = (host: string) =>
+      fetch(`http://${host}:${port}/token`, { dispatcher: publicDispatcher() } as RequestInit);
+    await expect(viaPublic('localhost')).rejects.toThrow();
+    // An address given as a number is not looked up; the check before the connection covers it.
+    expect((await viaPublic('127.0.0.1')).status).toBe(404);
+  });
+
+  it('OAuth: metadata adresi sayfa döndürse de giriş başka adresteki metadata ile sürer', async () => {
+    const f = await fixture({ oauth: true });
+    f.oauth.pageAtMetadata = true;
+    await signedIn(f);
+  });
+
+  it('OAuth: çıkış ve silme tokenı serviste de iptal eder', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    await t.api('POST', `/api/connections/${id}/signout`);
+    await waitFor(async () => f.oauth.revoked.length === 2);
+    expect(f.oauth.revoked).toEqual(['r1', 'issued-access-token']);
+
+    const other = await signedIn(f);
+    await t.api('DELETE', `/api/connections/${other}`);
+    await waitFor(async () => f.oauth.revoked.length === 4);
+  });
+
+  it('OAuth: servis kaydı unutunca arka planda yeniden kayıt olmaz, oturum kapanır', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    expect(f.oauth.registrations).toBe(1);
+    f.oauth.expire();
+    f.oauth.clientGone = true;
+    const out = (await t.api<Connection>('POST', `/api/connections/${id}/refresh`)).body;
+    expect(out.status).toBe('signed-out');
+    expect(f.oauth.registrations).toBe(1);
+  });
+
+  it('servisin hata metnindeki token gizlenir', async () => {
+    const f = await fixture({ oauth: true });
+    f.oauth.refresh = 'refresh-secret-value';
+    const id = await signedIn(f);
+    f.oauth.expire();
+    f.oauth.echoRefresh = true;
+    const out = (await t.api<Connection>('POST', `/api/connections/${id}/refresh`)).body;
+    expect(out.error).toContain('••••');
+    expect(out.error).not.toContain('refresh-secret-value');
+  });
+
+  it('aynı bağlantıya yeni giriş başlayınca eskisi bitirilemez', async () => {
+    const f = await fixture({ oauth: true });
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Servis', url: f.url, auth: 'oauth' })
+    ).body;
+    const state = async () =>
+      new URL(
+        (await t.api<ConnectionAuthStart>('POST', `/api/connections/${c.id}/signin`)).body.url!,
+      ).searchParams.get('state')!;
+    const first = await state();
+    const second = await state();
+    const finish = (s: string) =>
+      t.app.inject({
+        method: 'GET',
+        url: `/api/connections/oauth/callback?state=${s}&code=good-code`,
+        headers: { host: 'localhost' },
+      });
+    await finish(first);
+    expect((await t.api<Connection>('GET', `/api/connections/${c.id}`)).body.status).toBe('signed-out');
+    await finish(second);
+    expect((await t.api<Connection>('GET', `/api/connections/${c.id}`)).body.status).toBe('connected');
+  });
 });
 
 describe('bağlantı yardımcıları', () => {
+  it('model API’lerinin reddettiği üst seviye şema seçenekleri tek nesneye döner', () => {
+    expect(modelSchema({ $schema: 'x', type: 'object', properties: { a: {} } })).toEqual({
+      type: 'object',
+      properties: { a: {} },
+    });
+    expect(
+      modelSchema({
+        oneOf: [
+          { type: 'object', properties: { id: { type: 'string' }, url: {} }, required: ['id', 'url'] },
+          { type: 'object', properties: { id: { type: 'string' }, path: {} }, required: ['id'] },
+        ],
+      }),
+    ).toEqual({
+      type: 'object',
+      properties: { id: { type: 'string' }, url: {}, path: {} },
+      required: ['id'],
+    });
+    expect(
+      modelSchema({ allOf: [{ properties: { a: {} }, required: ['a'] }, { properties: { b: {} } }] }),
+    ).toEqual({ type: 'object', properties: { a: {}, b: {} }, required: ['a'] });
+    // Alternatives named as definitions are looked up; one that can't be is left as it came.
+    const defs = { $defs: { byId: { properties: { id: {} }, required: ['id'] } } };
+    expect(modelSchema({ ...defs, anyOf: [{ $ref: '#/$defs/byId' }] })).toEqual({
+      ...defs,
+      type: 'object',
+      properties: { id: {} },
+      required: ['id'],
+    });
+    const remote = { anyOf: [{ $ref: 'https://example.com/s.json' }] };
+    expect(modelSchema({ $schema: 'x', ...remote })).toEqual(remote);
+  });
+
+  it('eksik izin başlığını okur; sırları metinden çıkarır', () => {
+    expect(missingScope('Bearer error="insufficient_scope", scope="a b"')).toBe('a b');
+    expect(missingScope('Bearer error="insufficient_scope"')).toBe('');
+    expect(missingScope('Bearer error="invalid_token"')).toBe(null);
+    expect(missingScope(null)).toBe(null);
+    expect(maskSecrets('token abcdefghij and abc', ['abcdefghij', 'abc', undefined])).toBe(
+      'token •••• and abc',
+    );
+    // Cut short in the middle of a secret: its start goes too.
+    expect(maskSecrets('HTTP 400: bad abcdefghijkl…', ['abcdefghijklmnop'])).toBe('HTTP 400: bad ••••…');
+  });
   it('OAuth dönüş adresi TLS vekili arkasında https, loopback adreste http olur', () => {
     const at = (host: string, extra: { forwardedProto?: string; secure?: boolean } = {}) =>
       oauthRedirectUrl({ protocol: 'http', host, secure: false, ...extra });

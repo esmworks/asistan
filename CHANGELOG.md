@@ -25,6 +25,22 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Only admins offer their computer as the bots' way out to the web, and each person's connection limit counts apart.
 - A removed person's conversations, notes, connections and sign-ins go with them; the bots they made pass to the owner.
 
+### Slack
+
+- The server can have one Slack app, set up by an admin under Settings → Chat apps from the manifest shown there. It
+  connects over Socket Mode, so the server needs no public address.
+- Each person links their Slack account with a code from Profile; nobody else's requests run. A direct message goes
+  to their own conversation with the bot they last named (`Sales: …`) or the default bot.
+- Mentioning the app in a channel starts a team conversation: everyone who may talk with the bot sees it in the app,
+  and it stays when the person who started it leaves. It uses only what the team shares (team connections and
+  sign-ins, the bot's own notes), never one person's profile, notes, apps or sign-ins, and it hands no work to other
+  bots and makes no routines. A bot shared with nobody does not answer in channels.
+- Once the bot is in a Slack thread, later lines there reach it without a mention. Called into a thread that was going
+  on, it reads up to its last 30 lines as others' words.
+- A card in a team conversation is answered only by the person who asked or by someone who may change the bot, in
+  Slack and in the app alike. Replies, files and 👀/✅ marks go back to Slack.
+- A routine can post its report to a Slack channel; such a routine runs as a team conversation.
+
 ### Connections
 
 - Gmail asks for the read and compose scopes as well, as its setup guide does. A Gmail account connected before keeps

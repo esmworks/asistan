@@ -87,6 +87,23 @@ export function sourceAddress(from: string): string | null | undefined {
 
 const MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_write', 'memory_update', 'memory_forget']);
 const MANAGER_MEMORY_TOOLS = new Set<string>(['memory_search', 'memory_update', 'memory_forget']);
+/**
+ * Tools a team conversation does without: each reaches what is one person's (their apps, their
+ * conversations, routines run for them) or hands the work to a bot that would work for them.
+ */
+const TEAM_OFF = new Set<string>([
+  'app_add',
+  'routine_create',
+  'routine_update',
+  'routine_delete',
+  'my_activity',
+  'conversations_search',
+  'message_read',
+  'open_conversation',
+  'bot_send',
+  'bot_status',
+  'bot_stop',
+]);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -302,6 +319,9 @@ export class ToolFactory {
     const s = this.services;
     // Whom the turn works for: who asked, else whose conversation it is, else the bot's owner.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins.
+    const team = thread.kind === 'team';
+    const own = team ? null : person;
     /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
     const reachBot = async (ref: string, wanted: 'chat' | 'edit') =>
       s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
@@ -580,7 +600,7 @@ export class ToolFactory {
             CONNECTION_CATALOG.find((e) => e.name.toLowerCase() === wanted) ??
             searchCatalog(wanted, (c) => c)[0];
           if (!entry) return t('tool.appUnknown', { app });
-          const connected = (await s.connections.list(person)).find(
+          const connected = (await s.connections.list(own)).find(
             (c) =>
               c.catalogId === entry.id &&
               c.status === 'connected' &&
@@ -703,6 +723,7 @@ export class ToolFactory {
               missed: a.missed,
               carryReport: a.carry_report,
               inMain: a.in_main,
+              slackChannel: null,
               onStartup: a.on_startup,
               watchUrl: a.watch_url ?? null,
               check: check && { ...check, args: a.check_args ?? {} },
@@ -953,7 +974,7 @@ export class ToolFactory {
             if (!ids.length) return t('tool.memoryNotYours');
           }
           // Narrowed to one bot, the list is that bot's notes alone.
-          const found = await s.memory.search(ids, person, query?.trim() || undefined, !botRef?.trim());
+          const found = await s.memory.search(ids, own, query?.trim() || undefined, !botRef?.trim());
           if (!found.length) return t('tool.notFound');
           const whose = (m: Memory) =>
             m.scope === 'user'
@@ -989,6 +1010,7 @@ export class ToolFactory {
               return t('tool.memoryBadSite', { site });
             }
           }
+          if (team && scope === 'user') return t('tool.memoryTeamPersonal');
           const clean = redactSecrets(content, t('memory.redacted'));
           const note = {
             scope,
@@ -1036,7 +1058,9 @@ export class ToolFactory {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
           const m = await s.memory.get(id);
-          if (!s.memory.canEdit(m, (await memoryOwners()).keys(), person)) return t('tool.memoryNotYours');
+          if ((team && m.scope === 'user') || !s.memory.canEdit(m, (await memoryOwners()).keys(), person)) {
+            return t('tool.memoryNotYours');
+          }
           const clean = redactSecrets(content, t('memory.redacted'));
           const held = await memoryGate({
             action: 'update',
@@ -1066,7 +1090,9 @@ export class ToolFactory {
         async ({ id }) => {
           const m = await s.memory.get(id);
           const owners = await memoryOwners();
-          if (!s.memory.canEdit(m, owners.keys(), person)) return t('tool.memoryNotYours');
+          if ((team && m.scope === 'user') || !s.memory.canEdit(m, owners.keys(), person)) {
+            return t('tool.memoryNotYours');
+          }
           const held = await memoryGate({
             action: 'forget',
             memoryId: m.id,
@@ -1288,10 +1314,10 @@ export class ToolFactory {
           t,
           browser: this.ctx.browser,
           vault: s.vault,
-          person,
+          person: own,
           askLogin,
           siteNotes: async (host) =>
-            bot.memory ? (await s.memory.forSite(bot.id, host, person)).map((m) => m.content) : [],
+            bot.memory ? (await s.memory.forSite(bot.id, host, own)).map((m) => m.content) : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
         }),
       );
@@ -1304,7 +1330,7 @@ export class ToolFactory {
       // folder is; the desktop does not see it.
       tools.push(...(bot.projectDir ? desk.filter((x) => x.name !== 'run_command') : desk));
     }
-    if (bot.isManager) {
+    if (bot.isManager && !team) {
       tools.push(...this.managerTools(bot, signal, t, unattended, person, (ref) => reachBot(ref, 'edit')));
       // A manager also reads and tidies the other bots' own notes.
       for (const x of tools) {
@@ -1312,7 +1338,8 @@ export class ToolFactory {
       }
     }
     // With memory off the bot can neither read nor write it.
-    return bot.memory ? tools : tools.filter((x) => !MEMORY_TOOLS.has(x.name));
+    const kept = team ? tools.filter((x) => !TEAM_OFF.has(x.name)) : tools;
+    return bot.memory ? kept : kept.filter((x) => !MEMORY_TOOLS.has(x.name));
   }
 
   private managerTools(

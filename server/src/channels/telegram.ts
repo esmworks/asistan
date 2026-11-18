@@ -615,7 +615,7 @@ export class TelegramChannels {
     // is in the app with it; either way a note would only repeat it.
     if (settings.threadId === e.threadId) return;
     // Only of the person's own conversations, or the bot's own work they may change.
-    if (!(await this.services.access.threadAudience(e.threadId)).includes(row.userId)) return;
+    if (!(await this.services.access.noticeAudience(e.threadId)).includes(row.userId)) return;
     const t = await this.services.settings.translator();
     const thread = await this.services.threads.row(e.threadId).catch(() => null);
     const title = thread?.title || t('channel.otherChat');

@@ -207,7 +207,7 @@ export const GroupMove = z.object({ beforeId: Id.nullable() });
 export type GroupMove = z.infer<typeof GroupMove>;
 
 /** `api`: messages sent to the bot from a script or another app through its API. */
-export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket']);
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team']);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
 export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);

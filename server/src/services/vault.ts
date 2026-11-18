@@ -68,9 +68,11 @@ export function siteOf(host: string): string {
     .replace(/^www\./, '');
 }
 
-/** The sign-ins a person may use: the team's and their own. */
-const usableBy = (userId: string) =>
-  or(isNull(schema.vaultLogins.userId), eq(schema.vaultLogins.userId, userId))!;
+/** The sign-ins a person may use: the team's and their own; with null (a team conversation), the team's. */
+const usableBy = (userId: string | null) =>
+  userId
+    ? or(isNull(schema.vaultLogins.userId), eq(schema.vaultLogins.userId, userId))!
+    : isNull(schema.vaultLogins.userId);
 
 const toLogin = (r: Row): VaultLogin => ({
   id: r.id,
@@ -331,7 +333,7 @@ export class VaultService {
    * passwords. Server-side only. A sign-in kept for some bots stays out of reach of the others,
    * and a person's own is typed only for them.
    */
-  async forHost(host: string, botId: string | undefined, userId: string): Promise<Credential[]> {
+  async forHost(host: string, botId: string | undefined, userId: string | null): Promise<Credential[]> {
     await this.ready();
     const rows = await this.ctx.db.select().from(schema.vaultLogins).where(usableBy(userId));
     return rows

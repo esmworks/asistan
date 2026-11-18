@@ -932,7 +932,7 @@ function Detail({
             <span className="size-2 rounded-full bg-current" />
             {t(STATUS_KEY[c.status])}
           </span>
-          {c.auth === 'oauth' && c.status !== 'connected' && (
+          {c.auth === 'oauth' && (c.status !== 'connected' || c.needsScope) && (
             <Button
               size="sm"
               className="rounded-full"

@@ -1,5 +1,5 @@
 import type { Bot, BotAccess, BotLevel, Role } from '@yumakbot/shared';
-import { and, eq, inArray, isNull, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { OWNER_ID } from '../users';
@@ -85,12 +85,13 @@ export class AccessService {
   }
 
   /**
-   * Whether a person sees a conversation: their own, or the bot's own work when they may change
-   * the bot. Nobody sees another person's conversations, the server's owner and admins included.
+   * Whether a person sees a conversation: their own, a team conversation of a bot they may talk
+   * with, or the bot's own work when they may change the bot. Nobody sees another person's
+   * conversations, the server's owner and admins included.
    */
-  async seesThread(viewer: Viewer, row: Pick<ThreadRow, 'userId' | 'botId'>): Promise<boolean> {
+  async seesThread(viewer: Viewer, row: Pick<ThreadRow, 'userId' | 'botId' | 'kind'>): Promise<boolean> {
     if (row.userId) return row.userId === viewer.userId;
-    return atLeast(await this.level(viewer, row.botId), 'edit');
+    return atLeast(await this.level(viewer, row.botId), row.kind === 'team' ? 'chat' : 'edit');
   }
 
   /**
@@ -98,13 +99,17 @@ export class AccessService {
    * with its bot (in a room, with every bot in it): a bot no longer shared with them keeps their
    * conversations readable, not writable.
    */
-  async requireThread(viewer: Viewer, threadId: string, write: boolean): Promise<ThreadRow> {
+  async requireThread(viewer: Viewer, threadId: string, write: boolean, manage = false): Promise<ThreadRow> {
     const [row] = await this.ctx.db
       .select()
       .from(schema.threads)
       .where(eq(schema.threads.id, threadId))
       .limit(1);
     if (!row || !(await this.seesThread(viewer, row))) throw notFound('thread');
+    // A team conversation is everyone's: only those who may change its bot rename, empty or delete it.
+    if (manage && row.kind === 'team' && !atLeast(await this.level(viewer, row.botId), 'edit')) {
+      throw new HttpError(403, 'error.teamThreadManage');
+    }
     if (write) {
       const botIds =
         row.kind === 'room'
@@ -170,18 +175,39 @@ export class AccessService {
 
   /** Which of a bot's conversations a person's list holds. */
   async listScope(viewer: Viewer, botId: string): Promise<ThreadScope> {
-    return { userId: viewer.userId, botWork: atLeast(await this.level(viewer, botId), 'edit') };
+    const level = await this.level(viewer, botId);
+    return { userId: viewer.userId, botWork: atLeast(level, 'edit'), team: atLeast(level, 'chat') };
   }
 
   /** One person's sidebar: the bots they reach and the conversations they see. */
   async summaryScope(viewer: Viewer): Promise<SummaryScope> {
     const levels = [...(await this.levels(viewer))];
     const editable = levels.filter(([, l]) => atLeast(l, 'edit')).map(([id]) => id);
+    const botIds = levels.filter(([, l]) => atLeast(l, 'chat')).map(([id]) => id);
     return {
-      botIds: levels.filter(([, l]) => atLeast(l, 'chat')).map(([id]) => id),
+      botIds,
       editable,
-      seen: this.threadsSeenBy(viewer, editable),
+      seen: this.threadsSeenBy(viewer, editable, botIds),
+      answerable: this.cardsAnswerableBy(viewer, editable),
     };
+  }
+
+  /**
+   * The cards a person may answer, as a condition on approvals joined with their conversation: in a
+   * team conversation only the one whose request asked and those who may change the bot answer, so
+   * the others are not listed a card they would be refused.
+   */
+  private cardsAnswerableBy(viewer: Viewer, editable: string[]): SQL {
+    return or(
+      ne(schema.threads.kind, 'team'),
+      editable.length ? inArray(schema.threads.botId, editable) : undefined,
+      exists(
+        this.ctx.db
+          .select({ id: schema.turns.id })
+          .from(schema.turns)
+          .where(and(eq(schema.turns.id, schema.approvals.turnId), eq(schema.turns.userId, viewer.userId))),
+      ),
+    )!;
   }
 
   /** The people who reach a bot at least at `wanted`; remembered a few seconds, like audiences. */
@@ -198,38 +224,92 @@ export class AccessService {
     return users;
   }
 
-  /** The people a conversation's live events go to: its person, or those who may change its bot. */
+  /**
+   * The people a conversation's live events go to: its person; for a team conversation, everyone
+   * who may talk with its bot; otherwise those who may change its bot.
+   */
   async threadAudience(threadId: string): Promise<string[]> {
     const now = Date.now();
     const kept = this.audiences.get(`thread:${threadId}`);
     if (kept && now - kept.at < AUDIENCE_MS) return kept.users;
     const [row] = await this.ctx.db
-      .select({ userId: schema.threads.userId, botId: schema.threads.botId })
+      .select({ userId: schema.threads.userId, botId: schema.threads.botId, kind: schema.threads.kind })
       .from(schema.threads)
       .where(eq(schema.threads.id, threadId))
       .limit(1);
-    const users = !row ? [] : row.userId ? [row.userId] : await this.botPeople(row.botId, 'edit');
+    const users = !row
+      ? []
+      : row.userId
+        ? [row.userId]
+        : await this.botPeople(row.botId, row.kind === 'team' ? 'chat' : 'edit');
     this.audiences.set(`thread:${threadId}`, { users, at: now });
     return users;
+  }
+
+  /**
+   * Who is told a conversation needs them or answered: its people, but in a team conversation only
+   * the one whose request runs there and those who may change the bot. The others still see it,
+   * yet only these may answer its cards, so a notice would call them to something they cannot do.
+   */
+  async noticeAudience(threadId: string): Promise<string[]> {
+    const [row] = await this.ctx.db
+      .select({ botId: schema.threads.botId, kind: schema.threads.kind })
+      .from(schema.threads)
+      .where(eq(schema.threads.id, threadId))
+      .limit(1);
+    if (row?.kind !== 'team') return this.threadAudience(threadId);
+    // The running turn is the one a card waits on; a line someone else wrote meanwhile only queues
+    // one. With none running, the last that ran is the one a reply or error is about.
+    const [last] = await this.ctx.db
+      .select({ userId: schema.turns.userId })
+      .from(schema.turns)
+      .where(and(eq(schema.turns.threadId, threadId), ne(schema.turns.status, 'queued')))
+      .orderBy(sql`(${schema.turns.status} = 'running') desc`, desc(schema.turns.createdAt))
+      .limit(1);
+    const editors = await this.botPeople(row.botId, 'edit');
+    return last?.userId && !editors.includes(last.userId) ? [...editors, last.userId] : editors;
   }
 
   /** The conversations of one bot a person sees, by id, among `threadIds`. */
   async visibleThreads(viewer: Viewer, threadIds: string[]): Promise<Set<string>> {
     if (!threadIds.length) return new Set();
     const rows = await this.ctx.db
-      .select({ id: schema.threads.id, userId: schema.threads.userId, botId: schema.threads.botId })
+      .select({
+        id: schema.threads.id,
+        userId: schema.threads.userId,
+        botId: schema.threads.botId,
+        kind: schema.threads.kind,
+      })
       .from(schema.threads)
       .where(inArray(schema.threads.id, threadIds));
-    const editable = new Set(await this.botIds(viewer, 'edit'));
+    const levels = await this.levels(viewer);
     return new Set(
-      rows.filter((r) => (r.userId ? r.userId === viewer.userId : editable.has(r.botId))).map((r) => r.id),
+      rows
+        .filter((r) =>
+          r.userId
+            ? r.userId === viewer.userId
+            : atLeast(levels.get(r.botId) ?? 'none', r.kind === 'team' ? 'chat' : 'edit'),
+        )
+        .map((r) => r.id),
     );
   }
 
-  /** The SQL condition for the conversations a person sees, given the bots they may change. */
-  threadsSeenBy(viewer: Viewer, editableBotIds: string[]): SQL {
+  /**
+   * The SQL condition for the conversations a person sees, given the bots they may change and
+   * those they may talk with (whose team conversations they see).
+   */
+  threadsSeenBy(viewer: Viewer, editableBotIds: string[], chatBotIds: string[] = editableBotIds): SQL {
     const own = eq(schema.threads.userId, viewer.userId);
-    if (!editableBotIds.length) return own;
-    return or(own, and(isNull(schema.threads.userId), inArray(schema.threads.botId, editableBotIds)))!;
+    const work = editableBotIds.length
+      ? and(isNull(schema.threads.userId), inArray(schema.threads.botId, editableBotIds))
+      : undefined;
+    const team = chatBotIds.length
+      ? and(
+          eq(schema.threads.kind, 'team'),
+          isNull(schema.threads.userId),
+          inArray(schema.threads.botId, chatBotIds),
+        )
+      : undefined;
+    return or(own, work, team)!;
   }
 }

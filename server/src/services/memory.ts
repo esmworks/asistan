@@ -45,6 +45,10 @@ const noteOwner = (m: { scope: string; botId: string | null; userId?: string | n
 export const decides = (reach: MemoryReach, c: Pick<MemoryChange, 'scope' | 'botId' | 'userId'>) =>
   c.scope === 'user' ? (c.userId ?? OWNER_ID) === reach.userId : !!c.botId && reach.botIds.includes(c.botId);
 
+/** One person's notes; none for null (a team conversation, which reads no one's own notes). */
+const userNotes = (userId: string | null) =>
+  userId ? and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)) : sql`false`;
+
 export class MemoryService {
   private embeddings: EmbeddingService | null = null;
 
@@ -73,17 +77,14 @@ export class MemoryService {
   }
 
   /** The notes a bot has about the site of `host`: its own, and those of the person it works for. */
-  async forSite(botId: string, host: string, userId: string): Promise<Memory[]> {
+  async forSite(botId: string, host: string, userId: string | null): Promise<Memory[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
       .where(
         and(
           isNotNull(schema.memories.site),
-          or(
-            and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)),
-            and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
-          ),
+          or(userNotes(userId), and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId))),
         ),
       )
       .orderBy(asc(schema.memories.createdAt));
@@ -119,7 +120,7 @@ export class MemoryService {
   }
 
   /** What a bot sees working for `userId`: its own memories and that person's notes about themselves. */
-  async visibleTo(botId: string, userId: string): Promise<{ user: Memory[]; bot: Memory[] }> {
+  async visibleTo(botId: string, userId: string | null): Promise<{ user: Memory[]; bot: Memory[] }> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -127,10 +128,7 @@ export class MemoryService {
         and(
           // Notes about a site come with that site, not with every turn.
           isNull(schema.memories.site),
-          or(
-            and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)),
-            and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
-          ),
+          or(userNotes(userId), and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId))),
         ),
       )
       .orderBy(asc(schema.memories.createdAt));
@@ -143,13 +141,11 @@ export class MemoryService {
    * the bots in `botIds` and, unless `shared` is false, the shared user memory. A search with a
    * query counts as using the notes it finds; listing them all does not, as it picks none out.
    */
-  async search(botIds: string[], userId: string, query?: string, shared = true): Promise<Memory[]> {
+  async search(botIds: string[], userId: string | null, query?: string, shared = true): Promise<Memory[]> {
     const own = botIds.length
       ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds))
       : sql`false`;
-    const visible = shared
-      ? or(and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)), own)
-      : own;
+    const visible = shared ? or(userNotes(userId), own) : own;
     if (query?.trim() && this.embeddings && (await this.embeddings.available())) {
       const rows = await this.ctx.db
         .select()

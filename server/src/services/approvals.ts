@@ -18,6 +18,7 @@ import { toApproval, toRule } from './mappers';
 import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
 import { OWNER_ID } from '../users';
+import { botLevel } from './access';
 
 /** Built-in tools that only read inside the allowed folders. */
 export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite', 'NotebookRead']);
@@ -375,12 +376,14 @@ export class ApprovalService {
   ) {}
 
   /** Cards, newest first; with `seen`, only those in conversations it lets through. */
-  async list(opts: { status?: Approval['status']; seen?: SQL } = {}): Promise<Approval[]> {
+  async list(opts: { status?: Approval['status']; seen?: SQL; answerable?: SQL } = {}): Promise<Approval[]> {
     const rows = await this.ctx.db
       .select({ approval: schema.approvals })
       .from(schema.approvals)
       .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
-      .where(and(opts.status ? eq(schema.approvals.status, opts.status) : undefined, opts.seen))
+      .where(
+        and(opts.status ? eq(schema.approvals.status, opts.status) : undefined, opts.seen, opts.answerable),
+      )
       .orderBy(desc(schema.approvals.createdAt))
       .limit(200);
     return rows.map((r) => toApproval(r.approval));
@@ -449,6 +452,40 @@ export class ApprovalService {
 
   async get(id: string): Promise<Approval> {
     return toApproval(await this.row(id));
+  }
+
+  /**
+   * Whether `by` may answer a card. In a team conversation a card is the one who asked: only they,
+   * or someone who may change the bot, answer it; anyone else in the team only sees it.
+   */
+  async mayAnswer(card: { id: string }, by: string | null): Promise<boolean> {
+    if (!by) return true;
+    const [row] = await this.ctx.db
+      .select({ kind: schema.threads.kind, turnId: schema.approvals.turnId, botId: schema.approvals.botId })
+      .from(schema.approvals)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
+      .where(eq(schema.approvals.id, card.id))
+      .limit(1);
+    if (row?.kind !== 'team') return true;
+    if (row.turnId) {
+      const [turn] = await this.ctx.db
+        .select({ userId: schema.turns.userId })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, row.turnId))
+        .limit(1);
+      if (turn?.userId === by) return true;
+    }
+    const [user] = await this.ctx.db
+      .select({ role: schema.users.role, disabledAt: schema.users.disabledAt })
+      .from(schema.users)
+      .where(eq(schema.users.id, by))
+      .limit(1);
+    const [bot] = await this.ctx.db
+      .select({ ownerUserId: schema.bots.ownerUserId, access: schema.bots.access })
+      .from(schema.bots)
+      .where(eq(schema.bots.id, row.botId))
+      .limit(1);
+    return !!user && !user.disabledAt && !!bot && botLevel({ userId: by, role: user.role }, bot) === 'edit';
   }
 
   private async row(id: string) {
@@ -528,6 +565,7 @@ export class ApprovalService {
     const stored = await this.row(id);
     const current = toApproval(stored);
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
+    if (!(await this.mayAnswer(stored, by))) throw new HttpError(403, 'error.cardNotYours');
     const status = d.decision === 'allow' ? 'allowed' : 'denied';
     // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
     // that never applies and say the bot no longer asks. It counts as "this time" instead. So it

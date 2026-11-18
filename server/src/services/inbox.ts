@@ -1,7 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { extname, join, relative, resolve } from 'node:path';
-import { quoteExcerpt, titleFrom, type Message, type MessageFile, type ReplyQuote } from '@yumakbot/shared';
+import {
+  quoteExcerpt,
+  titleFrom,
+  type Approval,
+  type Message,
+  type MessageFile,
+  type ReplyQuote,
+} from '@yumakbot/shared';
+import { eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
+import { schema } from '../db';
 import { attachedFiles, moveIntoThread, promptWithFiles, promptWithReply, stagingDir } from '../uploads';
 import { asOutsideData } from '../runtime/outside';
 import { HttpError, isStopRequest, truncate } from '../util';
@@ -62,6 +71,16 @@ export class Inbox {
     return out;
   }
 
+  /** How a person is called, for lines several people write. */
+  private async nameOf(userId: string): Promise<string> {
+    const [row] = await this.ctx.db
+      .select({ displayName: schema.users.displayName, username: schema.users.username })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    return (row?.displayName || row?.username || '').slice(0, 80);
+  }
+
   /** The prompt a person's message becomes: the quoted message first, the attached files after. */
   async prompt(text: string, dir: string, files: { name: string }[], answered?: Message) {
     const t = await this.services.settings.translator();
@@ -85,6 +104,8 @@ export class Inbox {
       props?: Record<string, unknown>;
       /** The person writing. */
       userId?: string | null;
+      /** Earlier lines of the chat app's thread, `Name: text` each; read by the bot as outside text. */
+      history?: string;
     },
   ): Promise<{ message: Message; created: boolean }> {
     const s = this.services;
@@ -134,8 +155,11 @@ export class Inbox {
       await s.jobs.stopFrom(threadId);
       return { message, created: true };
     }
-    // Typed while the bot waits on its one-question card: the words are the answer to it.
-    const card = bare ? await s.approvals.typedAnswerable(threadId) : null;
+    // Typed while the bot waits on its one-question card: the words are the answer to it. In a
+    // team conversation only from whoever may answer it; anyone else's words wait their turn.
+    const typedCard = bare ? await s.approvals.typedAnswerable(threadId) : null;
+    const card =
+      typedCard && (await s.approvals.mayAnswer(typedCard, input.userId ?? null)) ? typedCard : null;
     if (card) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
       await s.approvals.answer(
@@ -147,7 +171,10 @@ export class Inbox {
     }
     // Typed while the bot waits on a step or sign-in card: the person chose to say something else
     // instead of pressing a button. The cards give way and the bot goes on with their words.
-    const waiting = bare ? await s.approvals.redirectable(threadId) : [];
+    const waiting: Approval[] = [];
+    for (const c of bare ? await s.approvals.redirectable(threadId) : []) {
+      if (await s.approvals.mayAnswer(c, input.userId ?? null)) waiting.push(c);
+    }
     if (waiting.length) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
       for (const c of waiting) await s.approvals.redirect(c.id, input.text, input.userId ?? null);
@@ -167,16 +194,23 @@ export class Inbox {
     if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60));
     const t = await s.settings.translator();
     const from = typeof extra.forwardedFrom === 'string' ? extra.forwardedFrom : '';
-    const said = forwarded
+    const written = forwarded
       ? asOutsideData(from ? t('outside.forwardFrom', { name: from }) : t('outside.forward'), text, t)
       : text;
+    // In a team conversation several people write: the bot reads who said it.
+    const name = thread.kind === 'team' && input.userId ? await this.nameOf(input.userId) : '';
+    // Earlier lines of a chat app's thread the bot was called into: others' words, read as data.
+    const history = input.history?.trim()
+      ? `${asOutsideData(t('outside.chatHistory'), input.history.trim(), t)}\n\n`
+      : '';
+    const said = `${history}${name ? `${name}: ` : ''}${written}`;
     const prompt = await this.prompt(said, dir, files, answered);
     const turn = await s.turns.enqueue({
       threadId,
       botId: bot.id,
       source: 'user',
       prompt,
-      outside: forwarded ? 'forward' : null,
+      outside: forwarded || history ? 'forward' : null,
       userId: input.userId ?? null,
     });
     await s.threads.updateMessage(message.id, { turnId: turn.id });
