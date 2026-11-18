@@ -1,5 +1,6 @@
 import type { Bot, Message, OutsideTrigger } from '@yumakbot/shared';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, inArray, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { TurnOutcome } from '../engine/types';
@@ -10,6 +11,9 @@ import { toMessage } from './mappers';
 import { serverTranslator } from './settings';
 
 type JobRow = typeof schema.jobs.$inferSelect;
+
+/** How recent a request left by a restart must be for its sender to be told of it. */
+const RECOVER_WAKE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Bot-to-bot requests. Sending never blocks the sender: the target gets a turn in its
@@ -154,6 +158,89 @@ export class JobService {
   }
 
   /**
+   * Ends requests left waiting with no turn to answer them: the server stopped between recording
+   * the request and queueing its turn, or between the turn's end and passing its answer on. Their
+   * sender hears so, or gets that answer, and the answers to requests it made in the same turn are
+   * no longer held back for them. Call after the turns' own recovery.
+   */
+  async recover() {
+    const orphaned = await this.ctx.db
+      .select()
+      .from(schema.jobs)
+      .where(
+        and(
+          eq(schema.jobs.status, 'pending'),
+          notExists(
+            this.ctx.db
+              .select({ id: schema.turns.id })
+              .from(schema.turns)
+              .where(
+                and(
+                  eq(schema.turns.jobId, schema.jobs.id),
+                  eq(schema.turns.threadId, schema.jobs.toThreadId),
+                  inArray(schema.turns.status, ['queued', 'running']),
+                ),
+              ),
+          ),
+        ),
+      );
+    if (!orphaned.length) return;
+    const t = await serverTranslator(this.ctx);
+    // A sender that has waited longer than this has moved on: the request just closes.
+    const fresh = Date.now() - RECOVER_WAKE_MS;
+    for (const job of orphaned) {
+      try {
+        const answer = await this.finishedAnswer(job);
+        const [ended] = await this.ctx.db
+          .update(schema.jobs)
+          .set({
+            reply: answer?.reply ?? t('job.failedReply', { message: t('turn.serverRestarted') }),
+            status: answer?.status ?? 'error',
+            finishedAt: new Date(),
+            ...(job.createdAt.getTime() < fresh && { deliveredAt: new Date() }),
+          })
+          .where(and(eq(schema.jobs.id, job.id), eq(schema.jobs.status, 'pending')))
+          .returning();
+        if (!ended) continue;
+        const from = await this.services.bots.get(ended.fromBotId).catch(() => null);
+        if (!from || from.archivedAt) continue;
+        await this.markReplied(ended);
+        if (ended.kind !== 'notify' && !ended.deliveredAt) await this.deliver(ended);
+      } catch (err) {
+        // The sender's conversation may be gone; one request does not hold up the start.
+        console.warn(`Could not close a request left by the restart: ${String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * What the target's turn for a request answered, when it ended but the server stopped before the
+   * answer was passed on; null when no turn of it ended.
+   */
+  private async finishedAnswer(job: JobRow): Promise<{ reply: string; status: JobRow['status'] } | null> {
+    const [turn] = await this.ctx.db
+      .select({ id: schema.turns.id, status: schema.turns.status, error: schema.turns.error })
+      .from(schema.turns)
+      .where(and(eq(schema.turns.jobId, job.id), eq(schema.turns.threadId, job.toThreadId)))
+      .orderBy(desc(schema.turns.createdAt))
+      .limit(1);
+    if (!turn || turn.status === 'queued' || turn.status === 'running') return null;
+    const [said] = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(and(eq(schema.messages.turnId, turn.id), eq(schema.messages.role, 'assistant')))
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(1);
+    const t = await serverTranslator(this.ctx);
+    const text = said ? toMessage(said).text.trim() : '';
+    if (turn.status === 'done') return { reply: text || t('job.emptyReply'), status: 'done' };
+    return {
+      reply: text || t('job.failedReply', { message: turn.error ?? t('turn.serverRestarted') }),
+      status: turn.status === 'interrupted' ? 'stopped' : 'error',
+    };
+  }
+
+  /**
    * Hands replies to the sender as one new turn. Requests made in the same turn wait for each
    * other, so a bot that asked several bots reads all their answers at once instead of answering
    * the person again after each.
@@ -228,6 +315,29 @@ export class JobService {
    */
   async exchange(job: JobRow): Promise<Message[]> {
     const thread = job.toThreadId;
+    const { turns } = await this.work(job);
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, thread),
+          or(
+            turns.size ? inArray(schema.messages.turnId, [...turns]) : undefined,
+            sql`${schema.messages.props}->>'jobId' = ${job.id}`,
+          ),
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id));
+    return rows.map(toMessage);
+  }
+
+  /**
+   * The turns the target ran for a request in its thread with the sender, including the turns that
+   * read the answers of bots it asked in turn, and the requests it made of those bots.
+   */
+  private async work(job: JobRow): Promise<{ turns: Set<string>; asked: JobRow[] }> {
+    const thread = job.toThreadId;
     const turns = new Set(
       (
         await this.ctx.db
@@ -236,13 +346,15 @@ export class JobService {
           .where(and(eq(schema.turns.jobId, job.id), eq(schema.turns.threadId, thread)))
       ).map((r) => r.id),
     );
+    const all: JobRow[] = [];
     // Answers to what those turns asked other bots come back as further turns here.
     let asking = [...turns];
     for (let i = 0; asking.length && i <= this.ctx.config.maxJobDepth; i++) {
       const asked = await this.ctx.db
-        .select({ id: schema.jobs.id })
+        .select()
         .from(schema.jobs)
         .where(and(eq(schema.jobs.fromThreadId, thread), inArray(schema.jobs.fromTurnId, asking)));
+      all.push(...asked);
       const answered = asked.length
         ? await this.ctx.db
             .select({ id: schema.turns.id })
@@ -260,20 +372,7 @@ export class JobService {
       asking = answered.map((r) => r.id).filter((id) => !turns.has(id));
       for (const id of asking) turns.add(id);
     }
-    const rows = await this.ctx.db
-      .select()
-      .from(schema.messages)
-      .where(
-        and(
-          eq(schema.messages.threadId, thread),
-          or(
-            turns.size ? inArray(schema.messages.turnId, [...turns]) : undefined,
-            sql`${schema.messages.props}->>'jobId' = ${job.id}`,
-          ),
-        ),
-      )
-      .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id));
-    return rows.map(toMessage);
+    return { turns, asked: all };
   }
 
   private async markReplied(job: JobRow) {
@@ -364,37 +463,94 @@ export class JobService {
    * When the person stops a conversation, the work its bot gave other bots stops too, and so on
    * down the chain. No reply comes back to wake the stopped bot. Returns how many bots stopped.
    */
-  async stopFrom(threadId: string, depth = 0): Promise<number> {
-    if (depth > this.ctx.config.maxJobDepth) return 0;
-    const open = await this.ctx.db
+  async stopFrom(threadId: string): Promise<number> {
+    await this.silence(await this.liveFrom(threadId));
+    // A request the stopped turn was making as the stop came is on record once it has ended.
+    await this.services.turns.settle(threadId);
+    const live = await this.liveFrom(threadId);
+    if (!live.length) return 0;
+    await this.silence(live);
+    let stopped = 0;
+    for (const job of live) stopped += await this.halt(job);
+    return stopped;
+  }
+
+  /**
+   * The requests a conversation made whose work goes on. A request is done once its target's first
+   * turn ends, while the bots that target asked go on working for it: so every request of a chain
+   * still at work counts, and so does an answer held back for an open request of the same turn.
+   */
+  private async liveFrom(threadId: string): Promise<JobRow[]> {
+    const other = alias(schema.jobs, 'other');
+    return this.ctx.db
       .select()
       .from(schema.jobs)
-      .where(and(eq(schema.jobs.fromThreadId, threadId), eq(schema.jobs.status, 'pending')));
-    if (!open.length) return 0;
+      .where(
+        and(
+          eq(schema.jobs.fromThreadId, threadId),
+          or(
+            eq(schema.jobs.status, 'pending'),
+            and(isNull(schema.jobs.deliveredAt), sql`${schema.jobs.kind} <> 'notify'`),
+            exists(
+              this.ctx.db
+                .select({ id: other.id })
+                .from(other)
+                .where(and(eq(other.rootId, schema.jobs.rootId), eq(other.status, 'pending'))),
+            ),
+          ),
+        ),
+      );
+  }
+
+  /**
+   * Requests whose answers are no longer to wake their sender, which was stopped: the open ones,
+   * and those answered already but held back for an open one of the same turn.
+   */
+  private async silence(jobs: JobRow[]) {
+    const waiting = jobs.filter((j) => !j.deliveredAt);
+    if (!waiting.length) return;
     await this.ctx.db
       .update(schema.jobs)
       .set({ deliveredAt: new Date() })
       .where(
-        inArray(
-          schema.jobs.id,
-          open.map((j) => j.id),
+        and(
+          inArray(
+            schema.jobs.id,
+            waiting.map((j) => j.id),
+          ),
+          isNull(schema.jobs.deliveredAt),
         ),
       );
-    let stopped = 0;
-    for (const job of open) {
-      if (await this.services.turns.stopJob(job.id)) stopped++;
-      stopped += await this.stopFrom(job.toThreadId, depth + 1);
-    }
+  }
+
+  /**
+   * Stops one request's work at its target, and what the target handed on to other bots for it;
+   * other requests between the same two bots go on. Returns how many bots stopped.
+   */
+  private async halt(job: JobRow, depth = 0): Promise<number> {
+    let stopped = (await this.services.turns.stopJob(job.id, job.toThreadId)) ? 1 : 0;
+    // Answers already handed back are being read in the target's thread: that is this work too.
+    const stopAnswers = async (asked: JobRow[]) => {
+      await this.silence(asked);
+      for (const child of asked) await this.services.turns.stopJob(child.id, job.toThreadId);
+    };
+    await stopAnswers((await this.work(job)).asked);
+    // A request the target was making as it stopped is looked for once its turns have ended.
+    await this.services.turns.settle(job.toThreadId);
+    const { asked } = await this.work(job);
+    await stopAnswers(asked);
+    if (depth >= this.ctx.config.maxJobDepth) return stopped;
+    for (const child of asked) stopped += await this.halt(child, depth + 1);
     return stopped;
   }
 
-  /** Stop the target turn of a job. */
+  /** Stops a request the bot sent, with what it started; the sender hears that it stopped. */
   async stop(jobId: string, requester: Bot) {
     const job = await this.get(jobId);
     if (job.fromBotId !== requester.id && !requester.isManager) {
       throw new HttpError(403, 'error.jobStopForbidden');
     }
-    await this.services.turns.interrupt(job.toThreadId);
+    await this.halt(job);
     return job;
   }
 }

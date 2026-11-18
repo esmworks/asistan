@@ -34,6 +34,7 @@ import {
   type ReviewVerdict,
   type Sandbox,
   type SubagentState,
+  subagentAnswer,
   type TurnOutcome,
   type TurnRequest,
   OVERLOADED,
@@ -615,6 +616,8 @@ export class ClaudeEngine implements Engine {
             const sub = subagents.get(c.tool_use_id);
             if (sub && sub.state === 'running') {
               sub.state = c.is_error ? 'failed' : 'done';
+              const result = subagentAnswer(c.content);
+              if (result) sub.result = result;
               req.onSubagent?.({ ...sub });
             }
           }
@@ -634,6 +637,7 @@ export class ClaudeEngine implements Engine {
             if (c.type !== 'tool_use') continue;
             if (parent) {
               parent.steps += 1;
+              parent.tool = c.name;
               req.onSubagent?.({ ...parent });
             } else if (c.name === 'Task' || c.name === 'Agent') {
               const input = (c.input ?? {}) as { description?: unknown; subagent_type?: unknown };

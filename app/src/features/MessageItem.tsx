@@ -17,6 +17,7 @@ import {
   type ReplyQuote,
   quoteExcerpt,
   subagentOf,
+  subagentTime,
   type SubagentCard as Subagent,
 } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -427,9 +428,30 @@ function PlanCard({ items }: { items: PlanItem[] }) {
   );
 }
 
-/** A helper the bot started for part of the work: what it was asked, how it stands, its steps. */
+/** The time now, once a second while `live`. */
+function useNow(live: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+  return now;
+}
+
+/**
+ * A helper the bot started for part of the work: what it was asked, how it stands, what it is
+ * doing now, how long it took and what it handed back.
+ */
 function SubagentCard({ sub }: { sub: Subagent }) {
   const t = useT();
+  const running = sub.state === 'running';
+  const now = useNow(running);
+  const [open, setOpen] = useState(false);
+  const { data: connections = [] } = useConnections();
+  const doing =
+    running && sub.tool ? toolLabel(sub.tool, t, new Map(connections.map((c) => [c.slug, c.name]))) : null;
+  const time = subagentTime(sub, t, now);
   return (
     <section
       aria-label={t('message.subagent')}
@@ -437,7 +459,7 @@ function SubagentCard({ sub }: { sub: Subagent }) {
     >
       <div className="flex items-start gap-2">
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
-          {sub.state === 'running' ? (
+          {running ? (
             <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden />
           ) : sub.state === 'done' ? (
             <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -449,10 +471,38 @@ function SubagentCard({ sub }: { sub: Subagent }) {
           <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
             <span className="font-medium">{t('message.subagent')}</span>
             <span className="tabular-nums">
-              {t(`message.subagentState.${sub.state}`)} · {t('message.subagentSteps', { count: sub.steps })}
+              {[
+                t(`message.subagentState.${sub.state}`),
+                t('message.subagentSteps', { count: sub.steps }),
+                time,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           </div>
           {sub.description && <div className="mt-1 break-words">{sub.description}</div>}
+          {doing && <div className="mt-1 text-xs text-muted-foreground">{doing}</div>}
+          {sub.result && !running && (
+            <div className="mt-2">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                aria-expanded={open}
+                onClick={() => setOpen((o) => !o)}
+              >
+                <ChevronDown
+                  className={cn('size-3.5 transition-transform', open && 'rotate-180')}
+                  aria-hidden
+                />
+                {t('message.subagentResult')}
+              </button>
+              {open && (
+                <div className="mt-1 max-h-64 overflow-y-auto rounded-lg border bg-background/60 px-3 py-2 text-xs whitespace-pre-wrap break-words">
+                  {sub.result}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>

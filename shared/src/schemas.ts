@@ -874,6 +874,13 @@ export interface SubagentCard {
   description: string;
   state: 'running' | 'done' | 'failed' | 'stopped';
   steps: number;
+  /** The tool it called last, by its engine name (`Bash`, `mcp__notion__search`). */
+  tool: string | null;
+  /** What it handed back to the bot, cut short; once it has ended. */
+  result: string | null;
+  /** When it started and, once it has, ended (ISO). */
+  startedAt: string | null;
+  endedAt: string | null;
 }
 
 /** The subagent a message is the card of, or null. */
@@ -885,7 +892,38 @@ export function subagentOf(props: Record<string, unknown>): SubagentCard | null 
     description: typeof s.description === 'string' ? s.description : '',
     state,
     steps: typeof s.steps === 'number' ? s.steps : 0,
+    tool: typeof s.tool === 'string' ? s.tool : null,
+    result: typeof s.result === 'string' ? s.result : null,
+    startedAt: typeof s.startedAt === 'string' ? s.startedAt : null,
+    endedAt: typeof s.endedAt === 'string' ? s.endedAt : null,
   };
+}
+
+/**
+ * How many seconds a subagent has worked: until it ended, or while it runs until `now`. Null when
+ * that is not known, as for a running one without `now`.
+ */
+export function subagentSeconds(sub: SubagentCard, now?: number): number | null {
+  const from = sub.startedAt ? Date.parse(sub.startedAt) : NaN;
+  const to = sub.endedAt ? Date.parse(sub.endedAt) : (now ?? NaN);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.max(0, Math.round((to - from) / 1000));
+}
+
+/**
+ * How long a subagent has worked, in words: seconds under a minute, then minutes. `t` is the app's
+ * translator; `now` counts a running one up to that moment.
+ */
+export function subagentTime(
+  sub: SubagentCard,
+  t: (key: 'message.subagentSeconds' | 'message.subagentMinutes', vars: { count: number }) => string,
+  now?: number,
+): string | null {
+  const seconds = subagentSeconds(sub, now);
+  if (seconds === null) return null;
+  return seconds < 60
+    ? t('message.subagentSeconds', { count: seconds })
+    : t('message.subagentMinutes', { count: Math.floor(seconds / 60) });
 }
 
 /** How far back the usage report looks, in days. */

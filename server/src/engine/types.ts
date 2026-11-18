@@ -192,6 +192,39 @@ export interface SubagentState {
   state: 'running' | 'done' | 'failed' | 'stopped';
   /** Tool calls it has made so far. */
   steps: number;
+  /** The tool it called last, by the name cards use (`Bash`, `mcp__notion__search`). */
+  tool?: string;
+  /** What it handed back to the bot, cut short; once it has ended. */
+  result?: string;
+}
+
+/**
+ * A subagent's answer as its card shows it: the engine follows the answer with the helper's id
+ * (`agentId: …`) and its usage (`<usage>…</usage>`) for the model, which are not the answer. Only
+ * that closing part is left out; the answer's own lines stay.
+ */
+export function subagentAnswer(content: unknown): string {
+  const lines = toolResultText(content)
+    .replace(/<usage>[\s\S]*?<\/usage>/g, '')
+    .trimEnd()
+    .split('\n');
+  while (lines.length && /^\s*agentId:/.test(lines.at(-1)!)) lines.pop();
+  return lines.join('\n').trim().slice(0, SUBAGENT_RESULT_MAX);
+}
+
+/** The most of a subagent's answer its card keeps. */
+export const SUBAGENT_RESULT_MAX = 2000;
+
+/** A tool result's text, whether it came as a string or as content blocks. */
+export function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .flatMap((c) => {
+      const o = (c ?? {}) as { type?: unknown; text?: unknown };
+      return o.type === 'text' && typeof o.text === 'string' ? [o.text] : [];
+    })
+    .join('\n');
 }
 
 /** One step of a bot's plan. */

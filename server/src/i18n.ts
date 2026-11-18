@@ -537,6 +537,8 @@ const tr = {
     '(Buraya sığmayan {count} eski hafıza notu var; bir iş onlara ihtiyaç duyabilirse memory_search ile ara.)',
   'prompt.skills': '## Becerilerin',
   'prompt.steered': '(Kullanıcı sen çalışırken şunu ekledi; işine bunu da kat:)\n{text}',
+  'prompt.resumeCut':
+    '(Bu isteğe önceki denemen yarıda kaldı. Yeniden yapmadan önce o denemede neyin yapıldığına bak; yapılmış adımları, özellikle gönderilen mesajları ya da yapılan değişiklikleri, tekrarlama.)\n\n{text}',
   'prompt.skillTagged':
     '(Kullanıcı şu beceriyi kullanmanı istiyor: {names}. Başlamadan önce skill_read ile oku.)',
   'prompt.skillsHow':
@@ -1737,6 +1739,8 @@ const en: Catalog<ServerKey> = {
     '({count} older memory notes did not fit here; look for them with memory_search when a task may need them.)',
   'prompt.skills': '## Your skills',
   'prompt.steered': '(The user added this while you work; take it into account:)\n{text}',
+  'prompt.resumeCut':
+    '(Your previous attempt at this request was cut short. Before doing it again, look at what that attempt already did, and do not repeat steps that are done, above all messages sent or changes made.)\n\n{text}',
   'prompt.skillTagged':
     '(The user asks you to use this skill: {names}. Read it with skill_read before you start.)',
   'prompt.skillsHow':
