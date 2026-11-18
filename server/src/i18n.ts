@@ -337,8 +337,6 @@ const tr = {
   'engine.toolsSearch':
     'Bağlı uygulamaların {count} aracı ({apps}) listeye sığmadı. Onlara find_tool ile arayıp use_tool ile ulaşabilirsin.',
   'approval.expired': 'Onay beklenirken tur durduruldu.',
-  'review.allowed': 'Otomatik inceleme izin verdi · {action} — {reason}',
-  'review.allowedNoReason': 'Otomatik inceleme izin verdi · {action}',
   'review.noWords':
     'Bu işi senin yazdığın bir istek başlatmadı (başka bir botun mesajı ya da sahibi olmayan bir iş), bu yüzden otomatik inceleme karar vermedi.',
   'review.noQuote': 'Otomatik inceleme bu adımı senin söylediğin bir sözle gösteremedi.',
@@ -1396,8 +1394,6 @@ const en: Catalog<ServerKey> = {
   'engine.toolsSearch':
     "{count} of the connected apps' tools ({apps}) did not fit in the list. Find them with find_tool and reach them with use_tool.",
   'approval.expired': 'The turn was stopped while waiting for approval.',
-  'review.allowed': 'Auto review allowed · {action} — {reason}',
-  'review.allowedNoReason': 'Auto review allowed · {action}',
   'review.noWords':
     "No request you wrote started this work (another bot's message, or work nobody asked for), so the auto review did not decide.",
   'review.noQuote': 'The auto review could not point to anything you said that asks for this step.',
