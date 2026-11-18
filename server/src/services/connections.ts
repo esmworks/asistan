@@ -26,6 +26,7 @@ import {
 } from '../connections/client';
 import type { CallToolResult, ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ElicitForm } from '../connections/elicit';
+import { sendGmail, withGmailSend } from '../connections/gmail';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { StoredConnectionTool } from '../db/schema';
@@ -147,7 +148,7 @@ export class ConnectionService {
         title: t.title,
         description: t.description,
         hinted: t.hinted,
-        kind: t.kind ?? t.hinted,
+        kind: t.local ? 'write' : (t.kind ?? t.hinted),
         enabled: t.enabled,
         ...(t.ui && { app: true }),
       })),
@@ -356,7 +357,7 @@ export class ConnectionService {
   async refresh(id: string): Promise<Connection> {
     const row = await this.row(id);
     try {
-      const tools = await listTools(this.target(row), row.tools);
+      const tools = withGmailSend(row.url, await listTools(this.target(row), row.tools), row.tools);
       await this.ctx.db
         .update(schema.connections)
         .set({ tools, status: 'connected', error: null, updatedAt: new Date() })
@@ -568,7 +569,8 @@ export class ConnectionService {
         );
       if (!open) throw new HttpError(403, 'error.appUnavailable');
     }
-    const tool = row.tools.find((x) => x.name === o.name && x.enabled);
+    // A tool this server adds is the bot's alone, behind its card.
+    const tool = row.tools.find((x) => x.name === o.name && x.enabled && !x.local);
     if (!tool) throw new HttpError(404, 'error.notFound');
     if ((tool.kind ?? tool.hinted) !== 'read' && o.bot.permissionMode !== 'auto') {
       throw new HttpError(403, 'error.appCallAsks');
@@ -598,7 +600,7 @@ export class ConnectionService {
         .where(and(eq(schema.botConnections.botId, botId), eq(schema.botConnections.connectionId, row.id)));
       if (!open) return null;
     }
-    const tool = row.tools.find((x) => x.name === name && x.enabled && !x.appOnly);
+    const tool = row.tools.find((x) => x.name === name && x.enabled && !x.appOnly && !x.local);
     if (!tool || (tool.kind ?? tool.hinted) !== 'read') return null;
     return { row, tool };
   }
@@ -753,7 +755,8 @@ export class ConnectionService {
     keep?: KeepResult,
     showApp?: ShowApp,
   ): AppTool {
-    const kind = tool.kind ?? tool.hinted;
+    // A tool this server adds sends mail: it always counts as a change, whatever it was set to.
+    const kind = tool.local ? 'write' : (tool.kind ?? tool.hinted);
     const about = [tool.title, tool.description].filter(Boolean).join(' — ');
     return {
       name: exposed,
@@ -776,13 +779,16 @@ export class ConnectionService {
           return t('connection.unavailable', { name: row.name });
         }
         try {
-          const result = await callTool(
-            this.target(current),
-            tool.name,
-            args,
-            signal,
-            elicit && ((form) => elicit(form, row.name)),
-          );
+          const result =
+            tool.local === 'gmailSend'
+              ? await sendGmail(this.target(current), args, signal)
+              : await callTool(
+                  this.target(current),
+                  tool.name,
+                  args,
+                  signal,
+                  elicit && ((form) => elicit(form, row.name)),
+                );
           if (tool.ui && current.showApps && showApp && !result.isError) {
             // The tool's own view joins the conversation; the bot's answer does not wait on it.
             void this.appResource(current, tool.ui)

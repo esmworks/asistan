@@ -27,9 +27,18 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Connections
 
-- Gmail asks for the read and compose scopes as well, so the bot gets the tools that send, reply, forward and change
-  drafts. A Gmail account connected before keeps its old tools until it is signed out and signed in again; with your
-  own Google app, add the `gmail.readonly` and `gmail.compose` scopes to its consent screen first.
+- Gmail asks for the read and compose scopes as well, as its setup guide does. A Gmail account connected before keeps
+  its old grant until it is signed out and signed in again; with your own Google app, add the `gmail.readonly` and
+  `gmail.compose` scopes to its consent screen first.
+- While Gmail's MCP server lists no tool that sends, the server adds a `send_message` of its own to a Gmail
+  connection and sends through the Gmail API with the connection's sign-in (the compose scope allows it): to, cc, bcc,
+  subject and a plain or HTML body. It always counts as a change, and whatever Google refuses comes back with its own
+  words. The Gmail API has to be turned on in the Google Cloud project. A connection gets the tool on its next
+  refresh.
+- A mail a bot asks to send, reply, forward or keep as a draft through a connected app shows as the mail itself: who
+  gets it, the subject, the body, the attachments and whether the signature is added, with Send and Cancel; "always
+  allow" and "never" sit in the menu next to Send. A formatted body is drawn without scripts or outside pictures. Once
+  answered the card folds to one line that opens the mail again.
 
 ## 0.4.1 — 2026-11-18
 
