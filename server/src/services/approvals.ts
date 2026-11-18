@@ -8,7 +8,7 @@ import {
   type PermissionRule,
   type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, or, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -17,6 +17,7 @@ import { HttpError, newId, notFound, truncate } from '../util';
 import { toApproval, toRule } from './mappers';
 import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
+import { OWNER_ID } from '../users';
 
 /** Built-in tools that only read inside the allowed folders. */
 export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite', 'NotebookRead']);
@@ -373,14 +374,16 @@ export class ApprovalService {
     private vault: VaultService,
   ) {}
 
-  async list(opts: { status?: Approval['status'] } = {}): Promise<Approval[]> {
+  /** Cards, newest first; with `seen`, only those in conversations it lets through. */
+  async list(opts: { status?: Approval['status']; seen?: SQL } = {}): Promise<Approval[]> {
     const rows = await this.ctx.db
-      .select()
+      .select({ approval: schema.approvals })
       .from(schema.approvals)
-      .where(opts.status ? eq(schema.approvals.status, opts.status) : undefined)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
+      .where(and(opts.status ? eq(schema.approvals.status, opts.status) : undefined, opts.seen))
       .orderBy(desc(schema.approvals.createdAt))
       .limit(200);
-    return rows.map(toApproval);
+    return rows.map((r) => toApproval(r.approval));
   }
 
   /**
@@ -426,10 +429,10 @@ export class ApprovalService {
   }
 
   /** Closes a card with the words the person wrote in the chat instead; the bot goes on with them. */
-  async redirect(id: string, text: string) {
+  async redirect(id: string, text: string, by: string | null = null) {
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status: 'denied', answer: text, decidedBy: 'typed', decidedAt: new Date() })
+      .set({ status: 'denied', answer: text, decidedBy: 'typed', decidedByUserId: by, decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) return;
@@ -521,7 +524,7 @@ export class ApprovalService {
     }
   }
 
-  async answer(id: string, d: ApprovalDecision): Promise<Approval> {
+  async answer(id: string, d: ApprovalDecision, by: string | null = null): Promise<Approval> {
     const stored = await this.row(id);
     const current = toApproval(stored);
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
@@ -561,7 +564,11 @@ export class ApprovalService {
       const exact = d.login.exact && typeof current.input.host === 'string' ? current.input.host : null;
       const site = exact ?? (typeof current.input.site === 'string' ? current.input.site : '');
       const saved = d.login.save
-        ? await this.vault.save({ site, username: d.login.username, password: d.login.password })
+        ? // Kept as the person who typed it: their own, typed only when a bot works for them.
+          await this.vault.save(
+            { site, username: d.login.username, password: d.login.password },
+            by ?? OWNER_ID,
+          )
         : null;
       login = { username: d.login.username, password: d.login.password, savedId: saved?.id ?? null };
       // Only the username is kept on the card.
@@ -569,7 +576,7 @@ export class ApprovalService {
     }
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status, answer, remembered, decidedBy: 'person', decidedAt: new Date() })
+      .set({ status, answer, remembered, decidedBy: 'person', decidedByUserId: by, decidedAt: new Date() })
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');

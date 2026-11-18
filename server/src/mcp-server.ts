@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Services } from './services';
 import type { AskResult } from './services/bot-api';
 import { errorText } from './util';
+import { OWNER_ID } from './users';
 
 /** The path an MCP client connects to; under /api/, so the access key guards it like the rest. */
 export const MCP_PATH = '/api/mcp';
@@ -46,7 +47,9 @@ function server(s: Services): McpServer {
     async ({ bot, message, wait_seconds }) => {
       try {
         const target = await s.bots.resolve(bot);
-        return answer(await s.botApi.ask(target.id, message, { waitMs: wait_seconds * 1000 }));
+        return answer(
+          await s.botApi.ask(target.id, message, { waitMs: wait_seconds * 1000, userId: OWNER_ID }),
+        );
       } catch (err) {
         return { ...text({ error: errorText(err, await s.settings.translator()) }), isError: true };
       }

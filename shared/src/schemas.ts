@@ -43,6 +43,20 @@ export const Group = z.object({
 });
 export type Group = z.infer<typeof Group>;
 
+/**
+ * What a person may do with a bot: nothing (they do not see it), talk with it in conversations of
+ * their own, or also change it, share it and look after what it learns.
+ */
+export const BotLevel = z.enum(['none', 'chat', 'edit']);
+export type BotLevel = z.infer<typeof BotLevel>;
+export const BOT_LEVELS = BotLevel.options;
+/** Who may use a bot besides its owner: everyone on the server at one level, and named people. */
+export const BotAccess = z.object({
+  everyone: BotLevel,
+  people: z.record(z.string(), BotLevel.exclude(['none'])),
+});
+export type BotAccess = z.infer<typeof BotAccess>;
+
 export const Bot = z.object({
   id: Id,
   name: z.string(),
@@ -80,6 +94,12 @@ export const Bot = z.object({
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** The person who made the bot (or was given it). Missing from older servers. */
+  ownerUserId: z.string().optional(),
+  /** Who else may use it; sent only to those who may change it. Missing from older servers. */
+  access: BotAccess.optional(),
+  /** What the person asking may do with it. Missing from older servers, where it is `edit`. */
+  yourLevel: BotLevel.optional(),
 });
 export type Bot = z.infer<typeof Bot>;
 
@@ -199,6 +219,8 @@ export const Thread = z.object({
   title: z.string(),
   kind: ThreadKind,
   peerBotId: Id.nullable(),
+  /** The person whose conversation it is; null for the bot's own work. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   /** What the conversation is for, set by the person; empty when none. Missing on older servers. */
   goal: z.string().optional(),
   /** The message pinned above the conversation, with its start; missing or null for none. */
@@ -455,6 +477,8 @@ export const VaultLogin = z.object({
   hasTotp: z.boolean(),
   /** The bots that may use it; null lets every bot. */
   botIds: z.array(Id).nullable(),
+  /** Whose it is: a person's own, typed only for them; null for the team's. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
@@ -468,6 +492,8 @@ export const VaultLoginCreate = z.object({
   /** The base32 text or `otpauth://` link of the site's authenticator setup. */
   totp: z.string().trim().max(1000).optional(),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /** For the whole team rather than the person saving it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type VaultLoginCreate = z.input<typeof VaultLoginCreate>;
 
@@ -478,6 +504,8 @@ export const VaultLoginUpdate = z.object({
   /** A new authenticator secret; empty removes it. */
   totp: z.string().trim().max(1000).optional(),
   botIds: z.array(Id).max(500).nullable().optional(),
+  /** Moves it to the team, or back to the person changing it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type VaultLoginUpdate = z.input<typeof VaultLoginUpdate>;
 
@@ -522,6 +550,8 @@ export const Memory = z.object({
   id: Id,
   scope: MemoryScope,
   botId: Id.nullable(),
+  /** Whose note about themselves it is; null for a bot's note. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   content: z.string(),
   /** The site the note is about (`example.com`); it reaches the bot when it opens that site. */
   site: z.string().nullable(),
@@ -556,8 +586,13 @@ export interface MemoryChange {
   content: string;
   before: string | null;
   proposedBy: string;
-  /** `outside`: a run of the bot `name` that had read outside text, though the person was there. */
-  origin: { kind: 'routine' | 'bot' | 'outside'; name: string };
+  /**
+   * `outside`: a run of the bot `name` that had read outside text, though the person was there.
+   * `person`: someone who may talk with the bot but not change it asked for it; `name` is theirs.
+   */
+  origin: { kind: 'routine' | 'bot' | 'outside' | 'person'; name: string };
+  /** The person the work was for. Missing on older servers. */
+  userId?: string | null;
   threadId: string | null;
   /** The page the bot said the fact came from. */
   sourceUrl: string | null;
@@ -578,6 +613,42 @@ export const MemoryCreate = z.object({
 export const MemoryUpdate = z.object({
   content: z.string().trim().min(1).max(2000),
 });
+
+/** What a person may do on this server: the owner installed it; admins manage it with them. */
+export const Role = z.enum(['owner', 'admin', 'member']);
+export type Role = z.infer<typeof Role>;
+/** Who a device is signed in as. */
+export const SessionUser = z.object({ id: z.string(), username: z.string().nullable(), role: Role });
+export type SessionUser = z.infer<typeof SessionUser>;
+
+/** A person on the server, as the people list shows them. */
+export const PersonInfo = z.object({
+  id: z.string(),
+  username: z.string().nullable(),
+  displayName: z.string().nullable(),
+  role: Role,
+  /** No longer able to sign in; their conversations and notes are kept. */
+  disabled: z.boolean(),
+  createdAt: z.string(),
+});
+export type PersonInfo = z.infer<typeof PersonInfo>;
+/** The roles a person can be given; there is only ever one owner. */
+export const GivenRole = z.enum(['admin', 'member']);
+export const PersonCreate = z.object({
+  username: z.string().trim().min(1).max(100),
+  password: z.string().min(1).max(200),
+  displayName: z.string().trim().max(100).optional(),
+  role: GivenRole.default('member'),
+});
+export type PersonCreate = z.input<typeof PersonCreate>;
+export const PersonUpdate = z.object({
+  displayName: z.string().trim().max(100).nullable().optional(),
+  role: GivenRole.optional(),
+  disabled: z.boolean().optional(),
+  /** A new password, for someone who forgot theirs; their devices are signed out. */
+  password: z.string().min(1).max(200).optional(),
+});
+export type PersonUpdate = z.input<typeof PersonUpdate>;
 
 export const AccessRequest = z.object({ key: z.string().min(1).max(500) });
 export const LoginRequest = z.object({
@@ -1207,6 +1278,8 @@ export const Ticket = z.object({
   priority: TicketPriority,
   assigneeBotId: Id.nullable(),
   createdBy: z.string(),
+  /** The person who opened it; null when a bot did. Missing on older servers. */
+  createdByUserId: z.string().nullable().optional(),
   threadId: Id.nullable(),
   /** Its place among the tickets of its column, smallest first. */
   position: z.number(),

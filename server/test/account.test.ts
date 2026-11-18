@@ -9,6 +9,7 @@ import {
   LoginThrottle,
   MAX_FAILURES,
 } from '../src/account';
+import { OWNER_ID } from '../src/users';
 import { KEY, testServer, type TestServer } from './helpers';
 
 describe('kullanıcı adı ve şifreyle giriş', () => {
@@ -86,8 +87,8 @@ describe('kullanıcı adı ve şifreyle giriş', () => {
   });
 
   it('veritabanında şifrenin kendisi değil yalnızca özeti durur', async () => {
-    const rows = await t.db.db.query.kv.findMany();
-    const stored = JSON.stringify(rows.find((r) => r.key === 'account')?.value);
+    const rows = await t.db.db.query.users.findMany();
+    const stored = JSON.stringify(rows.find((r) => r.id === OWNER_ID)?.password);
     expect(stored).toContain('"hash"');
     expect(stored).not.toContain('yeni-sifre-2');
   });

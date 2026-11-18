@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import type { BotAccess } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -73,6 +74,13 @@ export const bots = pgTable('bots', {
   archivedAt: ts('archived_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
+  /** The person who made the bot, or was handed it; they may always change and share it. */
+  ownerUserId: text('owner_user_id')
+    .notNull()
+    .default('owner')
+    .references(() => users.id),
+  /** Who else may use it (`BotAccess`); nobody but its owner and the admins until it is shared. */
+  access: jsonb('access').$type<BotAccess>().notNull().default({ everyone: 'none', people: {} }),
 });
 
 export const threads = pgTable(
@@ -88,6 +96,11 @@ export const threads = pgTable(
     kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
       .notNull()
       .default('user'),
+    /**
+     * The person whose conversation this is; only they see it. Null for the bot's own work (with
+     * other bots, routines, tickets), which those who may change the bot see.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     /** For bot-to-bot threads: the other bot. */
     peerBotId: text('peer_bot_id').references(() => bots.id, { onDelete: 'set null' }),
     engineSessionId: text('engine_session_id'),
@@ -116,8 +129,11 @@ export const threads = pgTable(
   },
   (t) => [
     index('threads_bot_idx').on(t.botId, t.updatedAt),
+    index('threads_user_idx').on(t.userId, t.botId),
+    // One exchange between two bots for each person it is done for: what one person asked through
+    // a bot is not in the engine session another person's request continues.
     uniqueIndex('threads_peer_uq')
-      .on(t.botId, t.peerBotId)
+      .on(t.botId, t.peerBotId, t.userId)
       .where(sql`${t.kind} = 'bot'`),
   ],
 );
@@ -131,6 +147,8 @@ export const messages = pgTable(
       .references(() => threads.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['user', 'assistant', 'system', 'marker', 'approval', 'error'] }).notNull(),
     author: text('author').notNull(),
+    /** The person who wrote a `user` message; null for bots, outside text and older rows. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     text: sealedText('text').notNull().default(''),
     props: sealedProps('props').notNull().default({}),
     clientId: text('client_id'),
@@ -203,6 +221,8 @@ export const turns = pgTable(
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
     // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
     source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
+    /** The person the turn works for: who wrote, or whose request a bot passed on; null when nobody asked. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status', {
       enum: ['queued', 'running', 'done', 'error', 'interrupted'],
     }).notNull(),
@@ -248,6 +268,8 @@ export const approvals = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     turnId: text('turn_id'),
+    /** The person who answered the card, when a person did. */
+    decidedByUserId: text('decided_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     kind: text('kind', { enum: ['tool', 'question', 'login'] }).notNull(),
     toolName: text('tool_name').notNull(),
     summary: sealedText('summary').notNull().default(''),
@@ -321,6 +343,8 @@ export const memories = pgTable(
     id: text('id').primaryKey(),
     scope: text('scope', { enum: ['bot', 'user'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'cascade' }),
+    /** For a note about the person, whose: each person's notes reach only bots working for them. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     content: sealedText('content').notNull(),
     /** A note on how a site works, given to the bot when it opens that site rather than every turn. */
     site: text('site'),
@@ -342,7 +366,7 @@ export const memories = pgTable(
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('memories_scope_idx').on(t.scope, t.botId)],
+  (t) => [index('memories_scope_idx').on(t.scope, t.botId), index('memories_user_idx').on(t.userId)],
 );
 
 export const auditLog = pgTable(
@@ -355,6 +379,11 @@ export const auditLog = pgTable(
     targetId: text('target_id').notNull(),
     before: sealedJson('before'),
     after: sealedJson('after'),
+    /**
+     * Whose the target was, for a memory note: `user:<id>` for a person's own, `bot:<id>` for a
+     * bot's. Kept on the line, so a deleted note's history still goes only to those it was for.
+     */
+    owner: text('owner'),
     createdAt: created(),
   },
   (t) => [index('audit_target_idx').on(t.targetType, t.targetId)],
@@ -377,6 +406,11 @@ export const routines = pgTable('routines', {
    * it no longer marks the bot: runs a check skips leave no new result to clear it with.
    */
   failureSeenAt: ts('failure_seen_at'),
+  /**
+   * The person who set it up; its runs work for them. Null for routines from before people came
+   * in, and for one whose person was removed: those work for the bot's owner.
+   */
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: created(),
   /** Secret of the routine's webhook address; null when it has none. */
   webhookToken: text('webhook_token'),
@@ -504,8 +538,54 @@ export const jobs = pgTable(
   ],
 );
 
+/** A password as stored: a scrypt hash with its salt and the cost it was made at. */
+export interface PasswordHash {
+  salt: string;
+  hash: string;
+  N: number;
+  r: number;
+  p: number;
+}
+
+/**
+ * The people who sign in to this server. There is always exactly one owner, with the fixed id
+ * `owner`: it stands for whoever installed the server, so a restore that brings back an older
+ * owner row still matches the sessions this server keeps across a restore.
+ */
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    /** As the person typed it; null for an owner who has only ever used the access key. */
+    username: text('username'),
+    /** The username folded the way sign-in compares it (trimmed, lower case), for lookup and uniqueness. */
+    usernameKey: text('username_key'),
+    displayName: text('display_name'),
+    role: text('role', { enum: ['owner', 'admin', 'member'] }).notNull(),
+    password: jsonb('password').$type<PasswordHash>(),
+    createdAt: created(),
+    /**
+     * What the person told about themselves, which the bots read when they work for them (name,
+     * how to address them, about me), and whether they went through the first-run questions.
+     */
+    profile: jsonb('profile').$type<Record<string, unknown>>().notNull().default({}),
+    /** Set when the person may no longer sign in; their sessions stop working. */
+    disabledAt: ts('disabled_at'),
+  },
+  (t) => [
+    uniqueIndex('users_username_key_uq').on(t.usernameKey),
+    uniqueIndex('users_one_owner_uq')
+      .on(t.role)
+      .where(sql`${t.role} = 'owner'`),
+  ],
+);
+
 export const sessions = pgTable('sessions', {
   id: text('id').primaryKey(),
+  /** Who signed in on this device. */
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id),
   createdAt: created(),
   lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
   /** The browser or app that signed in, so the person can tell their devices apart. */
@@ -538,6 +618,8 @@ export const vaultLogins = pgTable(
   'vault_logins',
   {
     id: text('id').primaryKey(),
+    /** Whose sign-in it is: a person's own, typed only for them; null for the team's. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     /** Domain the sign-in belongs to, e.g. facebook.com; also used on its subdomains. */
     site: text('site').notNull(),
     username: text('username').notNull(),
@@ -550,7 +632,8 @@ export const vaultLogins = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastUsedAt: ts('last_used_at'),
   },
-  (t) => [uniqueIndex('vault_logins_site_user_uq').on(t.site, t.username)],
+  // One sign-in per site and username for each person, and one for the team.
+  (t) => [uniqueIndex('vault_logins_site_user_uq').on(t.site, t.username, sql`coalesce(${t.userId}, '')`)],
 );
 
 export const kv = pgTable('kv', {
@@ -566,6 +649,11 @@ export const connections = pgTable(
   'connections',
   {
     id: text('id').primaryKey(),
+    /**
+     * Whose it is: a person's own, used only when a bot works for them; null for the team's,
+     * which those who look after the server set up for everyone.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     catalogId: text('catalog_id'),
@@ -634,6 +722,8 @@ export const skills = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     body: text('body').notNull().default(''),
+    /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -670,6 +760,11 @@ export const channels = pgTable(
     secret: text('secret'),
     /** What the chat app says about the account the server uses (Telegram bot name, linked number). */
     account: jsonb('account').$type<Record<string, unknown>>().notNull().default({}),
+    /** The person here it was set up by; what comes in through it is written as theirs. */
+    userId: text('user_id')
+      .notNull()
+      .default('owner')
+      .references(() => users.id, { onDelete: 'cascade' }),
     /** The person's id in the chat app; nobody else's messages are read. Null until paired. */
     owner: text('owner'),
     ownerName: text('owner_name'),
@@ -742,8 +837,18 @@ export const memoryChanges = pgTable(
     proposedBy: text('proposed_by')
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
-    /** Why nobody was watching: a routine's run or another bot's request, with its name. */
-    origin: jsonb('origin').$type<{ kind: 'routine' | 'bot' | 'outside'; name: string }>().notNull(),
+    /**
+     * Why it waits: a routine's run, another bot's request, outside text read, or a person who may
+     * talk with the bot but not change it; with its name.
+     */
+    origin: jsonb('origin')
+      .$type<{ kind: 'routine' | 'bot' | 'outside' | 'person'; name: string }>()
+      .notNull(),
+    /**
+     * The person the work was for. A change to their own notes is theirs to accept; one to a
+     * bot's notes, for those who may change the bot.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     threadId: text('thread_id'),
     /** The page the bot said the fact came from; kept on the note once accepted. */
     sourceUrl: sealedText('source_url'),
@@ -876,6 +981,8 @@ export const tickets = pgTable(
     id: text('id').primaryKey(),
     /** Shown as #12; grows by one with each ticket. */
     number: integer('number').notNull(),
+    /** The person who opened it; null when a bot did. */
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     title: sealedText('title').notNull(),
     description: sealedText('description').notNull().default(''),
     status: text('status', { enum: ['todo', 'in_progress', 'in_review', 'blocked', 'done', 'wont_do'] })

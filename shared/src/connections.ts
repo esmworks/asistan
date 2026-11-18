@@ -55,6 +55,11 @@ export const Connection = z.object({
   tools: z.array(ConnectionTool),
   /** Every bot may use the tools, including bots made later; `botIds` is then not used. */
   allBots: z.boolean(),
+  /**
+   * Whose it is: a person's own, used only when a bot works for them; null for the team's.
+   * Missing on older servers.
+   */
+  userId: z.string().nullable().optional(),
   /** The bots that may use the tools when `allBots` is off. */
   botIds: z.array(Id),
   /** Its tools' views (MCP apps) show in the conversation. */
@@ -97,6 +102,8 @@ export const ConnectionCreate = z.object({
   allBots: z.boolean().default(true),
   /** The bots that may use it when `allBots` is off. */
   botIds: z.array(Id).max(500).default([]),
+  /** For the whole team rather than the person setting it up; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type ConnectionCreate = z.input<typeof ConnectionCreate>;
 
@@ -109,6 +116,8 @@ export const ConnectionUpdate = z.object({
   clientId: z.string().trim().max(500).optional(),
   clientSecret: z.string().trim().max(2000).optional(),
   showApps: z.boolean().optional(),
+  /** Moves it to the team, or back to the person changing it; only those who look after the server. */
+  team: z.boolean().optional(),
 });
 export type ConnectionUpdate = z.input<typeof ConnectionUpdate>;
 

@@ -45,7 +45,7 @@ export class SkillService {
     return (await this.list()).filter((s) => s.botIds.includes(botId));
   }
 
-  async create(input: SkillCreate): Promise<Skill> {
+  async create(input: SkillCreate, userId: string | null = null): Promise<Skill> {
     const id = newId();
     try {
       await this.ctx.db.insert(schema.skills).values({
@@ -53,6 +53,7 @@ export class SkillService {
         name: input.name,
         description: input.description,
         body: input.body ?? '',
+        createdByUserId: userId,
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw new HttpError(409, 'error.skillExists', { name: input.name });

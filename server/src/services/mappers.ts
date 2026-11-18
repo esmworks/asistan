@@ -50,6 +50,8 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   instructionsCheckedAt: iso(r.instructionsCheckedAt),
   instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
+  ownerUserId: r.ownerUserId,
+  access: r.access,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -64,6 +66,7 @@ export const toThread = (
   title: r.title,
   kind: r.kind,
   peerBotId: r.peerBotId,
+  userId: r.userId,
   goal: r.goal,
   archivedAt: iso(r.archivedAt),
   snoozedUntil: iso(r.snoozedUntil),
@@ -118,6 +121,7 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   id: r.id,
   scope: r.scope,
   botId: r.botId,
+  userId: r.userId,
   content: r.content,
   site: r.site,
   status: 'active',
@@ -132,6 +136,7 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
 
 export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   id: r.id,
+  createdByUserId: r.createdByUserId,
   botId: r.botId,
   name: r.name,
   prompt: r.prompt,
@@ -179,6 +184,7 @@ export function toMemoryChange(r: typeof schema.memoryChanges.$inferSelect): Mem
     before: r.before,
     proposedBy: r.proposedBy,
     origin: r.origin,
+    userId: r.userId,
     threadId: r.threadId,
     sourceUrl: r.sourceUrl,
     createdAt: r.createdAt.toISOString(),

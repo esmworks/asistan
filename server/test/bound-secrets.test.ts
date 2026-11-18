@@ -10,6 +10,7 @@ import { ApiCredentialService } from '../src/services/api-credentials';
 import { BOUND_FILE } from '../src/services/vault';
 import { newId } from '../src/util';
 import { testServer, type TestServer } from './helpers';
+import { OWNER_ID } from '../src/users';
 
 describe('AES-GCM ile mühürleme', () => {
   const key = randomBytes(32);
@@ -51,21 +52,21 @@ describe('satırına ve adresine bağlı sırlar', () => {
   it('veritabanında sitesi değiştirilen ya da başka satıra taşınan parola doldurulmaz', async () => {
     const bank = await login('banka.example');
     const forum = await login('forum.example');
-    expect((await t.services.vault.forHost('banka.example')).map((c) => c.password)).toEqual([
-      'parola-banka.example',
-    ]);
+    expect(
+      (await t.services.vault.forHost('banka.example', undefined, OWNER_ID)).map((c) => c.password),
+    ).toEqual(['parola-banka.example']);
 
     // Someone who can only write to the database points the bank's password at their own site.
     await db()
       .update(schema.vaultLogins)
       .set({ site: 'kotu.example' })
       .where(eq(schema.vaultLogins.id, bank));
-    expect(await t.services.vault.forHost('kotu.example')).toEqual([]);
+    expect(await t.services.vault.forHost('kotu.example', undefined, OWNER_ID)).toEqual([]);
 
     // Or moves it into another row.
     const [b] = await db().select().from(schema.vaultLogins).where(eq(schema.vaultLogins.id, bank));
     await db().update(schema.vaultLogins).set({ secret: b!.secret }).where(eq(schema.vaultLogins.id, forum));
-    expect(await t.services.vault.forHost('forum.example')).toEqual([]);
+    expect(await t.services.vault.forHost('forum.example', undefined, OWNER_ID)).toEqual([]);
   });
 
   it('site uygulamadan değişince parola ve doğrulama sırrı yeni siteye bağlanır', async () => {
@@ -73,7 +74,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
     const totp = 'JBSWY3DPEHPK3PXP';
     expect((await t.api('PATCH', `/api/vault/${id}`, { totp })).status).toBe(200);
     expect((await t.api('PATCH', `/api/vault/${id}`, { site: 'yeni.example' })).status).toBe(200);
-    const [c] = await t.services.vault.forHost('yeni.example');
+    const [c] = await t.services.vault.forHost('yeni.example', undefined, OWNER_ID);
     expect(c).toMatchObject({ password: 'parola-eski.example', totp });
   });
 
@@ -93,7 +94,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
         totp: vault.seal('JBSWY3DPEHPK3PXP'),
       });
 
-    expect(await vault.forHost('eski.example')).toMatchObject([
+    expect(await vault.forHost('eski.example', undefined, OWNER_ID)).toMatchObject([
       { password: 'eski-parola', totp: 'JBSWY3DPEHPK3PXP' },
     ]);
     const [row] = await db().select().from(schema.vaultLogins).where(eq(schema.vaultLogins.id, old));
@@ -106,7 +107,7 @@ describe('satırına ve adresine bağlı sırlar', () => {
     await db()
       .insert(schema.vaultLogins)
       .values({ id: newId(), site: 'kotu.example', username: 'x', secret: vault.seal('telegram-jetonu') });
-    expect(await vault.forHost('kotu.example')).toEqual([]);
+    expect(await vault.forHost('kotu.example', undefined, OWNER_ID)).toEqual([]);
   });
 
   it('API anahtarı yalnızca kaydedildiği adrese gider; eski anahtarlar bağlanır', async () => {

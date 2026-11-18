@@ -7,7 +7,7 @@ import {
   type UsageReport,
 } from '@yumakbot/shared';
 import { z } from 'zod';
-import { and, asc, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { SettingsService } from './settings';
@@ -56,7 +56,8 @@ export class UsageService {
   ) {}
 
   /** Today, from midnight in the owner's time zone: each bot's finished turns, and the routines run. */
-  async today(): Promise<TodayReport> {
+  /** Today's work; with `botIds`, only those bots'. */
+  async today(botIds?: string[]): Promise<TodayReport> {
     const { timezone } = await this.settings.all();
     const now = this.clock();
     const date = dayKey(now, timezone);
@@ -70,7 +71,13 @@ export class UsageService {
       })
       .from(schema.turns)
       .innerJoin(schema.bots, eq(schema.bots.id, schema.turns.botId))
-      .where(and(isNotNull(schema.turns.finishedAt), gte(schema.turns.finishedAt, since)));
+      .where(
+        and(
+          isNotNull(schema.turns.finishedAt),
+          gte(schema.turns.finishedAt, since),
+          botIds && (botIds.length ? inArray(schema.turns.botId, botIds) : sql`false`),
+        ),
+      );
     const bots = new Map<string, TodayReport['bots'][number]>();
     let costUsd = 0;
     for (const r of turns) {
@@ -92,7 +99,12 @@ export class UsageService {
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
-      .where(gte(schema.routineRuns.startedAt, since))
+      .where(
+        and(
+          gte(schema.routineRuns.startedAt, since),
+          botIds && (botIds.length ? inArray(schema.routines.botId, botIds) : sql`false`),
+        ),
+      )
       .orderBy(desc(schema.routineRuns.startedAt));
     return {
       date,

@@ -206,6 +206,8 @@ export class PluginService {
    */
   async install(
     input: PluginInstall & { tokens: Record<string, string>; skip: string[] },
+    /** Whose the servers become: the person installing, until they give them to the team. */
+    userId: string,
   ): Promise<PluginInstallResult> {
     const { servers, skills, plan } = await this.read(input.url);
     const skip = new Set(input.skip);
@@ -214,15 +216,18 @@ export class PluginService {
       if (skip.has(sv.name) || sv.exists) continue;
       const token = input.tokens[sv.name]?.trim();
       if (sv.needsToken && !token) continue;
-      const conn = await this.services.connections.create({
-        name: sv.name,
-        url: servers.find((x) => x.name === sv.name)!.url,
-        auth: token ? 'token' : 'none',
-        token,
-        catalogId: null,
-        allBots: false,
-        botIds: [],
-      });
+      const conn = await this.services.connections.create(
+        {
+          name: sv.name,
+          url: servers.find((x) => x.name === sv.name)!.url,
+          auth: token ? 'token' : 'none',
+          token,
+          catalogId: null,
+          allBots: false,
+          botIds: [],
+        },
+        userId,
+      );
       // A server that turns away a call without sign-in signs in through OAuth instead.
       if (!token && conn.status !== 'connected')
         await this.services.connections.update(conn.id, { auth: 'oauth' });

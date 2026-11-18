@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PluginService, pluginSource } from '../src/services/plugins';
 import { testServer, type TestServer } from './helpers';
+import { OWNER_ID } from '../src/users';
 
 /** A plugin on GitHub, in Claude Code's layout, served by address. */
 const FILES: Record<string, string> = {
@@ -83,7 +84,7 @@ describe('eklentiler', () => {
   });
 
   it('kurulum bağlantıları ve becerileri ekler; anahtarı verilmeyen sunucuyu ve tekrarları atlar', async () => {
-    const r = await plugins.install({ url: 'https://github.com/acme/tools', tokens: {}, skip: [] });
+    const r = await plugins.install({ url: 'https://github.com/acme/tools', tokens: {}, skip: [] }, OWNER_ID);
     expect(r).toEqual({ servers: 1, skills: 1 });
     const conns = await t.services.connections.list();
     expect(conns.map((c) => c.url)).toEqual(['https://mcp.acme.invalid/mcp']);
@@ -92,11 +93,14 @@ describe('eklentiler', () => {
     const skills = await t.services.skills.list();
     expect(skills.map((k) => [k.name, k.botIds])).toEqual([['rapor-yaz', []]]);
 
-    const again = await plugins.install({
-      url: 'https://github.com/acme/tools',
-      tokens: { crm: 'tok-123' },
-      skip: [],
-    });
+    const again = await plugins.install(
+      {
+        url: 'https://github.com/acme/tools',
+        tokens: { crm: 'tok-123' },
+        skip: [],
+      },
+      OWNER_ID,
+    );
     expect(again).toEqual({ servers: 1, skills: 0 });
     const crm = (await t.services.connections.list()).find((c) => c.name === 'crm')!;
     expect(crm.auth).toBe('token');

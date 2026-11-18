@@ -30,6 +30,7 @@ import { mcpServers } from '../src/engine/claude';
 import { translator } from '../src/i18n';
 import { exposedNames, oauthRedirectUrl } from '../src/services/connections';
 import { AUTH, testServer, waitFor, type TestServer } from './helpers';
+import { OWNER_ID } from '../src/users';
 
 /** A small MCP server over Streamable HTTP, optionally behind a bearer token or an OAuth sign-in. */
 async function mcpFixture(
@@ -383,6 +384,7 @@ describe('bağlantılar', () => {
       .where(eq(schema.connections.id, c.id));
     const given = await t.services.connections.toolsFor(
       bot.id,
+      OWNER_ID,
       translator('tr'),
       new AbortController().signal,
     );
@@ -425,9 +427,9 @@ describe('bağlantılar', () => {
     expect(c.allBots).toBe(true);
     const later = await t.bot();
     const names = async (botId: string) =>
-      (await t.services.connections.toolsFor(botId, translator('tr'), new AbortController().signal)).map(
-        (x) => x.name,
-      );
+      (
+        await t.services.connections.toolsFor(botId, OWNER_ID, translator('tr'), new AbortController().signal)
+      ).map((x) => x.name);
     expect(await names(first.id)).toHaveLength(2);
     expect(await names(later.id)).toHaveLength(2);
 
@@ -815,7 +817,9 @@ describe('bağlantılar', () => {
     const bot = await t.bot();
     const stop = new AbortController();
     const toolNamed = async (name: string, signal: AbortSignal) =>
-      (await t.services.connections.toolsFor(bot.id, translator('tr'), signal)).find((x) => x.name === name)!;
+      (await t.services.connections.toolsFor(bot.id, OWNER_ID, translator('tr'), signal)).find(
+        (x) => x.name === name,
+      )!;
     const wait = await toolNamed('wait', stop.signal);
     const search = await toolNamed('search', new AbortController().signal);
 
@@ -903,6 +907,7 @@ describe('bağlantılar', () => {
     expect(c.tools.find((x) => x.name === 'show_board')).toMatchObject({ app: true });
     const given = await t.services.connections.toolsFor(
       bot.id,
+      OWNER_ID,
       translator('tr'),
       new AbortController().signal,
     );

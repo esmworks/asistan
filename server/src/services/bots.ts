@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import {
   leavesForEngine,
   type Bot,
+  type BotAccess,
   type BotCreate,
   type BotEngineChoice,
   type BotMove,
@@ -14,6 +15,7 @@ import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
 import { projectDirProblem } from '../workspace';
+import { OWNER_ID } from '../users';
 import { toBot, toGroup } from './mappers';
 
 type Tx = Parameters<Parameters<Ctx['db']['transaction']>[0]>[0];
@@ -62,14 +64,15 @@ export class BotService {
     if (problem) throw new HttpError(400, problem);
   }
 
-  async create(input: BotCreate): Promise<Bot> {
+  /** A new bot of `ownerUserId`'s, shared with nobody else yet. */
+  async create(input: BotCreate, ownerUserId: string = OWNER_ID): Promise<Bot> {
     if (input.groupId) await this.getGroup(input.groupId);
     this.checkProjectDir(input.projectDir);
     const [last] = await this.ctx.db.select({ n: max(schema.bots.position) }).from(schema.bots);
     // A new bot goes to the end of its section; managers start out pinned.
     const [row] = await this.ctx.db
       .insert(schema.bots)
-      .values({ id: newId(), ...input, pinned: input.isManager, position: (last?.n ?? -1) + 1 })
+      .values({ id: newId(), ...input, ownerUserId, pinned: input.isManager, position: (last?.n ?? -1) + 1 })
       .returning();
     this.ctx.bus.refresh({ scope: 'bots' });
     return toBot(row!);
@@ -151,6 +154,42 @@ export class BotService {
   }
 
   /** Moves a bot to another place in the sidebar and renumbers the section it lands in. */
+  /** Who else may talk with the bot or change it. */
+  async setAccess(id: string, access: BotAccess): Promise<Bot> {
+    const { ownerUserId } = await this.get(id);
+    // The bot's own owner needs no share of it.
+    const people = Object.fromEntries(Object.entries(access.people).filter(([p]) => p !== ownerUserId));
+    const [row] = await this.ctx.db
+      .update(schema.bots)
+      .set({ access: { everyone: access.everyone, people }, updatedAt: new Date() })
+      .where(eq(schema.bots.id, id))
+      .returning();
+    this.ctx.bus.refresh({ scope: 'bots' });
+    return toBot(row!);
+  }
+
+  /** A person leaves: the bots they made pass to `heir`, and no bot is shared with them any more. */
+  async leftBy(userId: string, heir: string) {
+    const rows = await this.ctx.db
+      .select({ id: schema.bots.id, access: schema.bots.access, ownerUserId: schema.bots.ownerUserId })
+      .from(schema.bots);
+    for (const r of rows) {
+      const shared = userId in r.access.people;
+      if (!shared && r.ownerUserId !== userId) continue;
+      const people = Object.fromEntries(
+        Object.entries(r.access.people).filter(([p]) => p !== userId && p !== heir),
+      );
+      await this.ctx.db
+        .update(schema.bots)
+        .set({
+          access: { everyone: r.access.everyone, people },
+          ...(r.ownerUserId === userId && { ownerUserId: heir }),
+        })
+        .where(eq(schema.bots.id, r.id));
+    }
+    this.ctx.bus.refresh({ scope: 'bots' });
+  }
+
   async move(id: string, to: BotMove): Promise<Bot> {
     const bot = await this.get(id);
     if (!to.pinned && to.groupId) await this.getGroup(to.groupId);

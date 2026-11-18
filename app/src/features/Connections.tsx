@@ -41,7 +41,8 @@ import { Switch } from '@/components/ui/switch';
 import { useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
-import { useBots, useConnections } from '@/lib/queries';
+import { useBots, useConnections, useManagesServer } from '@/lib/queries';
+import { TeamChoice } from './VaultTab';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -606,6 +607,8 @@ function Setup({
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [ownSwitch, setOwnSwitch] = useState(false);
+  const manages = useManagesServer();
+  const [team, setTeam] = useState(false);
   // A service that needs a registered app always asks for one; any other only when switched on.
   const ownApp = !reusing && (!!entry?.client || ownSwitch);
   // A new app next to the default is named, so later accounts find it in the list.
@@ -626,6 +629,7 @@ function Setup({
             }
           : {}),
         ...(reusing ? { sameAppAs: appFrom } : {}),
+        ...(team ? { team } : {}),
       };
       const c = await api.addConnection(input);
       if (auth !== 'oauth') return { id: c.id, url: undefined };
@@ -803,6 +807,7 @@ function Setup({
             {t('apps.accountSignInNote', { name: entry.name })}
           </p>
         )}
+        {manages && <TeamChoice team={team} onChange={setTeam} />}
         <p className="text-xs text-muted-foreground">{t('apps.trustNote')}</p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" className="rounded-full" onClick={onBack}>
@@ -1013,6 +1018,7 @@ function Detail({
           </form>
         )}
 
+        <Owned connection={c} />
         <BotAccess connection={c} bots={live} />
         <AppViews connection={c} />
         <Tools connection={c} />
@@ -1154,6 +1160,45 @@ function AccountRow({
         {t(STATUS_KEY[a.status])}
       </span>
     </div>
+  );
+}
+
+/**
+ * Whose a connection is: the team's, which every bot uses for everyone, or the person's own,
+ * which a bot uses only while it works for them. Only those who look after the server move one.
+ */
+function Owned({ connection: c }: { connection: Connection }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const manages = useManagesServer();
+  const team = c.userId === null;
+  const move = useMutation({
+    mutationFn: (to: boolean) => api.updateConnection(c.id, { team: to }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['connections'] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  // Servers older than people do not say.
+  if (c.userId === undefined) return null;
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold">{t('owned.title')}</h3>
+      <div className="flex items-center gap-3 rounded-2xl border px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{team ? t('owned.team') : t('owned.yours')}</div>
+          <div className="text-xs text-muted-foreground">
+            {team ? (manages ? t('owned.teamHint') : t('owned.teamLocked')) : t('owned.yoursHint')}
+          </div>
+        </div>
+        {manages && (
+          <Switch
+            checked={team}
+            disabled={move.isPending}
+            onCheckedChange={(to) => move.mutate(to)}
+            aria-label={t('owned.forTeam')}
+          />
+        )}
+      </div>
+    </section>
   );
 }
 

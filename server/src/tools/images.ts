@@ -23,7 +23,7 @@ export function imageTool(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  thread: Pick<Thread, 'id' | 'kind'>;
+  thread: Pick<Thread, 'id' | 'kind' | 'botId'> & { userId?: string | null };
   signal: AbortSignal;
   t: T;
 }): AppTool {

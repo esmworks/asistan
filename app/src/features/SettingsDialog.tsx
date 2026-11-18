@@ -41,6 +41,7 @@ import {
   SlidersHorizontal,
   Trash2,
   UserRound,
+  Users,
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -66,6 +67,8 @@ import {
   useStaleMemory,
   useRoutines,
   useRules,
+  useManagesServer,
+  useSession,
   useSettings,
 } from '@/lib/queries';
 import { desktop, useDesktopServer } from '@/lib/desktop';
@@ -112,6 +115,7 @@ import { ProfileTab } from './ProfileTab';
 import { SkillsTab } from './SkillsTab';
 import { UsageTab } from './UsageTab';
 import { VaultTab } from './VaultTab';
+import { PeopleTab } from './PeopleTab';
 import { AccountForm } from './AccountSetup';
 import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
@@ -126,8 +130,12 @@ import {
   useSavePiModel,
 } from './ProviderConnect';
 
+/** Sections only those who look after the server use: what they change is the server's. */
+const SERVER_TABS = new Set<SettingsTab>(['channels', 'services', 'groups', 'import', 'usage']);
+
 const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
   { id: 'profile', icon: <UserRound /> },
+  { id: 'people', icon: <Users /> },
   { id: 'general', icon: <SlidersHorizontal /> },
   { id: 'connection', icon: <Link2 /> },
   { id: 'channels', icon: <MessageCircle /> },
@@ -207,14 +215,18 @@ export function SettingsDialog() {
   const t = useT();
   const tab = useUi((s) => s.settingsTab);
   const open = useUi((s) => s.openSettings);
-  const current = TABS.find((t) => t.id === tab) ?? TABS[0]!;
+  const manages = useManagesServer();
+  // Until the session is known, every section shows, as it did with a single account.
+  const known = !!useSession().data?.user;
+  const tabs = TABS.filter((tb) => !known || manages || !SERVER_TABS.has(tb.id));
+  const current = tabs.find((t) => t.id === tab) ?? tabs[0]!;
   // A phone shows one of two screens: the list of sections, or the section picked from it.
   const phone = useMedia(PHONE);
   const listing = useUi((s) => s.settingsList) && phone;
   const toList = () => useUi.setState({ settingsList: true });
   // The list narrows to the sections whose name or contents match what is typed.
   const [find, setFind] = useState('');
-  const shownTabs = TABS.filter((tb) =>
+  const shownTabs = tabs.filter((tb) =>
     settingsMatch(find, `${t(`settings.tab.${tb.id}`)} ${t(`settings.keywords.${tb.id}`)}`),
   );
   // ⌘, / Ctrl+, opens the settings, as in most desktop apps; again closes them.
@@ -286,6 +298,7 @@ export function SettingsDialog() {
             <div className="scroll-thin min-h-0 min-w-0 flex-1 overflow-y-auto p-4 roomy:p-8">
               <h2 className="mb-6 text-2xl font-semibold phone:hidden">{t(`settings.tab.${current.id}`)}</h2>
               {current.id === 'profile' && <ProfileTab />}
+              {current.id === 'people' && <PeopleTab />}
               {current.id === 'general' && <General />}
               {current.id === 'connection' && <Connection />}
               {current.id === 'channels' && <ChannelsTab />}
@@ -445,6 +458,7 @@ function OpenAtLogin() {
 
 function General() {
   const t = useT();
+  const manages = useManagesServer();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
   const theme = useTheme();
@@ -583,14 +597,16 @@ function General() {
         )}
       </Card>
       <Notifications />
-      <Card title={t('general.bots')}>
-        <Row label={t('general.timezone')} hint={t('general.timezoneHint')}>
-          <TimeZoneField
-            value={settings?.timezone ?? 'Europe/Istanbul'}
-            onChange={(timezone) => save.mutate({ timezone })}
-          />
-        </Row>
-      </Card>
+      {manages && (
+        <Card title={t('general.bots')}>
+          <Row label={t('general.timezone')} hint={t('general.timezoneHint')}>
+            <TimeZoneField
+              value={settings?.timezone ?? 'Europe/Istanbul'}
+              onChange={(timezone) => save.mutate({ timezone })}
+            />
+          </Row>
+        </Card>
+      )}
     </>
   );
 }
@@ -606,6 +622,9 @@ function Connection() {
     onError: (e) => toast.error((e as Error).message),
   });
   const logout = useMutation({ mutationFn: api.logout, onSettled: () => setAuthed(false) });
+  // Everyone keeps their own account, devices and sign-out here; the AI account, models and the
+  // server's environment are for those who look after the server.
+  const manages = useManagesServer();
   const { data: claudeAuth } = useClaudeAuth();
   // Opened from the model card too, when another provider is picked before any is connected.
   const [adding, setAdding] = useState(false);
@@ -626,59 +645,63 @@ function Connection() {
           : (claude?.detail ?? t('connection.defaultHint'));
   return (
     <>
-      <Card title={t('connection.ai')}>
-        {claudeAuth === null ? (
-          <Row label={t('connection.claude')} hint={hint}>
-            <span
-              className={cn(
-                'flex items-center gap-1.5 text-sm',
-                status === 'ok'
-                  ? 'text-emerald-500'
-                  : status === 'unknown'
-                    ? 'text-muted-foreground'
-                    : 'text-amber-500',
-              )}
-            >
-              {status === 'ok' ? (
-                <Check className="size-4" />
-              ) : status === 'unknown' ? null : (
-                <X className="size-4" />
-              )}
-              {t(`connection.status.${status}`)}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="rounded-full"
-              onClick={() => check.mutate()}
-              disabled={check.isPending}
-            >
-              <RefreshCw className={cn(check.isPending && 'animate-spin')} /> {t('connection.check')}
-            </Button>
-          </Row>
-        ) : (
-          <div className="space-y-3 px-4 py-4">
-            <ClaudeConnect checking={check.isPending} />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-full text-muted-foreground"
-              onClick={() => check.mutate()}
-              disabled={check.isPending}
-            >
-              <RefreshCw className={cn(check.isPending && 'animate-spin')} /> {t('connection.check')}
-            </Button>
-          </div>
-        )}
-        <ProviderRows plain />
-        <AddProvider open={adding} onOpenChange={setAdding} anchor={addAnchor} />
-      </Card>
-      <ModelCard onAddProvider={addProvider} />
-      <Card title={t('connection.environment')}>
-        <ShellSandboxRow sandbox={info?.shellSandbox} />
-        <BrowserRow browser={info?.browser} />
-        <EgressRow egress={info?.egress} />
-      </Card>
+      {manages && (
+        <Card title={t('connection.ai')}>
+          {claudeAuth === null ? (
+            <Row label={t('connection.claude')} hint={hint}>
+              <span
+                className={cn(
+                  'flex items-center gap-1.5 text-sm',
+                  status === 'ok'
+                    ? 'text-emerald-500'
+                    : status === 'unknown'
+                      ? 'text-muted-foreground'
+                      : 'text-amber-500',
+                )}
+              >
+                {status === 'ok' ? (
+                  <Check className="size-4" />
+                ) : status === 'unknown' ? null : (
+                  <X className="size-4" />
+                )}
+                {t(`connection.status.${status}`)}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-full"
+                onClick={() => check.mutate()}
+                disabled={check.isPending}
+              >
+                <RefreshCw className={cn(check.isPending && 'animate-spin')} /> {t('connection.check')}
+              </Button>
+            </Row>
+          ) : (
+            <div className="space-y-3 px-4 py-4">
+              <ClaudeConnect checking={check.isPending} />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full text-muted-foreground"
+                onClick={() => check.mutate()}
+                disabled={check.isPending}
+              >
+                <RefreshCw className={cn(check.isPending && 'animate-spin')} /> {t('connection.check')}
+              </Button>
+            </div>
+          )}
+          <ProviderRows plain />
+          <AddProvider open={adding} onOpenChange={setAdding} anchor={addAnchor} />
+        </Card>
+      )}
+      {manages && <ModelCard onAddProvider={addProvider} />}
+      {manages && (
+        <Card title={t('connection.environment')}>
+          <ShellSandboxRow sandbox={info?.shellSandbox} />
+          <BrowserRow browser={info?.browser} />
+          <EgressRow egress={info?.egress} />
+        </Card>
+      )}
       <Card title={t('connection.server')}>
         <Row label={t('connection.address')} hint={window.location.origin} />
         <DesktopServerRow />
@@ -692,7 +715,7 @@ function Connection() {
       </Card>
       <PairDevice />
       <Devices />
-      <ApnsCard />
+      {manages && <ApnsCard />}
     </>
   );
 }

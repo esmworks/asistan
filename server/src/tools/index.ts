@@ -13,6 +13,7 @@ import {
   skillSlug,
   type ApiSource,
   type Bot,
+  type BotLevel,
   type Memory,
   type MemoryChange,
   outsideIn,
@@ -42,6 +43,9 @@ import { sourceOf } from '../services/memory';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
+import { OWNER_ID } from '../users';
+import { atLeast, managesServer } from '../services/access';
+import { privateHost } from '../services/skill-link';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
 
@@ -294,6 +298,22 @@ export class ToolFactory {
     // Conversations this turn opened; a few at most, so a looping bot cannot fill the list.
     let opened = 0;
     const s = this.services;
+    // Whom the turn works for: who asked, else whose conversation it is, else the bot's owner.
+    const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
+    const reachBot = async (ref: string, wanted: 'chat' | 'edit') =>
+      s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+    let levelHere: Promise<BotLevel> | undefined;
+    /** What the person may do with this bot. */
+    const personLevel = () =>
+      (levelHere ??= s.access.viewerOf(person).then((v) => s.access.level(v, bot.id)));
+    const mayChange = async () => atLeast(await personLevel(), 'edit');
+    /** This bot's conversations the person sees: theirs, and its own work when they may change it. */
+    const seenHere = async () =>
+      (await mayChange()) ? s.access.seenFrom(person) : eq(schema.threads.userId, person);
+    /** The bots the person reaches at `wanted`. */
+    const reachable = async (wanted: 'chat' | 'edit') =>
+      new Set(await s.access.botIds(await s.access.viewerOf(person), wanted));
     // Only the person's own message or emoji has them there; a room member another bot named is not.
     const fromUser = attended(turn.source);
     // Nobody may be watching a routine's or another bot's turn: its cards close unanswered in time.
@@ -327,16 +347,41 @@ export class ToolFactory {
         }
         return { kind: 'bot', name: '' };
       })());
-    type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId'>;
+    type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId' | 'userId'>;
     const propose = async (change: Change) => {
       await s.memory.propose({
         ...change,
         proposedBy: bot.id,
         origin: await awayFrom(),
         threadId: thread.id,
+        userId: person,
       });
       return t(fromUser ? 'tool.memoryProposedOutside' : 'tool.memoryProposed');
     };
+    /**
+     * A bot's notes reach everyone who uses the bot: a change to them asked by someone who may
+     * only talk with it waits for those who may change it.
+     */
+    const forReview = async (change: Change) => {
+      const [who] = await this.ctx.db
+        .select({ name: schema.users.displayName, username: schema.users.username })
+        .from(schema.users)
+        .where(eq(schema.users.id, person))
+        .limit(1);
+      await s.memory.propose({
+        ...change,
+        proposedBy: bot.id,
+        origin: { kind: 'person', name: who?.name || who?.username || '' },
+        threadId: thread.id,
+        userId: person,
+      });
+      return t('tool.memoryProposedReview');
+    };
+    /** Whether the person may change the bot whose notes a change is about. */
+    const mayChangeNotesOf = async (botId: string) =>
+      botId === bot.id
+        ? mayChange()
+        : atLeast(await s.access.level(await s.access.viewerOf(person), botId), 'edit');
     /**
      * How a memory change goes: made now, or waiting for the person. A turn nobody watches, or one
      * that read outside text, only proposes it: what it read may be behind it. The memory every
@@ -345,6 +390,9 @@ export class ToolFactory {
      * answer to give the bot.
      */
     const memoryGate = async (change: Change): Promise<string | null> => {
+      if (change.scope === 'bot' && change.botId && !(await mayChangeNotesOf(change.botId))) {
+        return forReview(change);
+      }
       if (!fromUser || reads()) return propose(change);
       const shared = change.scope === 'user' || (!!change.botId && change.botId !== bot.id);
       if (!shared) return null;
@@ -392,12 +440,15 @@ export class ToolFactory {
     ): Promise<{ routine: Routine; routines: Routine[] } | string> => {
       let owners: Bot[];
       if (botRef) {
-        const target = await s.bots.resolve(botRef, bot);
+        const target = await reachBot(botRef, 'edit');
         if (target.id !== bot.id && !bot.isManager) return t('tool.routineNotYours');
         if (target.id !== bot.id && target.isManager) return t('tool.otherManager');
         owners = [target];
       } else {
-        owners = bot.isManager ? (await s.bots.list()).filter((b) => b.id === bot.id || !b.isManager) : [bot];
+        const editable = await reachable('edit');
+        owners = bot.isManager
+          ? (await s.bots.list()).filter((b) => b.id === bot.id || (!b.isManager && editable.has(b.id)))
+          : [bot];
       }
       const names = new Map(owners.map((b) => [b.id, b.name]));
       const routines = (await s.routines.list(owners.length === 1 ? owners[0]!.id : undefined)).filter((r) =>
@@ -425,7 +476,11 @@ export class ToolFactory {
     const memoryOwners = async (): Promise<Map<string, string>> => {
       if (!bot.isManager) return new Map([[bot.id, bot.name]]);
       const all = await s.bots.list({ includeArchived: true });
-      return new Map(all.filter((b) => b.id === bot.id || !b.isManager).map((b) => [b.id, b.name]));
+      // Another bot's notes only where the person may change that bot.
+      const editable = await reachable('edit');
+      return new Map(
+        all.filter((b) => b.id === bot.id || (!b.isManager && editable.has(b.id))).map((b) => [b.id, b.name]),
+      );
     };
     const tools: AppTool[] = [
       def(
@@ -523,7 +578,7 @@ export class ToolFactory {
             CONNECTION_CATALOG.find((e) => e.name.toLowerCase() === wanted) ??
             searchCatalog(wanted, (c) => c)[0];
           if (!entry) return t('tool.appUnknown', { app });
-          const connected = (await s.connections.list()).find(
+          const connected = (await s.connections.list(person)).find(
             (c) =>
               c.catalogId === entry.id &&
               c.status === 'connected' &&
@@ -563,12 +618,20 @@ export class ToolFactory {
         'app_add',
         { name: z.string().min(1).max(80), url: z.string().min(1).max(2000) },
         async ({ name, url }) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const input = ConnectionCreate.safeParse({ name, url, auth: 'none' });
           if (!input.success) return t('tool.appBadUrl', { url });
-          const known = (await s.connections.list()).find((c) => c.url === input.data.url);
+          // Only those who look after the server point the server at itself or its network.
+          if (
+            !managesServer((await s.access.viewerOf(person)).role) &&
+            (await privateHost(new URL(input.data.url).hostname))
+          )
+            return t('error.connectionPrivate');
+          const known = (await s.connections.list(person)).find((c) => c.url === input.data.url);
           if (known) return t('tool.appKnown', { name: known.name });
-          // Open to this bot only; the person can open it to others in the apps window.
-          let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] });
+          // The person's own, open to this bot only; they can open it to others in the apps window.
+          let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] }, person);
           if (c.status === 'signed-out') {
             // The server wants a sign-in: it becomes an OAuth connection for the person to sign in to.
             c = await s.connections.update(c.id, { auth: 'oauth' });
@@ -619,31 +682,36 @@ export class ToolFactory {
           model: z.string().trim().max(200).optional(),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const own = await s.routines.list(bot.id);
           const same = own.find((r) => r.name.toLowerCase() === a.name.trim().toLowerCase());
           if (same) return t('tool.routineExists', { name: same.name });
-          const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool) : null;
+          const check = a.check_tool ? await s.connections.checkFromName(bot.id, a.check_tool, person) : null;
           if (a.check_tool && !check) return t('tool.routineBadCheck', { tool: a.check_tool });
           const settings = await s.settings.all();
-          const r = await s.routines.create({
-            botId: bot.id,
-            name: a.name.trim(),
-            prompt: a.prompt.trim(),
-            schedule: a.schedule,
-            timezone: settings.timezone,
-            enabled: true,
-            missed: a.missed,
-            carryReport: a.carry_report,
-            inMain: a.in_main,
-            onStartup: a.on_startup,
-            watchUrl: a.watch_url ?? null,
-            check: check && { ...check, args: a.check_args ?? {} },
-            webhookFilter: '',
-            webhookPost: false,
-            model: a.model ?? '',
-            emailTrigger: a.on_email,
-            emailFilter: a.email_filter ?? '',
-          });
+          const r = await s.routines.create(
+            {
+              botId: bot.id,
+              name: a.name.trim(),
+              prompt: a.prompt.trim(),
+              schedule: a.schedule,
+              timezone: settings.timezone,
+              enabled: true,
+              missed: a.missed,
+              carryReport: a.carry_report,
+              inMain: a.in_main,
+              onStartup: a.on_startup,
+              watchUrl: a.watch_url ?? null,
+              check: check && { ...check, args: a.check_args ?? {} },
+              webhookFilter: '',
+              webhookPost: false,
+              model: a.model ?? '',
+              emailTrigger: a.on_email,
+              emailFilter: a.email_filter ?? '',
+            },
+            person,
+          );
           const made = t('tool.routineCreated', {
             name: r.name,
             when: describeSchedule(r.schedule, await s.settings.locale()),
@@ -687,13 +755,15 @@ export class ToolFactory {
           email_filter: z.string().max(2000).optional(),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           const { routine: r, routines } = found;
           let check: RoutineCheck | null | undefined;
           if (a.check_tool) {
             // The check runs as the routine's own bot, which may be another one for a manager.
-            const named = await s.connections.checkFromName(r.botId, a.check_tool);
+            const named = await s.connections.checkFromName(r.botId, a.check_tool, person);
             if (!named) return t('tool.routineBadCheck', { tool: a.check_tool });
             check = { ...named, args: a.check_args ?? {} };
           } else if (a.check_tool === '') {
@@ -722,7 +792,7 @@ export class ToolFactory {
             rename &&
             routines.find((x) => x.id !== r.id && x.botId === r.botId && x.name.toLowerCase() === rename);
           if (taken) return t('tool.routineExists', { name: taken.name });
-          const updated = await s.routines.update(r.id, patch);
+          const updated = await s.routines.update(r.id, patch, person);
           return t('tool.routineUpdated', {
             name: updated.name,
             when: describeSchedule(updated.schedule, await s.settings.locale()),
@@ -736,6 +806,8 @@ export class ToolFactory {
         'routine_delete',
         { routine: z.string().min(1).max(200), bot: z.string().min(1).max(200).optional() },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           await s.routines.remove(found.routine.id);
@@ -773,6 +845,8 @@ export class ToolFactory {
           body: z.string().max(50_000),
         },
         async (a) => {
+          // The bot changes itself only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const name = skillSlug(a.name);
           if (!name) return t('tool.skillBadName');
           const mine = skills.find((k) => k.name === name);
@@ -792,7 +866,7 @@ export class ToolFactory {
         { days: z.number().int().min(1).max(30).default(1), query: z.string().max(200).optional() },
         async ({ days, query }) => {
           const since = new Date(Date.now() - days * 86_400_000);
-          const mine = (await s.threads.list(bot.id)).filter(
+          const mine = (await s.threads.list(bot.id, { userId: person, botWork: await mayChange() })).filter(
             (th) => th.id !== thread.id && new Date(th.updatedAt) >= since,
           );
           const out: string[] = [];
@@ -817,7 +891,11 @@ export class ToolFactory {
         'conversations_search',
         { query: z.string().min(2).max(200), limit: z.number().int().min(1).max(50).default(15) },
         async ({ query, limit }) => {
-          const hits = await s.threads.search(query, { botId: bot.id, limit });
+          const hits = await s.threads.search(query, {
+            botId: bot.id,
+            limit,
+            seen: await seenHere(),
+          });
           if (!hits.length) return t('tool.notFound');
           const found = await Promise.all(hits.map((h) => s.threads.message(h.messageId).catch(() => null)));
           await shows(found.flatMap((m) => (m ? [m.props] : [])));
@@ -842,6 +920,8 @@ export class ToolFactory {
           const owner = found ? await s.threads.row(found.threadId).catch(() => null) : null;
           // Another bot's message reads as missing, so its existence is not given away.
           if (!found || owner?.botId !== bot.id) return t('tool.notFound');
+          // Nor another person's conversation with it.
+          if (owner.userId ? owner.userId !== person : !(await mayChange())) return t('tool.notFound');
           const page = [
             ...(around ? await s.threads.messages(found.threadId, { before: found.id, limit: around }) : []),
             found,
@@ -871,7 +951,7 @@ export class ToolFactory {
             if (!ids.length) return t('tool.memoryNotYours');
           }
           // Narrowed to one bot, the list is that bot's notes alone.
-          const found = await s.memory.search(ids, query?.trim() || undefined, !botRef?.trim());
+          const found = await s.memory.search(ids, person, query?.trim() || undefined, !botRef?.trim());
           if (!found.length) return t('tool.notFound');
           const whose = (m: Memory) =>
             m.scope === 'user'
@@ -908,7 +988,13 @@ export class ToolFactory {
             }
           }
           const clean = redactSecrets(content, t('memory.redacted'));
-          const note = { scope, botId: scope === 'bot' ? bot.id : null, content: clean.text, site: host };
+          const note = {
+            scope,
+            botId: scope === 'bot' ? bot.id : null,
+            userId: scope === 'user' ? person : null,
+            content: clean.text,
+            site: host,
+          };
           const same = await s.memory.findSame(note);
           if (same) {
             // The fact came up again: the note is in use, though no new one is written.
@@ -948,7 +1034,7 @@ export class ToolFactory {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
           const m = await s.memory.get(id);
-          if (!s.memory.canEdit(m, (await memoryOwners()).keys())) return t('tool.memoryNotYours');
+          if (!s.memory.canEdit(m, (await memoryOwners()).keys(), person)) return t('tool.memoryNotYours');
           const clean = redactSecrets(content, t('memory.redacted'));
           const held = await memoryGate({
             action: 'update',
@@ -978,7 +1064,7 @@ export class ToolFactory {
         async ({ id }) => {
           const m = await s.memory.get(id);
           const owners = await memoryOwners();
-          if (!s.memory.canEdit(m, owners.keys())) return t('tool.memoryNotYours');
+          if (!s.memory.canEdit(m, owners.keys(), person)) return t('tool.memoryNotYours');
           const held = await memoryGate({
             action: 'forget',
             memoryId: m.id,
@@ -1003,7 +1089,8 @@ export class ToolFactory {
         {},
         async () => {
           const all = await s.bots.list();
-          const peers = all.filter((b) => s.bots.canMessage(bot, b));
+          const shared = await reachable('chat');
+          const peers = all.filter((b) => s.bots.canMessage(bot, b) && shared.has(b.id));
           if (!peers.length) return t('tool.noPeers');
           return peers
             .map(
@@ -1021,7 +1108,7 @@ export class ToolFactory {
         async ({ title, message }) => {
           if (opened >= MAX_OPENED) return t('tool.conversationsCap', { max: MAX_OPENED });
           opened++;
-          const fresh = await s.threads.create(bot.id, { title: title.replace(/\s+/g, ' ') });
+          const fresh = await s.threads.create(bot.id, { title: title.replace(/\s+/g, ' '), userId: person });
           // What this run had read goes along: the message may carry its words.
           const outside = reads();
           await s.threads.addMessage({
@@ -1060,7 +1147,7 @@ export class ToolFactory {
           approval_id: z.string().optional(),
         },
         async ({ bot: ref, message, expect_reply, approval_id }) => {
-          const to = await s.bots.resolve(ref, bot);
+          const to = await reachBot(ref, 'chat');
           const job = await s.jobs.send({
             from: bot,
             fromThreadId: thread.id,
@@ -1080,7 +1167,7 @@ export class ToolFactory {
         'read',
         // Asking a bot with looser permissions to act would bypass this bot's own limits.
         async ({ bot: ref }) => {
-          const to = await s.bots.resolve(ref, bot).catch(() => null);
+          const to = await reachBot(ref, 'chat').catch(() => null);
           return !!to && STRICTNESS[to.permissionMode] > STRICTNESS[bot.permissionMode];
         },
       ),
@@ -1088,7 +1175,7 @@ export class ToolFactory {
         'bot_status',
         { bot: z.string().min(1) },
         async ({ bot: ref }) => {
-          const target = await s.bots.resolve(ref, bot);
+          const target = await reachBot(ref, 'chat');
           const st = await s.jobs.status(target.id);
           return st.busy
             ? t('tool.busy', { name: target.name, count: st.pendingJobs })
@@ -1151,7 +1238,7 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
-    tools.push(...ticketTools({ def, services: s, bot, turn, t }));
+    tools.push(...ticketTools({ def, services: s, bot, turn, t, reach: (ref) => reachBot(ref, 'chat') }));
     tools.push(...tableTools({ def, services: s, botId: bot.id, t, hasTables: opts.hasTables ?? true }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
@@ -1199,9 +1286,10 @@ export class ToolFactory {
           t,
           browser: this.ctx.browser,
           vault: s.vault,
+          person,
           askLogin,
           siteNotes: async (host) =>
-            bot.memory ? (await s.memory.forSite(bot.id, host)).map((m) => m.content) : [],
+            bot.memory ? (await s.memory.forSite(bot.id, host, person)).map((m) => m.content) : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
         }),
       );
@@ -1215,7 +1303,7 @@ export class ToolFactory {
       tools.push(...(bot.projectDir ? desk.filter((x) => x.name !== 'run_command') : desk));
     }
     if (bot.isManager) {
-      tools.push(...this.managerTools(bot, signal, t, unattended));
+      tools.push(...this.managerTools(bot, signal, t, unattended, person, (ref) => reachBot(ref, 'edit')));
       // A manager also reads and tidies the other bots' own notes.
       for (const x of tools) {
         if (MANAGER_MEMORY_TOOLS.has(x.name)) x.description = `${x.description} ${t('tool.memoryManager')}`;
@@ -1225,7 +1313,16 @@ export class ToolFactory {
     return bot.memory ? tools : tools.filter((x) => !MEMORY_TOOLS.has(x.name));
   }
 
-  private managerTools(manager: Bot, signal: AbortSignal, t: T, unattended?: number): AppTool[] {
+  private managerTools(
+    manager: Bot,
+    signal: AbortSignal,
+    t: T,
+    unattended: number | undefined,
+    /** Whom the turn works for: they answer the manager's cards. */
+    person: string,
+    /** A bot the person may change, by name or id. */
+    reach: (ref: string) => Promise<Bot>,
+  ): AppTool[] {
     const def = definer(t);
     const s = this.services;
     const audit = async (action: string, targetId: string, before: unknown, after: unknown) => {
@@ -1256,7 +1353,7 @@ export class ToolFactory {
      */
     const confirm = async (summary: string, input: Record<string, unknown>, toolName: string) => {
       const approve = t('tool.approve');
-      const thread = await s.threads.main(manager.id);
+      const thread = await s.threads.main(manager.id, person);
       const r = await s.approvals.ask({
         threadId: thread.id,
         botId: manager.id,
@@ -1291,11 +1388,12 @@ export class ToolFactory {
         'bot_conversations_read',
         { bot: z.string().min(1), limit: z.number().int().min(1).max(100).default(30) },
         async ({ bot: ref, limit }) => {
-          const target = await s.bots.resolve(ref, manager);
+          const target = await reach(ref);
           const threads = await this.ctx.db
             .select()
             .from(schema.threads)
-            .where(eq(schema.threads.botId, target.id))
+            // The person's own conversations with it and its own work, not anyone else's.
+            .where(and(eq(schema.threads.botId, target.id), s.access.seenFrom(person)))
             .orderBy(desc(schema.threads.updatedAt))
             .limit(5);
           const out: string[] = [];
@@ -1329,27 +1427,31 @@ export class ToolFactory {
           const model = a.model?.trim() ?? (engine === 'pi' ? settings.piModel : '');
           const wrong = await modelProblem(engine, model);
           if (wrong) return wrong;
-          const created = await s.bots.create({
-            name: a.name,
-            description: a.description,
-            instructions: a.instructions,
-            engine,
-            model,
-            isManager: false,
-            // Without a group named, the new bot joins the manager's own section.
-            groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
-            color: a.color ?? '#4f6bed',
-            avatar: 'shape:blob',
-            // The level a bot the person creates starts at: the review asks only for what their
-            // words do not cover. Loosening it further still takes the person's card.
-            permissionMode: 'review',
-            internet: false,
-            projectDir: null,
-            memory: true,
-            effort: '',
-            toolSelection: ALL_TOOLS,
-            instructionsUrl: null,
-          });
+          const created = await s.bots.create(
+            {
+              name: a.name,
+              description: a.description,
+              instructions: a.instructions,
+              engine,
+              model,
+              isManager: false,
+              // Without a group named, the new bot joins the manager's own section.
+              groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
+              color: a.color ?? '#4f6bed',
+              avatar: 'shape:blob',
+              // The level a bot the person creates starts at: the review asks only for what their
+              // words do not cover. Loosening it further still takes the person's card.
+              permissionMode: 'review',
+              internet: false,
+              projectDir: null,
+              memory: true,
+              effort: '',
+              toolSelection: ALL_TOOLS,
+              instructionsUrl: null,
+            },
+            // The bot is the person's the manager made it for.
+            person,
+          );
           await audit('create', created.id, null, created);
           return t('tool.created', { name: created.name, id: created.id });
         },
@@ -1392,7 +1494,7 @@ export class ToolFactory {
           model: z.string().max(200).optional(),
         },
         async (a) => {
-          const target = await s.bots.resolve(a.bot, manager);
+          const target = await reach(a.bot);
           if (target.isManager && target.id !== manager.id) return t('tool.otherManager');
           // Instructions kept in a document change there, by whoever keeps the document.
           if (a.instructions !== undefined && target.instructionsUrl)
@@ -1473,11 +1575,11 @@ export class ToolFactory {
         'bot_profile',
         { bot: z.string().min(1) },
         async ({ bot: ref }) => {
-          const target = await s.bots.resolve(ref, manager);
+          const target = await reach(ref);
           const groups = await s.bots.listGroups();
           const skills = (await s.skills.forBot(target.id)).map((k) => k.name);
           const routines = await s.routines.list(target.id);
-          const apps = (await s.connections.list())
+          const apps = (await s.connections.list(person))
             .filter((c) => c.allBots || c.botIds.includes(target.id))
             .map((c) => c.name);
           return [
@@ -1503,7 +1605,7 @@ export class ToolFactory {
         'bot_skill',
         { bot: z.string().min(1), skill: z.string().min(1), on: z.boolean() },
         async (a) => {
-          const target = await s.bots.resolve(a.bot, manager);
+          const target = await reach(a.bot);
           if (target.isManager && target.id !== manager.id) return t('tool.otherManager');
           const all = await s.skills.list();
           const skill = all.find((k) => k.name === a.skill.trim().toLowerCase() || k.id === a.skill);
@@ -1529,7 +1631,7 @@ export class ToolFactory {
         'bot_archive',
         { bot: z.string().min(1) },
         async ({ bot: ref }) => {
-          const target = await s.bots.resolve(ref, manager);
+          const target = await reach(ref);
           if (target.isManager) return t('tool.managerArchive');
           const archived = await s.bots.archive(target.id);
           await audit('archive', target.id, target, archived);

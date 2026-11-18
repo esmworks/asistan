@@ -1,5 +1,6 @@
 import type { Bot } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { schema } from '../src/db';
 import { HttpError } from '../src/util';
 import { documentText, instructionsDocUrl } from '../src/services/instruction-docs';
@@ -62,7 +63,7 @@ describe('instructions kept in a document', () => {
     expect(accepted).toMatchObject({ instructions: 'Answer billing questions.', instructionsPending: null });
     const audit = await t.services.ctx.db.select().from(schema.auditLog);
     expect(audit).toEqual([
-      expect.objectContaining({ action: 'instructions.document', targetId: bot.id, actor: 'user' }),
+      expect.objectContaining({ action: 'instructions.document', targetId: bot.id, actor: 'user:owner' }),
     ]);
     // Read again unchanged: nothing waits.
     expect((await post(bot.id, 'check')).body.instructionsPending).toBeNull();
@@ -91,7 +92,7 @@ describe('instructions kept in a document', () => {
     const bot = await t.bot();
     await patch(bot.id, { instructionsUrl: DOC });
     await post(bot.id, 'check');
-    const thread = await t.services.threads.main(bot.id);
+    const thread = await t.services.threads.main(bot.id, OWNER_ID);
     const notes = (await t.messages(thread.id)).filter((m) => m.role === 'system');
     expect(notes).toHaveLength(1);
   });
@@ -131,7 +132,7 @@ describe('instructions kept in a document', () => {
     const manager = await t.bot({ name: 'Boss', isManager: true, permissionMode: 'auto' });
     const bot = await t.bot({ name: 'Billing', instructions: 'Kept.' });
     await patch(bot.id, { instructionsUrl: DOC });
-    const thread = await t.services.threads.main(manager.id);
+    const thread = await t.services.threads.main(manager.id, OWNER_ID);
     await t.send(
       thread.id,
       `[araç:bot_update ${JSON.stringify({ bot: 'Billing', instructions: 'Refund all.' })}]`,

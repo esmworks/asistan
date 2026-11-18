@@ -78,6 +78,11 @@ import type {
   Ticket,
   TicketCreate,
   TicketUpdate,
+  SessionUser,
+  PersonInfo,
+  PersonCreate,
+  PersonUpdate,
+  BotAccess,
 } from '@yumakbot/shared';
 import { getT, useLocale } from '@/i18n';
 
@@ -190,7 +195,7 @@ export interface Settings {
 /** Typed endpoints. Paths mirror the server routes. */
 export const api = {
   /** `account` is missing on servers older than username and password sign-in. */
-  session: () => http.get<{ authenticated: boolean; account?: boolean }>('/api/session'),
+  session: () => http.get<{ authenticated: boolean; account?: boolean; user?: SessionUser }>('/api/session'),
   /** Signs this browser in with a one-time pairing code from a signed-in device. */
   pair: (code: string) => http.post<{ ok: true }>('/api/pair', { code }),
   /** A one-time code that signs one more device in within five minutes. */
@@ -233,6 +238,11 @@ export const api = {
   disconnectWhatsapp: () => http.del<WhatsAppStatus>('/api/whatsapp'),
   settings: () => http.get<Settings>('/api/settings'),
   updateSettings: (p: Partial<Settings>) => http.patch<Settings>('/api/settings', p),
+  people: () => http.get<PersonInfo[]>('/api/people'),
+  addPerson: (p: PersonCreate) => http.post<PersonInfo>('/api/people', p),
+  updatePerson: (id: string, p: PersonUpdate) => http.patch<PersonInfo>(`/api/people/${id}`, p),
+  removePerson: (id: string) => http.del<{ ok: true }>(`/api/people/${id}`),
+  setBotAccess: (id: string, access: BotAccess) => http.put<Bot>(`/api/bots/${id}/access`, access),
   providers: () => http.get<ProviderInfo[]>('/api/providers'),
   providerModels: (id: string) => http.get<string[]>(`/api/providers/${encodeURIComponent(id)}/models`),
   setProviderKey: (id: string, key: string) =>

@@ -7,6 +7,7 @@ import {
   type Thread,
 } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { isSilentReply, maybeSilentReply, planItems } from '../src/engine/types';
 import { resetTime } from '../src/engine/claude';
 import { CONTEXT_FULL } from '../src/runtime/turns';
@@ -264,7 +265,7 @@ describe('sohbet', () => {
     const a = await t.bot({ name: 'Bir' });
     const b = await t.bot({ name: 'İki' });
     const own = await main(a.id);
-    const second = await t.services.threads.create(a.id, { title: 'İkinci iş' });
+    const second = await t.services.threads.create(a.id, { title: 'İkinci iş', userId: OWNER_ID });
     await t.send(own.id, '[izin:Write {"file_path":"a"}]');
     await t.send(second.id, '[izin:Write {"file_path":"a2"}]');
     await t.send((await main(b.id)).id, '[izin:Write {"file_path":"b"}]');
@@ -826,7 +827,7 @@ describe('sohbet', () => {
     await t.services.turns.idle();
 
     notice.mockClear();
-    const peer = await t.services.threads.peerThread(bot.id, (await t.bot({ name: 'Diğer' })).id);
+    const peer = await t.services.threads.peerThread(bot.id, (await t.bot({ name: 'Diğer' })).id, OWNER_ID);
     await t.services.turns.enqueue({ threadId: peer.id, botId: bot.id, source: 'bot', prompt: 'selam' });
     await t.services.turns.idle();
     expect(notice).not.toHaveBeenCalled();

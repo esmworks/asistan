@@ -51,6 +51,18 @@ export async function publicHost(raw: string): Promise<boolean> {
   return addresses.length > 0 && !addresses.some((a) => privateAddress(a.address));
 }
 
+/**
+ * Whether an address points at this machine or a private network: by name, by number, or by
+ * what its name resolves to now. A name that resolves to nothing reaches nothing yet.
+ */
+export async function privateHost(raw: string): Promise<boolean> {
+  const host = raw.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (isIP(host)) return privateAddress(host);
+  const addresses = await lookup(host, { all: true }).catch(() => []);
+  return addresses.some((a) => privateAddress(a.address));
+}
+
 /** A name that resolved to an address on this machine or a private network. */
 class PrivateTarget extends Error {}
 

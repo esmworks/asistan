@@ -1,6 +1,7 @@
 import type { SearchHit, Thread } from '@yumakbot/shared';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { schema } from '../src/db';
 import { openText, sealText, setContentKey, setSealing } from '../src/db/sealed';
 import { sealWith } from '../src/crypto';
@@ -57,7 +58,7 @@ describe('içeriğin veritabanında şifrelenmesi', () => {
     expect((await t.messages(thread.id)).map((m) => m.text)).toContain('Pasaport numaram TR-998877');
     const hits = (await t.api<SearchHit[]>('GET', `/api/search?q=${encodeURIComponent('numaram tr')}`)).body;
     expect(hits.map((h) => h.excerpt).join(' ')).toContain('TR-998877');
-    expect((await t.services.memory.search([], 'yılmaz')).map((m) => m.content)).toEqual([
+    expect((await t.services.memory.search([], OWNER_ID, 'yılmaz')).map((m) => m.content)).toEqual([
       'Doktorum Dr. Yılmaz',
     ]);
 

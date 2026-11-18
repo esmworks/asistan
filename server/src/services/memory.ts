@@ -5,7 +5,7 @@ import {
   type MemoryChange,
   type MemoryScope,
 } from '@yumakbot/shared';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { matchInServer } from '../db/sealed';
@@ -15,11 +15,35 @@ import { toMemory, toMemoryChange } from './mappers';
 import { noteKey } from './secrets';
 import { siteMatches } from './vault';
 import { MIN_SCORE, type EmbeddingService } from './embeddings';
+import { OWNER_ID } from '../users';
 
 /** A note whose words hold the query ranks this much above one only near it in meaning. */
 const WORD_MATCH_BONUS = 0.25;
 /** Notes a search by meaning returns at most. */
 const MEANING_HITS = 20;
+
+/** What one person reaches of the memory: their own notes, and the bots they may change. */
+export interface MemoryReach {
+  userId: string;
+  botIds: string[];
+}
+
+/** The SQL condition for the notes of `reach`. */
+const reachable = (reach: MemoryReach) =>
+  or(
+    and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, reach.userId)),
+    reach.botIds.length
+      ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, reach.botIds))
+      : sql`false`,
+  )!;
+
+/** Whose a note is, as its history lines keep it: a person's own, or a bot's. */
+const noteOwner = (m: { scope: string; botId: string | null; userId?: string | null }) =>
+  m.scope === 'user' ? `user:${m.userId ?? OWNER_ID}` : `bot:${m.botId}`;
+
+/** Whether a waiting change is one `reach` decides on. */
+export const decides = (reach: MemoryReach, c: Pick<MemoryChange, 'scope' | 'botId' | 'userId'>) =>
+  c.scope === 'user' ? (c.userId ?? OWNER_ID) === reach.userId : !!c.botId && reach.botIds.includes(c.botId);
 
 export class MemoryService {
   private embeddings: EmbeddingService | null = null;
@@ -31,10 +55,15 @@ export class MemoryService {
     this.embeddings = e;
   }
 
-  async list(opts: { scope?: MemoryScope; botId?: string | null } = {}) {
+  /**
+   * Notes, oldest first. With `reach`, only those one person may see: their own notes about
+   * themselves, and the notes of the bots they may change.
+   */
+  async list(opts: { scope?: MemoryScope; botId?: string | null; reach?: MemoryReach } = {}) {
     const conds = [];
     if (opts.scope) conds.push(eq(schema.memories.scope, opts.scope));
     if (opts.botId) conds.push(eq(schema.memories.botId, opts.botId));
+    if (opts.reach) conds.push(reachable(opts.reach));
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -43,8 +72,8 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** The notes a bot has about the site of `host`, its own and the shared ones. */
-  async forSite(botId: string, host: string): Promise<Memory[]> {
+  /** The notes a bot has about the site of `host`: its own, and those of the person it works for. */
+  async forSite(botId: string, host: string, userId: string): Promise<Memory[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -52,7 +81,7 @@ export class MemoryService {
         and(
           isNotNull(schema.memories.site),
           or(
-            eq(schema.memories.scope, 'user'),
+            and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)),
             and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
           ),
         ),
@@ -77,10 +106,10 @@ export class MemoryService {
       .where(inArray(schema.memories.id, ids));
   }
 
-  /** The notes no bot uses any more (see `staleNotes`), the longest unused first. */
-  async stale(now = new Date()): Promise<Memory[]> {
+  /** The notes no bot uses any more (see `staleNotes`), the longest unused first; with `reach`, one person's. */
+  async stale(now = new Date(), reach?: MemoryReach): Promise<Memory[]> {
     const [notes, bots] = await Promise.all([
-      this.list(),
+      this.list({ reach }),
       this.ctx.db
         .select({ id: schema.bots.id, memory: schema.bots.memory })
         .from(schema.bots)
@@ -89,8 +118,8 @@ export class MemoryService {
     return staleNotes(notes, bots, now);
   }
 
-  /** What a bot sees: its own memories and the shared user memory. */
-  async visibleTo(botId: string): Promise<{ user: Memory[]; bot: Memory[] }> {
+  /** What a bot sees working for `userId`: its own memories and that person's notes about themselves. */
+  async visibleTo(botId: string, userId: string): Promise<{ user: Memory[]; bot: Memory[] }> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -99,7 +128,7 @@ export class MemoryService {
           // Notes about a site come with that site, not with every turn.
           isNull(schema.memories.site),
           or(
-            eq(schema.memories.scope, 'user'),
+            and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)),
             and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
           ),
         ),
@@ -114,9 +143,13 @@ export class MemoryService {
    * the bots in `botIds` and, unless `shared` is false, the shared user memory. A search with a
    * query counts as using the notes it finds; listing them all does not, as it picks none out.
    */
-  async search(botIds: string[], query?: string, shared = true): Promise<Memory[]> {
-    const own = and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds));
-    const visible = shared ? or(eq(schema.memories.scope, 'user'), own) : own;
+  async search(botIds: string[], userId: string, query?: string, shared = true): Promise<Memory[]> {
+    const own = botIds.length
+      ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds))
+      : sql`false`;
+    const visible = shared
+      ? or(and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)), own)
+      : own;
     if (query?.trim() && this.embeddings && (await this.embeddings.available())) {
       const rows = await this.ctx.db
         .select()
@@ -163,16 +196,22 @@ export class MemoryService {
     return rows.map(toMemory);
   }
 
-  /** Whether the note is the shared memory or the own note of one of `botIds`. */
-  canEdit(m: Memory, botIds: Iterable<string>) {
-    return m.scope === 'user' || (!!m.botId && new Set(botIds).has(m.botId));
+  /** Whether the note is `userId`'s own about themselves or the own note of one of `botIds`. */
+  canEdit(m: Memory, botIds: Iterable<string>, userId: string) {
+    return m.scope === 'user' ? m.userId === userId : !!m.botId && new Set(botIds).has(m.botId);
   }
 
   /**
    * A note already saved with the same words (see `noteKey`), in the same place: the shared memory
    * or one bot's own notes, about the same site or none. Writing it again would only repeat it.
    */
-  async findSame(input: { scope: MemoryScope; botId: string | null; content: string; site?: string | null }) {
+  async findSame(input: {
+    scope: MemoryScope;
+    botId: string | null;
+    userId: string | null;
+    content: string;
+    site?: string | null;
+  }) {
     const rows = await this.ctx.db
       .select()
       .from(schema.memories)
@@ -182,6 +221,7 @@ export class MemoryService {
           input.scope === 'bot' && input.botId
             ? eq(schema.memories.botId, input.botId)
             : isNull(schema.memories.botId),
+          input.scope === 'user' && input.userId ? eq(schema.memories.userId, input.userId) : undefined,
           input.site ? eq(schema.memories.site, input.site) : isNull(schema.memories.site),
         ),
       );
@@ -202,6 +242,7 @@ export class MemoryService {
         c.memoryId === input.memoryId &&
         c.scope === input.scope &&
         c.botId === input.botId &&
+        (c.userId ?? null) === (input.userId ?? null) &&
         c.site === input.site &&
         noteKey(c.content) === noteKey(input.content),
     );
@@ -214,13 +255,16 @@ export class MemoryService {
     return toMemoryChange(row!);
   }
 
-  /** The memory changes waiting for the person, oldest first. */
-  async pending(): Promise<MemoryChange[]> {
+  /**
+   * The memory changes waiting, oldest first; with `reach`, those one person decides on: changes
+   * to their own notes, and to the notes of bots they may change.
+   */
+  async pending(reach?: MemoryReach): Promise<MemoryChange[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.memoryChanges)
       .orderBy(asc(schema.memoryChanges.createdAt));
-    return rows.map(toMemoryChange);
+    return rows.map(toMemoryChange).filter((c) => !reach || decides(reach, c));
   }
 
   /**
@@ -237,7 +281,13 @@ export class MemoryService {
     const words = content?.trim() || row.content;
     const actor = `bot:${row.proposedBy}`;
     if (row.action === 'write') {
-      const note = { scope: row.scope, botId: row.botId, content: words, site: row.site };
+      const note = {
+        scope: row.scope,
+        botId: row.botId,
+        userId: row.scope === 'user' ? (row.userId ?? OWNER_ID) : null,
+        content: words,
+        site: row.site,
+      };
       if (!(await this.findSame(note)))
         await this.create({ ...note, source: actor, threadId: row.threadId, sourceUrl: row.sourceUrl });
     } else if (row.memoryId) {
@@ -267,6 +317,8 @@ export class MemoryService {
   async create(input: {
     scope: MemoryScope;
     botId: string | null;
+    /** Whose note about themselves it is; the owner's when not said. */
+    userId?: string | null;
     content: string;
     source: string;
     site?: string | null;
@@ -281,6 +333,7 @@ export class MemoryService {
         id: newId(),
         scope: input.scope,
         botId: input.scope === 'bot' ? input.botId : null,
+        userId: input.scope === 'user' ? (input.userId ?? OWNER_ID) : null,
         content: input.content,
         site: input.site ?? null,
         source: input.source,
@@ -288,7 +341,7 @@ export class MemoryService {
         sourceUrl: input.sourceUrl ?? null,
       })
       .returning();
-    await this.log(row!.id, 'create', null, row!.content, input.source);
+    await this.log(row!.id, 'create', null, row!.content, input.source, noteOwner(row!));
     this.ctx.bus.refresh({ scope: 'memory' });
     this.embeddings?.soon();
     return toMemory(row!);
@@ -306,7 +359,7 @@ export class MemoryService {
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(schema.memories.id, id))
       .returning();
-    await this.log(id, 'update', before.content, row!.content, actor);
+    await this.log(id, 'update', before.content, row!.content, actor, noteOwner(before));
     this.ctx.bus.refresh({ scope: 'memory' });
     this.embeddings?.soon();
     return toMemory(row!);
@@ -315,7 +368,7 @@ export class MemoryService {
   async remove(id: string, actor: string) {
     const before = await this.get(id);
     await this.ctx.db.delete(schema.memories).where(eq(schema.memories.id, id));
-    await this.log(id, 'delete', before.content, null, actor);
+    await this.log(id, 'delete', before.content, null, actor, noteOwner(before));
     this.ctx.bus.refresh({ scope: 'memory' });
   }
 
@@ -347,6 +400,7 @@ export class MemoryService {
             targetId: m.id,
             before: m.content,
             after: null,
+            owner: noteOwner(m),
           })),
         );
       }
@@ -356,16 +410,39 @@ export class MemoryService {
     return { count: rows.length };
   }
 
-  async history(limit = 100) {
-    return this.ctx.db
+  /**
+   * The latest `limit` things that happened to notes, oldest first; with `reach`, only to the
+   * notes that person reaches.
+   */
+  async history(limit = 100, reach?: MemoryReach) {
+    const owners = reach && [`user:${reach.userId}`, ...reach.botIds.map((id) => `bot:${id}`)];
+    const rows = await this.ctx.db
       .select()
       .from(schema.auditLog)
-      .where(eq(schema.auditLog.targetType, 'memory'))
-      .orderBy(asc(schema.auditLog.createdAt))
+      .where(
+        and(
+          eq(schema.auditLog.targetType, 'memory'),
+          reach &&
+            or(
+              inArray(schema.auditLog.owner, owners!),
+              // Lines kept before people came in were the owner's.
+              reach.userId === OWNER_ID ? isNull(schema.auditLog.owner) : undefined,
+            ),
+        ),
+      )
+      .orderBy(desc(schema.auditLog.createdAt))
       .limit(limit);
+    return rows.reverse();
   }
 
-  private async log(id: string, action: string, before: string | null, after: string | null, actor: string) {
+  private async log(
+    id: string,
+    action: string,
+    before: string | null,
+    after: string | null,
+    actor: string,
+    owner: string,
+  ) {
     await this.ctx.db.insert(schema.auditLog).values({
       id: newId(),
       actor,
@@ -374,6 +451,7 @@ export class MemoryService {
       targetId: id,
       before,
       after,
+      owner,
     });
   }
 }
@@ -394,12 +472,17 @@ export function staleNotes(
   const old = notes.filter((m) => lastActive(m) < cutoff);
   if (!old.length) return [];
   const inPrompt = new Set<string>();
-  const shared = notes.filter((m) => m.scope === 'user' && !m.site);
+  // Each person's notes about themselves go into the prompts of bots working for them.
+  const about = notes.filter((m) => m.scope === 'user' && !m.site);
+  const people = [...new Set(about.map((m) => m.userId ?? null))];
   for (const b of bots) {
     if (!b.memory) continue;
     const own = notes.filter((m) => m.scope === 'bot' && m.botId === b.id && !m.site);
-    const fit = withinBudget(shared, own, budget);
-    for (const m of [...fit.user, ...fit.bot]) inPrompt.add(m.id);
+    for (const person of people.length ? people : [null]) {
+      const shared = about.filter((m) => (m.userId ?? null) === person);
+      const fit = withinBudget(shared, own, budget);
+      for (const m of [...fit.user, ...fit.bot]) inPrompt.add(m.id);
+    }
   }
   return old.filter((m) => !inPrompt.has(m.id)).sort((a, b) => lastActive(a).localeCompare(lastActive(b)));
 }

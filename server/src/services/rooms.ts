@@ -70,11 +70,12 @@ export class RoomService {
     return !!(await this.roomRow(threadId));
   }
 
-  async list(): Promise<Room[]> {
+  /** One person's rooms; every room without `userId`. */
+  async list(userId?: string): Promise<Room[]> {
     const rows = await this.ctx.db
       .select({ id: schema.threads.id })
       .from(schema.threads)
-      .where(eq(schema.threads.kind, 'room'))
+      .where(and(eq(schema.threads.kind, 'room'), userId ? eq(schema.threads.userId, userId) : undefined))
       .orderBy(desc(schema.threads.updatedAt));
     return Promise.all(rows.map((r) => this.get(r.id)));
   }
@@ -112,12 +113,14 @@ export class RoomService {
     return unique;
   }
 
-  async create(input: RoomCreate): Promise<Room> {
+  /** A room of `userId`'s, with bots they may talk with (the caller checks that). */
+  async create(input: RoomCreate, userId: string): Promise<Room> {
     const botIds = await this.checkedBots(input.botIds);
     const id = newId();
     await this.ctx.db.insert(schema.threads).values({
       id,
       botId: botIds[0]!,
+      userId,
       kind: 'room',
       title: input.title,
       goal: input.goal ?? '',
@@ -245,7 +248,11 @@ export class RoomService {
   }
 
   /** The person writes in the room; the members it names (or as the room is set) answer in turn. */
-  async post(roomId: string, body: RoomSend): Promise<{ message: Message; created: boolean }> {
+  async post(
+    roomId: string,
+    body: RoomSend,
+    userId: string | null = null,
+  ): Promise<{ message: Message; created: boolean }> {
     const room = await this.roomRow(roomId);
     if (!room) throw notFound('room');
     const { threads, turns } = this.services;
@@ -255,6 +262,7 @@ export class RoomService {
       threadId: roomId,
       role: 'user',
       author: 'user',
+      userId,
       text: body.text,
       clientId: body.clientId,
       props: answered ? { replyTo: { id: answered.id, text: truncate(answered.text, 300) } } : {},
@@ -284,7 +292,7 @@ export class RoomService {
       })
       .where(eq(schema.rooms.id, roomId));
     for (const botId of answering) {
-      await turns.enqueue({ threadId: roomId, botId, source: 'user', prompt: body.text });
+      await turns.enqueue({ threadId: roomId, botId, source: 'user', prompt: body.text, userId });
     }
     this.ctx.bus.refresh({ scope: 'rooms' });
     return result;
@@ -310,7 +318,9 @@ export class RoomService {
       .from(schema.roomMembers)
       .where(and(eq(schema.roomMembers.roomId, roomId), eq(schema.roomMembers.botId, bot.id)))
       .limit(1);
-    const settings = await this.services.settings.all();
+    // The room is its person's: their name is the one the bots read.
+    const room = await this.services.threads.row(roomId);
+    const settings = await this.services.settings.all(room.userId ?? undefined);
     const bots = await this.services.bots.list({ includeArchived: true });
     const name = (m: Message) =>
       m.author === 'user'

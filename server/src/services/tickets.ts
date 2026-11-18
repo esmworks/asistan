@@ -43,6 +43,7 @@ const toTicket = (r: Row, comments: CommentRow[], turnState: TurnState): Ticket 
   priority: r.priority,
   assigneeBotId: r.assigneeBotId,
   createdBy: r.createdBy,
+  createdByUserId: r.createdByUserId,
   threadId: r.threadId,
   position: r.position,
   turnState,
@@ -128,7 +129,7 @@ export class TicketService {
    * Adds a ticket. `by` is `user` or `bot:<id>`; `start` false keeps an assigned ticket waiting
    * for the person instead of starting its bot.
    */
-  async create(raw: CreateInput, by = 'user', start = true): Promise<Ticket> {
+  async create(raw: CreateInput, by = 'user', start = true, userId: string | null = null): Promise<Ticket> {
     const input = TicketCreate.parse(raw);
     if (input.assigneeBotId) await this.services.bots.get(input.assigneeBotId);
     const [row] = await this.ctx.db
@@ -141,6 +142,7 @@ export class TicketService {
         priority: input.priority,
         assigneeBotId: input.assigneeBotId,
         createdBy: by,
+        createdByUserId: userId,
         position: TOP,
       })
       .returning();
@@ -217,6 +219,7 @@ export class TicketService {
         await this.services.threads.create(bot.id, {
           title: `#${row.number} ${row.title}`.slice(0, 120),
           kind: 'ticket',
+          userId: null,
         })
       ).id;
     }
@@ -250,7 +253,14 @@ export class TicketService {
       text: prompt,
       props: { ticketNumber: row.number },
     });
-    await this.services.turns.enqueue({ threadId, botId: bot.id, source: 'ticket', prompt });
+    // The work is for whoever opened the ticket; a bot's own ticket works for the bot's owner.
+    await this.services.turns.enqueue({
+      threadId,
+      botId: bot.id,
+      source: 'ticket',
+      prompt,
+      ...(row.createdByUserId && { userId: row.createdByUserId }),
+    });
     this.changed();
   }
 

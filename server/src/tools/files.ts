@@ -86,14 +86,21 @@ export async function shareableFile(
   return { name: basename(file), size, path: relative(workspaces, file) };
 }
 
+/** What a card's conversation needs to be known by. */
+type ThreadRef = Pick<Thread, 'id' | 'kind' | 'botId'> & { userId?: string | null };
+
 /**
  * The conversation the person reads for a card the bot hands over. A conversation with another bot
  * is between the two bots: the person does not follow it, so a file or page meant for them goes to
  * the bot's own conversation with them.
  */
-async function personThread(services: Services, bot: Bot, thread: Pick<Thread, 'id' | 'kind'>) {
+async function personThread(services: Services, bot: Bot, thread: ThreadRef) {
   if (thread.kind !== 'bot') return { id: thread.id, moved: false };
-  return { id: (await services.threads.main(bot.id)).id, moved: true };
+  // Work between two bots is the bot's own: its card goes to the bot's owner.
+  return {
+    id: (await services.threads.main(bot.id, await services.access.personOf(thread))).id,
+    moved: true,
+  };
 }
 
 /**
@@ -104,7 +111,7 @@ export async function postFiles(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  thread: Pick<Thread, 'id' | 'kind'>;
+  thread: ThreadRef;
   paths: string[];
   caption?: string;
   t: T;
@@ -133,7 +140,7 @@ export function sendFileTool(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  thread: Pick<Thread, 'id' | 'kind'>;
+  thread: ThreadRef;
   t: T;
 }): AppTool {
   const { def, services, dataDir, bot, thread, t } = opts;
@@ -216,7 +223,7 @@ export function showPageTool(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  thread: Pick<Thread, 'id' | 'kind'>;
+  thread: ThreadRef;
   t: T;
 }): AppTool {
   const { def, services, dataDir, bot, thread, t } = opts;
@@ -262,7 +269,7 @@ export function pageImageTool(opts: {
   services: Services;
   dataDir: string;
   bot: Bot;
-  thread: Pick<Thread, 'id' | 'kind'>;
+  thread: ThreadRef;
   browser: { executable: string; sandbox: boolean };
   signal: AbortSignal;
   t: T;

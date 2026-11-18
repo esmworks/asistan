@@ -13,6 +13,13 @@ const tr = {
     'Çok fazla yanlış deneme oldu; 15 dakika sonra yeniden deneyin ya da erişim anahtarıyla girin',
   'error.passwordShort': 'Şifre en az {min} karakter olmalı',
   'error.currentPasswordWrong': 'Mevcut şifre ya da erişim anahtarı yanlış',
+  'error.usernameTaken': 'Bu kullanıcı adı başka birinde',
+  'error.adminOnly': 'Bunu yalnızca sunucuyu yönetenler yapabilir',
+  'error.ownerOnly': 'Bunu yalnızca sunucunun sahibi yapabilir',
+  'error.botEditOnly': 'Bu botu yalnızca değiştirme izni olanlar değiştirebilir',
+  'error.botNotShared': 'Bu bot artık seninle paylaşılmıyor',
+  'error.groupNotYours': 'Bu grubun dosyalarını paylaşan botların hepsini değiştirme iznin yok',
+  'error.botOwnerOnly': 'Bunu yalnızca botun sahibi ya da sunucuyu yönetenler yapabilir',
   'error.accessKeyRequired': 'Erişim anahtarı gerekli',
   'error.authCheckFailed': 'Kimlik denetlenemedi',
   'error.originRequired': 'Origin başlığı gerekli',
@@ -65,6 +72,11 @@ const tr = {
   'error.notFound.ticket': 'Görev bulunamadı',
   'error.notFound.table': 'Tablo bulunamadı',
   'error.notFound.tableRow': 'Satır bulunamadı',
+  'error.connectionPrivate':
+    'Bu bilgisayardaki ya da iç ağdaki bir adrese bağlantıyı yalnızca sunucuyu yönetenler kurabilir',
+  'error.notFound.person': 'Kişi bulunamadı',
+  'error.ownerManagesAdmins': 'Yöneticileri yalnızca sunucunun sahibi ekleyip değiştirebilir',
+  'error.notYourself': 'Kendi hesabınızı buradan değiştiremezsiniz; Hesap bölümünü kullanın',
   'error.tableNoColumn': 'Tabloda "{column}" diye bir sütun yok. Sütunlar: {columns}',
   'error.tableColumns': 'Bir tabloda en çok 30 sütun olabilir.',
   'error.tableNoColumns': 'Yeni bir tablo için en az bir sütun ver.',
@@ -240,6 +252,7 @@ const tr = {
   'turn.toolOff': 'Bu araç bu botta kapalı (botun ayarları → Araçlar).',
   'turn.safetyFloor':
     'Bu komut hiçbir izinle çalıştırılmaz: bir diski ya da bütün ev klasörünü silebilir, bilgisayarı kapatabilir. Daha dar bir hedefle (belirli bir klasör ya da dosya) yeniden dene.',
+  'turn.personDisabled': 'Bu iş, artık giriş yapamayan bir kişi adına çalışacaktı; başlatılmadı.',
   'turn.spendLimit':
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
@@ -911,6 +924,10 @@ const tr = {
   'browser.loginSkipped':
     'Kullanıcı giriş bilgilerini vermedi. Giriş yapmadan devam et ya da ne yapmak istediğini sor.',
   'tool.notFound': 'Bulunamadı.',
+  'tool.memoryProposedReview':
+    'Not hemen kaydedilmedi: bu kişi botla yalnızca konuşabiliyor, değişikliği botu değiştirme izni olanlar onaylayınca geçerli olur. Kişiye bunu söyle.',
+  'tool.changeNotAllowed':
+    'Bu değişikliği yalnızca botu değiştirme izni olan biri isteyebilir; bu kişi botla yalnızca konuşabiliyor.',
   'tool.reacted': 'Mesaja {emoji} bırakıldı. Yazıyla yanıt gerekmiyorsa başka bir şey yazmadan bitir.',
   'tool.noUserMessage': 'Tepki bırakılacak kullanıcı mesajı yok.',
   'tool.fileSent': 'Kullanıcıya gönderildi: {names}. Sohbette dosya kartı olarak görünüyor.',
@@ -1079,6 +1096,13 @@ const en: Catalog<ServerKey> = {
   'error.loginBlocked': 'Too many wrong attempts; try again in 15 minutes or sign in with the access key',
   'error.passwordShort': 'The password must be at least {min} characters',
   'error.currentPasswordWrong': 'The current password or access key is wrong',
+  'error.usernameTaken': 'Someone else already has this username',
+  'error.adminOnly': 'Only the people who manage this server can do this',
+  'error.ownerOnly': 'Only the owner of this server can do this',
+  'error.botEditOnly': 'Only people allowed to change this bot can do this',
+  'error.botNotShared': 'This bot is no longer shared with you',
+  'error.groupNotYours': "You aren't allowed to change every bot that shares this group's files",
+  'error.botOwnerOnly': "Only the bot's owner or the people who manage this server can do this",
   'error.accessKeyRequired': 'Access key required',
   'error.authCheckFailed': 'Could not check credentials',
   'error.originRequired': 'Origin header required',
@@ -1133,6 +1157,11 @@ const en: Catalog<ServerKey> = {
   'error.notFound.ticket': 'Ticket not found',
   'error.notFound.table': 'Table not found',
   'error.notFound.tableRow': 'Row not found',
+  'error.connectionPrivate':
+    'Only those who look after the server can connect an address on this computer or its private network',
+  'error.notFound.person': 'Person not found',
+  'error.ownerManagesAdmins': 'Only the owner of this server can add or change admins',
+  'error.notYourself': 'You cannot change your own account here; use the Account section',
   'error.tableNoColumn': 'The table has no column "{column}". Columns: {columns}',
   'error.tableColumns': 'A table can have at most 30 columns.',
   'error.tableNoColumns': 'Give at least one column for a new table.',
@@ -1306,6 +1335,7 @@ const en: Catalog<ServerKey> = {
   'turn.toolOff': "This tool is off for this bot (the bot's settings → Tools).",
   'turn.safetyFloor':
     'This command is never run, whatever is allowed: it could wipe a disk or a whole home folder, or stop the machine. Try again with a narrower target (a particular folder or file).',
+  'turn.personDisabled': 'This work would run for someone who may no longer sign in; it was not started.',
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
@@ -1970,6 +2000,10 @@ const en: Catalog<ServerKey> = {
   'browser.loginSkipped':
     "The user did not give sign-in details. Continue without signing in, or ask what they'd like.",
   'tool.notFound': 'Nothing found.',
+  'tool.memoryProposedReview':
+    'The note was not saved yet: this person can only talk with the bot, so it takes effect once someone allowed to change the bot accepts it. Tell the person so.',
+  'tool.changeNotAllowed':
+    'Only someone allowed to change this bot can ask for this change; this person can only talk with it.',
   'tool.reacted':
     'Left {emoji} on the message. If no written reply is needed, finish without writing anything else.',
   'tool.noUserMessage': 'There is no user message to react to.',

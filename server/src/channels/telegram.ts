@@ -168,7 +168,8 @@ export class TelegramChannels {
    * Saves a bot's Telegram token after Telegram accepts it, and starts a pairing: the link it
    * gives opens the Telegram bot with a code, and whoever presses Start there pairs.
    */
-  async connect(botId: string, raw: string): Promise<TelegramStatus> {
+  /** Links a Telegram bot for `userId`: what comes in through it is theirs. */
+  async connect(botId: string, raw: string, userId: string): Promise<TelegramStatus> {
     const bot = await this.services.bots.get(botId);
     const token = telegramToken(raw);
     if (!token) throw new HttpError(400, 'error.telegramToken');
@@ -210,6 +211,7 @@ export class TelegramChannels {
       secret: this.vault.seal(token),
       account: { id: me.id, username: me.username, name: me.first_name },
       error: null,
+      userId,
       pairCode: randomBytes(16).toString('base64url'),
       pairUntil: new Date(Date.now() + PAIR_MS),
       // Another Telegram bot starts over: nobody has paired with it yet.
@@ -330,7 +332,8 @@ export class TelegramChannels {
       await api.sendMessage(m.chat.id, t('channel.botArchived'));
       return;
     }
-    const thread = await this.services.threads.main(bot.id);
+    // The conversation of the person who set the chat up.
+    const thread = await this.services.threads.main(bot.id, row.userId);
     const text = (m.text || m.caption || '').trim();
     // Someone else's words the person passed on: never a command, and the bot reads them as data.
     const forward = forwardedFrom(m);
@@ -353,6 +356,7 @@ export class TelegramChannels {
       text,
       files,
       clientId: `telegram:${m.chat.id}:${m.message_id}`,
+      userId: row.userId,
       ...(replyTo && { replyTo }),
       props: {
         via: 'telegram',
@@ -610,6 +614,8 @@ export class TelegramChannels {
     // The conversation the person writes to from Telegram gets its cards as cards, or the person
     // is in the app with it; either way a note would only repeat it.
     if (settings.threadId === e.threadId) return;
+    // Only of the person's own conversations, or the bot's own work they may change.
+    if (!(await this.services.access.threadAudience(e.threadId)).includes(row.userId)) return;
     const t = await this.services.settings.translator();
     const thread = await this.services.threads.row(e.threadId).catch(() => null);
     const title = thread?.title || t('channel.otherChat');

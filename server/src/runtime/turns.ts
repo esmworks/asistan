@@ -47,6 +47,7 @@ import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText
 import { catastrophic, readsOnlyWithin } from './safety';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
+import { OWNER_ID } from '../users';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
@@ -228,6 +229,7 @@ export class TurnManager {
       botId: turn.botId,
       source: 'user',
       prompt: turn.prompt,
+      userId: turn.userId,
     });
     this.retried.add(again.id);
   }
@@ -265,7 +267,13 @@ export class TurnManager {
     this.retries.delete(note.id);
     const { retryAt: _, ...props } = note.props;
     await this.services.threads.updateMessage(note.id, { props: { ...props, retried: true } });
-    return this.enqueue({ threadId: turn.threadId, botId: turn.botId, source: 'user', prompt: turn.prompt });
+    return this.enqueue({
+      threadId: turn.threadId,
+      botId: turn.botId,
+      source: 'user',
+      prompt: turn.prompt,
+      userId: turn.userId,
+    });
   }
 
   /** After a restart: the retries still waiting are set again. */
@@ -297,7 +305,11 @@ export class TurnManager {
     outside?: OutsideTrigger | null;
     /** The freest level the turn may act at, when a stricter bot starts it. */
     modeCap?: Bot['permissionMode'] | null;
+    /** The person the turn works for; left out, it is worked out from what started it. */
+    userId?: string | null;
   }): Promise<TurnRow> {
+    const userId =
+      t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null, t.threadId, t.botId);
     const [row] = await this.ctx.db
       .insert(schema.turns)
       .values({
@@ -311,11 +323,35 @@ export class TurnManager {
         routineRunId: t.routineRunId ?? null,
         outside: t.outside ?? null,
         modeCap: t.modeCap ?? null,
+        userId,
       })
       .returning();
     this.emitState(t.threadId, t.botId);
     this.schedule();
     return row!;
+  }
+
+  /**
+   * Whom a turn nobody named works for: a bot asked by another bot works for whoever the asking
+   * turn worked for, so a request passes on along a chain of bots; otherwise the person whose
+   * conversation it is, and for the bot's own work (a routine, a ticket) the bot's owner.
+   */
+  private async actingPerson(jobId: string | null, threadId: string, botId: string): Promise<string> {
+    if (jobId) {
+      const [row] = await this.ctx.db
+        .select({ userId: schema.turns.userId })
+        .from(schema.jobs)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.jobs.fromTurnId))
+        .where(eq(schema.jobs.id, jobId))
+        .limit(1);
+      if (row?.userId) return row.userId;
+    }
+    const [thread] = await this.ctx.db
+      .select({ userId: schema.threads.userId })
+      .from(schema.threads)
+      .where(eq(schema.threads.id, threadId))
+      .limit(1);
+    return thread?.userId ?? (await this.services.access.botOwner(botId));
   }
 
   /** Stops the work a bot-to-bot request started: its running turn, and its turns not yet started. */
@@ -623,11 +659,27 @@ export class TurnManager {
       internet: bot.internet,
       readOnly: bot.permissionMode === 'readonly',
     });
+    // Whom the turn works for: their profile and notes go in, and the bots it may ask are theirs.
+    const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
+    // nor a request a bot passed on for them.
+    const [who] = await this.ctx.db
+      .select({ disabledAt: schema.users.disabledAt })
+      .from(schema.users)
+      .where(eq(schema.users.id, person))
+      .limit(1);
+    if (!who || who.disabledAt) {
+      throw new Error((await this.services.settings.translator())('turn.personDisabled'));
+    }
+    const reached = new Set(
+      await this.services.access.botIds(await this.services.access.viewerOf(person), 'chat'),
+    );
     const allBots = await bots.list();
-    const peers = allBots.filter((b) => bots.canMessage(bot, b));
-    const settings = await this.services.settings.all();
+    const peers = allBots.filter((b) => bots.canMessage(bot, b) && reached.has(b.id));
+    const settings = await this.services.settings.all(person);
     const timezone = settings.timezone;
-    const locale = await this.services.settings.locale();
+    // The person's own language; the server's until they choose one.
+    const locale = settings.language ?? (await this.services.settings.locale());
     const t = translator(locale);
     const skills = await this.services.skills.forBot(bot.id);
     const email = await this.services.email.addressOf(bot.id);
@@ -702,7 +754,7 @@ export class TurnManager {
       paths,
       cwd: sandbox.cwd,
       // A bot with memory off sees none, not even the person's shared notes.
-      memory: bot.memory ? await memory.visibleTo(bot.id) : { user: [], bot: [] },
+      memory: bot.memory ? await memory.visibleTo(bot.id, person) : { user: [], bot: [] },
       profile: {
         name: settings.userName,
         addressAs: settings.addressAs,
@@ -740,6 +792,7 @@ export class TurnManager {
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
+        person,
         t,
         controller.signal,
         async (form, connection) => {
@@ -811,7 +864,7 @@ export class TurnManager {
     if (bot.internet) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
     // tools are gone. Per turn, so the system prompt stays the same and keeps its cache.
-    const down = await this.services.connections.unavailableFor(bot.id);
+    const down = await this.services.connections.unavailableFor(bot.id, person);
     const appsDown = down.length
       ? t('prompt.appsDown', {
           apps: down.map((c) => `${c.name} (${t(`prompt.appDown.${c.status}`)})`).join(', '),

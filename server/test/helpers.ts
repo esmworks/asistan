@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Bot, BotCreate, Message } from '@yumakbot/shared';
 import { createServer, type YumakBotServer } from '../src/app';
+import { SESSION_COOKIE } from '../src/auth';
+import { schema } from '../src/db';
 import { loadConfig, type Config } from '../src/config';
 import { FakeEngine } from '../src/engine/fake';
 import postgres from 'postgres';
@@ -39,7 +41,16 @@ export interface TestServer extends YumakBotServer {
   bot(input?: Partial<BotCreate>): Promise<Bot>;
   send(threadId: string, text: string): Promise<Message>;
   messages(threadId: string): Promise<Message[]>;
+  /** Adds a signed-in person and calls the API as them. */
+  person(id: string, role?: 'admin' | 'member'): Promise<Person>;
   dispose(): Promise<void>;
+}
+
+/** Someone signed in other than with the access key. */
+export interface Person {
+  id: string;
+  cookie: string;
+  api<T = unknown>(method: string, url: string, body?: unknown): Promise<{ status: number; body: T }>;
 }
 
 export async function testServer(overrides: Partial<Config> = {}): Promise<TestServer> {
@@ -95,6 +106,32 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
     },
     async messages(threadId) {
       return (await api<Message[]>('GET', `/api/threads/${threadId}/messages`)).body;
+    },
+    async person(id, role = 'member') {
+      await server.services.ctx.db
+        .insert(schema.users)
+        .values({ id, username: id, usernameKey: id, role })
+        .onConflictDoNothing();
+      const cookie = `${SESSION_COOKIE}=${await server.auth.createSession(id)}`;
+      return {
+        id,
+        cookie,
+        async api<T>(method: string, url: string, body?: unknown) {
+          const res = await server.app.inject({
+            method: method as 'GET',
+            url,
+            headers: {
+              host: 'localhost',
+              cookie,
+              ...(method !== 'GET' && { origin: 'http://localhost' }),
+            },
+            ...(body !== undefined ? { payload: body as object } : {}),
+          });
+          // A file comes back as itself, not JSON.
+          const json = String(res.headers['content-type'] ?? '').includes('json');
+          return { status: res.statusCode, body: (res.body ? (json ? res.json() : res.body) : null) as T };
+        },
+      };
     },
     async dispose() {
       await server.close();

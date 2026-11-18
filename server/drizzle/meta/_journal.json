@@ -393,6 +393,55 @@
       "when": 1794950456849,
       "tag": "0055_actions_rule_limits_linked_instructions",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794955978773,
+      "tag": "0056_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1794957921716,
+      "tag": "0057_people_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794958700184,
+      "tag": "0058_bot_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794960474145,
+      "tag": "0059_person_work",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794961049164,
+      "tag": "0060_personal_profile_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794961426466,
+      "tag": "0061_personal_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794961848100,
+      "tag": "0062_memory_history_owner",
+      "breakpoints": true
     }
   ]
 }

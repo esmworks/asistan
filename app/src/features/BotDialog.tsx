@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
 import { TelegramPanel } from './TelegramPanel';
+import { BotSharing } from './BotSharing';
 import { api } from '@/lib/api';
 import { newBotEngine, splitPiModel, type BotEngine } from '@/lib/new-bot';
 import {
@@ -197,6 +198,8 @@ function BotForm({
   onDirty(dirty: boolean): void;
 }) {
   const t = useT();
+  // Shared for talking only: the settings show, but only those who may change the bot save them.
+  const readOnly = bot?.yourLevel === 'chat';
   const qc = useQueryClient();
   const { data: groups = [] } = useGroups();
   const selectBot = useUi((s) => s.selectBot);
@@ -305,6 +308,7 @@ function BotForm({
   return (
     <form onSubmit={form.handleSubmit((f) => save.mutate(f))} className="flex min-h-0 flex-1 flex-col">
       <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 pt-1 pb-6">
+        {readOnly && <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-sm">{t('share.readOnly')}</p>}
         {starters.length > 0 && (
           <section aria-labelledby="bot-starters">
             <h3 id="bot-starters" className="mb-2 text-sm font-medium">
@@ -424,6 +428,7 @@ function BotForm({
             </Select>
           </Field>
         )}
+        {bot && <BotSharing bot={bot} />}
         {bot && <TelegramPanel botId={bot.id} />}
         <button
           type="button"
@@ -547,7 +552,7 @@ function BotForm({
             variant="ghost"
             className="mr-auto rounded-full text-muted-foreground"
             onClick={() => archive.mutate()}
-            disabled={archive.isPending}
+            disabled={archive.isPending || readOnly}
           >
             <Archive /> {t('bot.archive')}
           </Button>
@@ -556,7 +561,7 @@ function BotForm({
         <Button type="button" variant="ghost" className="rounded-full" onClick={onCancel}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" className="rounded-full" disabled={save.isPending}>
+        <Button type="submit" className="rounded-full" disabled={save.isPending || readOnly}>
           {bot ? t('common.save') : t('bot.create')}
         </Button>
       </div>

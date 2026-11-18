@@ -1,6 +1,7 @@
 import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
+import type { MemoryReach } from './services/memory';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
@@ -8,10 +9,16 @@ import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
   AccessRequest,
   AccountSet,
+  PersonCreate,
+  PersonUpdate,
   connectionToolParts,
   describeAction,
   ApprovalDecision,
+  BotAccess,
   BotCreate,
+  type Bot,
+  type BotLevel,
+  type Ticket,
   BotMove,
   BotUpdate,
   newBotEngine,
@@ -80,7 +87,15 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
-import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth } from './auth';
+import {
+  canAdminister,
+  clientAddress,
+  requireAdmin,
+  SESSION_COOKIE,
+  SESSION_IDLE_MS,
+  type Auth,
+  type Principal,
+} from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
@@ -90,11 +105,13 @@ import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
 import { clientMetadata, clientMetadataUrlFor, OAUTH_CLIENT_PATH } from './connections/client';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
-import { fetchSkillFile } from './services/skill-link';
-import { serverLocale, Settings } from './services/settings';
+import { fetchSkillFile, privateHost } from './services/skill-link';
+import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
-import { HttpError, truncate } from './util';
+import { OWNER_ID } from './users';
+import { HttpError, notFound, truncate } from './util';
+import { atLeast, managesServer } from './services/access';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
@@ -133,6 +150,8 @@ interface Deps {
   };
   /** One short request to a provider's model with its stored key. */
   testModel(provider: string, model: string): Promise<ModelTest>;
+  /** Closes a person's live connections, so they come back with what they may do now, or not at all. */
+  dropSockets(userId: string): void;
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
@@ -180,6 +199,15 @@ export function byteRange(header: string | undefined, size: number): { start: nu
   return start <= end && start < size ? { start, end } : null;
 }
 
+/** Who a signed-in request comes from; every route past the sign-in check has one. */
+function me(req: FastifyRequest): Principal {
+  if (!req.principal) throw new HttpError(401, 'error.accessKeyRequired');
+  return req.principal;
+}
+
+/** How the audit log names the person a request comes from. */
+const actorOf = (req: FastifyRequest) => `user:${me(req).userId}`;
+
 /** A browser problem as an answer to the person who asked. */
 function browserHttpError(err: unknown): unknown {
   if (!(err instanceof BrowserError)) return err;
@@ -209,17 +237,102 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   };
   app.get('/api/session', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
-    const how = await d.auth.authenticate(req.headers, token, clientAddress(req.headers, req.ip, d.config));
+    const who = await d.auth.authenticate(req.headers, token, clientAddress(req.headers, req.ip, d.config));
     // Each visit moves the cookie's end along with the session's.
-    if (how === 'cookie' && token) reply.setCookie(SESSION_COOKIE, token, sessionCookie);
-    // Whether the sign-in page asks for a username and password or for the access key.
-    return { authenticated: !!how, account: (await d.auth.account.username()) !== null };
+    if (who?.via === 'session' && token) reply.setCookie(SESSION_COOKIE, token, sessionCookie);
+    const user = who ? await d.auth.users.get(who.userId) : null;
+    return {
+      authenticated: !!who,
+      // Whether the sign-in page asks for a username and password or for the access key.
+      account: await d.auth.users.anyPassword(),
+      ...(user && { user: { id: user.id, username: user.username, role: user.role } }),
+    };
   });
-  app.get('/api/sessions', async (req) => d.auth.listSessions(req.cookies[SESSION_COOKIE]));
+  // People: everyone sees who is here, to share bots with them; those who look after the server
+  // add, change and remove them. The owner stays as they are, and only the owner handles admins.
+  app.get('/api/people', async (req) => {
+    const all = await d.auth.users.list();
+    return managesServer(me(req).role) ? all : all.filter((p) => !p.disabled);
+  });
+  /** A person the one asking may change: not themselves, not the owner, an admin only by the owner. */
+  const changeable = async (req: FastifyRequest, id: string) => {
+    const who = me(req);
+    if (id === who.userId) throw new HttpError(403, 'error.notYourself');
+    const person = await d.auth.users.person(id);
+    if (!person || person.role === 'owner') throw notFound('person');
+    if (person.role === 'admin' && who.role !== 'owner') throw new HttpError(403, 'error.ownerManagesAdmins');
+    return person;
+  };
+  const checkPassword = (password: string | undefined) => {
+    if (password !== undefined && password.length < MIN_PASSWORD) {
+      throw new HttpError(400, 'error.passwordShort', { min: String(MIN_PASSWORD) });
+    }
+  };
+  /** After a change to a person: what was remembered about them is forgotten. */
+  const peopleChanged = async (userId: string, signOut: boolean) => {
+    await d.auth.forgetPerson(userId, signOut);
+    s.access.forget();
+    d.dropSockets(userId);
+    s.ctx.bus.refresh({ scope: 'people' });
+  };
+  app.post('/api/people', async (req) => {
+    const body = PersonCreate.parse(req.body);
+    checkPassword(body.password);
+    if (body.role === 'admin' && me(req).role !== 'owner')
+      throw new HttpError(403, 'error.ownerManagesAdmins');
+    const made = await d.auth.users.create(body);
+    s.access.forget();
+    s.ctx.bus.refresh({ scope: 'people' });
+    return made;
+  });
+  app.patch('/api/people/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await changeable(req, id);
+    const patch = PersonUpdate.parse(req.body);
+    checkPassword(patch.password);
+    if (patch.role === 'admin' && me(req).role !== 'owner')
+      throw new HttpError(403, 'error.ownerManagesAdmins');
+    const changed = await d.auth.users.change(id, patch);
+    // A new password or a disabled person signs out everywhere; a new role counts at once.
+    await peopleChanged(id, patch.password !== undefined || patch.disabled === true);
+    return changed;
+  });
+  /**
+   * Removes a person. Their conversations go with them, files included; the bots they made pass to
+   * the owner; their notes, apps, sign-ins and chat apps go. What they wrote elsewhere stays,
+   * without their name.
+   */
+  app.delete('/api/people/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await changeable(req, id);
+    // Signed out first, so nothing new of theirs starts while they are removed.
+    await d.auth.users.change(id, { disabled: true });
+    await peopleChanged(id, true);
+    const threads = await s.ctx.db
+      .select({ id: schema.threads.id, botId: schema.threads.botId })
+      .from(schema.threads)
+      .where(eq(schema.threads.userId, id));
+    for (const th of threads) await deleteThread(th.id, th.botId);
+    const channels = await s.ctx.db
+      .select({ kind: schema.channels.kind, botId: schema.channels.botId })
+      .from(schema.channels)
+      .where(eq(schema.channels.userId, id));
+    for (const c of channels) {
+      if (c.kind === 'telegram' && c.botId) await s.telegram.disconnect(c.botId);
+      if (c.kind === 'whatsapp') await s.whatsapp.disconnect();
+    }
+    await s.bots.leftBy(id, OWNER_ID);
+    await d.auth.users.remove(id);
+    await peopleChanged(id, true);
+    return { ok: true };
+  });
+
+  app.get('/api/sessions', async (req) => d.auth.listSessions(req.cookies[SESSION_COOKIE], me(req).userId));
   app.delete('/api/sessions/:id', async (req) => {
     const id = z.object({ id: z.string().min(1).max(64) }).parse(req.params).id;
     const ended = await d.auth.revokeSessions(
       req.cookies[SESSION_COOKIE],
+      me(req).userId,
       id === 'others' ? 'others' : { id },
     );
     return { ended };
@@ -238,7 +351,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       throw new HttpError(401, 'error.accessKeyWrong');
     }
     attempt.succeeded();
-    const token = await d.auth.createSession(req.headers['user-agent']);
+    // The access key is the owner's.
+    const token = await d.auth.createSession(OWNER_ID, req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     return { ok: true };
   });
@@ -248,15 +362,20 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // The try is counted before the slow check, so many sent at once cannot all get past the limit.
     const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
     if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-    if (!(await d.auth.account.check(password, username))) throw new HttpError(401, 'error.loginWrong');
+    const user = await d.auth.users.check(username, password);
+    if (!user) throw new HttpError(401, 'error.loginWrong');
     attempt.succeeded();
-    reply.setCookie(SESSION_COOKIE, await d.auth.createSession(req.headers['user-agent']), sessionCookie);
+    reply.setCookie(
+      SESSION_COOKIE,
+      await d.auth.createSession(user.id, req.headers['user-agent']),
+      sessionCookie,
+    );
     return { ok: true };
   });
 
   // Pairing: a signed-in device makes a short code; another device signs in with it once.
-  app.post('/api/pairing', async () => ({
-    ...d.auth.createPairingCode(),
+  app.post('/api/pairing', async (req) => ({
+    ...d.auth.createPairingCode(me(req).userId),
     // Where the other device finds this server, when it is known to the server.
     url: d.config.publicUrl ?? null,
   }));
@@ -267,12 +386,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // Wrong codes count with wrong passwords: guessing either is slowed the same way.
     const attempt = d.auth.throttle.attempt(clientAddress(req.headers, req.ip, d.config));
     if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-    if (!d.auth.usePairingCode(code)) {
+    // The new device signs in as whoever made the code.
+    const userId = d.auth.usePairingCode(code);
+    if (!userId) {
       await new Promise((r) => setTimeout(r, 300));
       throw new HttpError(401, 'error.pairingWrong');
     }
     attempt.succeeded();
-    const token = await d.auth.createSession(req.headers['user-agent']);
+    const token = await d.auth.createSession(userId, req.headers['user-agent']);
     reply.setCookie(SESSION_COOKIE, token, sessionCookie);
     // The desktop app pairs from its own process and puts the session in its window's cookies.
     return wantToken
@@ -280,14 +401,20 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       : { ok: true };
   });
 
-  app.get('/api/account', async () => ({ username: await d.auth.account.username() }));
+  // The signed-in person's own username and password.
+  app.get('/api/account', async (req) => ({
+    username: (await d.auth.users.get(me(req).userId))?.username ?? null,
+  }));
   app.put('/api/account', async (req) => {
     const { username, password, current } = AccountSet.parse(req.body);
     if (password.length < MIN_PASSWORD) {
       throw new HttpError(400, 'error.passwordShort', { min: String(MIN_PASSWORD) });
     }
-    // Changing it takes the current password, or the access key when that is forgotten.
-    const changing = (await d.auth.account.username()) !== null;
+    const who = me(req);
+    const user = await d.auth.users.get(who.userId);
+    if (!user) throw new HttpError(401, 'error.accessKeyRequired');
+    // Changing it takes the current password, or, for the owner, the access key when that is forgotten.
+    const changing = user.username !== null;
     if (changing) {
       // Only a signed-in device gets here, so the count across all addresses is left alone: a
       // flood of guesses at the sign-in page must not stop the owner changing the password.
@@ -295,15 +422,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         shared: false,
       });
       if (!attempt) throw new HttpError(429, 'error.loginBlocked');
-      const ok = !!current && (d.auth.checkKey(current) || (await d.auth.account.check(current)));
+      const ok =
+        !!current &&
+        ((user.role === 'owner' && d.auth.checkKey(current)) ||
+          (await d.auth.users.checkFor(user.id, current)));
       if (!ok) throw new HttpError(403, 'error.currentPasswordWrong');
       attempt.succeeded();
     }
-    await d.auth.account.set(username, password);
+    const saved = await d.auth.users.setCredentials(user.id, username, password);
     // A new password is often set because the old one got out: whoever signed in with it is
     // signed out, everywhere but on the device that made the change.
-    if (changing) await d.auth.revokeSessions(req.cookies[SESSION_COOKIE], 'others');
-    return { username: username.trim() };
+    if (changing) await d.auth.revokeSessions(req.cookies[SESSION_COOKIE], user.id, 'others');
+    return { username: saved.username };
   });
 
   app.post('/api/logout', async (req, reply) => {
@@ -315,8 +445,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/info', async () => d.info());
   app.post('/api/info/claude-check', async () => d.checkClaude());
 
-  app.get('/api/settings', async () => s.settings.all());
-  app.patch('/api/settings', async (req) => s.settings.update(patchOf(Settings).parse(req.body)));
+  // Each person reads the server's settings with their own profile in them, and changes their own
+  // profile; the server's settings are changed by those who look after it.
+  app.get('/api/settings', async (req) => s.settings.all(me(req).userId));
+  app.patch('/api/settings', async (req) => {
+    const patch = patchOf(Settings).parse(req.body);
+    if (Object.keys(patch).some((k) => !isPersonal(k))) requireAdmin(me(req));
+    return s.settings.update(patch, me(req).userId);
+  });
 
   // API keys for the Pi engine; responses carry only a hint of each key.
   const ProviderParams = z.object({ id: z.string().regex(/^[a-z0-9-]{2,60}$/) });
@@ -400,14 +536,45 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Bots and groups
+  /** Only the bot's own owner, or those who look after the server, share or remove a bot. */
+  const requireBotOwner = async (req: FastifyRequest, botId: string) => {
+    const p = me(req);
+    if (canAdminister(p.role)) return;
+    if ((await s.access.botOwner(botId)) !== p.userId) throw new HttpError(403, 'error.botOwnerOnly');
+  };
+  /**
+   * A group's bots share its files folder, so a bot joins one only for someone who may change
+   * every bot already in it.
+   */
+  const checkGroup = async (req: FastifyRequest, groupId: string | null | undefined) => {
+    if (!groupId || canAdminister(me(req).role)) return;
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    const members = (await s.bots.list({ includeArchived: true })).filter((b) => b.groupId === groupId);
+    if (!members.every((b) => editable.has(b.id))) throw new HttpError(403, 'error.groupNotYours');
+  };
+  /** A bot with what the asking person may do with it. */
+  const leveled = async (req: FastifyRequest, bot: Bot): Promise<Bot> => ({
+    ...bot,
+    yourLevel: await s.access.level(me(req), bot.id),
+  });
+  /** A project folder opens the server's files to the bot: only those who look after the server pick one. */
+  const checkProjectDir = (req: FastifyRequest, projectDir: string | null | undefined) => {
+    if (projectDir && !canAdminister(me(req).role)) throw new HttpError(403, 'error.adminOnly');
+  };
   app.get('/api/bots', async (req) => {
     const q = z.object({ archived: z.enum(['0', '1']).optional() }).parse(req.query);
-    return s.bots.list({ includeArchived: q.archived === '1' });
+    const levels = await s.access.levels(me(req));
+    return (await s.bots.list({ includeArchived: q.archived === '1' }))
+      .map((b) => ({ ...b, yourLevel: levels.get(b.id) ?? 'none' }))
+      .filter((b) => b.yourLevel !== 'none');
   });
   // A bot linked to a document reads it right away, so its text waits for the person at once.
   app.post('/api/bots', async (req) => {
-    const bot = await s.bots.create(BotCreate.parse(req.body));
-    return bot.instructionsUrl ? s.instructionDocs.check(bot.id) : bot;
+    const body = BotCreate.parse(req.body);
+    checkProjectDir(req, body.projectDir);
+    await checkGroup(req, body.groupId);
+    const bot = await s.bots.create(body, me(req).userId);
+    return leveled(req, bot.instructionsUrl ? await s.instructionDocs.check(bot.id) : bot);
   });
   // Moves the existing bots to what new bots start with, while its provider can still be reached
   // the way the engine reaches it: a key, a sign-in with a plan, or an endpoint that takes none.
@@ -419,13 +586,26 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { changed: await s.bots.moveAllTo(target) };
   });
-  app.get('/api/bots/:id', async (req) => s.bots.get(IdParams.parse(req.params).id));
+  app.get('/api/bots/:id', async (req) => leveled(req, await s.bots.get(IdParams.parse(req.params).id)));
   app.patch('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
     const before = await s.bots.get(id);
-    const bot = await s.bots.update(id, BotUpdate.parse(req.body));
+    const patch = BotUpdate.parse(req.body);
+    if (patch.projectDir !== undefined && patch.projectDir !== before.projectDir) {
+      checkProjectDir(req, patch.projectDir);
+    }
+    if (patch.groupId !== undefined && patch.groupId !== before.groupId) await checkGroup(req, patch.groupId);
+    const bot = await s.bots.update(id, patch);
     const relinked = !!bot.instructionsUrl && bot.instructionsUrl !== before.instructionsUrl;
-    return relinked ? s.instructionDocs.check(id) : bot;
+    return leveled(req, relinked ? await s.instructionDocs.check(id) : bot);
+  });
+  // Who else may talk with the bot or change it: its owner and those who look after the server say.
+  app.put('/api/bots/:id/access', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await requireBotOwner(req, id);
+    const bot = await s.bots.setAccess(id, BotAccess.parse(req.body));
+    s.access.forget();
+    return leveled(req, bot);
   });
   // The document a bot's instructions are kept in: read it now, take its text, or turn it down.
   app.post('/api/bots/:id/instructions/check', async (req) =>
@@ -433,18 +613,22 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   );
   app.post('/api/bots/:id/instructions/accept', async (req) => {
     const { expected } = z.object({ expected: z.string().max(100_000).optional() }).parse(req.body ?? {});
-    return s.instructionDocs.accept(IdParams.parse(req.params).id, expected);
+    return s.instructionDocs.accept(IdParams.parse(req.params).id, expected, actorOf(req));
   });
   app.post('/api/bots/:id/instructions/decline', async (req) =>
     s.instructionDocs.decline(IdParams.parse(req.params).id),
   );
-  app.post('/api/bots/:id/move', async (req) =>
-    s.bots.move(IdParams.parse(req.params).id, BotMove.parse(req.body)),
-  );
+  app.post('/api/bots/:id/move', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const body = BotMove.parse(req.body);
+    if (body.groupId !== (await s.bots.get(id)).groupId) await checkGroup(req, body.groupId);
+    return s.bots.move(id, body);
+  });
   app.post('/api/bots/:id/archive', async (req) => s.bots.archive(IdParams.parse(req.params).id));
   app.post('/api/bots/:id/restore', async (req) => s.bots.restore(IdParams.parse(req.params).id));
   app.delete('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
+    await requireBotOwner(req, id);
     // An archived bot leaves its rooms first, so a room it started is not removed with it.
     if ((await s.bots.get(id)).archivedAt) await s.rooms.removeBot(id);
     await s.bots.purge(id);
@@ -475,7 +659,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.get('/api/bots/:id/audit', async (req) => s.tools.auditFor(IdParams.parse(req.params).id));
-  app.get('/api/summaries', async () => s.threads.summaries());
+  app.get('/api/summaries', async (req) => s.threads.summaries(await s.access.summaryScope(me(req))));
   app.get('/api/search', async (req) => {
     const q = z
       .object({
@@ -484,7 +668,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         limit: z.coerce.number().int().min(1).max(500).optional(),
       })
       .parse(req.query);
-    return s.threads.search(q.q, { threadId: q.threadId, limit: q.limit });
+    const { seen } = await s.access.summaryScope(me(req));
+    return s.threads.search(q.q, { threadId: q.threadId, limit: q.limit, seen });
   });
   app.get('/api/usage', async (req) => {
     const q = z
@@ -493,11 +678,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
-  app.get('/api/today', async () => ({
-    ...(await s.usage.today()),
-    staleMemory: (await s.memory.stale()).length,
-    pendingMemory: (await s.memory.pending()).length,
-  }));
+  app.get('/api/today', async (req) => {
+    // Every bot's level is read once, for what the person may talk with and what they may change.
+    const levels = [...(await s.access.levels(me(req)))];
+    const reach = (wanted: BotLevel) => levels.filter(([, l]) => atLeast(l, wanted)).map(([id]) => id);
+    const notes: MemoryReach = { userId: me(req).userId, botIds: reach('edit') };
+    return {
+      ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
+      staleMemory: (await s.memory.stale(new Date(), notes)).length,
+      pendingMemory: (await s.memory.pending(notes)).length,
+    };
+  });
 
   // A bot as an API: send it a message from a script and get its reply when the turn ends (or the
   // turn's id to ask again later when the wait runs out).
@@ -510,7 +701,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         wait: z.number().int().min(0).max(600).default(300),
       })
       .parse(req.body);
-    const result = await s.botApi.ask(id, body.text, { threadId: body.threadId, waitMs: body.wait * 1000 });
+    const result = await s.botApi.ask(id, body.text, {
+      threadId: body.threadId,
+      waitMs: body.wait * 1000,
+      userId: me(req).userId,
+    });
     return reply.code(result.status === 'running' ? 202 : 200).send(result);
   });
   // How many turns run now, so the desktop app can ask before quitting stops them.
@@ -572,14 +767,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       skills++;
     }
     for (const c of found.servers.filter((x) => body.servers.includes(x.url))) {
-      await s.connections.create({
-        name: c.name,
-        url: c.url,
-        auth: 'none',
-        catalogId: null,
-        allBots: false,
-        botIds: [],
-      });
+      await s.connections.create(
+        { name: c.name, url: c.url, auth: 'none', catalogId: null, allBots: false, botIds: [] },
+        me(req).userId,
+      );
       servers++;
     }
     return { skills, servers };
@@ -656,37 +847,96 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // The board: tickets the person and the bots work from.
-  app.get('/api/tickets', async () => s.tickets.list());
-  app.post('/api/tickets', async (req) => s.tickets.create(TicketCreate.parse(req.body)));
-  app.patch('/api/tickets/:id', async (req) =>
-    s.tickets.update(IdParams.parse(req.params).id, TicketUpdate.parse(req.body)),
-  );
+  // The board: a person sees the tickets they opened and those of bots they may talk with; they
+  // change those they opened or whose bot they may change.
+  const seesTicket = (p: Principal, ticket: Ticket, levels: Map<string, BotLevel>) =>
+    canAdminister(p.role) ||
+    ticket.createdByUserId === p.userId ||
+    (!!ticket.assigneeBotId && atLeast(levels.get(ticket.assigneeBotId) ?? 'none', 'chat'));
+  const ticketFor = async (req: FastifyRequest, id: string, change: boolean) => {
+    const p = me(req);
+    const ticket = await s.tickets.get(id);
+    const levels = await s.access.levels(p);
+    if (!seesTicket(p, ticket, levels)) throw notFound('ticket');
+    const mayChange =
+      canAdminister(p.role) ||
+      ticket.createdByUserId === p.userId ||
+      (!!ticket.assigneeBotId && atLeast(levels.get(ticket.assigneeBotId) ?? 'none', 'edit'));
+    if (change && !mayChange) throw new HttpError(403, 'error.botEditOnly');
+    return ticket;
+  };
+  /** A ticket goes only to a bot the person may talk with. */
+  const checkAssignee = async (req: FastifyRequest, botId: string | null | undefined) => {
+    if (botId) await s.access.requireBot(me(req), botId, 'chat');
+  };
+  app.get('/api/tickets', async (req) => {
+    const levels = await s.access.levels(me(req));
+    return (await s.tickets.list()).filter((tk) => seesTicket(me(req), tk, levels));
+  });
+  app.post('/api/tickets', async (req) => {
+    const body = TicketCreate.parse(req.body);
+    await checkAssignee(req, body.assigneeBotId);
+    return s.tickets.create(body, 'user', true, me(req).userId);
+  });
+  app.patch('/api/tickets/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const body = TicketUpdate.parse(req.body);
+    await ticketFor(req, id, true);
+    await checkAssignee(req, body.assigneeBotId);
+    return s.tickets.update(id, body);
+  });
   app.delete('/api/tickets/:id', async (req) => {
-    await s.tickets.remove(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ticketFor(req, id, true);
+    await s.tickets.remove(id);
     return { ok: true };
   });
-  app.post('/api/tickets/:id/comments', async (req) =>
-    s.tickets.comment(IdParams.parse(req.params).id, TicketCommentCreate.parse(req.body).text),
-  );
+  app.post('/api/tickets/:id/comments', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ticketFor(req, id, false);
+    return s.tickets.comment(id, TicketCommentCreate.parse(req.body).text);
+  });
 
   // Plugins: read first, so the person sees what each would add, then installed as connections
   // and skills.
   app.post('/api/plugins/preview', async (req) =>
     s.plugins.preview(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
   );
-  app.post('/api/plugins/install', async (req) => s.plugins.install(PluginInstall.parse(req.body)));
+  app.post('/api/plugins/install', async (req) =>
+    s.plugins.install(PluginInstall.parse(req.body), me(req).userId),
+  );
   app.get('/api/skills', async () => s.skills.list());
-  app.post('/api/skills', async (req) => s.skills.create(SkillCreate.parse(req.body)));
+  app.post('/api/skills', async (req) => {
+    const body = SkillCreate.parse(req.body);
+    // Turning a skill on for a bot changes the bot.
+    for (const botId of body.botIds ?? []) await s.access.requireBot(me(req), botId, 'edit');
+    return s.skills.create(body, me(req).userId);
+  });
   // A skill file from a link (a GitHub page of a SKILL.md, or any https address); read here, so
   // the page is not stopped by the other site's rules on who may read it.
   app.post('/api/skills/fetch', async (req) =>
     fetchSkillFile(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
   );
-  app.patch('/api/skills/:id', async (req) =>
-    s.skills.update(IdParams.parse(req.params).id, SkillUpdate.parse(req.body)),
-  );
+  /** A skill is changed by whoever made it and by those who look after the server. */
+  const ownSkill = async (req: FastifyRequest, id: string) => {
+    const p = me(req);
+    const [row] = await s.ctx.db
+      .select({ by: schema.skills.createdByUserId })
+      .from(schema.skills)
+      .where(eq(schema.skills.id, id))
+      .limit(1);
+    if (!row) throw notFound('skill');
+    if (!canAdminister(p.role) && row.by !== p.userId) throw new HttpError(403, 'error.adminOnly');
+  };
+  app.patch('/api/skills/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ownSkill(req, id);
+    return s.skills.update(id, SkillUpdate.parse(req.body));
+  });
   app.delete('/api/skills/:id', async (req) => {
-    await s.skills.remove(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ownSkill(req, id);
+    await s.skills.remove(id);
     return { ok: true };
   });
   app.put('/api/skills/:id/bots/:botId', async (req) => {
@@ -710,16 +960,19 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Threads and messages
-  app.get('/api/bots/:id/threads', async (req) => s.threads.list(IdParams.parse(req.params).id));
+  app.get('/api/bots/:id/threads', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    return s.threads.list(id, await s.access.listScope(me(req), id));
+  });
   app.get('/api/bots/:id/main-thread', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    return s.threads.main(id);
+    return s.threads.main(id, me(req).userId);
   });
   app.post('/api/bots/:id/threads', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    return s.threads.create(id, { title: ThreadCreate.parse(req.body ?? {}).title });
+    return s.threads.create(id, { title: ThreadCreate.parse(req.body ?? {}).title, userId: me(req).userId });
   });
   app.get('/api/threads/:id', async (req) => s.threads.get(IdParams.parse(req.params).id));
   app.patch('/api/threads/:id', async (req) => {
@@ -772,8 +1025,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.delete('/api/bots/:id/threads', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    const main = await s.threads.main(id);
-    const others = (await s.threads.list(id)).filter((th) => th.id !== main.id);
+    // Only the person's own conversations: the bot's own work and others' stay.
+    const { userId } = me(req);
+    const main = await s.threads.main(id, userId);
+    const others = (await s.threads.list(id, { userId, botWork: false })).filter((th) => th.id !== main.id);
     for (const th of others) await deleteThread(th.id, id);
     return { deleted: others.length };
   });
@@ -788,11 +1043,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const thread = await s.threads.row(id);
     // A room has its members answer in turn, not the one bot its thread points at.
     if (thread.kind === 'room') {
-      const { message, created } = await s.rooms.post(id, RoomSend.parse(req.body));
+      const { message, created } = await s.rooms.post(id, RoomSend.parse(req.body), me(req).userId);
       return reply.code(created ? 201 : 200).send(message);
     }
     const body = SendMessage.parse(req.body);
-    const { message, created } = await s.inbox.send(id, body);
+    const { message, created } = await s.inbox.send(id, { ...body, userId: me(req).userId });
     return reply.code(created ? 201 : 200).send(message);
   });
 
@@ -864,7 +1119,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const source = await s.threads.get(m.threadId);
     const t = await s.settings.translator();
     const title = t('thread.forkTitle', { title: source.title || t('thread.untitled') });
-    return s.threads.fork(id, truncate(title, 120));
+    return s.threads.fork(id, truncate(title, 120), me(req).userId);
   });
   app.put('/api/messages/:id/reaction', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -946,18 +1201,29 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // Rooms: the person and several bots in one conversation. Its messages, cards and files are the
   // thread's own routes; a room's id is its thread's id.
-  app.get('/api/rooms', async () => s.rooms.list());
-  app.post('/api/rooms', async (req) => s.rooms.create(RoomCreate.parse(req.body)));
+  app.get('/api/rooms', async (req) => s.rooms.list(me(req).userId));
+  app.post('/api/rooms', async (req) => {
+    const body = RoomCreate.parse(req.body);
+    // Every bot in the room must be one the person may talk with.
+    for (const botId of body.botIds) await s.access.requireBot(me(req), botId, 'chat');
+    return s.rooms.create(body, me(req).userId);
+  });
   app.get('/api/rooms/:id', async (req) => s.rooms.get(IdParams.parse(req.params).id));
-  app.patch('/api/rooms/:id', async (req) =>
-    s.rooms.update(IdParams.parse(req.params).id, RoomUpdate.parse(req.body)),
-  );
+  app.patch('/api/rooms/:id', async (req) => {
+    const body = RoomUpdate.parse(req.body);
+    for (const botId of body.botIds ?? []) await s.access.requireBot(me(req), botId, 'chat');
+    return s.rooms.update(IdParams.parse(req.params).id, body);
+  });
   app.delete('/api/rooms/:id', async (req) => {
     await s.rooms.remove(IdParams.parse(req.params).id);
     return { ok: true };
   });
   app.post('/api/rooms/:id/messages', async (req, reply) => {
-    const { message, created } = await s.rooms.post(IdParams.parse(req.params).id, RoomSend.parse(req.body));
+    const { message, created } = await s.rooms.post(
+      IdParams.parse(req.params).id,
+      RoomSend.parse(req.body),
+      me(req).userId,
+    );
     return reply.code(created ? 201 : 200).send(message);
   });
   app.post('/api/rooms/:id/stop', async (req) => ({
@@ -980,11 +1246,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const q = z
       .object({ status: z.enum(['pending', 'allowed', 'denied', 'expired']).optional() })
       .parse(req.query);
-    return s.approvals.list(q);
+    return s.approvals.list({ ...q, seen: (await s.access.summaryScope(me(req))).seen });
   });
   app.get('/api/approvals/:id', async (req) => s.approvals.get(IdParams.parse(req.params).id));
   app.post('/api/approvals/:id', async (req) =>
-    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body)),
+    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId),
   );
   // What a bot changed, and what let each step through.
   app.get('/api/bots/:id/actions', async (req) => {
@@ -1025,10 +1291,27 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .header('content-disposition', `attachment; filename="yumakbot-steps-${id}.csv"`)
       .send(await s.actions.csv(id));
   });
-  app.get('/api/rules', async () => s.approvals.rules());
-  app.post('/api/rules', async (req) => s.approvals.addRule(PermissionRuleCreate.parse(req.body)));
+  // Rules for every bot are the server's: those who look after it set them. A bot's own rules are
+  // set by those who may change the bot.
+  const checkRuleBot = async (req: FastifyRequest, botId: string | null | undefined) => {
+    if (botId) await s.access.requireBot(me(req), botId, 'edit');
+    else requireAdmin(me(req));
+  };
+  app.get('/api/rules', async (req) => {
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    return (await s.approvals.rules()).filter((r) => !r.botId || editable.has(r.botId));
+  });
+  app.post('/api/rules', async (req) => {
+    const body = PermissionRuleCreate.parse(req.body);
+    await checkRuleBot(req, body.botId);
+    return s.approvals.addRule(body);
+  });
   app.delete('/api/rules/:id', async (req) => {
-    await s.approvals.removeRule(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    const rule = (await s.approvals.rules()).find((r) => r.id === id);
+    if (!rule) throw new HttpError(404, 'error.notFound');
+    await checkRuleBot(req, rule.botId);
+    await s.approvals.removeRule(id);
     return { ok: true };
   });
 
@@ -1043,33 +1326,93 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
           secure: d.config.secureCookies,
         });
   const ToolParams = z.object({ id: z.string().min(1), name: z.string().min(1).max(500) });
-  app.get('/api/connections', async () => s.connections.list());
+  /**
+   * A connection a person may see: the team's or their own; another person's is not found. To
+   * change the team's, they must look after the server.
+   */
+  const connectionFor = async (req: FastifyRequest, id: string, change: boolean) => {
+    const c = await s.connections.get(id);
+    const who = me(req);
+    if (c.userId && c.userId !== who.userId) throw new HttpError(404, 'error.notFound.connection');
+    if (change && !c.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return c;
+  };
+  /** Who a connection or sign-in goes to: the team's only for those who look after the server. */
+  const ownerFor = (req: FastifyRequest, team: boolean | undefined): string | null | undefined => {
+    if (team === undefined) return undefined;
+    if (!team) return me(req).userId;
+    if (!managesServer(me(req).role)) throw new HttpError(403, 'error.adminOnly');
+    return null;
+  };
+  /**
+   * The server calls a connection's address itself: only those who look after it may point one
+   * at this machine or the private network it sits in.
+   */
+  const checkConnectionUrl = async (req: FastifyRequest, url: string | undefined) => {
+    if (!url || managesServer(me(req).role)) return;
+    if (await privateHost(new URL(url).hostname)) throw new HttpError(400, 'error.connectionPrivate');
+  };
+  /** Whose a new connection or sign-in is: the team's when asked for, otherwise the person's. */
+  const ownerOrSelf = (req: FastifyRequest, team: boolean | undefined): string | null => {
+    const given = ownerFor(req, team);
+    return given === undefined ? me(req).userId : given;
+  };
+  /** The bots a person opens their own connection or sign-in to must be ones they may talk with. */
+  const checkOwnBots = async (req: FastifyRequest, botIds: readonly string[] | null | undefined) => {
+    for (const botId of botIds ?? []) await s.access.requireBot(me(req), botId, 'chat');
+  };
+  app.get('/api/connections', async (req) => s.connections.list(me(req).userId));
   app.get('/api/connections/redirect-url', async (req) => ({ url: redirectUrl(req) }));
-  app.post('/api/connections', async (req) => s.connections.create(ConnectionCreate.parse(req.body)));
-  app.get('/api/connections/:id', async (req) => s.connections.get(IdParams.parse(req.params).id));
-  app.patch('/api/connections/:id', async (req) =>
-    s.connections.update(IdParams.parse(req.params).id, ConnectionUpdate.parse(req.body)),
-  );
+  app.post('/api/connections', async (req) => {
+    const body = ConnectionCreate.parse(req.body);
+    await checkConnectionUrl(req, body.url);
+    const owner = ownerOrSelf(req, body.team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.connections.create(body, owner);
+  });
+  app.get('/api/connections/:id', async (req) => connectionFor(req, IdParams.parse(req.params).id, false));
+  app.patch('/api/connections/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    const { team, ...patch } = ConnectionUpdate.parse(req.body);
+    await checkConnectionUrl(req, patch.url);
+    const owner = ownerFor(req, team);
+    const changed = await s.connections.update(id, patch);
+    return owner === undefined ? changed : s.connections.setOwner(id, owner);
+  });
   app.delete('/api/connections/:id', async (req) => {
-    await s.connections.remove(IdParams.parse(req.params).id);
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    await s.connections.remove(id);
     return { ok: true };
   });
-  app.post('/api/connections/:id/refresh', async (req) =>
-    s.connections.refresh(IdParams.parse(req.params).id),
-  );
-  app.post('/api/connections/:id/signin', async (req) =>
-    s.connections.startSignIn(IdParams.parse(req.params).id, redirectUrl(req)),
-  );
-  app.post('/api/connections/:id/signout', async (req) =>
-    s.connections.signOut(IdParams.parse(req.params).id),
-  );
+  app.post('/api/connections/:id/refresh', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.refresh(id);
+  });
+  app.post('/api/connections/:id/signin', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.startSignIn(id, redirectUrl(req));
+  });
+  app.post('/api/connections/:id/signout', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await connectionFor(req, id, true);
+    return s.connections.signOut(id);
+  });
   app.patch('/api/connections/:id/tools/:name', async (req) => {
     const { id, name } = ToolParams.parse(req.params);
+    await connectionFor(req, id, true);
     return s.connections.setTool(id, name, ConnectionToolPatch.parse(req.body));
   });
-  app.put('/api/connections/:id/bots', async (req) =>
-    s.connections.setBots(IdParams.parse(req.params).id, ConnectionBots.parse(req.body)),
-  );
+  app.put('/api/connections/:id/bots', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const c = await connectionFor(req, id, true);
+    const body = ConnectionBots.parse(req.body);
+    if (c.userId) await checkOwnBots(req, body.allBots ? [] : body.botIds);
+    return s.connections.setBots(id, body);
+  });
   // This server as an OAuth client, for a service that takes an address as the client's id: the
   // service reads it here, so the address names the callback it may send the person back to.
   app.get(OAUTH_CLIENT_PATH, async (req, reply) => {
@@ -1162,20 +1505,40 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await s.apiCredentials.remove(IdParams.parse(req.params).id);
     return { ok: true };
   });
-  app.get('/api/vault', async () => s.vault.list());
-  app.post('/api/vault', async (req) => s.vault.save(VaultLoginCreate.parse(req.body)));
-  app.patch('/api/vault/:id', async (req) =>
-    s.vault.update(IdParams.parse(req.params).id, VaultLoginUpdate.parse(req.body)),
-  );
+  /** A sign-in a person may change: their own, or the team's when they look after the server. */
+  const loginFor = async (req: FastifyRequest, id: string) => {
+    const v = await s.vault.get(id);
+    const who = me(req);
+    if (v.userId && v.userId !== who.userId) throw notFound('vault');
+    if (!v.userId && !managesServer(who.role)) throw new HttpError(403, 'error.adminOnly');
+    return v;
+  };
+  app.get('/api/vault', async (req) => s.vault.list(me(req).userId));
+  app.post('/api/vault', async (req) => {
+    const { team, ...body } = VaultLoginCreate.parse(req.body);
+    const owner = ownerOrSelf(req, team);
+    if (owner) await checkOwnBots(req, body.botIds);
+    return s.vault.save(body, owner);
+  });
+  app.patch('/api/vault/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const v = await loginFor(req, id);
+    const { team, ...body } = VaultLoginUpdate.parse(req.body);
+    const owner = ownerFor(req, team);
+    if ((owner === undefined ? v.userId : owner) && body.botIds) await checkOwnBots(req, body.botIds);
+    return s.vault.update(id, body, owner);
+  });
   app.delete('/api/vault/:id', async (req) => {
-    await s.vault.remove(IdParams.parse(req.params).id);
+    const { id } = IdParams.parse(req.params);
+    await loginFor(req, id);
+    await s.vault.remove(id);
     return { ok: true };
   });
 
   // Chat apps: a bot's own Telegram bot.
   app.get('/api/bots/:id/telegram', async (req) => s.telegram.status(IdParams.parse(req.params).id));
   app.put('/api/bots/:id/telegram', async (req) =>
-    s.telegram.connect(IdParams.parse(req.params).id, TelegramConnect.parse(req.body).token),
+    s.telegram.connect(IdParams.parse(req.params).id, TelegramConnect.parse(req.body).token, me(req).userId),
   );
   app.patch('/api/bots/:id/telegram', async (req) =>
     s.telegram.update(IdParams.parse(req.params).id, TelegramUpdate.parse(req.body)),
@@ -1188,11 +1551,32 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // Chat apps: WhatsApp through a linked device, for whichever bot is chosen.
   app.get('/api/whatsapp', async () => s.whatsapp.status());
-  app.put('/api/whatsapp', async (req) => s.whatsapp.configure(WhatsAppSet.parse(req.body)));
+  app.put('/api/whatsapp', async (req) => {
+    const body = WhatsAppSet.parse(req.body);
+    if (body.botId) await s.access.requireBot(me(req), body.botId, 'chat');
+    return s.whatsapp.configure(body, me(req).userId);
+  });
   app.post('/api/whatsapp/link', async () => s.whatsapp.link());
   app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
 
-  // Memory
+  // Memory: each person's notes about themselves, and the notes of the bots they may change.
+  const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({
+    userId: me(req).userId,
+    botIds: await s.access.botIds(me(req), 'edit'),
+  });
+  /** A note the person reaches; another's reads as missing. */
+  const ownNote = async (req: FastifyRequest, id: string) => {
+    const reach = await memoryReach(req);
+    const note = await s.memory.get(id);
+    if (!s.memory.canEdit(note, reach.botIds, reach.userId)) throw notFound('memory');
+    return note;
+  };
+  /** A waiting change the person decides on; another's reads as missing. */
+  const ownChange = async (req: FastifyRequest, id: string) => {
+    const change = (await s.memory.pending(await memoryReach(req))).find((c) => c.id === id);
+    if (!change) throw notFound('memory');
+    return change;
+  };
   app.get('/api/memory', async (req) => {
     const q = z
       .object({
@@ -1200,44 +1584,58 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         botId: z.string().optional(),
       })
       .parse(req.query);
-    return s.memory.list(q);
+    return s.memory.list({ ...q, reach: await memoryReach(req) });
   });
   app.post('/api/memory', async (req) => {
     const b = MemoryCreate.parse(req.body);
-    return s.memory.create({ ...b, source: 'user' });
+    // A bot's note needs its bot, and leave to change it.
+    if (b.scope === 'bot') await s.access.requireBot(me(req), b.botId ?? '', 'edit');
+    return s.memory.create({ ...b, userId: me(req).userId, source: 'user' });
   });
-  app.patch('/api/memory/:id', async (req) =>
-    s.memory.update(IdParams.parse(req.params).id, MemoryUpdate.parse(req.body), 'user'),
-  );
+  app.patch('/api/memory/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ownNote(req, id);
+    return s.memory.update(id, MemoryUpdate.parse(req.body), actorOf(req));
+  });
   // Every note one bot keeps for itself.
   app.delete('/api/bots/:id/memory', async (req) =>
-    s.memory.removeForBot(IdParams.parse(req.params).id, 'user'),
+    s.memory.removeForBot(IdParams.parse(req.params).id, actorOf(req)),
   );
   app.delete('/api/memory/:id', async (req) => {
-    await s.memory.remove(IdParams.parse(req.params).id, 'user');
+    const id = IdParams.parse(req.params).id;
+    await ownNote(req, id);
+    await s.memory.remove(id, actorOf(req));
     return { ok: true };
   });
-  app.get('/api/memory-history', async () => s.memory.history());
-  // Memory changes bots asked for while nobody watched; they wait for the person.
-  app.get('/api/memory-changes', async () => s.memory.pending());
+  // What happened to the notes the person reaches now.
+  app.get('/api/memory-history', async (req) => {
+    return s.memory.history(100, await memoryReach(req));
+  });
+  // Memory changes waiting for a person: a bot asked while nobody watched, or someone who may only
+  // talk with the bot asked for a change to its notes.
+  app.get('/api/memory-changes', async (req) => s.memory.pending(await memoryReach(req)));
   app.post('/api/memory-changes/:id/accept', async (req) => {
+    const id = IdParams.parse(req.params).id;
     const { content } = z.object({ content: z.string().trim().max(2000).optional() }).parse(req.body ?? {});
-    await s.memory.accept(IdParams.parse(req.params).id, content);
+    await ownChange(req, id);
+    await s.memory.accept(id, content);
     return { ok: true };
   });
   app.delete('/api/memory-changes/:id', async (req) => {
-    await s.memory.reject(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ownChange(req, id);
+    await s.memory.reject(id);
     return { ok: true };
   });
   // Notes no bot uses any more, offered to the user to keep or delete.
-  app.get('/api/memory-stale', async () => s.memory.stale());
+  app.get('/api/memory-stale', async (req) => s.memory.stale(new Date(), await memoryReach(req)));
   // Deletes the ones of `ids` that are still unused; a note a bot used since the list was shown stays.
   app.post('/api/memory-stale/delete', async (req) => {
     const { ids } = z.object({ ids: z.array(z.string().min(1).max(64)).max(5000) }).parse(req.body);
-    const still = new Set((await s.memory.stale()).map((m) => m.id));
+    const still = new Set((await s.memory.stale(new Date(), await memoryReach(req))).map((m) => m.id));
     return s.memory.removeMany(
       ids.filter((id) => still.has(id)),
-      'user',
+      actorOf(req),
     );
   });
 
@@ -1289,11 +1687,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.get('/api/routines', async (req) => {
     const q = z.object({ botId: z.string().optional() }).parse(req.query);
-    return s.routines.list(q.botId);
+    // A routine runs as its bot's work: those who may change the bot see and set it.
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    return (await s.routines.list(q.botId)).filter((r) => editable.has(r.botId));
   });
-  app.post('/api/routines', async (req) => s.routines.create(RoutineCreate.parse(req.body)));
+  app.post('/api/routines', async (req) => {
+    const body = RoutineCreate.parse(req.body);
+    await s.access.requireBot(me(req), body.botId, 'edit');
+    return s.routines.create(body, me(req).userId);
+  });
   app.patch('/api/routines/:id', async (req) =>
-    s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body)),
+    s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body), me(req).userId),
   );
   app.delete('/api/routines/:id', async (req) => {
     await s.routines.remove(IdParams.parse(req.params).id);
@@ -1430,7 +1834,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return out.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
   });
   /** A file in the bot's folders, resolved past symlinks so a link cannot point outside them. */
-  const libraryFile = async (botId: string, path: string) => {
+  /**
+   * A file of a bot's folders. `who`, when given, may open it only if they may change the bot, or
+   * the file is in one of their own conversations' folders: those who only talk with a bot get the
+   * files it hands them, not everyone's.
+   */
+  const libraryFile = async (botId: string, path: string, who?: Principal) => {
     const { root, roots } = await libraryRoots(botId);
     let full: string;
     try {
@@ -1446,6 +1855,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       }
     });
     if (!realRoots.some((r) => full.startsWith(r + sep))) throw new HttpError(403, 'error.fileForbidden');
+    if (who && !atLeast(await s.access.level(who, botId), 'edit')) {
+      let threads = '';
+      try {
+        threads = realpathSync(join(root, 'bots', botId, 'threads'));
+      } catch {
+        // No conversation of the bot has a folder yet.
+      }
+      const threadId =
+        threads && full.startsWith(threads + sep) ? full.slice(threads.length + 1).split(sep)[0] : null;
+      const own = threadId ? await s.access.visibleThreads(who, [threadId]) : new Set<string>();
+      if (!threadId || !own.has(threadId)) throw new HttpError(403, 'error.fileForbidden');
+    }
     const st = statSync(full);
     if (!st.isFile()) throw new HttpError(404, 'error.fileMissing');
     return { full, st };
@@ -1465,7 +1886,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const entries = [];
     let total = 0;
     for (const p of paths) {
-      const { full, st } = await libraryFile(botId, p);
+      const { full, st } = await libraryFile(botId, p, me(req));
       total += st.size;
       if (total > MAX_ZIP_BYTES) {
         throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_ZIP_BYTES / 1024 / 1024) });
@@ -1517,6 +1938,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.connections.callFromApp({
       connectionId: view.connectionId,
       bot,
+      userId: me(req).userId,
       name: body.name,
       args: body.arguments,
     });
@@ -1532,9 +1954,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     reply: FastifyReply,
     botId: string,
     path: string,
-    o: { framed?: boolean; height?: number; print?: boolean; title?: string; shared?: boolean },
+    o: {
+      framed?: boolean;
+      height?: number;
+      print?: boolean;
+      title?: string;
+      shared?: boolean;
+      who?: Principal;
+    },
   ) => {
-    const { full, st } = await libraryFile(botId, path);
+    const { full, st } = await libraryFile(botId, path, o.who);
     if (!/\.html?$/i.test(full) || st.size > 2 * 1024 * 1024) throw new HttpError(404, 'error.notFound');
     const csp = frameCsp({ resources: PAGE_LIBRARIES, images: ['https:'] });
     // Its own scripts, styles, pictures and data go inside it: the frame loads nothing from here.
@@ -1570,6 +1999,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       height: h,
       print: !!print,
       title: print ? basename(path) : undefined,
+      who: me(req),
     });
   });
 
@@ -1616,7 +2046,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/bots/:id/emails', async (req) => s.email.inbox(IdParams.parse(req.params).id, { limit: 50 }));
 
   // Links that open a page for anyone who has them.
-  app.get('/api/page-shares', () => s.pageShares.list());
+  app.get('/api/page-shares', async (req) =>
+    s.pageShares.list(canAdminister(me(req).role) ? undefined : await s.access.botIds(me(req), 'edit')),
+  );
   app.get('/api/bots/:id/library/share', async (req) => {
     const { path } = z.object({ path: z.string().min(1) }).parse(req.query);
     return { share: await s.pageShares.find(IdParams.parse(req.params).id, path) };
@@ -1631,6 +2063,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.delete('/api/page-shares/:token', async (req) => {
     const { token } = z.object({ token: z.string().min(1).max(100) }).parse(req.params);
+    const botId = await s.pageShares.botOf(token);
+    if (botId) await s.access.requireBot(me(req), botId, 'edit');
     await s.pageShares.unshare(token);
     return { ok: true };
   });
@@ -1663,7 +2097,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const { path, inline } = z
       .object({ path: z.string().min(1), inline: z.enum(['1']).optional() })
       .parse(req.query);
-    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path);
+    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path, me(req));
     // Only images, PDFs, sound and video are shown on the page; anything else (HTML included)
     // downloads, since the page could otherwise run it as its own.
     const type = inline ? INLINE_TYPES[extname(full).toLowerCase()] : undefined;

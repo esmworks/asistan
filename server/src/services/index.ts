@@ -3,6 +3,7 @@ import type { Ctx } from '../context';
 import type { Engine } from '../engine/types';
 import { TurnManager } from '../runtime/turns';
 import { ToolFactory } from '../tools';
+import { AccessService } from './access';
 import { ActionService } from './actions';
 import { ApprovalService } from './approvals';
 import { InstructionDocService } from './instruction-docs';
@@ -42,6 +43,7 @@ import { BotApi } from './bot-api';
 import { VaultService } from './vault';
 
 export class Services {
+  readonly access: AccessService;
   readonly bots: BotService;
   readonly threads: ThreadService;
   readonly rooms: RoomService;
@@ -92,6 +94,7 @@ export class Services {
      */
     reviewer?: () => Engine,
   ) {
+    this.access = new AccessService(ctx);
     this.bots = new BotService(ctx);
     this.threads = new ThreadService(ctx);
     this.instructionDocs = new InstructionDocService(ctx, this.threads);

@@ -71,7 +71,16 @@ export class JobService {
         : '';
       approvalNote = `\n\n${t('job.approvalNote', { id: approval.id, summary: truncate(approval.summary, 160), answer })}`;
     }
-    const toThread = await this.services.threads.peerThread(to.id, from.id);
+    // The exchange is the requesting person's: who the asking turn works for.
+    const [fromTurn] = opts.fromTurnId
+      ? await this.ctx.db
+          .select({ userId: schema.turns.userId })
+          .from(schema.turns)
+          .where(eq(schema.turns.id, opts.fromTurnId))
+          .limit(1)
+      : [];
+    const person = fromTurn?.userId ?? (await this.services.access.botOwner(from.id));
+    const toThread = await this.services.threads.peerThread(to.id, from.id, person);
     const job: JobRow = {
       id: newId(),
       rootId,

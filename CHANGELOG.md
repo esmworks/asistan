@@ -5,6 +5,26 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### People
+
+- Several people use one server, each with their own username, password and devices. The owner installed it; admins
+  look after it with them; members use the bots shared with them. Settings → People adds, renames, disables and
+  removes people, gives new passwords and changes roles; only the owner handles admins. A change counts at once and a
+  disabled person is signed out everywhere.
+- A bot belongs to the person who made it. Its owner or an admin shares it with everyone or some people, to talk with
+  or to change; a bot not shared with someone does not show for them. What existed before stays the owner's, unshared.
+- Conversations are their person's own: nobody else sees them, admins included, and live updates and notifications go
+  only to them. A bot's own work (tickets, requests between bots) shows to those who may change the bot.
+- Each person has their own profile, language and notes about themselves; a bot reads those of the person it works
+  for. A change to a bot's own notes asked for by someone who may only talk with the bot waits for its owner.
+- Connections and vault sign-ins are the team's or a person's own. A bot uses the team's and those of the person it
+  works for; only admins set up or change the team's.
+- Routines, tickets, chat apps and bot-to-bot requests work for the person who set them up, and reach no further than
+  that person may. A routine changed by someone else works for them from then on, and its runs and reports stay in
+  the conversations of the person it works for.
+- Only admins offer their computer as the bots' way out to the web, and each person's connection limit counts apart.
+- A removed person's conversations, notes, connections and sign-ins go with them; the bots they made pass to the owner.
+
 ### Connections
 
 - Gmail asks for the read and compose scopes as well, so the bot gets the tools that send, reply, forward and change

@@ -16,6 +16,7 @@ import {
   type ServerInfo,
   type ServerToClientEvents,
 } from '@yumakbot/shared';
+import type { IncomingMessage } from 'node:http';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { Server as IOServer, type Namespace } from 'socket.io';
 import { ZodError } from 'zod';
@@ -28,6 +29,8 @@ import {
   parseCookie,
   routedPath,
   SESSION_COOKIE,
+  type Principal,
+  type SocketData,
 } from './auth';
 import { BrowserManager } from './browser/manager';
 import { browserErrorText } from './browser/text';
@@ -41,6 +44,9 @@ import type { Config } from './config';
 import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
+import { adoptLegacyAccount } from './users';
+import { atLeast, managesServer } from './services/access';
+import { enforceRule, ruleFor } from './access-rules';
 import { setContentKey } from './db/sealed';
 import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
 import { FakeEngine } from './engine/fake';
@@ -72,12 +78,14 @@ export interface ServerOptions {
 
 export interface YumakBotServer {
   app: FastifyInstance;
-  io: IOServer<ClientToServerEvents, ServerToClientEvents>;
+  io: IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
   services: Services;
   auth: Auth;
   db: DbHandle;
   bootId: string;
   accessKey: string;
+  /** Every route as registered (`METHOD /path`). */
+  routes: string[];
   info(): ServerInfo;
   checkClaude(): Promise<AccountStatus>;
   listen(): Promise<string>;
@@ -86,6 +94,9 @@ export interface YumakBotServer {
 
 /** How often, and how long after its last try, a failed app connection is tried again. */
 const CONNECTION_RETRY_MS = 5 * 60_000;
+
+/** The socket room of one person's devices. */
+const personRoom = (userId: string) => `user:${userId}`;
 
 const PUBLIC_API = new Set([
   '/api/health',
@@ -103,6 +114,8 @@ const openRoute = (route: string) => PUBLIC_API.has(route) || route.startsWith(`
 
 export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
+  // The single account from before people came in becomes the owner's sign-in.
+  await adoptLegacyAccount(db.db);
   const bus = new Bus();
   // Each bot's desktop, when a computer service runs next to this server. Its folders are the
   // bot's workspace, which both containers see at the same path.
@@ -333,6 +346,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
 
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
   await app.register(fastifyCookie);
+  // Who a request comes from; set by the sign-in check below, null on the routes open to anyone.
+  app.decorateRequest('principal', null);
 
   /** Errors go out in the language the page asks in, else in the server's language. */
   const requestT = async (headers: { 'accept-language'?: string }): Promise<T> =>
@@ -351,12 +366,25 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     // `/%61pi/bots` runs the /api/bots handler while its URL does not start with /api/.
     if (!needsSignIn(req.routeOptions.url, req.url, openRoute)) return;
     const from = clientAddress(req.headers, req.ip, config);
-    const via = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE], from);
-    if (!via) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
+    const principal = await auth.authenticate(req.headers, req.cookies[SESSION_COOKIE], from);
+    if (!principal) return sendError(req, reply, new HttpError(401, 'error.accessKeyRequired'));
+    req.principal = principal;
     // Cookie-authenticated writes must come from our own page.
-    if (via === 'cookie' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
+    if (principal.via === 'session' && req.method !== 'GET' && req.method !== 'HEAD' && !req.headers.origin) {
       return sendError(req, reply, new HttpError(403, 'error.originRequired'));
     }
+  });
+
+  const routes: string[] = [];
+  // Who may call what: each signed-in route's rule, checked once its params are read.
+  app.addHook('preHandler', async (req: FastifyRequest) => {
+    const route = req.routeOptions.url;
+    if (!route || !needsSignIn(route, req.url, openRoute)) return;
+    await enforceRule(services, req, ruleFor(req.method, route));
+  });
+  // Every route as registered, so a test can check each signed-in one has a rule.
+  app.addHook('onRoute', (r) => {
+    for (const method of [r.method].flat()) routes.push(`${method} ${r.url}`);
   });
 
   app.setErrorHandler(async (err, req, reply) => {
@@ -388,6 +416,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     info,
     checkClaude: () => checkClaude(),
     claude: claudeAuth,
+    dropSockets: (userId) => io.in(personRoom(userId)).disconnectSockets(true),
     testModel,
   });
 
@@ -422,35 +451,46 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     });
   }
 
-  const io = new IOServer<ClientToServerEvents, ServerToClientEvents>(app.server, {
-    path: '/socket.io',
-    serveClient: false,
-    allowRequest: (req, cb) => {
-      const refuse = (err: HttpError) =>
-        void requestT(req.headers).then(
-          (t) => cb(err.localized(t), false),
-          () => cb(err.message, false),
+  /** Who each socket's handshake request signed in as, read when the socket connects. */
+  const socketPrincipals = new WeakMap<IncomingMessage, Principal>();
+  const io = new IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
+    app.server,
+    {
+      path: '/socket.io',
+      serveClient: false,
+      allowRequest: (req, cb) => {
+        const refuse = (err: HttpError) =>
+          void requestT(req.headers).then(
+            (t) => cb(err.localized(t), false),
+            () => cb(err.message, false),
+          );
+        const problem = checkHostOrigin(
+          { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
+          config,
         );
-      const problem = checkHostOrigin(
-        { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
-        config,
-      );
-      if (problem) return refuse(problem);
-      const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
-      const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
-      auth
-        .authenticate({ authorization: req.headers.authorization }, cookie, from)
-        .then((via) => (via ? cb(null, true) : refuse(new HttpError(401, 'error.accessKeyRequired'))))
-        .catch((err: unknown) =>
-          refuse(err instanceof HttpError ? err : new HttpError(500, 'error.authCheckFailed')),
-        );
+        if (problem) return refuse(problem);
+        const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
+        const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
+        auth
+          .authenticate({ authorization: req.headers.authorization }, cookie, from)
+          .then((principal) => {
+            if (!principal) return refuse(new HttpError(401, 'error.accessKeyRequired'));
+            socketPrincipals.set(req, principal);
+            cb(null, true);
+          })
+          .catch((err: unknown) =>
+            refuse(err instanceof HttpError ? err : new HttpError(500, 'error.authCheckFailed')),
+          );
+      },
     },
-  });
+  );
   // The desktop app offers its computer as the bots' way out to the web. Frames are binary
-  // messages of the egress protocol; the sign-in is the same as for every socket.
+  // messages of the egress protocol; the sign-in is the same as for every socket. Every bot's
+  // pages then pass through that computer, so only those who look after the server offer one.
   const egressSockets = io.of('/egress') as unknown as Namespace;
   egressSockets.on('connection', (socket) => {
-    if (!egress) return void socket.disconnect(true);
+    const by = socketPrincipals.get(socket.request);
+    if (!egress || !by || !managesServer(by.role)) return void socket.disconnect(true);
     const device: unknown = socket.handshake.auth?.device;
     const link = egress.attach(
       typeof device === 'string' ? device : '',
@@ -464,18 +504,21 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   });
 
   io.on('connection', (socket) => {
+    // Who signed this socket in; the handshake request is the one the sign-in check saw.
+    socket.data.principal = socketPrincipals.get(socket.request) ?? null;
+    const viewer = socket.data.principal;
+    // Live events of a conversation go to its people's rooms.
+    if (viewer) void socket.join(personRoom(viewer.userId));
     socket.emit('hello', { bootId, buildId });
 
     // Watching and driving a bot's browser. Only existing bots: the id names a profile folder.
     const watching = new Set<string>();
     const botExists = (id: unknown): id is string =>
       typeof id === 'string' && id.length <= 64 && /^[\w-]+$/.test(id);
+    // The browser and the desktop are the bot's, shared by everyone who uses it: only those who
+    // may change the bot watch or drive them.
     const known = async (id: unknown) =>
-      botExists(id) &&
-      (await services.bots.get(id).then(
-        () => true,
-        () => false,
-      ));
+      botExists(id) && !!viewer && atLeast(await services.access.level(viewer, id), 'edit');
     socket.on('browser:watch', async (botId, ack) => {
       if (typeof ack !== 'function') return;
       if (!(await known(botId))) return ack(null);
@@ -609,20 +652,38 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       computer?.forget(socket.id);
     });
   });
-  computer?.on((s) => io.emit('computer:state', s));
+  /**
+   * Sends to the people of a conversation, or of a bot (those who may change it). With nobody to
+   * send to it sends nothing: an empty list of rooms would reach every socket.
+   */
+  const nobody = { emit: () => true } as unknown as ReturnType<typeof io.to>;
+  const toPeople = (users: string[]) => (users.length ? io.to(users.map(personRoom)) : nobody);
+  const toThread = async (threadId: string) => toPeople(await services.access.threadAudience(threadId));
+  const toBotEditors = async (botId: string) => toPeople(await services.access.botPeople(botId, 'edit'));
+  computer?.on((s) => void toBotEditors(s.botId).then((to) => to.emit('computer:state', s)));
   browser.on({
-    state: (s) => io.emit('browser:state', s),
+    state: (s) => void toBotEditors(s.botId).then((to) => to.emit('browser:state', s)),
     // A frame a slow viewer cannot take yet is dropped, not queued: the next one replaces it anyway.
     frame: (botId, f) => io.to(`browser:${botId}`).volatile.emit('browser:frame', { botId, ...f }),
   });
-  bus.on('refresh', (e) => io.emit('refresh', e));
-  bus.on('delta', (e) => io.emit('delta', e));
-  bus.on('turn', (e) => io.emit('turn', e));
-  bus.on('notice', (e) => {
-    io.emit('notice', e);
-    void services.push.notice(e);
+  const toBotPeople = async (botId: string) => toPeople(await services.access.botPeople(botId, 'chat'));
+  // A refresh only says what to fetch again, but one about a conversation or a bot also says it
+  // exists and is busy: it goes only to those who see it. The rest are lists each fetches as theirs.
+  bus.on('refresh', (e) => {
+    if (e.scope === 'thread') void toThread(e.threadId).then((to) => to.emit('refresh', e));
+    else if (e.scope === 'threads' || e.scope === 'tables' || e.scope === 'actions')
+      void toBotPeople(e.botId).then((to) => to.emit('refresh', e));
+    else io.emit('refresh', e);
   });
-  bus.on('tool', (e) => io.emit('tool', e));
+  bus.on('delta', (e) => void toThread(e.threadId).then((to) => to.emit('delta', e)));
+  bus.on('turn', (e) => void toThread(e.threadId).then((to) => to.emit('turn', e)));
+  bus.on('notice', (e) => {
+    void services.access.threadAudience(e.threadId).then((users) => {
+      toPeople(users).emit('notice', e);
+      return services.push.notice(e, users);
+    });
+  });
+  bus.on('tool', (e) => void toThread(e.threadId).then((to) => to.emit('tool', e)));
 
   await services.turns.recover();
   await services.routines.recover();
@@ -643,6 +704,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     db,
     bootId,
     accessKey,
+    routes,
     info,
     checkClaude,
     async listen() {

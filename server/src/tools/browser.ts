@@ -357,13 +357,15 @@ export function browserTools(opts: {
   t: T;
   browser: BrowserManager;
   vault: VaultService;
+  /** Whom the bot works for: only the team's sign-ins and theirs are typed. */
+  person: string;
   askLogin: AskLogin;
   /** What the bot noted earlier about how a site works. */
   siteNotes?: (host: string) => Promise<string[]>;
   /** Where the browser's traffic now leaves, if that changed since the bot last heard. */
   exitNote?: () => 'computer' | 'server' | null;
 }): AppTool[] {
-  const { def, bot, dataDir, threadId, t, browser, vault, askLogin } = opts;
+  const { def, bot, dataDir, threadId, t, browser, vault, person, askLogin } = opts;
   const outline = async (page: Page): Promise<string> => {
     const [title, raw, typed] = await Promise.all([
       page.title().catch(() => ''),
@@ -837,7 +839,7 @@ export function browserTools(opts: {
         } catch (err) {
           return browserErrorText(err, t);
         }
-        const saved = await vault.forHost(host, bot.id);
+        const saved = await vault.forHost(host, bot.id, person);
         let cred: { id: string | null; site: string; username: string; password: string } | undefined;
         if (account) {
           cred = saved.find((c) => c.username === account);
@@ -909,7 +911,7 @@ export function browserTools(opts: {
         } catch (err) {
           return browserErrorText(err, t);
         }
-        const withCode = (await vault.forHost(host, bot.id)).filter(
+        const withCode = (await vault.forHost(host, bot.id, person)).filter(
           (c) => c.totp && (!account || c.username === account),
         );
         if (!withCode.length) return t('browser.codeNone', { site: siteOf(host) });

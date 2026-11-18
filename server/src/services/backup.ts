@@ -11,11 +11,12 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { PassThrough, Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
-import { getTableColumns, getTableName, inArray, is, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, getTableName, inArray, is, isNull, notInArray, sql } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
-import { schema, schemaVersion } from '../db';
+import { schema, schemaVersion, type Db } from '../db';
+import { adoptLegacyAccount, OWNER_ID } from '../users';
 import { HttpError, newId } from '../util';
 import { BOUND_FILE } from './vault';
 
@@ -142,6 +143,71 @@ export function tablesInOrder(): PgTable[] {
     placed.add(next);
   }
   return out;
+}
+
+/**
+ * Every table's rows from a backup's unpacked files, by table name, all or nothing. One table's
+ * rows are in memory at a time: together they can be far larger than the server's memory. The
+ * sessions of this server stay; those of a person the backup does not have end.
+ */
+/** Tables whose rows name a person since people came in; an older backup's rows were the owner's. */
+const OWNED_BEFORE_PEOPLE = new Set<PgTable>([schema.connections, schema.vaultLogins]);
+
+export async function replaceRows(db: Db, files: Map<string, string>) {
+  const order = tablesInOrder().filter((t) => !KEEP_TABLES.has(getTableName(t)));
+  const rowsOf = async (table: PgTable): Promise<Record<string, unknown>[]> => {
+    const file = files.get(getTableName(table));
+    if (!file) return [];
+    let rows: unknown;
+    try {
+      rows = JSON.parse(await readFile(file, 'utf8'));
+    } catch {
+      throw new HttpError(400, 'error.backupDamaged');
+    }
+    if (!Array.isArray(rows)) throw new HttpError(400, 'error.backupDamaged');
+    const list = rows as Record<string, unknown>[];
+    // A backup from before people came in has no owner on what was set up; it was the owner's
+    // own, as the migration that brought people in decided, not the team's.
+    if (OWNED_BEFORE_PEOPLE.has(table)) {
+      for (const r of list) if (!('userId' in r)) r.userId = OWNER_ID;
+    }
+    return revive(table, list);
+  };
+  await db.transaction(async (tx) => {
+    // The sessions stay while the people they belong to are replaced: their link is checked once,
+    // at the end, rather than while the people are gone.
+    await tx.execute(sql`set constraints sessions_user_id_users_id_fk deferred`);
+    for (const table of [...order].reverse()) await tx.delete(table);
+    for (const table of order) {
+      const list = await rowsOf(table);
+      for (let i = 0; i < list.length; i += 200) await tx.insert(table).values(list.slice(i, i + 200));
+      // A backup from before people came in has none, yet its bots and settings name the owner.
+      if (table === schema.users) {
+        await tx.insert(schema.users).values({ id: OWNER_ID, role: 'owner' }).onConflictDoNothing();
+      }
+    }
+    // A backup from before people came in has none: its single account becomes the owner.
+    await adoptLegacyAccount(tx as unknown as Db);
+    // Nor do its conversations name a person: the ones with the person were the owner's, as the
+    // migration that brought people in decided. Left unnamed they would read as the bots' own work.
+    await tx
+      .update(schema.threads)
+      .set({ userId: OWNER_ID })
+      .where(and(isNull(schema.threads.userId), inArray(schema.threads.kind, ['user', 'room', 'api'])));
+    // So were its notes about the person and the changes waiting for them.
+    await tx
+      .update(schema.memories)
+      .set({ userId: OWNER_ID })
+      .where(and(isNull(schema.memories.userId), eq(schema.memories.scope, 'user')));
+    await tx
+      .update(schema.memoryChanges)
+      .set({ userId: OWNER_ID })
+      .where(isNull(schema.memoryChanges.userId));
+    // A device signed in as someone the backup does not have is signed out.
+    await tx
+      .delete(schema.sessions)
+      .where(notInArray(schema.sessions.userId, tx.select({ id: schema.users.id }).from(schema.users)));
+  });
 }
 
 /** Rows read back from JSON as the table takes them: dates were written as text. */
@@ -458,7 +524,7 @@ export class BackupService {
       const sealing = contentSealed();
       setSealing(false);
       try {
-        await this.replaceRows(tables);
+        await replaceRows(this.ctx.db, tables);
       } catch (err) {
         setSealing(sealing);
         throw err;
@@ -539,33 +605,6 @@ export class BackupService {
       if (/auth|decrypt/i.test(String(err))) throw new HttpError(400, 'error.backupWrongPassword');
       throw err;
     }
-  }
-
-  /**
-   * Every table's rows, all or nothing. One table's rows are in memory at a time: together they can
-   * be far larger than the server's memory.
-   */
-  private async replaceRows(files: Map<string, string>) {
-    const order = tablesInOrder().filter((t) => !KEEP_TABLES.has(getTableName(t)));
-    const rowsOf = async (table: PgTable): Promise<Record<string, unknown>[]> => {
-      const file = files.get(getTableName(table));
-      if (!file) return [];
-      let rows: unknown;
-      try {
-        rows = JSON.parse(await readFile(file, 'utf8'));
-      } catch {
-        throw new HttpError(400, 'error.backupDamaged');
-      }
-      if (!Array.isArray(rows)) throw new HttpError(400, 'error.backupDamaged');
-      return revive(table, rows as Record<string, unknown>[]);
-    };
-    await this.ctx.db.transaction(async (tx) => {
-      for (const table of [...order].reverse()) await tx.delete(table);
-      for (const table of order) {
-        const list = await rowsOf(table);
-        for (let i = 0; i < list.length; i += 200) await tx.insert(table).values(list.slice(i, i + 200));
-      }
-    });
   }
 
   /**

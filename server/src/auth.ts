@@ -1,12 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Params, SessionInfo } from '@yumakbot/shared';
-import { desc, eq } from 'drizzle-orm';
+import type { Params, Role, SessionInfo } from '@yumakbot/shared';
+import { and, desc, eq } from 'drizzle-orm';
 import type { Config } from './config';
 import { schema, type Db } from './db';
-import { Account, LoginThrottle } from './account';
+import { LoginThrottle } from './account';
 import type { ServerKey } from './i18n';
+import { OWNER_ID, Users } from './users';
 import { HttpError } from './util';
 
 export const SESSION_COOKIE = 'yumakbot_session';
@@ -152,11 +153,47 @@ const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 /** A pairing code as typed: case, spaces and dashes do not matter. */
 export const normalizePairingCode = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+/** Who a request comes from, and how it proved it. */
+export interface Principal {
+  userId: string;
+  role: Role;
+  /** The access key (always the owner) or a signed-in device's session. */
+  via: 'key' | 'session';
+}
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Who the request comes from; null on the routes open without signing in. */
+    principal: Principal | null;
+  }
+}
+
+/** What the server keeps on each socket. */
+export interface SocketData {
+  principal: Principal | null;
+}
+
+/** Whether a role may manage the server and its people: the owner and admins. */
+export const canAdminister = (role: Role) => role === 'owner' || role === 'admin';
+
+/** Refuses a request whose person may not manage the server. */
+export function requireAdmin(principal: Principal | null | undefined): Principal {
+  if (!principal || !canAdminister(principal.role)) throw new HttpError(403, 'error.adminOnly');
+  return principal;
+}
+
+interface SeenSession {
+  userId: string;
+  role: Role;
+  at: number;
+}
+
 export class Auth {
-  private cache = new Map<string, number>();
-  /** Pairing codes waiting to be used, by hash, with when each stops working. */
-  private pairing = new Map<string, number>();
-  readonly account: Account;
+  /** Sessions checked in the last minute, by hash, with whose they are. */
+  private cache = new Map<string, SeenSession>();
+  /** Pairing codes waiting to be used, by hash, with whose they are and when each stops working. */
+  private pairing = new Map<string, { userId: string; until: number }>();
+  readonly users: Users;
   /** Wrong passwords and pairing codes. */
   readonly throttle = new LoginThrottle();
   /** Wrong access keys, at sign-in and as a Bearer key. */
@@ -165,7 +202,7 @@ export class Auth {
     private db: Db,
     private key: string,
   ) {
-    this.account = new Account(db);
+    this.users = new Users(db);
   }
 
   checkKey(candidate: string): boolean {
@@ -174,60 +211,72 @@ export class Auth {
 
   /**
    * A code that signs one more device in, once, within five minutes: typed on a phone or another
-   * computer instead of the password or the access key. Only a signed-in device makes one.
+   * computer instead of the password or the access key. Only a signed-in device makes one, and
+   * the new device signs in as the same person.
    */
-  createPairingCode(now = Date.now()): { code: string; expiresAt: string } {
-    for (const [h, until] of this.pairing) if (until <= now) this.pairing.delete(h);
+  createPairingCode(userId: string, now = Date.now()): { code: string; expiresAt: string } {
+    for (const [h, p] of this.pairing) if (p.until <= now) this.pairing.delete(h);
     // The oldest goes first when too many wait.
     while (this.pairing.size >= MAX_PAIRING_CODES) this.pairing.delete(this.pairing.keys().next().value!);
     const bytes = randomBytes(8);
     const raw = [...bytes].map((b) => PAIRING_ALPHABET[b % PAIRING_ALPHABET.length]).join('');
     const until = now + PAIRING_MS;
-    this.pairing.set(hashSession(raw), until);
+    this.pairing.set(hashSession(raw), { userId, until });
     return { code: `${raw.slice(0, 4)}-${raw.slice(4)}`, expiresAt: new Date(until).toISOString() };
   }
 
-  /** Spends a pairing code: true once for a code that is still good, false otherwise. */
-  usePairingCode(code: string, now = Date.now()): boolean {
+  /** Spends a pairing code: once, for a code that is still good, whose person it signs in as. */
+  usePairingCode(code: string, now = Date.now()): string | null {
     const h = hashSession(normalizePairingCode(code));
-    const until = this.pairing.get(h);
-    if (until === undefined) return false;
+    const p = this.pairing.get(h);
+    if (p === undefined) return null;
     this.pairing.delete(h);
-    return until > now;
+    return p.until > now ? p.userId : null;
   }
 
-  async createSession(userAgent?: string): Promise<string> {
+  async createSession(userId: string, userAgent?: string): Promise<string> {
     const token = randomBytes(32).toString('base64url');
     await this.db
       .insert(schema.sessions)
-      .values({ id: hashSession(token), userAgent: userAgent ? userAgent.slice(0, 300) : null });
+      .values({ id: hashSession(token), userId, userAgent: userAgent ? userAgent.slice(0, 300) : null });
     return token;
   }
 
   /**
-   * Whether the token belongs to a live session. A session is kept alive by use: one unused for
-   * longer than SESSION_IDLE_MS ends, so a device left behind does not stay signed in for ever.
+   * The person a token signs in as, when it belongs to a live session. A session is kept alive by
+   * use: one unused for longer than SESSION_IDLE_MS ends, so a device left behind does not stay
+   * signed in for ever. A disabled person's sessions stop working.
    */
-  async validSession(token: string | undefined, now = new Date()): Promise<boolean> {
-    if (!token) return false;
+  async validSession(token: string | undefined, now = new Date()): Promise<Principal | null> {
+    if (!token) return null;
     const id = hashSession(token);
     const seen = this.cache.get(id);
-    if (seen && now.getTime() - seen < 60_000) return true;
-    const [row] = await this.db.select().from(schema.sessions).where(eq(schema.sessions.id, id)).limit(1);
-    if (!row) return false;
+    if (seen && now.getTime() - seen.at < 60_000)
+      return { userId: seen.userId, role: seen.role, via: 'session' };
+    const [row] = await this.db
+      .select({ lastSeenAt: schema.sessions.lastSeenAt, user: schema.users })
+      .from(schema.sessions)
+      .innerJoin(schema.users, eq(schema.users.id, schema.sessions.userId))
+      .where(eq(schema.sessions.id, id))
+      .limit(1);
+    if (!row || row.user.disabledAt) return null;
     if (now.getTime() - row.lastSeenAt.getTime() > SESSION_IDLE_MS) {
       await this.db.delete(schema.sessions).where(eq(schema.sessions.id, id));
-      return false;
+      return null;
     }
-    this.cache.set(id, now.getTime());
+    this.cache.set(id, { userId: row.user.id, role: row.user.role, at: now.getTime() });
     await this.db.update(schema.sessions).set({ lastSeenAt: now }).where(eq(schema.sessions.id, id));
-    return true;
+    return { userId: row.user.id, role: row.user.role, via: 'session' };
   }
 
-  /** Every signed-in device, the one asking marked, most recently used first. */
-  async listSessions(current: string | undefined): Promise<SessionInfo[]> {
+  /** A person's signed-in devices, the one asking marked, most recently used first. */
+  async listSessions(current: string | undefined, userId: string): Promise<SessionInfo[]> {
     const mine = current ? hashSession(current) : null;
-    const rows = await this.db.select().from(schema.sessions).orderBy(desc(schema.sessions.lastSeenAt));
+    const rows = await this.db
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.userId, userId))
+      .orderBy(desc(schema.sessions.lastSeenAt));
     const live = rows.filter((r) => Date.now() - r.lastSeenAt.getTime() <= SESSION_IDLE_MS);
     return live.map((r) => ({
       // A short public name: the stored id is a hash, but it is still what a token is checked against.
@@ -239,18 +288,41 @@ export class Auth {
     }));
   }
 
-  /** Signs out the device named by `id` (from listSessions), or every other one with `others`. */
-  async revokeSessions(current: string | undefined, target: { id: string } | 'others'): Promise<number> {
+  /**
+   * Signs out one of a person's devices, named by `id` (from listSessions), or every other one of
+   * theirs with `others`.
+   */
+  async revokeSessions(
+    current: string | undefined,
+    userId: string,
+    target: { id: string } | 'others',
+  ): Promise<number> {
     const mine = current ? hashSession(current) : null;
-    const rows = await this.db.select({ id: schema.sessions.id }).from(schema.sessions);
+    const rows = await this.db
+      .select({ id: schema.sessions.id })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.userId, userId));
     const gone = rows
       .map((r) => r.id)
       .filter((id) => id !== mine && (target === 'others' || id.slice(0, 16) === target.id));
     for (const id of gone) {
       this.cache.delete(id);
-      await this.db.delete(schema.sessions).where(eq(schema.sessions.id, id));
+      await this.db
+        .delete(schema.sessions)
+        .where(and(eq(schema.sessions.id, id), eq(schema.sessions.userId, userId)));
     }
     return gone.length;
+  }
+
+  /**
+   * Forgets what was remembered about a person's sessions, so a new role counts from their next
+   * request; with `signOut`, ends every session and pairing code of theirs too.
+   */
+  async forgetPerson(userId: string, signOut: boolean) {
+    for (const [id, seen] of this.cache) if (seen.userId === userId) this.cache.delete(id);
+    if (!signOut) return;
+    for (const [h, p] of this.pairing) if (p.userId === userId) this.pairing.delete(h);
+    await this.db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));
   }
 
   async endSession(token: string | undefined) {
@@ -262,22 +334,23 @@ export class Auth {
 
   /**
    * Bearer key or session cookie. With the address the request comes from, wrong Bearer keys
-   * count against it like wrong passwords, and an address with too many is refused (429).
+   * count against it like wrong passwords, and an address with too many is refused (429). The
+   * access key is the owner's.
    */
   async authenticate(
     headers: { authorization?: string | undefined },
     cookie: string | undefined,
     from?: string,
-  ): Promise<'bearer' | 'cookie' | null> {
+  ): Promise<Principal | null> {
     const auth = headers.authorization;
     if (auth?.startsWith('Bearer ')) {
       const attempt = from === undefined ? null : this.keyThrottle.attempt(from, { shared: false });
       if (from !== undefined && !attempt) throw new HttpError(429, 'error.loginBlocked');
       if (!this.checkKey(auth.slice(7).trim())) return null;
       attempt?.succeeded();
-      return 'bearer';
+      return { userId: OWNER_ID, role: 'owner', via: 'key' };
     }
-    return (await this.validSession(cookie)) ? 'cookie' : null;
+    return this.validSession(cookie);
   }
 }
 

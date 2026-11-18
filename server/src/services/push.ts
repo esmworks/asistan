@@ -22,12 +22,14 @@ import {
   type ApnsTransport,
 } from './apns';
 import type { VaultService } from './vault';
+import { OWNER_ID } from '../users';
 
 const KEY = 'secret.apns';
 /** Long replies are cut; the phone shows only the first lines anyway. */
 const BODY_MAX = 240;
 
-type Device = typeof schema.pushDevices.$inferSelect;
+/** A device and the person it was signed in as; the access key stands for the owner. */
+type Device = typeof schema.pushDevices.$inferSelect & { userId: string };
 
 /**
  * Notifications on phones while the app is closed. The phone app registers its push token with
@@ -93,9 +95,12 @@ export class PushService {
   }
 
   /** Sends a notice to every phone that wants it; failures are logged, never thrown. */
-  async notice(e: NoticeEvent): Promise<void> {
+  /** Tells the devices of `users` (everyone's without it) about a reply, a card or a failure. */
+  async notice(e: NoticeEvent, users?: string[]): Promise<void> {
     try {
-      const devices = (await this.liveDevices()).filter((d) => pushWanted(e, d.level, d.mutes));
+      const devices = (await this.liveDevices()).filter(
+        (d) => pushWanted(e, d.level, d.mutes) && (!users || users.includes(d.userId)),
+      );
       if (!devices.length) return;
       const [bot] = await this.ctx.db
         .select({ name: schema.bots.name })
@@ -152,21 +157,24 @@ export class PushService {
   private async liveDevices(): Promise<Device[]> {
     const devices = await this.ctx.db.select().from(schema.pushDevices);
     const sessionIds = [...new Set(devices.map((d) => d.sessionId).filter((s): s is string => !!s))];
-    const live = new Set(
+    const people = new Map(
       sessionIds.length
         ? (
             await this.ctx.db
-              .select({ id: schema.sessions.id })
+              .select({ id: schema.sessions.id, userId: schema.sessions.userId })
               .from(schema.sessions)
               .where(inArray(schema.sessions.id, sessionIds))
-          ).map((r) => r.id)
+          ).map((r) => [r.id, r.userId])
         : [],
     );
+    const live = new Set(people.keys());
     const ended = devices.filter((d) => d.sessionId && !live.has(d.sessionId)).map((d) => d.token);
     if (ended.length) {
       await this.ctx.db.delete(schema.pushDevices).where(inArray(schema.pushDevices.token, ended));
     }
-    return devices.filter((d) => !d.sessionId || live.has(d.sessionId));
+    return devices
+      .filter((d) => !d.sessionId || live.has(d.sessionId))
+      .map((d) => ({ ...d, userId: d.sessionId ? people.get(d.sessionId)! : OWNER_ID }));
   }
 
   private async credentials(): Promise<ApnsCredentials | null> {
@@ -184,7 +192,10 @@ export class PushService {
    * One notification to one device. A build run from Xcode gets its token from Apple's test
    * service, an installed one from the real one; which a device uses is learnt from the answer.
    */
-  private async send(d: Device, alert: ApnsAlert): Promise<'sent' | 'gone' | 'refused' | 'unconfigured'> {
+  private async send(
+    d: typeof schema.pushDevices.$inferSelect,
+    alert: ApnsAlert,
+  ): Promise<'sent' | 'gone' | 'refused' | 'unconfigured'> {
     const creds = await this.credentials();
     if (!creds) return 'unconfigured';
     if (!this.token || JSON.stringify(this.token.creds) !== JSON.stringify(creds)) {

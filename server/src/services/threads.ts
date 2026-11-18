@@ -9,7 +9,7 @@ import {
   type TurnState,
   quoteExcerpt,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { matchInServer } from '../db/sealed';
@@ -27,10 +27,25 @@ export interface NewMessage {
   props?: Record<string, unknown>;
   clientId?: string | null;
   turnId?: string | null;
+  /** The person who wrote it, for a person's own message. */
+  userId?: string | null;
 }
 
 /** How many messages a conversation opens with, and how many each "load older" adds. */
 export const MESSAGE_PAGE = 500;
+
+/** Whose view a bot's conversation list is for: theirs, and the bot's own work when `botWork`. */
+export interface ThreadScope {
+  userId: string;
+  botWork: boolean;
+}
+
+/** One person's sidebar: the bots they reach, those they may change, the conversations they see. */
+export interface SummaryScope {
+  botIds: string[];
+  editable: string[];
+  seen: SQL;
+}
 /** Messages read back at a time while a search matches sealed text in the server. */
 const SEARCH_PAGE = 1000;
 
@@ -42,6 +57,7 @@ const createdAtOf = (id: string) =>
   sql`(select ${schema.messages.createdAt} from ${schema.messages} where ${schema.messages.id} = ${id})`;
 
 export class ThreadService {
+  private mainLocks = new Map<string, Promise<void>>();
   constructor(private ctx: Ctx) {}
 
   /** Told of every new message once it is saved; chat apps pass on the ones meant for them. */
@@ -121,12 +137,25 @@ export class ThreadService {
     return new Map(rows.map((r) => [r.threadId, r.createdAt]));
   }
 
-  async list(botId: string): Promise<Thread[]> {
+  /**
+   * A bot's conversations, newest first. With `scope`, only those its person sees: their own, and
+   * the bot's own work when they may change the bot.
+   */
+  async list(botId: string, scope?: ThreadScope): Promise<Thread[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.threads)
       // A room is listed apart, not among the conversations of its first member.
-      .where(and(eq(schema.threads.botId, botId), ne(schema.threads.kind, 'room')))
+      .where(
+        and(
+          eq(schema.threads.botId, botId),
+          ne(schema.threads.kind, 'room'),
+          scope &&
+            (scope.botWork
+              ? or(eq(schema.threads.userId, scope.userId), isNull(schema.threads.userId))
+              : eq(schema.threads.userId, scope.userId)),
+        ),
+      )
       .orderBy(desc(schema.threads.updatedAt));
     const ids = rows.map((r) => r.id);
     const [states, previews] = await Promise.all([this.states(ids), this.previews(ids)]);
@@ -178,21 +207,55 @@ export class ThreadService {
     this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
   }
 
-  async create(botId: string, opts: { title?: string; kind?: ThreadRow['kind'] } = {}): Promise<Thread> {
+  /** A new conversation; `userId` names the person it is with, null for the bot's own work. */
+  async create(
+    botId: string,
+    opts: { title?: string; kind?: ThreadRow['kind']; userId: string | null },
+  ): Promise<Thread> {
     const [row] = await this.ctx.db
       .insert(schema.threads)
-      .values({ id: newId(), botId, title: opts.title ?? '', kind: opts.kind ?? 'user' })
+      .values({
+        id: newId(),
+        botId,
+        title: opts.title ?? '',
+        kind: opts.kind ?? 'user',
+        userId: opts.userId,
+      })
       .returning();
     this.ctx.bus.refresh({ scope: 'threads', botId });
     return toThread(row!, 'idle');
   }
 
-  /** The bot's most recent user thread, created if missing. */
-  async main(botId: string): Promise<Thread> {
+  /**
+   * A person's most recent conversation with the bot, created if missing. Calls for the same bot
+   * and person wait for each other, so two arriving at once do not each make one.
+   */
+  main(botId: string, userId: string): Promise<Thread> {
+    const key = `${botId}:${userId}`;
+    const before = this.mainLocks.get(key) ?? Promise.resolve();
+    const run = before.catch(() => {}).then(() => this.findOrCreateMain(botId, userId));
+    const settled = run.then(
+      () => {},
+      () => {},
+    );
+    this.mainLocks.set(key, settled);
+    void settled.then(() => {
+      if (this.mainLocks.get(key) === settled) this.mainLocks.delete(key);
+    });
+    return run;
+  }
+
+  private async findOrCreateMain(botId: string, userId: string): Promise<Thread> {
     const [row] = await this.ctx.db
       .select()
       .from(schema.threads)
-      .where(and(eq(schema.threads.botId, botId), eq(schema.threads.kind, 'user')))
+      .where(
+        and(
+          eq(schema.threads.botId, botId),
+          eq(schema.threads.kind, 'user'),
+          eq(schema.threads.userId, userId),
+        ),
+      )
       // An archived or snoozed conversation is the main one only when every one is put away.
       .orderBy(
         sql`${schema.threads.archivedAt} is not null`,
@@ -201,11 +264,11 @@ export class ThreadService {
       )
       .limit(1);
     if (row) return this.get(row.id);
-    return this.create(botId);
+    return this.create(botId, { userId });
   }
 
-  /** The thread in `botId` where messages from `peerBotId` land; one per pair. */
-  async peerThread(botId: string, peerBotId: string): Promise<ThreadRow> {
+  /** The thread in `botId` where messages from `peerBotId` land; one per pair and person. */
+  async peerThread(botId: string, peerBotId: string, userId: string): Promise<ThreadRow> {
     const find = async () => {
       const [row] = await this.ctx.db
         .select()
@@ -215,6 +278,7 @@ export class ThreadService {
             eq(schema.threads.botId, botId),
             eq(schema.threads.peerBotId, peerBotId),
             eq(schema.threads.kind, 'bot'),
+            eq(schema.threads.userId, userId),
           ),
         )
         .limit(1);
@@ -225,7 +289,7 @@ export class ThreadService {
     try {
       const [row] = await this.ctx.db
         .insert(schema.threads)
-        .values({ id: newId(), botId, peerBotId, kind: 'bot', title: '' })
+        .values({ id: newId(), botId, peerBotId, userId, kind: 'bot', title: '' })
         .returning();
       this.ctx.bus.refresh({ scope: 'threads', botId });
       return row!;
@@ -235,19 +299,36 @@ export class ThreadService {
     }
   }
 
-  /** The thread a routine's runs post into (one per routine). */
-  async routineThread(botId: string, routineName: string, existingId: string | null): Promise<ThreadRow> {
+  /**
+   * The thread a routine's runs post into (one per routine), `userId`'s own. One kept from before
+   * becomes theirs; one of someone else's, from before the routine changed hands, is left to them.
+   */
+  async routineThread(
+    botId: string,
+    routineName: string,
+    existingId: string | null,
+    userId: string,
+  ): Promise<ThreadRow> {
     if (existingId) {
       const [row] = await this.ctx.db
         .select()
         .from(schema.threads)
         .where(eq(schema.threads.id, existingId))
         .limit(1);
-      if (row) return row;
+      if (row?.userId === userId) return row;
+      if (row && !row.userId) {
+        const [adopted] = await this.ctx.db
+          .update(schema.threads)
+          .set({ userId })
+          .where(eq(schema.threads.id, row.id))
+          .returning();
+        this.ctx.bus.refresh({ scope: 'threads', botId });
+        return adopted!;
+      }
     }
     const [row] = await this.ctx.db
       .insert(schema.threads)
-      .values({ id: newId(), botId, kind: 'routine', title: routineName })
+      .values({ id: newId(), botId, userId, kind: 'routine', title: routineName })
       .returning();
     this.ctx.bus.refresh({ scope: 'threads', botId });
     return row!;
@@ -258,10 +339,11 @@ export class ThreadService {
    * the person's and the bot's messages, in their order and with their times. It has no engine
    * session, so its first turn hands the bot the copied exchange.
    */
-  async fork(messageId: string, title: string): Promise<Thread> {
+  async fork(messageId: string, title: string, userId: string): Promise<Thread> {
     const at = await this.message(messageId);
     const source = await this.row(at.threadId);
-    const created = await this.create(source.botId, { title });
+    // The copy is the person's own, even of the bot's own work they may read.
+    const created = await this.create(source.botId, { title, userId });
     const rows = await this.ctx.db
       .select()
       .from(schema.messages)
@@ -443,7 +525,7 @@ export class ThreadService {
   /** Messages that contain `query`, newest first; with `threadId`, only that conversation's. */
   async search(
     query: string,
-    opts: { threadId?: string; botId?: string; limit?: number } = {},
+    opts: { threadId?: string; botId?: string; limit?: number; seen?: SQL } = {},
   ): Promise<SearchHit[]> {
     const limit = opts.limit ?? 30;
     // A phrase the text breaks over two lines is still found: spaces and line breaks count as one.
@@ -477,6 +559,7 @@ export class ThreadService {
             isNull(schema.bots.archivedAt),
             opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
             opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
+            opts.seen,
             inServer
               ? undefined
               : sql`translate(regexp_replace(${schema.messages.text}, '[[:space:]]+', ' ', 'g'), ${DOTTED_AND_DOTLESS_I}, 'ii') ilike ${pattern}`,
@@ -541,6 +624,7 @@ export class ThreadService {
           props: m.props ?? {},
           clientId: m.clientId ?? null,
           turnId: m.turnId ?? null,
+          userId: m.userId ?? null,
           // Distinct, ordered timestamps even within one millisecond.
           createdAt: sql`clock_timestamp()`,
         })
@@ -685,17 +769,25 @@ export class ThreadService {
     await this.updateMessage(id, { props: { ...row.props, ...patch } });
   }
 
-  /** Sidebar summary for every active bot. */
-  async summaries(): Promise<BotSummary[]> {
+  /**
+   * Sidebar summary for every active bot; with `scope`, for the bots one person reaches, from the
+   * conversations they see.
+   */
+  async summaries(scope?: SummaryScope): Promise<BotSummary[]> {
     const bots = await this.ctx.db
       .select({ id: schema.bots.id })
       .from(schema.bots)
-      .where(isNull(schema.bots.archivedAt))
+      .where(
+        and(
+          isNull(schema.bots.archivedAt),
+          scope && (scope.botIds.length ? inArray(schema.bots.id, scope.botIds) : sql`false`),
+        ),
+      )
       .orderBy(asc(schema.bots.createdAt));
     const threads = await this.ctx.db
       .select()
       .from(schema.threads)
-      .where(inArray(schema.threads.kind, ['user', 'routine', 'bot', 'api']))
+      .where(and(inArray(schema.threads.kind, ['user', 'routine', 'bot', 'api']), scope?.seen))
       .orderBy(desc(schema.threads.updatedAt));
     const ids = threads.map((t) => t.id);
     const [states, previews, replies] = await Promise.all([
@@ -711,7 +803,8 @@ export class ThreadService {
         summary: schema.approvals.summary,
       })
       .from(schema.approvals)
-      .where(eq(schema.approvals.status, 'pending'))
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
+      .where(and(eq(schema.approvals.status, 'pending'), scope?.seen))
       .orderBy(asc(schema.approvals.createdAt));
     const pendingBy = new Map<string, number>();
     const waitingBy = new Map<string, BotSummary['waiting']>();
@@ -739,7 +832,14 @@ export class ThreadService {
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
-      .where(and(eq(schema.routines.enabled, true), inArray(schema.routineRuns.status, ['done', 'error'])))
+      .where(
+        and(
+          eq(schema.routines.enabled, true),
+          inArray(schema.routineRuns.status, ['done', 'error']),
+          // A routine's failures are for those who may change its bot.
+          scope && (scope.editable.length ? inArray(schema.routines.botId, scope.editable) : sql`false`),
+        ),
+      )
       .orderBy(schema.routineRuns.routineId, desc(schema.routineRuns.startedAt));
     // Newest failure first: that one names the bot's mark.
     const failedBy = new Map<string, { id: string; name: string }[]>();

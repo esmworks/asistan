@@ -44,6 +44,10 @@ The interface is available in English and Turkish.
   after a server restart. Unread marks, find in a conversation (⌘F), `/` commands, quick replies, a goal per
   conversation, branching from a reply, Markdown export, sortable tables, Mermaid diagrams, and speaking a message
   instead of typing it.
+- **People** — the owner and admins add people, each with their own password and role (admin or member). A bot is
+  shared with everyone or some people, to talk with or to change; each person's conversations, profile, notes,
+  connections and vault entries are theirs alone, admins included, and a bot works with what belongs to the person it
+  works for. A note on a bot's own memory asked for by someone who may only talk with it waits for the bot's owner.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a

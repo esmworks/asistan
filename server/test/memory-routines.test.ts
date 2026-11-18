@@ -10,6 +10,7 @@ import {
   type Thread,
 } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { eq } from 'drizzle-orm';
 import { schema } from '../src/db';
 import { MEMORY_PROMPT_CHARS } from '../src/runtime/prompt';
@@ -324,9 +325,9 @@ describe('hafıza', () => {
       site: 'ornek.com',
     });
     expect(r.body.site).toBe('ornek.com');
-    expect((await t.services.memory.forSite(bot.id, 'www.ornek.com')).map((m) => m.content)).toEqual([
-      'Giriş /giris adresinde',
-    ]);
+    expect(
+      (await t.services.memory.forSite(bot.id, 'www.ornek.com', OWNER_ID)).map((m) => m.content),
+    ).toEqual(['Giriş /giris adresinde']);
   });
 });
 
@@ -378,7 +379,7 @@ describe('hafızanın kullanımı', () => {
     expect(used.updatedAt).toBe(kahve.updatedAt);
     expect((await note(ofis.id)).useCount).toBe(0);
 
-    await t.services.memory.forSite(a.id, 'www.ornek.com');
+    await t.services.memory.forSite(a.id, 'www.ornek.com', OWNER_ID);
     expect((await note(site.id)).useCount).toBe(1);
 
     // Saving a fact already kept writes no second note, but the first one is in use again.
@@ -432,7 +433,7 @@ describe('hafızanın kullanımı', () => {
       await t.api<{ action: string; actor: string; targetId: string }[]>('GET', '/api/memory-history')
     ).body;
     expect(history.filter((h) => h.action === 'delete')).toMatchObject([
-      { actor: 'user', targetId: dropped.id },
+      { actor: 'user:owner', targetId: dropped.id },
     ]);
   });
 
@@ -603,7 +604,7 @@ describe('rutinler', () => {
   };
   /** The rows a server leaves behind when it dies mid-run. */
   const crashedRun = async (r: Routine, botId: string, withTurn: boolean) => {
-    const thread = await t.services.threads.routineThread(botId, r.name, null);
+    const thread = await t.services.threads.routineThread(botId, r.name, null, OWNER_ID);
     const id = newId();
     await t.db.db.insert(schema.routineRuns).values({
       id,

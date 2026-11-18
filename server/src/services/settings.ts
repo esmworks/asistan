@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -15,6 +15,7 @@ import {
   ROUTINE_GATE_MODES,
   type Locale,
 } from '@yumakbot/shared';
+import { OWNER_ID } from '../users';
 
 /** The most turns the person may let run at the same time. */
 export const MAX_TURNS_LIMIT = 10;
@@ -112,10 +113,79 @@ export async function serverTranslator(ctx: Ctx): Promise<T> {
   return translator(await serverLocale(ctx));
 }
 
+/** Settings each person has for themselves; the rest are the server's. */
+export const PERSONAL_SETTINGS = [
+  'userName',
+  'addressAs',
+  'occupation',
+  'focus',
+  'helpWith',
+  'aboutMe',
+  'onboarded',
+  // The language the app and the bots speak with the person.
+  'language',
+] as const satisfies readonly (keyof Settings)[];
+export type Profile = Pick<Settings, (typeof PERSONAL_SETTINGS)[number]>;
+const Profile = Settings.pick({
+  userName: true,
+  addressAs: true,
+  occupation: true,
+  focus: true,
+  helpWith: true,
+  aboutMe: true,
+  onboarded: true,
+  language: true,
+});
+
+/** Whether a setting is one each person has for themselves. */
+export const isPersonal = (key: string) => (PERSONAL_SETTINGS as readonly string[]).includes(key);
+
 export class SettingsService {
   constructor(private ctx: Ctx) {}
 
-  async all(): Promise<Settings> {
+  /** What a person told about themselves; what does not parse reads as unset. */
+  async profile(userId: string): Promise<Profile> {
+    const [row] = await this.ctx.db
+      .select({ profile: schema.users.profile })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    const obj: Record<string, unknown> = { ...(row?.profile ?? {}) };
+    // What it helps with keeps the choices this version still offers.
+    if (Array.isArray(obj.helpWith)) {
+      obj.helpWith = obj.helpWith.filter((h) => (PROFILE_HELP as readonly unknown[]).includes(h));
+    }
+    for (const [key, field] of Object.entries(Profile.shape)) {
+      if (key in obj && !(field as z.ZodType).safeParse(obj[key]).success) delete obj[key];
+    }
+    return Profile.parse(obj);
+  }
+
+  /**
+   * The server's settings; with `userId`, with that person's own in place of the personal ones.
+   * Without, the personal ones are the owner's from before people came in.
+   */
+  async all(userId?: string): Promise<Settings> {
+    const server = await this.server();
+    if (!userId) return server;
+    // The owner's own, kept with the server's for what runs for nobody in particular, are not
+    // another person's: only the language stands in until they choose their own.
+    const base: Record<string, unknown> = { ...server };
+    for (const key of PERSONAL_SETTINGS) if (key !== 'language') delete base[key];
+    const own = await this.profile(userId);
+    if (!own.userName && userId !== OWNER_ID) {
+      // Until they say their name, they are called what they are called here.
+      const [row] = await this.ctx.db
+        .select({ displayName: schema.users.displayName, username: schema.users.username })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+      own.userName = (row?.displayName || row?.username || '').slice(0, 80);
+    }
+    return Settings.parse({ ...base, ...own });
+  }
+
+  private async server(): Promise<Settings> {
     const rows = await this.ctx.db.select().from(schema.kv);
     const obj: Record<string, unknown> = {};
     for (const r of rows) if (r.key.startsWith('setting.')) obj[r.key.slice(8)] = r.value;
@@ -147,16 +217,28 @@ export class SettingsService {
     return serverTranslator(this.ctx);
   }
 
-  async update(patch: Partial<Settings>): Promise<Settings> {
+  /** Saves settings: the personal ones for `userId`, the rest for the server. */
+  async update(patch: Partial<Settings>, userId: string = OWNER_ID): Promise<Settings> {
     const valid = patchOf(Settings).parse(patch);
+    const personal = Object.fromEntries(
+      Object.entries(valid).filter(([k, v]) => isPersonal(k) && v !== undefined),
+    );
+    if (Object.keys(personal).length) {
+      // Merged by the database in one write: two changes made at once both stay.
+      await this.ctx.db
+        .update(schema.users)
+        .set({ profile: sql`${schema.users.profile} || ${JSON.stringify(personal)}::jsonb` })
+        .where(eq(schema.users.id, userId));
+    }
     for (const [k, v] of Object.entries(valid)) {
-      if (v === undefined) continue;
+      // The owner's own are also the server's, for what runs for nobody in particular.
+      if (v === undefined || (isPersonal(k) && userId !== OWNER_ID)) continue;
       await this.ctx.db
         .insert(schema.kv)
         .values({ key: `setting.${k}`, value: v })
         .onConflictDoUpdate({ target: schema.kv.key, set: { value: v } });
     }
     this.ctx.bus.refresh({ scope: 'info' });
-    return this.all();
+    return this.all(userId);
   }
 }

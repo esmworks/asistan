@@ -200,9 +200,10 @@ export class RoutineService {
     return toRoutine(row);
   }
 
-  async create(input: RoutineCreate): Promise<Routine> {
+  /** A new routine; its runs work for `userId`, or for the bot's owner when null. */
+  async create(input: RoutineCreate, userId: string | null = null): Promise<Routine> {
     await this.services.bots.get(input.botId);
-    if (input.check) await this.checkCheck(input.botId, input.check);
+    if (input.check) await this.checkCheck(input.botId, input.check, userId);
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
     // The routine and the first line of its history are written together, or neither is.
@@ -212,6 +213,7 @@ export class RoutineService {
         .values({
           id: newId(),
           ...input,
+          createdByUserId: userId,
           nextRunAt: input.enabled ? nextRun(input.schedule, input.timezone, now) : null,
         })
         .returning();
@@ -224,20 +226,37 @@ export class RoutineService {
     return toRoutine(row!);
   }
 
-  async update(id: string, patch: z.infer<typeof RoutineUpdate>): Promise<Routine> {
+  /** Whom a routine's runs work for: whoever set it up, or the bot's owner for one from before people. */
+  private async personOf(routine: Pick<Routine, 'botId' | 'createdByUserId'>): Promise<string> {
+    return routine.createdByUserId ?? (await this.services.access.botOwner(routine.botId));
+  }
+
+  /**
+   * Changes a routine. `by` is the person changing it: a routine works for whoever last said what
+   * it does, so one changed by someone else works for them from then on. Otherwise anyone who may
+   * change the bot could have another person's routine act with that person's apps, sign-ins and
+   * notes. Only pausing or resuming it leaves it whose it was.
+   */
+  async update(id: string, patch: z.infer<typeof RoutineUpdate>, by?: string): Promise<Routine> {
     const current = await this.get(id);
     const schedule = (patch.schedule ?? current.schedule) as Schedule;
     const timezone = patch.timezone ?? current.timezone;
     const enabled = patch.enabled ?? current.enabled;
     const last = current.lastRunAt ? new Date(current.lastRunAt) : null;
     if (patch.schedule) this.checkOnce(schedule, timezone, this.clock());
-    if (patch.check) await this.checkCheck(current.botId, patch.check);
+    const was = await this.personOf(current);
+    const shapes = Object.keys(patch).some((k) => k !== 'enabled');
+    const person = by && shapes ? by : was;
+    // The check runs for the routine's person: a new one, or the old one for its new person.
+    const check = patch.check !== undefined ? patch.check : person !== was ? current.check : null;
+    if (check) await this.checkCheck(current.botId, check, person);
     // A changed instruction goes into the history in the same write: a failed save leaves none.
     const row = await this.ctx.db.transaction(async (tx) => {
       const [saved] = await tx
         .update(schema.routines)
         .set({
           ...patch,
+          ...(person !== was && { createdByUserId: person }),
           // A new check starts from its own first answer, not from what the old one returned.
           ...(patch.check !== undefined && { checkHash: null }),
           nextRunAt: enabled ? nextRun(schedule, timezone, this.clock(), last) : null,
@@ -306,8 +325,10 @@ export class RoutineService {
    * A check must be a tool the bot itself may call without asking: of an app open to it, switched
    * on, and one that only reads. It runs with no one watching, so it may never change anything.
    */
-  private async checkCheck(botId: string, check: RoutineCheck) {
-    const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool);
+  private async checkCheck(botId: string, check: RoutineCheck, userId: string | null) {
+    // The check runs for the routine's person: only the team's apps and theirs.
+    const person = userId ?? (await this.services.access.botOwner(botId));
+    const tool = await this.services.connections.checkTool(botId, check.connectionId, check.tool, person);
     if (!tool) throw new HttpError(400, 'error.routineCheckTool');
   }
 
@@ -411,7 +432,7 @@ export class RoutineService {
           }
           if (r.check) {
             const check = r.check as RoutineCheck;
-            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash);
+            const changed = await this.checkChanged(r.id, r.botId, check, r.checkHash, r.createdByUserId);
             if (changed) {
               news.push(
                 t('routine.checkChanged', { app: changed.app, tool: check.tool, text: changed.text }),
@@ -488,10 +509,12 @@ export class RoutineService {
     botId: string,
     check: RoutineCheck,
     before: string | null,
+    userId: string | null = null,
   ): Promise<{ app: string; text: string } | null> {
     let app: string, text: string;
     try {
-      ({ app, text } = await this.services.connections.callCheck(botId, check));
+      const person = userId ?? (await this.services.access.botOwner(botId));
+      ({ app, text } = await this.services.connections.callCheck(botId, check, person));
     } catch (err) {
       console.warn(`Check of routine ${routineId} could not be called: ${String(err)}`);
       return null;
@@ -676,7 +699,7 @@ export class RoutineService {
       text,
       props,
     });
-    if (thread.kind === 'routine') await this.report(bot.id, thread.id, text, props);
+    if (thread.kind === 'routine') await this.report(bot.id, thread, text, props);
     this.ctx.bus.refresh({ scope: 'routines' });
     return toRun(run);
   }
@@ -695,7 +718,11 @@ export class RoutineService {
    * made while the routine ran in the main conversation does not make that one its own.
    */
   private async threadFor(routine: Routine, botId: string) {
-    if (routine.inMain) return this.services.threads.row((await this.services.threads.main(botId)).id);
+    // Its runs bring in its person's profile, notes and apps: they happen where only they look.
+    const person = await this.personOf(routine);
+    if (routine.inMain) {
+      return this.services.threads.row((await this.services.threads.main(botId, person)).id);
+    }
     const [last] = await this.ctx.db
       .select({ threadId: schema.routineRuns.threadId })
       .from(schema.routineRuns)
@@ -703,7 +730,7 @@ export class RoutineService {
       .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.threads.kind, 'routine')))
       .orderBy(desc(schema.routineRuns.startedAt))
       .limit(1);
-    return this.services.threads.routineThread(botId, routine.name, last?.threadId ?? null);
+    return this.services.threads.routineThread(botId, routine.name, last?.threadId ?? null, person);
   }
 
   /**
@@ -713,11 +740,14 @@ export class RoutineService {
    */
   private async report(
     botId: string,
-    routineThreadId: string,
+    routineThread: { id: string; userId: string | null },
     text: string,
     props: { routineRunId: string; routineName: string; posted?: boolean; outside?: OutsideTrigger },
   ) {
-    const main = await this.services.threads.main(botId);
+    const routineThreadId = routineThread.id;
+    // Reports go to the main conversation of the person the routine works for.
+    const person = routineThread.userId ?? (await this.services.access.botOwner(botId));
+    const main = await this.services.threads.main(botId, person);
     await this.services.threads.addMessage({
       threadId: main.id,
       role: 'assistant',
@@ -1036,6 +1066,8 @@ export class RoutineService {
       source: 'routine',
       prompt: payload ? `${prompt}\n\n${t('routine.payload', { payload })}` : prompt,
       routineRunId: run.id,
+      // Its runs work for whoever set it up; one from before people came in, for the bot's owner.
+      ...(routine.createdByUserId && { userId: routine.createdByUserId }),
     });
   }
 
@@ -1151,7 +1183,7 @@ export class RoutineService {
       outcome.text.trim() &&
       !isSilentReply(outcome.text)
     ) {
-      await this.report(turn.botId, thread.id, outcome.text, {
+      await this.report(turn.botId, thread, outcome.text, {
         routineRunId: turn.routineRunId,
         routineName: run.routineName,
         // Written from outside text: a turn that is handed the report reads that text too.

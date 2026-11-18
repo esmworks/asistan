@@ -1,9 +1,7 @@
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 import { isIPv6 } from 'node:net';
-import { eq } from 'drizzle-orm';
-import { schema, type Db } from './db';
+import type { PasswordHash } from './db/schema';
 
-const KEY = 'account';
 /** Shortest password accepted; the account stands in for a 256-bit access key. */
 export const MIN_PASSWORD = 8;
 /** Failed sign-ins one address may make in a window before it has to wait the window out. */
@@ -37,12 +35,6 @@ interface Cost {
   N: number;
   r: number;
   p: number;
-}
-
-interface Stored extends Cost {
-  username: string;
-  salt: string;
-  hash: string;
 }
 
 const sameCost = (a: Cost, b: Cost) => a.N === b.N && a.r === b.r && a.p === b.p;
@@ -84,60 +76,29 @@ async function derive(password: string, salt: Buffer, cost: Cost): Promise<Buffe
   }
 }
 
-const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** Hashes a new password at today's cost. */
+export async function hashPassword(password: string): Promise<PasswordHash> {
+  const salt = randomBytes(16);
+  const hash = await derive(password, salt, PASSWORD_SCRYPT);
+  return { salt: salt.toString('base64'), hash: hash.toString('base64'), ...PASSWORD_SCRYPT };
+}
 
 /**
- * The person's own sign-in: one username and password, so the long access key is typed once,
- * when the account is made. Only a scrypt hash of the password is kept.
+ * Whether the password matches a stored hash, and whether that hash was made at an older, lower
+ * cost and should be made again. Without a stored hash the work is still done, so a reply's timing
+ * does not tell whether there is one.
  */
-export class Account {
-  constructor(private db: Db) {}
-
-  private async stored(): Promise<Stored | null> {
-    const [row] = await this.db.select().from(schema.kv).where(eq(schema.kv.key, KEY)).limit(1);
-    const v = row?.value as Partial<Stored> | undefined;
-    return v?.username && v.salt && v.hash ? (v as Stored) : null;
-  }
-
-  async username(): Promise<string | null> {
-    return (await this.stored())?.username ?? null;
-  }
-
-  async set(username: string, password: string): Promise<void> {
-    const salt = randomBytes(16);
-    const hash = await derive(password, salt, PASSWORD_SCRYPT);
-    const value: Stored = {
-      username: username.trim(),
-      salt: salt.toString('base64'),
-      hash: hash.toString('base64'),
-      ...PASSWORD_SCRYPT,
-    };
-    await this.db
-      .insert(schema.kv)
-      .values({ key: KEY, value })
-      .onConflictDoUpdate({ target: schema.kv.key, set: { value } });
-  }
-
-  /**
-   * Whether the password is the account's; with a username, that it names the account too. A
-   * hash made at an older, lower cost is made again at today's once the password is known right.
-   */
-  async check(password: string, username?: string): Promise<boolean> {
-    const s = await this.stored();
-    const cost: Cost | null = s ? { N: s.N, r: s.r, p: s.p } : null;
-    // Without an account the work is still done, so a reply's timing does not tell whether one exists.
-    const salt = s ? Buffer.from(s.salt, 'base64') : randomBytes(16);
-    const derived = await derive(password, salt, cost && affordable(cost) ? cost : PASSWORD_SCRYPT);
-    if (!s || !cost || !affordable(cost)) return false;
-    const expected = Buffer.from(s.hash, 'base64');
-    const ok =
-      expected.length === derived.length &&
-      timingSafeEqual(expected, derived) &&
-      (username === undefined || sameName(username, s.username));
-    // The sign-in stands even if the new hash cannot be written; it is tried again next time.
-    if (ok && !sameCost(cost, PASSWORD_SCRYPT)) await this.set(s.username, password).catch(() => {});
-    return ok;
-  }
+export async function verifyPassword(
+  password: string,
+  stored: PasswordHash | null,
+): Promise<{ ok: boolean; stale: boolean }> {
+  const cost: Cost | null = stored ? { N: stored.N, r: stored.r, p: stored.p } : null;
+  const salt = stored ? Buffer.from(stored.salt, 'base64') : randomBytes(16);
+  const derived = await derive(password, salt, cost && affordable(cost) ? cost : PASSWORD_SCRYPT);
+  if (!stored || !cost || !affordable(cost)) return { ok: false, stale: false };
+  const expected = Buffer.from(stored.hash, 'base64');
+  const ok = expected.length === derived.length && timingSafeEqual(expected, derived);
+  return { ok, stale: ok && !sameCost(cost, PASSWORD_SCRYPT) };
 }
 
 /**

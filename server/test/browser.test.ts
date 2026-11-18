@@ -3,6 +3,7 @@ import { createServer as httpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Approval, Thread } from '@yumakbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { OWNER_ID } from '../src/users';
 import { findBrowser } from '../src/browser/find';
 import { BrowserError, SCREEN, VIEWPORT, webUrl, windowedUserAgent } from '../src/browser/manager';
 import { browserErrorText } from '../src/browser/text';
@@ -297,7 +298,7 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
       source: 'user',
       site: '127.0.0.1',
     });
-    expect((await t.services.memory.visibleTo(bot.id)).bot).toEqual([]);
+    expect((await t.services.memory.visibleTo(bot.id, OWNER_ID)).bot).toEqual([]);
 
     // Several fields in one step; a password field is left for the vault or the person.
     const opened = await text('browser_open', { url: `${base}/giris` });
@@ -674,8 +675,8 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     // Kept for another bot only: this bot no longer reaches it.
     const other = await t.bot();
     await t.api('PATCH', `/api/vault/${id}`, { botIds: [other.id] });
-    expect(await t.services.vault.forHost('127.0.0.1', bot.id)).toEqual([]);
-    expect((await t.services.vault.forHost('127.0.0.1', other.id)).map((c) => c.username)).toEqual([
+    expect(await t.services.vault.forHost('127.0.0.1', bot.id, OWNER_ID)).toEqual([]);
+    expect((await t.services.vault.forHost('127.0.0.1', other.id, OWNER_ID)).map((c) => c.username)).toEqual([
       'ayse@ornek.com',
     ]);
     expect(await text('browser_code', { ref: refOf(codePage, 'textbox "E-posta"') })).toContain(
@@ -954,17 +955,19 @@ describe('şifre kasası', () => {
       password: 'Yeni-654321',
     });
     expect((await t.api<unknown[]>('GET', '/api/vault')).body).toHaveLength(1);
-    const creds = await t.services.vault.forHost('m.facebook.com');
+    const creds = await t.services.vault.forHost('m.facebook.com', undefined, OWNER_ID);
     expect(creds).toEqual([
       expect.objectContaining({ username: 'erhan@ornek.com', password: 'Yeni-654321' }),
     ]);
-    expect(await t.services.vault.forHost('facebook.com.evil.net')).toEqual([]);
-    expect(await t.services.vault.forHost('notfacebook.com')).toEqual([]);
+    expect(await t.services.vault.forHost('facebook.com.evil.net', undefined, OWNER_ID)).toEqual([]);
+    expect(await t.services.vault.forHost('notfacebook.com', undefined, OWNER_ID)).toEqual([]);
 
     expect((await t.api('PATCH', `/api/vault/${created.body.id}`, { password: 'Ucuncu-999' })).status).toBe(
       200,
     );
-    expect((await t.services.vault.forHost('facebook.com'))[0]!.password).toBe('Ucuncu-999');
+    expect((await t.services.vault.forHost('facebook.com', undefined, OWNER_ID))[0]!.password).toBe(
+      'Ucuncu-999',
+    );
     expect(
       (await t.api('POST', '/api/vault', { site: 'kotu adres', username: 'x', password: 'y' })).status,
     ).toBe(400);
