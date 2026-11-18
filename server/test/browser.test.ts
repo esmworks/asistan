@@ -5,6 +5,7 @@ import type { Approval, Thread } from '@yumakbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { findBrowser } from '../src/browser/find';
+import { MASK } from '../src/browser/logs';
 import { BrowserError, SCREEN, VIEWPORT, webUrl, windowedUserAgent } from '../src/browser/manager';
 import { browserErrorText } from '../src/browser/text';
 import { translator } from '../src/i18n';
@@ -233,6 +234,18 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
           '<title>Donuk</title><p>yüklendi</p><script>setTimeout(() => { for (;;); }, 100)</script>',
         );
       }
+      if (req.url?.startsWith('/gunluk')) {
+        // A page that logs, prints a token, gets an error from its own API and throws.
+        return res.end(`<title>Günlük</title><p>günlük</p><script>
+          console.log('hazır');
+          console.error('kayıt bulunamadı', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXBhcnQ');
+          fetch('/api/hata?token=gizli-anahtar&sayfa=2');
+          setTimeout(() => { throw new Error('beklenmedik durum'); }, 50);</script>`);
+      }
+      if (req.url?.startsWith('/api/hata')) {
+        res.statusCode = 500;
+        return res.end('{}');
+      }
       if (req.url?.startsWith('/sonuc')) {
         const q = new URL(req.url, 'http://x').searchParams.get('ad');
         return res.end(`<title>Sonuç</title><h1>Merhaba ${q}</h1>`);
@@ -337,7 +350,9 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     expect(check).toContain('Kontrolü al');
     const blocked = await text('browser_open', { url: `${base}/engel` });
     expect(blocked).toContain('geri çevirdi');
-  });
+    // A refusal is waited out for 24 seconds before the bot hears of it, which leaves this test
+    // too little room under the default limit on a busy machine.
+  }, 45_000);
 
   it('yanıt vermeyen sayfada adım sınırda biter, tarayıcı baştan açılır ve sonraki adımlar beklemez', async () => {
     await t.dispose();
@@ -453,6 +468,44 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
       ),
     );
     expect(status).toBe('reddedildi');
+  });
+
+  it('records each tab’s requests and console messages, which the bot reads without secrets', async () => {
+    const bot = await t.bot();
+    await t.send((await main(bot.id)).id, 'merhaba');
+    await t.services.turns.idle();
+    // Nothing is open, so nothing is recorded; reading starts no browser.
+    expect(await text('browser_network', {})).toContain('Tarayıcı açık değil.');
+    expect(t.services.ctx.browser.state(bot.id).status).toBe('off');
+
+    await text('browser_open', { url: `${base}/gunluk?token=adres-gizli` });
+    const logged = await waitFor(async () => {
+      const out = await text('browser_console', {});
+      return out.includes('yakalanmamış hata') && out;
+    });
+    expect(logged).toContain('[log] hazır');
+    expect(logged).toContain('[error] kayıt bulunamadı');
+    expect(logged).toContain('Error: beklenmedik durum');
+    expect(logged).not.toContain('eyJ');
+    expect(await text('browser_console', { errors: true })).not.toContain('hazır');
+
+    const failed = await waitFor(async () => {
+      const out = await text('browser_network', { failed: true });
+      return out.includes('/api/hata') && out;
+    });
+    expect(failed).toMatch(/GET 500 fetch \d+ ms http:\/\/127\.0\.0\.1:\d+\/api\/hata/);
+    expect(failed).not.toContain('document');
+    expect(failed).toContain(`token=${MASK}&sayfa=2`);
+    expect(failed).not.toContain('gizli-anahtar');
+    const page = await text('browser_network', { filter: 'gunluk' });
+    expect(page).toMatch(/GET 200 document \d+ ms .*\/gunluk\?token=/);
+    // The tab's own address is shown masked as well.
+    expect(page).not.toContain('adres-gizli');
+
+    // Forgotten after reading, when asked; a tab that does not exist is said so.
+    expect(await text('browser_network', { clear: true })).toContain('Kayıt temizlendi');
+    expect(await text('browser_network', {})).toContain('uyan istek kaydı yok');
+    expect(await text('browser_console', { tab: 9 })).toContain('Böyle bir sekme yok.');
   });
 
   it('üzerinde olunan sekmeyi site kendisi kapatırsa bota söyler; botun kapattığını söylemez', async () => {

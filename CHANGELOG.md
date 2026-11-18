@@ -115,6 +115,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Settings → Connection offers to move existing bots to the AI new bots start with. A bot that changes engine drops its
   room sessions too, and its routines' models are cleared.
 
+### Browser
+
+- A bot can read the requests each tab of its browser made and what the page's scripts logged, uncaught errors
+  included, to find out why a page does not work. Only the method, address, status, type and time of a request are
+  kept, never its body or headers; address parameters that may carry a secret and tokens printed to the console are
+  hidden.
+
 ### Fixes
 
 - A reply the provider cut off is retried once on the same model before the backup model, when nothing was changed
