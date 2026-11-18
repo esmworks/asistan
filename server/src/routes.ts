@@ -1028,6 +1028,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   /** Deletes a conversation with its turns, its folder and its staged uploads. */
   const deleteThread = async (id: string, botId: string) => {
     await s.turns.interrupt(id);
+    // Work it gave other bots would answer into a conversation that is gone.
+    await s.jobs.stopFrom(id);
     await s.threads.remove(id);
     // The conversation's own folder (its attachments and what the bot made there) goes with it.
     const root = join(d.config.dataDir, 'workspaces', 'bots', botId, 'threads');

@@ -200,9 +200,9 @@ export class FakeEngine implements Engine {
     if (req.prompt.includes('[alt-ajan]')) {
       const sub = { id: 'fake-sub', description: 'Kaynakları tara', state: 'running' as const, steps: 0 };
       req.onSubagent?.(sub);
-      req.onSubagent?.({ ...sub, steps: 1 });
-      req.onSubagent?.({ ...sub, steps: 2 });
-      req.onSubagent?.({ ...sub, steps: 2, state: 'done' });
+      req.onSubagent?.({ ...sub, steps: 1, tool: 'Grep' });
+      req.onSubagent?.({ ...sub, steps: 2, tool: 'WebSearch' });
+      req.onSubagent?.({ ...sub, steps: 2, tool: 'WebSearch', state: 'done', result: 'Üç kaynak bulundu.' });
     }
     // A call that keeps failing the same way, past the warning: the turn is stopped.
     if (req.prompt.includes('[döngü]')) {

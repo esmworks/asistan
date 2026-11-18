@@ -1142,7 +1142,16 @@ describe('sohbet', () => {
       return (card!.props.subagent as { state: string }).state === 'done' ? card : null;
     });
     const [card] = (await t.messages(thread.id)).filter((m) => m.props.subagent);
-    expect(card!.props.subagent).toEqual({ description: 'Kaynakları tara', state: 'done', steps: 2 });
+    const sub = card!.props.subagent as Record<string, unknown>;
+    expect(sub).toMatchObject({
+      description: 'Kaynakları tara',
+      state: 'done',
+      steps: 2,
+      tool: 'WebSearch',
+      result: 'Üç kaynak bulundu.',
+    });
+    // It says how long the helper worked.
+    expect(Date.parse(sub.endedAt as string)).toBeGreaterThanOrEqual(Date.parse(sub.startedAt as string));
   });
 
   it('aynı hatayı tekrar tekrar alan tur durdurulur ve nedeni yazılır', async () => {

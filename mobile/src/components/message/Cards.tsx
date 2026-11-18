@@ -5,6 +5,7 @@ import {
   describeAction,
   parseAnswers,
   questionItems,
+  subagentTime,
   type Approval,
   type Bot,
   type OutsideTrigger,
@@ -641,6 +642,9 @@ export function PlanCard({ items }: { items: PlanItem[] }) {
 /** A helper the bot started for part of the work: what it was asked, how it stands, its steps. */
 export function SubagentCard({ sub }: { sub: SubagentCardProps }) {
   const c = useColors();
+  const [open, setOpen] = useState(false);
+  // Its time is told once it has ended; while it runs, the spinner says so.
+  const time = subagentTime(sub, t);
   return (
     <View
       accessibilityLabel={t('message.subagent')}
@@ -651,7 +655,9 @@ export function SubagentCard({ sub }: { sub: SubagentCardProps }) {
           {t('message.subagent')}
         </Text>
         <Text style={[styles.small, { color: c.mutedForeground }]}>
-          {t(`message.subagentState.${sub.state}`)} · {t('message.subagentSteps', { count: sub.steps })}
+          {[t(`message.subagentState.${sub.state}`), t('message.subagentSteps', { count: sub.steps }), time]
+            .filter(Boolean)
+            .join(' · ')}
         </Text>
       </View>
       {sub.description ? (
@@ -665,6 +671,24 @@ export function SubagentCard({ sub }: { sub: SubagentCardProps }) {
           <Text style={[styles.small, styles.sizeSm, styles.flex, { color: c.foreground }]}>
             {sub.description}
           </Text>
+        </View>
+      ) : null}
+      {sub.result && sub.state !== 'running' ? (
+        <View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: open }}
+            onPress={() => setOpen((o) => !o)}
+            style={styles.planHead}
+          >
+            <Text style={[styles.small, { color: c.mutedForeground }]}>{t('message.subagentResult')}</Text>
+            <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={c.mutedForeground} />
+          </Pressable>
+          {open ? (
+            <Text selectable style={[styles.small, { color: c.foreground }]}>
+              {sub.result}
+            </Text>
+          ) : null}
         </View>
       ) : null}
     </View>
