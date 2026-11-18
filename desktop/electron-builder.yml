@@ -53,6 +53,11 @@ extraResources:
     to: app
   - from: assets
     to: assets
+  # The license and its notices travel with every copy, the plush art's MIT notice among them.
+  - from: ../LICENSE
+    to: LICENSE
+  - from: ../NOTICE
+    to: NOTICE
 mac:
   # An Icon Composer icon: a gradient tile and the plush as its own layer, so macOS draws the light
   # rim of glass round it as on its own icons. electron-builder compiles it with Xcode 26's actool
