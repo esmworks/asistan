@@ -125,7 +125,8 @@ export class InstructionDocService {
     // The person hears of it where they talk to the bot; the text itself waits in the bot's panel.
     if (fresh && saved.instructionsPending === pending) {
       const t = await serverTranslator(this.ctx);
-      const thread = await this.threads.main(botId);
+      // The bot's owner looks after its instructions.
+      const thread = await this.threads.main(botId, (await this.row(botId)).ownerUserId);
       await this.threads.addMessage({
         threadId: thread.id,
         role: 'system',

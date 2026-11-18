@@ -45,6 +45,8 @@ import { appPolicy, STRICT_TRANSPORT_SECURITY } from './csp';
 import type { Ctx } from './context';
 import { openDb, type DbHandle } from './db';
 import { adoptLegacyAccount } from './users';
+import { atLeast } from './services/access';
+import { enforceRule, ruleFor } from './access-rules';
 import { setContentKey } from './db/sealed';
 import { ClaudeEngine, FALLBACK_MODELS } from './engine/claude';
 import { FakeEngine } from './engine/fake';
@@ -82,6 +84,8 @@ export interface YumakBotServer {
   db: DbHandle;
   bootId: string;
   accessKey: string;
+  /** Every route as registered (`METHOD /path`). */
+  routes: string[];
   info(): ServerInfo;
   checkClaude(): Promise<AccountStatus>;
   listen(): Promise<string>;
@@ -90,6 +94,9 @@ export interface YumakBotServer {
 
 /** How often, and how long after its last try, a failed app connection is tried again. */
 const CONNECTION_RETRY_MS = 5 * 60_000;
+
+/** The socket room of one person's devices. */
+const personRoom = (userId: string) => `user:${userId}`;
 
 const PUBLIC_API = new Set([
   '/api/health',
@@ -367,6 +374,18 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     }
   });
 
+  const routes: string[] = [];
+  // Who may call what: each signed-in route's rule, checked once its params are read.
+  app.addHook('preHandler', async (req: FastifyRequest) => {
+    const route = req.routeOptions.url;
+    if (!route || !needsSignIn(route, req.url, openRoute)) return;
+    await enforceRule(services, req, ruleFor(req.method, route));
+  });
+  // Every route as registered, so a test can check each signed-in one has a rule.
+  app.addHook('onRoute', (r) => {
+    for (const method of [r.method].flat()) routes.push(`${method} ${r.url}`);
+  });
+
   app.setErrorHandler(async (err, req, reply) => {
     if (err instanceof HttpError) return sendError(req, reply, err);
     if (err instanceof ZodError) {
@@ -483,18 +502,19 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   io.on('connection', (socket) => {
     // Who signed this socket in; the handshake request is the one the sign-in check saw.
     socket.data.principal = socketPrincipals.get(socket.request) ?? null;
+    const viewer = socket.data.principal;
+    // Live events of a conversation go to its people's rooms.
+    if (viewer) void socket.join(personRoom(viewer.userId));
     socket.emit('hello', { bootId, buildId });
 
     // Watching and driving a bot's browser. Only existing bots: the id names a profile folder.
     const watching = new Set<string>();
     const botExists = (id: unknown): id is string =>
       typeof id === 'string' && id.length <= 64 && /^[\w-]+$/.test(id);
+    // The browser and the desktop are the bot's, shared by everyone who uses it: only those who
+    // may change the bot watch or drive them.
     const known = async (id: unknown) =>
-      botExists(id) &&
-      (await services.bots.get(id).then(
-        () => true,
-        () => false,
-      ));
+      botExists(id) && !!viewer && atLeast(await services.access.level(viewer, id), 'edit');
     socket.on('browser:watch', async (botId, ack) => {
       if (typeof ack !== 'function') return;
       if (!(await known(botId))) return ack(null);
@@ -628,20 +648,31 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       computer?.forget(socket.id);
     });
   });
-  computer?.on((s) => io.emit('computer:state', s));
+  /**
+   * Sends to the people of a conversation, or of a bot (those who may change it). With nobody to
+   * send to it sends nothing: an empty list of rooms would reach every socket.
+   */
+  const nobody = { emit: () => true } as unknown as ReturnType<typeof io.to>;
+  const toPeople = (users: string[]) => (users.length ? io.to(users.map(personRoom)) : nobody);
+  const toThread = async (threadId: string) => toPeople(await services.access.threadAudience(threadId));
+  const toBotEditors = async (botId: string) => toPeople(await services.access.botPeople(botId, 'edit'));
+  computer?.on((s) => void toBotEditors(s.botId).then((to) => to.emit('computer:state', s)));
   browser.on({
-    state: (s) => io.emit('browser:state', s),
+    state: (s) => void toBotEditors(s.botId).then((to) => to.emit('browser:state', s)),
     // A frame a slow viewer cannot take yet is dropped, not queued: the next one replaces it anyway.
     frame: (botId, f) => io.to(`browser:${botId}`).volatile.emit('browser:frame', { botId, ...f }),
   });
+  // A refresh only says what to fetch again; what each person gets back is theirs.
   bus.on('refresh', (e) => io.emit('refresh', e));
-  bus.on('delta', (e) => io.emit('delta', e));
-  bus.on('turn', (e) => io.emit('turn', e));
+  bus.on('delta', (e) => void toThread(e.threadId).then((to) => to.emit('delta', e)));
+  bus.on('turn', (e) => void toThread(e.threadId).then((to) => to.emit('turn', e)));
   bus.on('notice', (e) => {
-    io.emit('notice', e);
-    void services.push.notice(e);
+    void services.access.threadAudience(e.threadId).then((users) => {
+      toPeople(users).emit('notice', e);
+      return services.push.notice(e, users);
+    });
   });
-  bus.on('tool', (e) => io.emit('tool', e));
+  bus.on('tool', (e) => void toThread(e.threadId).then((to) => to.emit('tool', e)));
 
   await services.turns.recover();
   await services.routines.recover();
@@ -662,6 +693,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     db,
     bootId,
     accessKey,
+    routes,
     info,
     checkClaude,
     async listen() {

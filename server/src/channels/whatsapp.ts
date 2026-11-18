@@ -491,7 +491,8 @@ export class WhatsAppChannel {
       await this.say(jid, t('channel.botArchived'));
       return;
     }
-    const thread = await this.services.threads.main(bot.id);
+    // The conversation of the person who set the chat up.
+    const thread = await this.services.threads.main(bot.id, row.userId);
     if (!media && !forwarded) {
       const done = await chatCommand(this.services, thread.id, text, t);
       if (done) {
@@ -526,6 +527,7 @@ export class WhatsAppChannel {
       text,
       files,
       clientId: `whatsapp:${(m.key.id ?? newId()).slice(0, 48)}`,
+      userId: row.userId,
       props: { via: 'whatsapp', ...(forwarded && { outside: 'forward' }) },
     });
   }

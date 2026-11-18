@@ -11,7 +11,11 @@ import {
   connectionToolParts,
   describeAction,
   ApprovalDecision,
+  BotAccess,
   BotCreate,
+  type Bot,
+  type BotLevel,
+  type Ticket,
   BotMove,
   BotUpdate,
   newBotEngine,
@@ -80,7 +84,15 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
-import { clientAddress, SESSION_COOKIE, SESSION_IDLE_MS, type Auth, type Principal } from './auth';
+import {
+  canAdminister,
+  clientAddress,
+  requireAdmin,
+  SESSION_COOKIE,
+  SESSION_IDLE_MS,
+  type Auth,
+  type Principal,
+} from './auth';
 import { BrowserError } from './browser/manager';
 import type { Config } from './config';
 import { PLAIN_PAGE_POLICY } from './csp';
@@ -94,7 +106,8 @@ import { serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, saveUpload, stagingDir } from './uploads';
 import { OWNER_ID } from './users';
-import { HttpError, truncate } from './util';
+import { HttpError, notFound, truncate } from './util';
+import { atLeast } from './services/access';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
@@ -432,14 +445,34 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Bots and groups
+  /** Only the bot's own owner, or those who look after the server, share or remove a bot. */
+  const requireBotOwner = async (req: FastifyRequest, botId: string) => {
+    const p = me(req);
+    if (canAdminister(p.role)) return;
+    if ((await s.access.botOwner(botId)) !== p.userId) throw new HttpError(403, 'error.botOwnerOnly');
+  };
+  /** A bot with what the asking person may do with it. */
+  const leveled = async (req: FastifyRequest, bot: Bot): Promise<Bot> => ({
+    ...bot,
+    yourLevel: await s.access.level(me(req), bot.id),
+  });
+  /** A project folder opens the server's files to the bot: only those who look after the server pick one. */
+  const checkProjectDir = (req: FastifyRequest, projectDir: string | null | undefined) => {
+    if (projectDir && !canAdminister(me(req).role)) throw new HttpError(403, 'error.adminOnly');
+  };
   app.get('/api/bots', async (req) => {
     const q = z.object({ archived: z.enum(['0', '1']).optional() }).parse(req.query);
-    return s.bots.list({ includeArchived: q.archived === '1' });
+    const levels = await s.access.levels(me(req));
+    return (await s.bots.list({ includeArchived: q.archived === '1' }))
+      .map((b) => ({ ...b, yourLevel: levels.get(b.id) ?? 'none' }))
+      .filter((b) => b.yourLevel !== 'none');
   });
   // A bot linked to a document reads it right away, so its text waits for the person at once.
   app.post('/api/bots', async (req) => {
-    const bot = await s.bots.create(BotCreate.parse(req.body));
-    return bot.instructionsUrl ? s.instructionDocs.check(bot.id) : bot;
+    const body = BotCreate.parse(req.body);
+    checkProjectDir(req, body.projectDir);
+    const bot = await s.bots.create(body, me(req).userId);
+    return leveled(req, bot.instructionsUrl ? await s.instructionDocs.check(bot.id) : bot);
   });
   // Moves the existing bots to what new bots start with, while its provider can still be reached
   // the way the engine reaches it: a key, a sign-in with a plan, or an endpoint that takes none.
@@ -451,13 +484,25 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     }
     return { changed: await s.bots.moveAllTo(target) };
   });
-  app.get('/api/bots/:id', async (req) => s.bots.get(IdParams.parse(req.params).id));
+  app.get('/api/bots/:id', async (req) => leveled(req, await s.bots.get(IdParams.parse(req.params).id)));
   app.patch('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
     const before = await s.bots.get(id);
-    const bot = await s.bots.update(id, BotUpdate.parse(req.body));
+    const patch = BotUpdate.parse(req.body);
+    if (patch.projectDir !== undefined && patch.projectDir !== before.projectDir) {
+      checkProjectDir(req, patch.projectDir);
+    }
+    const bot = await s.bots.update(id, patch);
     const relinked = !!bot.instructionsUrl && bot.instructionsUrl !== before.instructionsUrl;
-    return relinked ? s.instructionDocs.check(id) : bot;
+    return leveled(req, relinked ? await s.instructionDocs.check(id) : bot);
+  });
+  // Who else may talk with the bot or change it: its owner and those who look after the server say.
+  app.put('/api/bots/:id/access', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await requireBotOwner(req, id);
+    const bot = await s.bots.setAccess(id, BotAccess.parse(req.body));
+    s.access.forget();
+    return leveled(req, bot);
   });
   // The document a bot's instructions are kept in: read it now, take its text, or turn it down.
   app.post('/api/bots/:id/instructions/check', async (req) =>
@@ -477,6 +522,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/bots/:id/restore', async (req) => s.bots.restore(IdParams.parse(req.params).id));
   app.delete('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
+    await requireBotOwner(req, id);
     // An archived bot leaves its rooms first, so a room it started is not removed with it.
     if ((await s.bots.get(id)).archivedAt) await s.rooms.removeBot(id);
     await s.bots.purge(id);
@@ -507,7 +553,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return { ok: true };
   });
   app.get('/api/bots/:id/audit', async (req) => s.tools.auditFor(IdParams.parse(req.params).id));
-  app.get('/api/summaries', async () => s.threads.summaries());
+  app.get('/api/summaries', async (req) => s.threads.summaries(await s.access.summaryScope(me(req))));
   app.get('/api/search', async (req) => {
     const q = z
       .object({
@@ -516,7 +562,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         limit: z.coerce.number().int().min(1).max(500).optional(),
       })
       .parse(req.query);
-    return s.threads.search(q.q, { threadId: q.threadId, limit: q.limit });
+    const { seen } = await s.access.summaryScope(me(req));
+    return s.threads.search(q.q, { threadId: q.threadId, limit: q.limit, seen });
   });
   app.get('/api/usage', async (req) => {
     const q = z
@@ -525,8 +572,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
-  app.get('/api/today', async () => ({
-    ...(await s.usage.today()),
+  app.get('/api/today', async (req) => ({
+    ...(await s.usage.today(
+      canAdminister(me(req).role) ? undefined : await s.access.botIds(me(req), 'chat'),
+    )),
     staleMemory: (await s.memory.stale()).length,
     pendingMemory: (await s.memory.pending()).length,
   }));
@@ -690,20 +739,55 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // The board: tickets the person and the bots work from.
-  app.get('/api/tickets', async () => s.tickets.list());
-  app.post('/api/tickets', async (req) =>
-    s.tickets.create(TicketCreate.parse(req.body), 'user', true, me(req).userId),
-  );
-  app.patch('/api/tickets/:id', async (req) =>
-    s.tickets.update(IdParams.parse(req.params).id, TicketUpdate.parse(req.body)),
-  );
+  // The board: a person sees the tickets they opened and those of bots they may talk with; they
+  // change those they opened or whose bot they may change.
+  const seesTicket = (p: Principal, ticket: Ticket, levels: Map<string, BotLevel>) =>
+    canAdminister(p.role) ||
+    ticket.createdByUserId === p.userId ||
+    (!!ticket.assigneeBotId && atLeast(levels.get(ticket.assigneeBotId) ?? 'none', 'chat'));
+  const ticketFor = async (req: FastifyRequest, id: string, change: boolean) => {
+    const p = me(req);
+    const ticket = await s.tickets.get(id);
+    const levels = await s.access.levels(p);
+    if (!seesTicket(p, ticket, levels)) throw notFound('ticket');
+    const mayChange =
+      canAdminister(p.role) ||
+      ticket.createdByUserId === p.userId ||
+      (!!ticket.assigneeBotId && atLeast(levels.get(ticket.assigneeBotId) ?? 'none', 'edit'));
+    if (change && !mayChange) throw new HttpError(403, 'error.botEditOnly');
+    return ticket;
+  };
+  /** A ticket goes only to a bot the person may talk with. */
+  const checkAssignee = async (req: FastifyRequest, botId: string | null | undefined) => {
+    if (botId) await s.access.requireBot(me(req), botId, 'chat');
+  };
+  app.get('/api/tickets', async (req) => {
+    const levels = await s.access.levels(me(req));
+    return (await s.tickets.list()).filter((tk) => seesTicket(me(req), tk, levels));
+  });
+  app.post('/api/tickets', async (req) => {
+    const body = TicketCreate.parse(req.body);
+    await checkAssignee(req, body.assigneeBotId);
+    return s.tickets.create(body, 'user', true, me(req).userId);
+  });
+  app.patch('/api/tickets/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const body = TicketUpdate.parse(req.body);
+    await ticketFor(req, id, true);
+    await checkAssignee(req, body.assigneeBotId);
+    return s.tickets.update(id, body);
+  });
   app.delete('/api/tickets/:id', async (req) => {
-    await s.tickets.remove(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ticketFor(req, id, true);
+    await s.tickets.remove(id);
     return { ok: true };
   });
-  app.post('/api/tickets/:id/comments', async (req) =>
-    s.tickets.comment(IdParams.parse(req.params).id, TicketCommentCreate.parse(req.body).text),
-  );
+  app.post('/api/tickets/:id/comments', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ticketFor(req, id, false);
+    return s.tickets.comment(id, TicketCommentCreate.parse(req.body).text);
+  });
 
   // Plugins: read first, so the person sees what each would add, then installed as connections
   // and skills.
@@ -718,11 +802,26 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/skills/fetch', async (req) =>
     fetchSkillFile(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
   );
-  app.patch('/api/skills/:id', async (req) =>
-    s.skills.update(IdParams.parse(req.params).id, SkillUpdate.parse(req.body)),
-  );
+  /** A skill is changed by whoever made it and by those who look after the server. */
+  const ownSkill = async (req: FastifyRequest, id: string) => {
+    const p = me(req);
+    const [row] = await s.ctx.db
+      .select({ by: schema.skills.createdByUserId })
+      .from(schema.skills)
+      .where(eq(schema.skills.id, id))
+      .limit(1);
+    if (!row) throw notFound('skill');
+    if (!canAdminister(p.role) && row.by !== p.userId) throw new HttpError(403, 'error.adminOnly');
+  };
+  app.patch('/api/skills/:id', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await ownSkill(req, id);
+    return s.skills.update(id, SkillUpdate.parse(req.body));
+  });
   app.delete('/api/skills/:id', async (req) => {
-    await s.skills.remove(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    await ownSkill(req, id);
+    await s.skills.remove(id);
     return { ok: true };
   });
   app.put('/api/skills/:id/bots/:botId', async (req) => {
@@ -746,16 +845,19 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // Threads and messages
-  app.get('/api/bots/:id/threads', async (req) => s.threads.list(IdParams.parse(req.params).id));
+  app.get('/api/bots/:id/threads', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    return s.threads.list(id, await s.access.listScope(me(req), id));
+  });
   app.get('/api/bots/:id/main-thread', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    return s.threads.main(id);
+    return s.threads.main(id, me(req).userId);
   });
   app.post('/api/bots/:id/threads', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    return s.threads.create(id, { title: ThreadCreate.parse(req.body ?? {}).title });
+    return s.threads.create(id, { title: ThreadCreate.parse(req.body ?? {}).title, userId: me(req).userId });
   });
   app.get('/api/threads/:id', async (req) => s.threads.get(IdParams.parse(req.params).id));
   app.patch('/api/threads/:id', async (req) => {
@@ -808,8 +910,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.delete('/api/bots/:id/threads', async (req) => {
     const id = IdParams.parse(req.params).id;
     await s.bots.get(id);
-    const main = await s.threads.main(id);
-    const others = (await s.threads.list(id)).filter((th) => th.id !== main.id);
+    // Only the person's own conversations: the bot's own work and others' stay.
+    const { userId } = me(req);
+    const main = await s.threads.main(id, userId);
+    const others = (await s.threads.list(id, { userId, botWork: false })).filter((th) => th.id !== main.id);
     for (const th of others) await deleteThread(th.id, id);
     return { deleted: others.length };
   });
@@ -824,7 +928,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const thread = await s.threads.row(id);
     // A room has its members answer in turn, not the one bot its thread points at.
     if (thread.kind === 'room') {
-      const { message, created } = await s.rooms.post(id, RoomSend.parse(req.body));
+      const { message, created } = await s.rooms.post(id, RoomSend.parse(req.body), me(req).userId);
       return reply.code(created ? 201 : 200).send(message);
     }
     const body = SendMessage.parse(req.body);
@@ -900,7 +1004,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const source = await s.threads.get(m.threadId);
     const t = await s.settings.translator();
     const title = t('thread.forkTitle', { title: source.title || t('thread.untitled') });
-    return s.threads.fork(id, truncate(title, 120));
+    return s.threads.fork(id, truncate(title, 120), me(req).userId);
   });
   app.put('/api/messages/:id/reaction', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -982,12 +1086,19 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   // Rooms: the person and several bots in one conversation. Its messages, cards and files are the
   // thread's own routes; a room's id is its thread's id.
-  app.get('/api/rooms', async () => s.rooms.list());
-  app.post('/api/rooms', async (req) => s.rooms.create(RoomCreate.parse(req.body)));
+  app.get('/api/rooms', async (req) => s.rooms.list(me(req).userId));
+  app.post('/api/rooms', async (req) => {
+    const body = RoomCreate.parse(req.body);
+    // Every bot in the room must be one the person may talk with.
+    for (const botId of body.botIds) await s.access.requireBot(me(req), botId, 'chat');
+    return s.rooms.create(body, me(req).userId);
+  });
   app.get('/api/rooms/:id', async (req) => s.rooms.get(IdParams.parse(req.params).id));
-  app.patch('/api/rooms/:id', async (req) =>
-    s.rooms.update(IdParams.parse(req.params).id, RoomUpdate.parse(req.body)),
-  );
+  app.patch('/api/rooms/:id', async (req) => {
+    const body = RoomUpdate.parse(req.body);
+    for (const botId of body.botIds ?? []) await s.access.requireBot(me(req), botId, 'chat');
+    return s.rooms.update(IdParams.parse(req.params).id, body);
+  });
   app.delete('/api/rooms/:id', async (req) => {
     await s.rooms.remove(IdParams.parse(req.params).id);
     return { ok: true };
@@ -1020,7 +1131,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const q = z
       .object({ status: z.enum(['pending', 'allowed', 'denied', 'expired']).optional() })
       .parse(req.query);
-    return s.approvals.list(q);
+    return s.approvals.list({ ...q, seen: (await s.access.summaryScope(me(req))).seen });
   });
   app.get('/api/approvals/:id', async (req) => s.approvals.get(IdParams.parse(req.params).id));
   app.post('/api/approvals/:id', async (req) =>
@@ -1065,10 +1176,27 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .header('content-disposition', `attachment; filename="yumakbot-steps-${id}.csv"`)
       .send(await s.actions.csv(id));
   });
-  app.get('/api/rules', async () => s.approvals.rules());
-  app.post('/api/rules', async (req) => s.approvals.addRule(PermissionRuleCreate.parse(req.body)));
+  // Rules for every bot are the server's: those who look after it set them. A bot's own rules are
+  // set by those who may change the bot.
+  const checkRuleBot = async (req: FastifyRequest, botId: string | null | undefined) => {
+    if (botId) await s.access.requireBot(me(req), botId, 'edit');
+    else requireAdmin(me(req));
+  };
+  app.get('/api/rules', async (req) => {
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    return (await s.approvals.rules()).filter((r) => !r.botId || editable.has(r.botId));
+  });
+  app.post('/api/rules', async (req) => {
+    const body = PermissionRuleCreate.parse(req.body);
+    await checkRuleBot(req, body.botId);
+    return s.approvals.addRule(body);
+  });
   app.delete('/api/rules/:id', async (req) => {
-    await s.approvals.removeRule(IdParams.parse(req.params).id);
+    const id = IdParams.parse(req.params).id;
+    const rule = (await s.approvals.rules()).find((r) => r.id === id);
+    if (!rule) throw new HttpError(404, 'error.notFound');
+    await checkRuleBot(req, rule.botId);
+    await s.approvals.removeRule(id);
     return { ok: true };
   });
 
@@ -1319,9 +1447,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
 
   app.get('/api/routines', async (req) => {
     const q = z.object({ botId: z.string().optional() }).parse(req.query);
-    return s.routines.list(q.botId);
+    // A routine runs as its bot's work: those who may change the bot see and set it.
+    const editable = new Set(await s.access.botIds(me(req), 'edit'));
+    return (await s.routines.list(q.botId)).filter((r) => editable.has(r.botId));
   });
-  app.post('/api/routines', async (req) => s.routines.create(RoutineCreate.parse(req.body)));
+  app.post('/api/routines', async (req) => {
+    const body = RoutineCreate.parse(req.body);
+    await s.access.requireBot(me(req), body.botId, 'edit');
+    return s.routines.create(body);
+  });
   app.patch('/api/routines/:id', async (req) =>
     s.routines.update(IdParams.parse(req.params).id, RoutineUpdate.parse(req.body)),
   );
@@ -1460,7 +1594,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return out.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
   });
   /** A file in the bot's folders, resolved past symlinks so a link cannot point outside them. */
-  const libraryFile = async (botId: string, path: string) => {
+  /**
+   * A file of a bot's folders. `who`, when given, may open it only if they may change the bot, or
+   * the file is in one of their own conversations' folders: those who only talk with a bot get the
+   * files it hands them, not everyone's.
+   */
+  const libraryFile = async (botId: string, path: string, who?: Principal) => {
     const { root, roots } = await libraryRoots(botId);
     let full: string;
     try {
@@ -1476,6 +1615,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       }
     });
     if (!realRoots.some((r) => full.startsWith(r + sep))) throw new HttpError(403, 'error.fileForbidden');
+    if (who && !atLeast(await s.access.level(who, botId), 'edit')) {
+      let threads = '';
+      try {
+        threads = realpathSync(join(root, 'bots', botId, 'threads'));
+      } catch {
+        // No conversation of the bot has a folder yet.
+      }
+      const threadId =
+        threads && full.startsWith(threads + sep) ? full.slice(threads.length + 1).split(sep)[0] : null;
+      const own = threadId ? await s.access.visibleThreads(who, [threadId]) : new Set<string>();
+      if (!threadId || !own.has(threadId)) throw new HttpError(403, 'error.fileForbidden');
+    }
     const st = statSync(full);
     if (!st.isFile()) throw new HttpError(404, 'error.fileMissing');
     return { full, st };
@@ -1495,7 +1646,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const entries = [];
     let total = 0;
     for (const p of paths) {
-      const { full, st } = await libraryFile(botId, p);
+      const { full, st } = await libraryFile(botId, p, me(req));
       total += st.size;
       if (total > MAX_ZIP_BYTES) {
         throw new HttpError(413, 'error.fileTooLarge', { max: Math.round(MAX_ZIP_BYTES / 1024 / 1024) });
@@ -1562,9 +1713,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     reply: FastifyReply,
     botId: string,
     path: string,
-    o: { framed?: boolean; height?: number; print?: boolean; title?: string; shared?: boolean },
+    o: {
+      framed?: boolean;
+      height?: number;
+      print?: boolean;
+      title?: string;
+      shared?: boolean;
+      who?: Principal;
+    },
   ) => {
-    const { full, st } = await libraryFile(botId, path);
+    const { full, st } = await libraryFile(botId, path, o.who);
     if (!/\.html?$/i.test(full) || st.size > 2 * 1024 * 1024) throw new HttpError(404, 'error.notFound');
     const csp = frameCsp({ resources: PAGE_LIBRARIES, images: ['https:'] });
     // Its own scripts, styles, pictures and data go inside it: the frame loads nothing from here.
@@ -1600,6 +1758,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       height: h,
       print: !!print,
       title: print ? basename(path) : undefined,
+      who: me(req),
     });
   });
 
@@ -1646,7 +1805,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/bots/:id/emails', async (req) => s.email.inbox(IdParams.parse(req.params).id, { limit: 50 }));
 
   // Links that open a page for anyone who has them.
-  app.get('/api/page-shares', () => s.pageShares.list());
+  app.get('/api/page-shares', async (req) =>
+    s.pageShares.list(canAdminister(me(req).role) ? undefined : await s.access.botIds(me(req), 'edit')),
+  );
   app.get('/api/bots/:id/library/share', async (req) => {
     const { path } = z.object({ path: z.string().min(1) }).parse(req.query);
     return { share: await s.pageShares.find(IdParams.parse(req.params).id, path) };
@@ -1661,6 +1822,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.delete('/api/page-shares/:token', async (req) => {
     const { token } = z.object({ token: z.string().min(1).max(100) }).parse(req.params);
+    const botId = await s.pageShares.botOf(token);
+    if (botId) await s.access.requireBot(me(req), botId, 'edit');
     await s.pageShares.unshare(token);
     return { ok: true };
   });
@@ -1693,7 +1856,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const { path, inline } = z
       .object({ path: z.string().min(1), inline: z.enum(['1']).optional() })
       .parse(req.query);
-    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path);
+    const { full, st } = await libraryFile(IdParams.parse(req.params).id, path, me(req));
     // Only images, PDFs, sound and video are shown on the page; anything else (HTML included)
     // downloads, since the page could otherwise run it as its own.
     const type = inline ? INLINE_TYPES[extname(full).toLowerCase()] : undefined;

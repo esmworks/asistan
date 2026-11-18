@@ -307,7 +307,8 @@ export class TurnManager {
     /** The person the turn works for; left out, it is worked out from what started it. */
     userId?: string | null;
   }): Promise<TurnRow> {
-    const userId = t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null);
+    const userId =
+      t.userId !== undefined ? t.userId : await this.actingPerson(t.jobId ?? null, t.threadId, t.botId);
     const [row] = await this.ctx.db
       .insert(schema.turns)
       .values({
@@ -331,17 +332,25 @@ export class TurnManager {
 
   /**
    * Whom a turn nobody named works for: a bot asked by another bot works for whoever the asking
-   * turn worked for, so a request passes on along a chain of bots.
+   * turn worked for, so a request passes on along a chain of bots; otherwise the person whose
+   * conversation it is, and for the bot's own work (a routine, a ticket) the bot's owner.
    */
-  private async actingPerson(jobId: string | null): Promise<string | null> {
-    if (!jobId) return null;
-    const [row] = await this.ctx.db
-      .select({ userId: schema.turns.userId })
-      .from(schema.jobs)
-      .innerJoin(schema.turns, eq(schema.turns.id, schema.jobs.fromTurnId))
-      .where(eq(schema.jobs.id, jobId))
+  private async actingPerson(jobId: string | null, threadId: string, botId: string): Promise<string> {
+    if (jobId) {
+      const [row] = await this.ctx.db
+        .select({ userId: schema.turns.userId })
+        .from(schema.jobs)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.jobs.fromTurnId))
+        .where(eq(schema.jobs.id, jobId))
+        .limit(1);
+      if (row?.userId) return row.userId;
+    }
+    const [thread] = await this.ctx.db
+      .select({ userId: schema.threads.userId })
+      .from(schema.threads)
+      .where(eq(schema.threads.id, threadId))
       .limit(1);
-    return row?.userId ?? null;
+    return thread?.userId ?? (await this.services.access.botOwner(botId));
   }
 
   /** Stops the work a bot-to-bot request started: its running turn, and its turns not yet started. */

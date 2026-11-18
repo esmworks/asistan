@@ -8,7 +8,7 @@ import {
   type PermissionRule,
   type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, or, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -372,14 +372,16 @@ export class ApprovalService {
     private vault: VaultService,
   ) {}
 
-  async list(opts: { status?: Approval['status'] } = {}): Promise<Approval[]> {
+  /** Cards, newest first; with `seen`, only those in conversations it lets through. */
+  async list(opts: { status?: Approval['status']; seen?: SQL } = {}): Promise<Approval[]> {
     const rows = await this.ctx.db
-      .select()
+      .select({ approval: schema.approvals })
       .from(schema.approvals)
-      .where(opts.status ? eq(schema.approvals.status, opts.status) : undefined)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
+      .where(and(opts.status ? eq(schema.approvals.status, opts.status) : undefined, opts.seen))
       .orderBy(desc(schema.approvals.createdAt))
       .limit(200);
-    return rows.map(toApproval);
+    return rows.map((r) => toApproval(r.approval));
   }
 
   /**

@@ -1,0 +1,392 @@
+import { eq } from 'drizzle-orm';
+import type { FastifyRequest } from 'fastify';
+import type { Principal } from './auth';
+import { schema } from './db';
+import type { Services } from './services';
+import { managesServer } from './services/access';
+import { HttpError, notFound } from './util';
+
+/** What a route's `:id` (or `:botId`) names, so the bot or conversation behind it can be found. */
+type BotVia = 'bot' | 'botParam' | 'table' | 'routine';
+type ThreadVia = 'thread' | 'message' | 'turn' | 'approval' | 'job';
+
+/**
+ * Who may call a route:
+ * - `signedIn`: anyone signed in;
+ * - `admin` / `owner`: those who look after the server, or only its owner;
+ * - `self`: anyone signed in, and the handler itself keeps each person to what is theirs;
+ * - a bot level: the bot the route names must be shared with them at least that far;
+ * - a conversation: it must be theirs (or the bot's own work, for those who may change the bot);
+ *   to write in it they must also still be able to talk with its bot.
+ */
+export type Rule =
+  | 'signedIn'
+  | 'admin'
+  | 'owner'
+  | 'self'
+  | { bot: 'chat' | 'edit'; via: BotVia }
+  | { thread: 'read' | 'write'; via: ThreadVia };
+
+const chat = (via: BotVia = 'bot'): Rule => ({ bot: 'chat', via });
+const edit = (via: BotVia = 'bot'): Rule => ({ bot: 'edit', via });
+const read = (via: ThreadVia = 'thread'): Rule => ({ thread: 'read', via });
+const write = (via: ThreadVia = 'thread'): Rule => ({ thread: 'write', via });
+
+/**
+ * Every signed-in route, as registered, with who may call it. A route missing here is left to the
+ * admins; a test checks that none is missing.
+ */
+export const ROUTE_RULES: Record<string, Rule> = {
+  // Signing in and the person's own account and devices.
+  'GET /api/sessions': 'signedIn',
+  'DELETE /api/sessions/:id': 'signedIn',
+  'POST /api/pairing': 'signedIn',
+  'GET /api/account': 'signedIn',
+  'PUT /api/account': 'signedIn',
+  'POST /api/logout': 'signedIn',
+  'GET /api/info': 'signedIn',
+  'POST /api/info/claude-check': 'admin',
+  'PUT /api/push/device': 'signedIn',
+  'DELETE /api/push/device/:token': 'signedIn',
+  'POST /api/push/test': 'signedIn',
+
+  // The server's own settings and the AI services it uses.
+  'GET /api/settings': 'signedIn',
+  'PATCH /api/settings': 'admin',
+  'GET /api/claude/auth': 'signedIn',
+  'PUT /api/claude/auth': 'admin',
+  'DELETE /api/claude/auth': 'admin',
+  'GET /api/claude/models': 'signedIn',
+  'GET /api/push/apns': 'admin',
+  'PUT /api/push/apns': 'admin',
+  'DELETE /api/push/apns': 'admin',
+  'GET /api/providers': 'signedIn',
+  'GET /api/providers/:id/models': 'signedIn',
+  'PUT /api/providers/:id/key': 'admin',
+  'POST /api/providers/:id/test': 'admin',
+  'POST /api/providers/:id/sign-in': 'admin',
+  'GET /api/sign-ins/:id': 'admin',
+  'POST /api/sign-ins/:id/paste': 'admin',
+  'DELETE /api/sign-ins/:id': 'admin',
+  'DELETE /api/providers/:id/sign-in': 'admin',
+  'DELETE /api/providers/:id/key': 'admin',
+  'POST /api/providers/custom': 'admin',
+  'GET /api/providers/discover': 'admin',
+  'PATCH /api/providers/:id': 'admin',
+  'POST /api/providers/:id/refresh': 'admin',
+  'DELETE /api/providers/:id': 'admin',
+  'GET /api/ai-endpoints': 'signedIn',
+  'PUT /api/ai-endpoints/:kind': 'admin',
+  'DELETE /api/ai-endpoints/:kind': 'admin',
+  'POST /api/ai-endpoints/:kind/test': 'admin',
+  'GET /api/transcribe': 'signedIn',
+  'POST /api/transcribe': 'signedIn',
+  'GET /api/speech': 'signedIn',
+  'POST /api/speech': 'signedIn',
+  'GET /api/content-encryption': 'signedIn',
+  'PUT /api/content-encryption': 'owner',
+  'GET /api/usage': 'admin',
+  'GET /api/usage/turns.csv': 'admin',
+
+  // Everything at once: only the owner holds every person's data.
+  'GET /api/setup-import': 'owner',
+  'GET /api/setup-import/projects': 'owner',
+  'POST /api/setup-import': 'owner',
+  'POST /api/backup': 'owner',
+  'GET /api/backup/:id': 'owner',
+  'POST /api/backup/restore': 'owner',
+  'GET /api/export/bots': 'admin',
+  'POST /api/import/bots': 'admin',
+  'POST /api/mcp': 'owner',
+  'GET /api/mcp': 'owner',
+  'DELETE /api/mcp': 'owner',
+
+  // Bots.
+  'GET /api/bots': 'self',
+  'POST /api/bots': 'signedIn',
+  'POST /api/bots/engine': 'admin',
+  'GET /api/bots/:id': chat(),
+  'PATCH /api/bots/:id': edit(),
+  'PUT /api/bots/:id/access': edit(),
+  'POST /api/bots/:id/instructions/check': edit(),
+  'POST /api/bots/:id/instructions/accept': edit(),
+  'POST /api/bots/:id/instructions/decline': edit(),
+  'POST /api/bots/:id/move': edit(),
+  'POST /api/bots/:id/archive': edit(),
+  'POST /api/bots/:id/restore': edit(),
+  'DELETE /api/bots/:id': edit(),
+  'POST /api/bots/:id/browser/window': edit(),
+  'DELETE /api/bots/:id/browser/window': edit(),
+  'GET /api/bots/:id/audit': edit(),
+  'POST /api/bots/:id/ask': chat(),
+  'POST /api/bots/:id/teach': edit(),
+  'GET /api/bots/:id/teach': edit(),
+  'POST /api/bots/:id/teach/stop': edit(),
+  'GET /api/bots/:id/conversations': edit(),
+  'GET /api/bots/:id/actions': edit(),
+  'GET /api/bots/:id/suggestions': edit(),
+  'POST /api/bots/:id/suggestions/dismiss': edit(),
+  'GET /api/bots/:id/actions.csv': edit(),
+  'GET /api/bots/:id/telegram': edit(),
+  'PUT /api/bots/:id/telegram': edit(),
+  'PATCH /api/bots/:id/telegram': edit(),
+  'POST /api/bots/:id/telegram/pair': edit(),
+  'DELETE /api/bots/:id/telegram': edit(),
+  'POST /api/bots/:id/email': edit(),
+  'DELETE /api/bots/:id/email': edit(),
+  'GET /api/bots/:id/emails': edit(),
+  // A bot's folders hold every conversation's files: only those who may change the bot list them;
+  // those who talk with it open the files of their own conversations (checked by the route).
+  'GET /api/bots/:id/library': edit(),
+  'GET /api/bots/:id/library/zip': chat(),
+  'GET /api/bots/:id/library/page': chat(),
+  'GET /api/bots/:id/library/file': chat(),
+  'GET /api/bots/:id/library/share': edit(),
+  'POST /api/bots/:id/library/share': edit(),
+  'GET /api/page-shares': 'self',
+  'DELETE /api/page-shares/:token': 'self',
+  'GET /api/summaries': 'self',
+  'GET /api/search': 'self',
+  'GET /api/today': 'self',
+  'GET /api/turns/:id/result': read('turn'),
+
+  // A bot's tables.
+  'GET /api/bots/:id/tables': chat(),
+  'GET /api/tables/:id/rows': chat('table'),
+  'GET /api/tables/:id/rows.csv': chat('table'),
+  'POST /api/tables/:id/rows': edit('table'),
+  'PATCH /api/tables/:id/rows/:rowId': edit('table'),
+  'DELETE /api/tables/:id/rows/:rowId': edit('table'),
+  'DELETE /api/tables/:id': edit('table'),
+
+  // The board.
+  'GET /api/tickets': 'self',
+  'POST /api/tickets': 'self',
+  'PATCH /api/tickets/:id': 'self',
+  'DELETE /api/tickets/:id': 'self',
+  'POST /api/tickets/:id/comments': 'self',
+
+  // Skills, plugins, groups.
+  'POST /api/plugins/preview': 'admin',
+  'POST /api/plugins/install': 'admin',
+  'GET /api/skills': 'signedIn',
+  'POST /api/skills': 'signedIn',
+  'POST /api/skills/fetch': 'signedIn',
+  'PATCH /api/skills/:id': 'self',
+  'DELETE /api/skills/:id': 'self',
+  'PUT /api/skills/:id/bots/:botId': edit('botParam'),
+  'GET /api/groups': 'signedIn',
+  'POST /api/groups': 'admin',
+  'PATCH /api/groups/:id': 'admin',
+  'POST /api/groups/:id/move': 'admin',
+  'DELETE /api/groups/:id': 'admin',
+
+  // Conversations.
+  'GET /api/bots/:id/threads': chat(),
+  'GET /api/bots/:id/main-thread': chat(),
+  'POST /api/bots/:id/threads': chat(),
+  'DELETE /api/bots/:id/threads': chat(),
+  'GET /api/threads/:id': read(),
+  'PATCH /api/threads/:id': read(),
+  'DELETE /api/threads/:id': read(),
+  'GET /api/threads/:id/messages': read(),
+  'POST /api/threads/:id/messages': write(),
+  'PATCH /api/messages/:id': write('message'),
+  'POST /api/messages/:id/steer': write('message'),
+  'POST /api/messages/:id/retry': write('message'),
+  'DELETE /api/messages/:id': write('message'),
+  'PUT /api/threads/:id/pin': read(),
+  'POST /api/messages/:id/fork': write('message'),
+  'PUT /api/messages/:id/reaction': write('message'),
+  'POST /api/threads/:id/files': write(),
+  'DELETE /api/threads/:id/files/:name': write(),
+  'POST /api/threads/:id/reset': write(),
+  'POST /api/threads/:id/stop': read(),
+  'GET /api/apps/:id/frame': read('message'),
+  'POST /api/apps/:id/call': write('message'),
+  'GET /api/rooms': 'self',
+  'POST /api/rooms': 'self',
+  'GET /api/rooms/:id': read(),
+  'PATCH /api/rooms/:id': read(),
+  'DELETE /api/rooms/:id': read(),
+  'POST /api/rooms/:id/messages': write(),
+  'POST /api/rooms/:id/stop': read(),
+  'GET /api/jobs/:id': read('job'),
+  'GET /api/approvals': 'self',
+  'GET /api/approvals/:id': read('approval'),
+  'POST /api/approvals/:id': read('approval'),
+  'GET /api/rules': 'self',
+  'POST /api/rules': 'self',
+  'DELETE /api/rules/:id': 'self',
+
+  // Routines.
+  'GET /api/routines': 'self',
+  'POST /api/routines': 'self',
+  'PATCH /api/routines/:id': edit('routine'),
+  'DELETE /api/routines/:id': edit('routine'),
+  'POST /api/routines/:id/failure-seen': edit('routine'),
+  'POST /api/routines/:id/run': edit('routine'),
+  'POST /api/routines/:id/webhook': edit('routine'),
+  'DELETE /api/routines/:id/webhook': edit('routine'),
+  'GET /api/routines/:id/runs': edit('routine'),
+  'GET /api/routines/:id/revisions': edit('routine'),
+
+  // Memory. Until each person has their own, only those who look after the server see it.
+  'GET /api/memory': 'admin',
+  'POST /api/memory': 'admin',
+  'PATCH /api/memory/:id': 'admin',
+  'DELETE /api/bots/:id/memory': edit(),
+  'DELETE /api/memory/:id': 'admin',
+  'GET /api/memory-history': 'admin',
+  'GET /api/memory-changes': 'admin',
+  'POST /api/memory-changes/:id/accept': 'admin',
+  'DELETE /api/memory-changes/:id': 'admin',
+  'GET /api/memory-stale': 'admin',
+  'POST /api/memory-stale/delete': 'admin',
+
+  // Connected apps, keys, documents, the vault and the chat apps.
+  'GET /api/connections': 'signedIn',
+  'GET /api/connections/redirect-url': 'admin',
+  'POST /api/connections': 'admin',
+  'GET /api/connections/:id': 'admin',
+  'PATCH /api/connections/:id': 'admin',
+  'DELETE /api/connections/:id': 'admin',
+  'POST /api/connections/:id/refresh': 'admin',
+  'POST /api/connections/:id/signin': 'admin',
+  'POST /api/connections/:id/signout': 'admin',
+  'PATCH /api/connections/:id/tools/:name': 'admin',
+  'PUT /api/connections/:id/bots': 'admin',
+  'GET /api/api-sources': 'signedIn',
+  'POST /api/api-sources': 'admin',
+  'POST /api/api-sources/:id/refresh': 'admin',
+  'DELETE /api/api-sources/:id': 'admin',
+  'GET /api/api-keys': 'signedIn',
+  'POST /api/api-keys': 'admin',
+  'PATCH /api/api-keys/:id': 'admin',
+  'DELETE /api/api-keys/:id': 'admin',
+  'GET /api/vault': 'admin',
+  'POST /api/vault': 'admin',
+  'PATCH /api/vault/:id': 'admin',
+  'DELETE /api/vault/:id': 'admin',
+  'GET /api/whatsapp': 'admin',
+  'PUT /api/whatsapp': 'admin',
+  'POST /api/whatsapp/link': 'admin',
+  'DELETE /api/whatsapp': 'admin',
+  'GET /api/email': 'admin',
+  'POST /api/email/secret': 'admin',
+};
+
+/** The rule for a request, by its method and the route it matched. */
+export function ruleFor(method: string, route: string): Rule {
+  return ROUTE_RULES[`${method === 'HEAD' ? 'GET' : method} ${route}`] ?? 'admin';
+}
+
+const param = (req: FastifyRequest, name: string): string => {
+  const v = (req.params as Record<string, unknown>)[name];
+  if (typeof v !== 'string' || !v) throw new HttpError(400, 'error.notFound');
+  return v;
+};
+
+async function botOf(s: Services, req: FastifyRequest, via: BotVia): Promise<string> {
+  const db = s.ctx.db;
+  switch (via) {
+    case 'bot':
+      return param(req, 'id');
+    case 'botParam':
+      return param(req, 'botId');
+    case 'table': {
+      const [row] = await db
+        .select({ botId: schema.botTables.botId })
+        .from(schema.botTables)
+        .where(eq(schema.botTables.id, param(req, 'id')))
+        .limit(1);
+      if (!row) throw notFound('table');
+      return row.botId;
+    }
+    case 'routine': {
+      const [row] = await db
+        .select({ botId: schema.routines.botId })
+        .from(schema.routines)
+        .where(eq(schema.routines.id, param(req, 'id')))
+        .limit(1);
+      if (!row) throw notFound('routine');
+      return row.botId;
+    }
+  }
+}
+
+/** The conversations a route's id leads to; a person must see one of them. */
+async function threadsOf(s: Services, req: FastifyRequest, via: ThreadVia): Promise<string[]> {
+  const db = s.ctx.db;
+  const id = param(req, 'id');
+  switch (via) {
+    case 'thread':
+      return [id];
+    case 'message': {
+      const [row] = await db
+        .select({ threadId: schema.messages.threadId })
+        .from(schema.messages)
+        .where(eq(schema.messages.id, id))
+        .limit(1);
+      if (!row) throw notFound('message');
+      return [row.threadId];
+    }
+    case 'turn': {
+      const [row] = await db
+        .select({ threadId: schema.turns.threadId })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, id))
+        .limit(1);
+      if (!row) throw new HttpError(404, 'error.notFound');
+      return [row.threadId];
+    }
+    case 'approval': {
+      const [row] = await db
+        .select({ threadId: schema.approvals.threadId })
+        .from(schema.approvals)
+        .where(eq(schema.approvals.id, id))
+        .limit(1);
+      if (!row) throw notFound('approval');
+      return [row.threadId];
+    }
+    case 'job': {
+      const [row] = await db
+        .select({ from: schema.jobs.fromThreadId, to: schema.jobs.toThreadId })
+        .from(schema.jobs)
+        .where(eq(schema.jobs.id, id))
+        .limit(1);
+      if (!row) throw notFound('job');
+      return [row.from, row.to];
+    }
+  }
+}
+
+/** Refuses a request its person may not make; lets it through otherwise. */
+export async function enforceRule(s: Services, req: FastifyRequest, rule: Rule): Promise<void> {
+  const p: Principal | null = req.principal;
+  if (!p) throw new HttpError(401, 'error.accessKeyRequired');
+  if (rule === 'signedIn' || rule === 'self') return;
+  if (rule === 'admin') {
+    if (!managesServer(p.role)) throw new HttpError(403, 'error.adminOnly');
+    return;
+  }
+  if (rule === 'owner') {
+    if (p.role !== 'owner') throw new HttpError(403, 'error.ownerOnly');
+    return;
+  }
+  if ('bot' in rule) {
+    await s.access.requireBot(p, await botOf(s, req, rule.via), rule.bot);
+    return;
+  }
+  const ids = await threadsOf(s, req, rule.via);
+  let lastErr: unknown = notFound('thread');
+  for (const id of ids) {
+    try {
+      await s.access.requireThread(p, id, rule.thread === 'write');
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}

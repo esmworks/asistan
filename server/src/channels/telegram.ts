@@ -330,7 +330,8 @@ export class TelegramChannels {
       await api.sendMessage(m.chat.id, t('channel.botArchived'));
       return;
     }
-    const thread = await this.services.threads.main(bot.id);
+    // The conversation of the person who set the chat up.
+    const thread = await this.services.threads.main(bot.id, row.userId);
     const text = (m.text || m.caption || '').trim();
     // Someone else's words the person passed on: never a command, and the bot reads them as data.
     const forward = forwardedFrom(m);
@@ -353,6 +354,7 @@ export class TelegramChannels {
       text,
       files,
       clientId: `telegram:${m.chat.id}:${m.message_id}`,
+      userId: row.userId,
       ...(replyTo && { replyTo }),
       props: {
         via: 'telegram',

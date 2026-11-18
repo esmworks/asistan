@@ -43,6 +43,20 @@ export const Group = z.object({
 });
 export type Group = z.infer<typeof Group>;
 
+/**
+ * What a person may do with a bot: nothing (they do not see it), talk with it in conversations of
+ * their own, or also change it, share it and look after what it learns.
+ */
+export const BotLevel = z.enum(['none', 'chat', 'edit']);
+export type BotLevel = z.infer<typeof BotLevel>;
+export const BOT_LEVELS = BotLevel.options;
+/** Who may use a bot besides its owner: everyone on the server at one level, and named people. */
+export const BotAccess = z.object({
+  everyone: BotLevel,
+  people: z.record(z.string(), BotLevel.exclude(['none'])),
+});
+export type BotAccess = z.infer<typeof BotAccess>;
+
 export const Bot = z.object({
   id: Id,
   name: z.string(),
@@ -80,6 +94,12 @@ export const Bot = z.object({
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** The person who made the bot (or was given it). Missing from older servers. */
+  ownerUserId: z.string().optional(),
+  /** Who else may use it; sent only to those who may change it. Missing from older servers. */
+  access: BotAccess.optional(),
+  /** What the person asking may do with it. Missing from older servers, where it is `edit`. */
+  yourLevel: BotLevel.optional(),
 });
 export type Bot = z.infer<typeof Bot>;
 
@@ -199,6 +219,8 @@ export const Thread = z.object({
   title: z.string(),
   kind: ThreadKind,
   peerBotId: Id.nullable(),
+  /** The person whose conversation it is; null for the bot's own work. Missing on older servers. */
+  userId: z.string().nullable().optional(),
   /** What the conversation is for, set by the person; empty when none. Missing on older servers. */
   goal: z.string().optional(),
   /** The message pinned above the conversation, with its start; missing or null for none. */
@@ -1156,6 +1178,8 @@ export const Ticket = z.object({
   priority: TicketPriority,
   assigneeBotId: Id.nullable(),
   createdBy: z.string(),
+  /** The person who opened it; null when a bot did. Missing on older servers. */
+  createdByUserId: z.string().nullable().optional(),
   threadId: Id.nullable(),
   /** Its place among the tickets of its column, smallest first. */
   position: z.number(),

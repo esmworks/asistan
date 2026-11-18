@@ -695,7 +695,10 @@ export class RoutineService {
    * made while the routine ran in the main conversation does not make that one its own.
    */
   private async threadFor(routine: Routine, botId: string) {
-    if (routine.inMain) return this.services.threads.row((await this.services.threads.main(botId)).id);
+    if (routine.inMain) {
+      const owner = await this.services.access.botOwner(botId);
+      return this.services.threads.row((await this.services.threads.main(botId, owner)).id);
+    }
     const [last] = await this.ctx.db
       .select({ threadId: schema.routineRuns.threadId })
       .from(schema.routineRuns)
@@ -717,7 +720,8 @@ export class RoutineService {
     text: string,
     props: { routineRunId: string; routineName: string; posted?: boolean; outside?: OutsideTrigger },
   ) {
-    const main = await this.services.threads.main(botId);
+    // Reports go to the bot's owner, who set the routine's bot up.
+    const main = await this.services.threads.main(botId, await this.services.access.botOwner(botId));
     await this.services.threads.addMessage({
       threadId: main.id,
       role: 'assistant',

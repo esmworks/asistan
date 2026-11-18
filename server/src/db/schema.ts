@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import type { BotAccess } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -73,6 +74,13 @@ export const bots = pgTable('bots', {
   archivedAt: ts('archived_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
+  /** The person who made the bot, or was handed it; they may always change and share it. */
+  ownerUserId: text('owner_user_id')
+    .notNull()
+    .default('owner')
+    .references(() => users.id),
+  /** Who else may use it (`BotAccess`); nobody but its owner and the admins until it is shared. */
+  access: jsonb('access').$type<BotAccess>().notNull().default({ everyone: 'none', people: {} }),
 });
 
 export const threads = pgTable(
@@ -88,6 +96,11 @@ export const threads = pgTable(
     kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
       .notNull()
       .default('user'),
+    /**
+     * The person whose conversation this is; only they see it. Null for the bot's own work (with
+     * other bots, routines, tickets), which those who may change the bot see.
+     */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     /** For bot-to-bot threads: the other bot. */
     peerBotId: text('peer_bot_id').references(() => bots.id, { onDelete: 'set null' }),
     engineSessionId: text('engine_session_id'),
@@ -116,6 +129,7 @@ export const threads = pgTable(
   },
   (t) => [
     index('threads_bot_idx').on(t.botId, t.updatedAt),
+    index('threads_user_idx').on(t.userId, t.botId),
     uniqueIndex('threads_peer_uq')
       .on(t.botId, t.peerBotId)
       .where(sql`${t.kind} = 'bot'`),
@@ -719,6 +733,11 @@ export const channels = pgTable(
     secret: text('secret'),
     /** What the chat app says about the account the server uses (Telegram bot name, linked number). */
     account: jsonb('account').$type<Record<string, unknown>>().notNull().default({}),
+    /** The person here it was set up by; what comes in through it is written as theirs. */
+    userId: text('user_id')
+      .notNull()
+      .default('owner')
+      .references(() => users.id, { onDelete: 'cascade' }),
     /** The person's id in the chat app; nobody else's messages are read. Null until paired. */
     owner: text('owner'),
     ownerName: text('owner_name'),

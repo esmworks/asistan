@@ -18,6 +18,8 @@ export function ticketTools(opts: {
   bot: Bot;
   turn: TurnRow;
   t: T;
+  /** A bot the turn's person may talk with, by name or id. */
+  reach: (ref: string) => Promise<Bot>;
 }): AppTool[] {
   const { def, services: s, bot, turn, t } = opts;
   const by = `bot:${bot.id}`;
@@ -28,7 +30,7 @@ export function ticketTools(opts: {
   const assignee = async (ref: string | undefined) => {
     if (ref === undefined) return undefined;
     if (!ref.trim()) return null;
-    return (await s.bots.resolve(ref, bot)).id;
+    return (await opts.reach(ref)).id;
   };
   return [
     def(

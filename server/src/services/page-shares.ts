@@ -25,12 +25,23 @@ const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 export class PageShareService {
   constructor(private ctx: Ctx) {}
 
-  async list(): Promise<PageShare[]> {
+  /** Shared pages, newest first; with `botIds`, only those bots'. */
+  async list(botIds?: string[]): Promise<PageShare[]> {
     const rows = await this.ctx.db
       .select()
       .from(schema.pageShares)
       .orderBy(desc(schema.pageShares.createdAt));
-    return rows.map(toShare);
+    return rows.filter((r) => !botIds || botIds.includes(r.botId)).map(toShare);
+  }
+
+  /** The bot a link's page is of; null for a token there is no link for. */
+  async botOf(token: string): Promise<string | null> {
+    const [row] = await this.ctx.db
+      .select({ botId: schema.pageShares.botId })
+      .from(schema.pageShares)
+      .where(eq(schema.pageShares.token, token))
+      .limit(1);
+    return row?.botId ?? null;
   }
 
   async find(botId: string, path: string): Promise<PageShare | null> {

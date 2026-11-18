@@ -50,6 +50,8 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   instructionsCheckedAt: iso(r.instructionsCheckedAt),
   instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
+  ownerUserId: r.ownerUserId,
+  access: r.access,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -64,6 +66,7 @@ export const toThread = (
   title: r.title,
   kind: r.kind,
   peerBotId: r.peerBotId,
+  userId: r.userId,
   goal: r.goal,
   archivedAt: iso(r.archivedAt),
   snoozedUntil: iso(r.snoozedUntil),

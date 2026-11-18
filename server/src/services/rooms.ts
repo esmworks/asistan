@@ -70,11 +70,12 @@ export class RoomService {
     return !!(await this.roomRow(threadId));
   }
 
-  async list(): Promise<Room[]> {
+  /** One person's rooms; every room without `userId`. */
+  async list(userId?: string): Promise<Room[]> {
     const rows = await this.ctx.db
       .select({ id: schema.threads.id })
       .from(schema.threads)
-      .where(eq(schema.threads.kind, 'room'))
+      .where(and(eq(schema.threads.kind, 'room'), userId ? eq(schema.threads.userId, userId) : undefined))
       .orderBy(desc(schema.threads.updatedAt));
     return Promise.all(rows.map((r) => this.get(r.id)));
   }
@@ -112,12 +113,14 @@ export class RoomService {
     return unique;
   }
 
-  async create(input: RoomCreate): Promise<Room> {
+  /** A room of `userId`'s, with bots they may talk with (the caller checks that). */
+  async create(input: RoomCreate, userId: string): Promise<Room> {
     const botIds = await this.checkedBots(input.botIds);
     const id = newId();
     await this.ctx.db.insert(schema.threads).values({
       id,
       botId: botIds[0]!,
+      userId,
       kind: 'room',
       title: input.title,
       goal: input.goal ?? '',

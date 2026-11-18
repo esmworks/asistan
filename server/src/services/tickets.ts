@@ -43,6 +43,7 @@ const toTicket = (r: Row, comments: CommentRow[], turnState: TurnState): Ticket 
   priority: r.priority,
   assigneeBotId: r.assigneeBotId,
   createdBy: r.createdBy,
+  createdByUserId: r.createdByUserId,
   threadId: r.threadId,
   position: r.position,
   turnState,
@@ -218,6 +219,7 @@ export class TicketService {
         await this.services.threads.create(bot.id, {
           title: `#${row.number} ${row.title}`.slice(0, 120),
           kind: 'ticket',
+          userId: null,
         })
       ).id;
     }

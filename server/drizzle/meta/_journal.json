@@ -407,6 +407,13 @@
       "when": 1794957921716,
       "tag": "0057_people_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794958700184,
+      "tag": "0058_bot_access",
+      "breakpoints": true
     }
   ]
 }

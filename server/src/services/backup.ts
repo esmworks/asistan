@@ -16,7 +16,7 @@ import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
 import { schema, schemaVersion, type Db } from '../db';
-import { adoptLegacyAccount } from '../users';
+import { adoptLegacyAccount, OWNER_ID } from '../users';
 import { HttpError, newId } from '../util';
 import { BOUND_FILE } from './vault';
 
@@ -172,6 +172,10 @@ export async function replaceRows(db: Db, files: Map<string, string>) {
     for (const table of order) {
       const list = await rowsOf(table);
       for (let i = 0; i < list.length; i += 200) await tx.insert(table).values(list.slice(i, i + 200));
+      // A backup from before people came in has none, yet its bots and settings name the owner.
+      if (table === schema.users) {
+        await tx.insert(schema.users).values({ id: OWNER_ID, role: 'owner' }).onConflictDoNothing();
+      }
     }
     // A backup from before people came in has none: its single account becomes the owner.
     await adoptLegacyAccount(tx as unknown as Db);
