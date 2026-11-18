@@ -7,6 +7,7 @@ import { useT } from '@/i18n';
 import { useSettings } from '@/lib/queries';
 import { Chip } from './onboarding/Chip';
 import { Card, Row, useSaveSettings } from './SettingsDialog';
+import { SlackLinkCard } from './SlackCards';
 
 /** What the person told YumakBot about themselves; every bot reads it. */
 export function ProfileTab() {
@@ -106,6 +107,7 @@ export function ProfileTab() {
           </Card>
         </>
       )}
+      <SlackLinkCard />
     </>
   );
 }

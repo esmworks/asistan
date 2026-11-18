@@ -93,7 +93,9 @@ export const threads = pgTable(
     title: sealedText('title').notNull().default(''),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
-    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket'] })
+    // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the
+    // bot sees it, and its turns use only what the team shares, never one person's own data.
+    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team'] })
       .notNull()
       .default('user'),
     /**
@@ -422,6 +424,11 @@ export const routines = pgTable('routines', {
   carryReport: boolean('carry_report').notNull().default(false),
   /** Runs in the bot's main conversation, with its context, instead of a conversation of its own. */
   inMain: boolean('in_main').notNull().default(false),
+  /**
+   * The Slack channel its reports go to; null for none. Such a routine runs in a team conversation:
+   * what goes to a channel is written from what the team shares, never from one person's own data.
+   */
+  slackChannel: text('slack_channel'),
   /** Also runs once each time the server starts (the computer was turned on, the app opened). */
   onStartup: boolean('on_startup').notNull().default(false),
   /** A page checked before each scheduled run; the bot runs only when its text changed. */
@@ -754,12 +761,14 @@ export const botSkills = pgTable(
  * A chat app the person talks to bots through. Telegram: one row per bot, with that bot's own
  * Telegram bot (its token sealed with the vault key) and the one Telegram account paired with it.
  * WhatsApp: a single row for the linked number; `botId` is the bot its messages go to now.
+ * Slack: a single row for the server's Slack app (its two tokens sealed together); `botId` is the
+ * bot that answers when a message names none.
  */
 export const channels = pgTable(
   'channels',
   {
     id: text('id').primaryKey(),
-    kind: text('kind', { enum: ['telegram', 'whatsapp'] }).notNull(),
+    kind: text('kind', { enum: ['telegram', 'whatsapp', 'slack'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
     /** Telegram: the bot token, sealed. */
     secret: text('secret'),
@@ -791,7 +800,48 @@ export const channels = pgTable(
     uniqueIndex('channels_whatsapp_uq')
       .on(t.kind)
       .where(sql`${t.kind} = 'whatsapp'`),
+    uniqueIndex('channels_slack_uq')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'slack'`),
   ],
+);
+
+/**
+ * A Slack account linked to a person here: what it writes runs as theirs, and nobody else's
+ * requests are run. Linked with a code the person gets in the app and sends to the Slack app.
+ */
+export const slackPeople = pgTable(
+  'slack_people',
+  {
+    slackUserId: text('slack_user_id').primaryKey(),
+    teamId: text('team_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** How Slack names them, for the app to show. */
+    name: text('name').notNull().default(''),
+    /** Their direct-message channel with the Slack app, once they wrote there. */
+    dmChannel: text('dm_channel'),
+    /** The bot their direct messages go to, the last one they named. */
+    botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('slack_people_user_uq').on(t.userId)],
+);
+
+/** Which Slack thread a team conversation is, so its replies and later lines find each other. */
+export const slackThreads = pgTable(
+  'slack_threads',
+  {
+    threadId: text('thread_id')
+      .primaryKey()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    channel: text('channel').notNull(),
+    /** The Slack thread's first message. */
+    threadTs: text('thread_ts').notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('slack_threads_uq').on(t.channel, t.threadTs)],
 );
 
 /** Which message in a chat app is which message here, so an answer to one finds its place. */

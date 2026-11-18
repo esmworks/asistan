@@ -68,6 +68,10 @@ const Form = z.object({
   emailTrigger: z.boolean(),
   emailFilter: z.string().max(2000),
   model: z.string().max(200),
+  slackChannel: z
+    .string()
+    .trim()
+    .regex(/^([CG][A-Z0-9]{6,20})?$/, 'routine.slackChannelInvalid'),
   watchUrl: z
     .string()
     .trim()
@@ -135,6 +139,7 @@ function fromRoutine(r?: Routine): Form {
     inMain: r?.inMain ?? false,
     onStartup: r?.onStartup ?? false,
     watchUrl: r?.watchUrl ?? '',
+    slackChannel: r?.slackChannel ?? '',
     webhookFilter: r?.webhookFilter ?? '',
     webhookPost: r?.webhookPost ?? false,
     emailTrigger: r?.emailTrigger ?? false,
@@ -166,6 +171,8 @@ export function RoutineDialog({
   const { data: claudeModels = [] } = useClaudeModels(open && claude);
   const form = useForm<Form>({ resolver: zodResolver(Form), values: fromRoutine(routine) });
   const values = useWatch({ control: form.control }) as Form;
+  // The Slack field is offered once the server has a Slack app.
+  const { data: slack } = useQuery({ queryKey: ['slack-link'], queryFn: api.slackLink });
   // Opening a routine whose latest run failed is seeing it: the bot's mark for it goes out until
   // a run fails again.
   const { data: summaries = [] } = useSummaries();
@@ -185,6 +192,7 @@ export function RoutineDialog({
         inMain: f.inMain,
         onStartup: f.onStartup,
         watchUrl: f.watchUrl.trim() || null,
+        slackChannel: f.slackChannel.trim() || null,
         webhookFilter: f.webhookFilter.trim(),
         webhookPost: f.webhookPost,
         emailTrigger: f.emailTrigger,
@@ -434,6 +442,12 @@ export function RoutineDialog({
               </datalist>
               <p className="mt-1 text-xs text-muted-foreground">{t('routine.modelHint')}</p>
             </Field>
+            {(slack?.available || !!values.slackChannel) && (
+              <Field label={t('routine.slackChannel')} error={err.slackChannel?.message}>
+                <Input {...form.register('slackChannel')} placeholder="C0123456789" className="rounded-xl" />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackChannelHint')}</p>
+              </Field>
+            )}
             <Field label={t('routine.watchUrl')} error={err.watchUrl?.message}>
               <Input
                 {...form.register('watchUrl')}

@@ -12,6 +12,7 @@ import { useBots } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Card } from './SettingsDialog';
 import { EmailCard } from './EmailCard';
+import { SlackCard } from './SlackCards';
 
 const ERRORS: Record<string, MessageKey> = {
   expired: 'whatsapp.error.expired',
@@ -19,12 +20,16 @@ const ERRORS: Record<string, MessageKey> = {
   loggedOut: 'whatsapp.error.loggedOut',
 };
 
-/** Chat apps: WhatsApp for the chosen bot here; each bot's Telegram is in that bot's settings. */
+/**
+ * Chat apps: WhatsApp for the chosen bot and the server's Slack app here; each bot's Telegram is in
+ * that bot's settings.
+ */
 export function ChannelsTab() {
   const t = useT();
   return (
     <>
       <WhatsAppCard />
+      <SlackCard />
       <Card title={t('channels.telegram')}>
         <p className="px-4 py-3 text-sm text-muted-foreground">{t('channels.telegramHint')}</p>
       </Card>

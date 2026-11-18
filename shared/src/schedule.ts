@@ -80,6 +80,8 @@ export const Routine = z.object({
   carryReport: z.boolean(),
   /** Runs in the bot's main conversation instead of one of its own. */
   inMain: z.boolean(),
+  /** The Slack channel its reports go to; it then works only with what the team shares. */
+  slackChannel: z.string().nullable().optional(),
   /** Also runs once each time the server starts. */
   onStartup: z.boolean(),
   /** A page checked before each scheduled run, without the AI; the bot runs only when it changed. */
@@ -123,6 +125,16 @@ export const RoutineCreate = z.object({
    * instead of a conversation of its own.
    */
   inMain: z.boolean().default(false),
+  /**
+   * The Slack channel's id (`C…`, `G…`) its reports are posted to; null for none. The routine then
+   * runs as a team conversation, with no one's own notes, apps or sign-ins.
+   */
+  slackChannel: z
+    .string()
+    .trim()
+    .regex(/^[CG][A-Z0-9]{6,20}$/, 'validation.slackChannel')
+    .nullable()
+    .default(null),
   /** Also runs once each time the server starts: on a desktop, when the computer is turned on. */
   onStartup: z.boolean().default(false),
   /**

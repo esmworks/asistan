@@ -59,6 +59,10 @@ The interface is available in English and Turkish.
   WhatsApp links like WhatsApp Web, with a separate number or your own "Message yourself" chat, and `/bot <name>`
   switches the bot it talks to. Replies, files and approval cards go back to the app you last wrote from; passwords
   and sign-ins stay in the Yumak Bot app.
+- **Slack** — one Slack app for the server, over Socket Mode (no public address). Each person links their Slack
+  account with a code. A direct message goes to their own conversation; mentioning the app in a channel starts a team
+  conversation that uses only what the team shares and that everyone who may talk with the bot sees in the app.
+  Approval buttons answer only for the person who asked, and a routine can post its report to a channel.
 - **A bot as an API** — call a bot from a script with the access key and get its reply.
 - **Connections** — connect remote MCP servers (Notion, GitHub, Linear, Google Workspace, Slack and many more) once and
   choose which bots may use them.
@@ -324,6 +328,7 @@ The server reads these environment variables:
 | `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
 | `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
 | `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
+| `YUMAKBOT_SLACK_API`             | Slack's own         | Address of Slack's Web API; only tests change it                        |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from

@@ -57,6 +57,8 @@ import {
   SkillBot,
   SkillCreate,
   SkillUpdate,
+  SlackConnect,
+  SlackUpdate,
   TelegramConnect,
   TelegramUpdate,
   WhatsAppSet,
@@ -1246,7 +1248,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const q = z
       .object({ status: z.enum(['pending', 'allowed', 'denied', 'expired']).optional() })
       .parse(req.query);
-    return s.approvals.list({ ...q, seen: (await s.access.summaryScope(me(req))).seen });
+    const { seen, answerable } = await s.access.summaryScope(me(req));
+    return s.approvals.list({ ...q, seen, answerable });
   });
   app.get('/api/approvals/:id', async (req) => s.approvals.get(IdParams.parse(req.params).id));
   app.post('/api/approvals/:id', async (req) =>
@@ -1563,6 +1566,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.post('/api/whatsapp/link', async () => s.whatsapp.link());
   app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
+  // The server's Slack app, set up by those who look after the server; each person links their own
+  // Slack account to it with a code.
+  app.get('/api/slack', async () => s.slack.status());
+  app.put('/api/slack', async (req) => s.slack.connect(SlackConnect.parse(req.body)));
+  app.patch('/api/slack', async (req) => s.slack.update(SlackUpdate.parse(req.body)));
+  app.delete('/api/slack', async () => {
+    await s.slack.disconnect();
+    return { ok: true };
+  });
+  app.get('/api/slack/me', async (req) => s.slack.link(me(req).userId));
+  app.post('/api/slack/me/code', async (req) => s.slack.newCode(me(req).userId));
+  app.delete('/api/slack/me', async (req) => s.slack.unlink(me(req).userId));
 
   // Memory: each person's notes about themselves, and the notes of the bots they may change.
   const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({

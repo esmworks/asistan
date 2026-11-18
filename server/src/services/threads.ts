@@ -34,10 +34,14 @@ export interface NewMessage {
 /** How many messages a conversation opens with, and how many each "load older" adds. */
 export const MESSAGE_PAGE = 500;
 
-/** Whose view a bot's conversation list is for: theirs, and the bot's own work when `botWork`. */
+/**
+ * Whose view a bot's conversation list is for: theirs, the bot's own work when `botWork`, and the
+ * team's conversations with it when `team`.
+ */
 export interface ThreadScope {
   userId: string;
   botWork: boolean;
+  team?: boolean;
 }
 
 /** One person's sidebar: the bots they reach, those they may change, the conversations they see. */
@@ -45,6 +49,8 @@ export interface SummaryScope {
   botIds: string[];
   editable: string[];
   seen: SQL;
+  /** Of the cards in `seen`, those the viewer may answer. */
+  answerable?: SQL;
 }
 /** Messages read back at a time while a search matches sealed text in the server. */
 const SEARCH_PAGE = 1000;
@@ -153,7 +159,12 @@ export class ThreadService {
           scope &&
             (scope.botWork
               ? or(eq(schema.threads.userId, scope.userId), isNull(schema.threads.userId))
-              : eq(schema.threads.userId, scope.userId)),
+              : scope.team
+                ? or(
+                    eq(schema.threads.userId, scope.userId),
+                    and(eq(schema.threads.kind, 'team'), isNull(schema.threads.userId)),
+                  )
+                : eq(schema.threads.userId, scope.userId)),
         ),
       )
       .orderBy(desc(schema.threads.updatedAt));
@@ -787,7 +798,7 @@ export class ThreadService {
     const threads = await this.ctx.db
       .select()
       .from(schema.threads)
-      .where(and(inArray(schema.threads.kind, ['user', 'routine', 'bot', 'api']), scope?.seen))
+      .where(and(inArray(schema.threads.kind, ['user', 'routine', 'bot', 'api', 'team']), scope?.seen))
       .orderBy(desc(schema.threads.updatedAt));
     const ids = threads.map((t) => t.id);
     const [states, previews, replies] = await Promise.all([
@@ -804,7 +815,7 @@ export class ThreadService {
       })
       .from(schema.approvals)
       .innerJoin(schema.threads, eq(schema.threads.id, schema.approvals.threadId))
-      .where(and(eq(schema.approvals.status, 'pending'), scope?.seen))
+      .where(and(eq(schema.approvals.status, 'pending'), scope?.seen, scope?.answerable))
       .orderBy(asc(schema.approvals.createdAt));
     const pendingBy = new Map<string, number>();
     const waitingBy = new Map<string, BotSummary['waiting']>();

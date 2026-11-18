@@ -442,6 +442,20 @@
       "when": 1794961848100,
       "tag": "0062_memory_history_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794992832534,
+      "tag": "0063_slack",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794993536682,
+      "tag": "0064_routine_slack_channel",
+      "breakpoints": true
     }
   ]
 }
