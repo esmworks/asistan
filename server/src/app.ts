@@ -700,6 +700,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     await services.telegram.start();
     await services.whatsapp.start();
     await services.slack.start();
+    await services.discord.start();
   }
 
   return {
@@ -721,6 +722,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.telegram.stop();
       await services.whatsapp.stop();
       await services.slack.stop();
+      await services.discord.stop();
       await services.reactions.stop();
       services.push.stop();
       services.subscriptions.stop();

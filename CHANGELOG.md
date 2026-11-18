@@ -41,6 +41,31 @@ version is 0.x, a minor release may change the data format or the API; the serve
   Slack and in the app alike. Replies, files and 👀/✅ marks go back to Slack.
 - A routine can post its report to a Slack channel; such a routine runs as a team conversation.
 
+### Discord
+
+- The server can have one Discord bot, set up by an admin under Settings → Chat apps with the bot's token from the
+  developer portal. It connects over Discord's Gateway, so the server needs no public address. The card gives the link
+  that adds the bot to a Discord server.
+- Anyone in a Discord server the bot is in can mention it in a channel, as for a community's help desk; for each server
+  an admin can allow only the members of chosen roles. A direct message gets one fixed answer: mention the bot in a
+  server's channel.
+- A mention starts a team conversation with the bot chosen for Discord, which everyone who may talk with that bot sees
+  in the app; a reply to the bot's post goes on with it. A new conversation reads the channel's last messages from the
+  15 minutes before it, or the message it replies to, as others' words.
+- People in Discord have no account here. Their requests act for the server's owner but use only what the team
+  shares, may do no more with the bots than talk with them, and leave the "always allow" rules aside. Reading the
+  team's apps, mail, tables or the web, and every step that changes something, waits for a card, whatever the bot's
+  level; they start no board work and save no skills. A bot shared with nobody does not answer in Discord.
+- A step's card is answered in the app by those who may change the bot. In a server with chosen roles, the member who
+  asked can also press its buttons in Discord; a question's card is theirs to answer there in any server. Nobody else
+  presses them, and "always allow" is not offered there.
+- "Working on it…" with a Stop button shows until the first answer takes its place; 👀 becomes ✅, ❌ or ⏹️. Only the
+  person who asked stops it, with the button or a reply `stop`. One person has at most two requests under way, and at
+  most 20 wait in all. What is written in the app in such a conversation is posted to the channel with the writer's
+  name.
+- Answers are split at Discord's 2,000 characters; files go both ways, up to 10 MB to Discord. A post notifies only the
+  people it names, never a role, `@everyone` or `@here`.
+
 ### Connections
 
 - Gmail asks for the read and compose scopes as well, as its setup guide does. A Gmail account connected before keeps

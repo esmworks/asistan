@@ -370,7 +370,8 @@ function Header({
   // A ticket's work is followed on the board; its conversation is listed only while it needs the person.
   const ticketThreads = listed.filter((th) => th.kind === 'ticket' && (waiting.has(th.id) || !!th.pinnedAt));
   const apiThreads = listed.filter((th) => th.kind === 'api');
-  // The team's conversations with the bot, from a Slack channel: everyone who may talk with it sees them.
+  // The team's conversations with the bot, from a Slack or Discord channel: everyone who may talk
+  // with it sees them.
   const teamThreads = listed.filter((th) => th.kind === 'team');
   const refresh = () => qc.invalidateQueries({ queryKey: ['threads', bot.id] });
   const fail = (e: Error) => toast.error(e.message);

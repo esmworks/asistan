@@ -106,6 +106,18 @@ export class Inbox {
       userId?: string | null;
       /** Earlier lines of the chat app's thread, `Name: text` each; read by the bot as outside text. */
       history?: string;
+      /** Who wrote it, when that is not `userId`: a person of a chat app with no account here. */
+      author?: string;
+      /**
+       * Written by someone with no account here: the turn talks with the bot and no more, at the
+       * strictest of its level and "ask", and the "always allow" rules do not count.
+       */
+      guest?: boolean;
+      /**
+       * Whether the words may stop the bot or answer its cards; false for someone who did not ask
+       * for the work under way, whose words then wait their turn.
+       */
+      answers?: boolean;
     },
   ): Promise<{ message: Message; created: boolean }> {
     const s = this.services;
@@ -147,7 +159,7 @@ export class Inbox {
     // A message forwarded from someone else is their words, not the person's: it neither stops the
     // bot nor answers its card.
     const forwarded = extra.outside === 'forward';
-    const bare = queued && !files.length && !answered && !forwarded;
+    const bare = queued && !files.length && !answered && !forwarded && input.answers !== false;
     // A bare "stop" while it works stops it, as the Stop button does, instead of waiting behind it.
     if (bare && isStopRequest(input.text)) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
@@ -198,7 +210,8 @@ export class Inbox {
       ? asOutsideData(from ? t('outside.forwardFrom', { name: from }) : t('outside.forward'), text, t)
       : text;
     // In a team conversation several people write: the bot reads who said it.
-    const name = thread.kind === 'team' && input.userId ? await this.nameOf(input.userId) : '';
+    const name =
+      input.author?.trim() || (thread.kind === 'team' && input.userId ? await this.nameOf(input.userId) : '');
     // Earlier lines of a chat app's thread the bot was called into: others' words, read as data.
     const history = input.history?.trim()
       ? `${asOutsideData(t('outside.chatHistory'), input.history.trim(), t)}\n\n`
@@ -212,6 +225,7 @@ export class Inbox {
       prompt,
       outside: forwarded || history ? 'forward' : null,
       userId: input.userId ?? null,
+      ...(input.guest && { guest: true, modeCap: 'ask' as const }),
     });
     await s.threads.updateMessage(message.id, { turnId: turn.id });
     return { message: { ...message, turnId: turn.id }, created };

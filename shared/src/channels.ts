@@ -146,3 +146,79 @@ export function slackManifest(name: string): string {
     2,
   );
 }
+
+/** A Discord bot token as the developer portal shows it: three dot-separated parts. */
+export function discordToken(raw: string): string | null {
+  const token = raw.trim().replace(/^Bot\s+/i, '');
+  return /^[\w-]{20,100}\.[\w-]{4,20}\.[\w-]{20,100}$/.test(token) ? token : null;
+}
+
+/** The server's Discord bot: its token from the developer portal, and the bot that answers there. */
+export const DiscordConnect = z.object({
+  token: z.string().trim().min(1).max(500),
+  botId: z.string().min(1).nullable(),
+});
+export type DiscordConnect = z.infer<typeof DiscordConnect>;
+
+/** Most roles one Discord server may list as allowed to use the bot. */
+export const MAX_DISCORD_ROLES = 50;
+
+export const DiscordUpdate = z.object({
+  botId: z.string().min(1).nullable().optional(),
+  /** One Discord server's roles whose members may use the bot; empty lets everyone there. */
+  roles: z
+    .object({
+      serverId: z.string().regex(/^\d{1,25}$/),
+      roleIds: z.array(z.string().regex(/^\d{1,25}$/)).max(MAX_DISCORD_ROLES),
+    })
+    .optional(),
+});
+export type DiscordUpdate = z.infer<typeof DiscordUpdate>;
+
+/** One Discord server the bot is in, with who there may use it. */
+export interface DiscordServer {
+  id: string;
+  name: string;
+  /** Its roles, but `@everyone` and those of other apps. */
+  roles: { id: string; name: string }[];
+  /** The roles whose members may use the bot; empty: everyone there. */
+  allowed: string[];
+}
+
+/** The server's Discord bot, as those who look after the server see it. Never the token. */
+export interface DiscordStatus {
+  /** A token is saved and the server listens. */
+  connected: boolean;
+  /** The bot's name in Discord, as people mention it. */
+  botUser: string | null;
+  /** The bot here that answers in Discord. */
+  botId: string | null;
+  /** Adds the Discord bot to a server, with the permissions it uses. */
+  inviteUrl: string | null;
+  servers: DiscordServer[];
+  /**
+   * Whether Discord gives the bot the text of every message (the Message Content intent). Off, it
+   * reads only messages that mention it, so it misses the earlier lines of a channel.
+   */
+  messageContent: boolean;
+  /** Why it stopped working, in Discord's words; null while it works. */
+  error: string | null;
+}
+
+/**
+ * What the Discord bot may do in a server: view channels, send messages (in threads too), embed
+ * links, attach files, read message history and add reactions.
+ */
+export const DISCORD_PERMISSIONS = (
+  (1n << 6n) |
+  (1n << 10n) |
+  (1n << 11n) |
+  (1n << 14n) |
+  (1n << 15n) |
+  (1n << 16n) |
+  (1n << 38n)
+).toString();
+
+/** The address that adds the Discord bot to a server. */
+export const discordInviteUrl = (applicationId: string) =>
+  `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(applicationId)}&scope=bot&permissions=${DISCORD_PERMISSIONS}`;
