@@ -3,6 +3,14 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Connections
+
+- Gmail asks for the read and compose scopes as well, so the bot gets the tools that send, reply, forward and change
+  drafts. A Gmail account connected before keeps its old tools until it is signed out and signed in again; with your
+  own Google app, add the `gmail.readonly` and `gmail.compose` scopes to its consent screen first.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety
