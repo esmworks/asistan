@@ -285,7 +285,7 @@ export const tr = {
   'settings.keywords.general':
     'tema, koyu, açık, dil, yakınlaştırma, bildirim, ses, gönderme tuşu, enter, saat dilimi, kenar çubuğu, sıkışık, sohbet genişliği, girişte aç, sesli okuma',
   'settings.keywords.connection':
-    'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
+    'claude, oturum, api anahtarı, sağlayıcı, model, akıl yürütme, özetleme, bağlam, sıkıştırma, sunucu, adres, cihazlar, oturum kapat, korumalı alan, tarayıcı, iphone, telefon, bildirim, apple, apns',
   'settings.keywords.permissions': 'onaylar, kurallar, izin, sor, her zaman, engelle, asla, yasakla',
   'settings.keywords.vault':
     'şifreler, girişler, iki adımlı kod, totp, gizli, paylaşılan sayfalar, bağlantılar',
@@ -1654,6 +1654,13 @@ export const tr = {
   'model.moveKeeps':
     'Konuşmaları silinmez; her bot bir sonraki mesajda son konuşmayı okuyarak devam eder. Claude ile başka bir sağlayıcı arasında geçen botun rutinlerine ayrı model seçilmişse o seçim kalkar; rutin botun modelini kullanır.',
   'model.moved': '{count} bot geçirildi.',
+  'model.compact': 'Sohbeti özetleme sınırı',
+  'model.compactHint':
+    'Claude botlarda sohbet bu boyuta gelince eski kısmı özetlenir. Küçük tutmak cevapları hızlı ve ucuz tutar; büyük tutmak daha çok ayrıntıyı aynen hatırlatır, ama her mesaj daha pahalı olur.',
+  'model.compactThousand': '{count} bin token',
+  'model.compactMillion': '{count} milyon token',
+  'model.compactAuto': "Claude'un kendi değeri",
+  'model.compactRecommended': '{size} (önerilen)',
   'model.backup': 'Yedek model',
   'model.backupHint':
     'Kullanım sınırı dolunca iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır.',

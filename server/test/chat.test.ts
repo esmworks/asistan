@@ -43,6 +43,8 @@ describe('sohbet', () => {
     // The engine was asked to resume the stored session.
     expect(t.engine.requests.at(-1)!.sessionId).toBe(`fake-${thread.id}`);
     expect(t.engine.requests.at(-1)!.systemPrompt).toContain('Kahya');
+    // A long conversation may reach the bot only as a summary: it is told where the exact words are.
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('`conversations_search` ile ara');
     // The time goes with each message, so the system prompt reads the same turn after turn and the
     // model's prompt cache holds.
     const [first, second] = t.engine.requests.slice(-2);
@@ -79,8 +81,8 @@ describe('sohbet', () => {
     expect(lost!.sessionId).toBe(`fake-${thread.id}`);
     expect(retry!.sessionId).toBeNull();
     // The earlier exchange goes along; the new message comes last and only once.
-    expect(retry!.prompt).toContain('Kullanıcı: adım Ayşe');
-    expect(retry!.prompt).toContain('Kahya: Yankı: adım Ayşe');
+    expect(retry!.prompt).toMatch(/Kullanıcı \[[^\]]+\]: adım Ayşe/);
+    expect(retry!.prompt).toMatch(/Kahya \[[^\]]+\]: Yankı: adım Ayşe/);
     expect(retry!.prompt.endsWith('adımı hatırlıyor musun?')).toBe(true);
     expect(retry!.prompt.split('adımı hatırlıyor musun?')).toHaveLength(2);
 
@@ -100,7 +102,7 @@ describe('sohbet', () => {
     await t.send(thread.id, 'devam');
     await t.services.turns.idle();
     expect(t.engine.requests.at(-1)!.sessionId).toBeNull();
-    expect(t.engine.requests.at(-1)!.prompt).toContain('Kullanıcı: ilk konu');
+    expect(t.engine.requests.at(-1)!.prompt).toMatch(/Kullanıcı \[[^\]]+\]: ilk konu/);
   });
 
   it('aynı istemci kimliğiyle gelen mesajı bir kez işler', async () => {
@@ -1067,9 +1069,41 @@ describe('sohbet', () => {
     expect(last.sessionId).toBeNull();
     expect(last.prompt).toContain('merhaba');
     const msgs = await t.messages(thread.id);
+    // The new session can read any handed message whole by its id.
+    const hello = msgs.find((m) => m.role === 'user' && m.text === 'merhaba')!;
+    expect(last.prompt).toContain(`[${hello.id}]: merhaba`);
     expect(msgs.some((m) => m.props.kind === 'contextHandoff')).toBe(true);
     expect(msgs.some((m) => m.role === 'error')).toBe(false);
     expect(msgs.at(-1)!.role).toBe('assistant');
+  });
+
+  it('Claude botun özetleme sınırı ayardan gelir; 200 binle başlar, geçersiz değer reddedilir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    expect((await t.api('GET', '/api/settings')).body).toMatchObject({ claudeCompactWindow: 200_000 });
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.compactWindow).toBe(200_000);
+    expect((await t.api('PATCH', '/api/settings', { claudeCompactWindow: 0 })).status).toBe(200);
+    await t.send(thread.id, 'tekrar');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.compactWindow).toBe(0);
+    expect((await t.api('PATCH', '/api/settings', { claudeCompactWindow: 50_000 })).status).toBe(400);
+  });
+
+  it('motor bağlamın dolduğunu kendi bildirince de son konuşma yeni oturuma aktarılır', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    await t.send(thread.id, '[bağlam-bayrak] devam');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.sessionId).toBeNull();
+    // What the old session had summarised goes to the new one.
+    expect(t.engine.requests.at(-1)!.prompt).toContain('ÖZET: devredilen konuşma');
+    const msgs = await t.messages(thread.id);
+    expect(msgs.some((m) => m.props.kind === 'contextHandoff')).toBe(true);
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
   });
 
   it('model aşırı yüklüyse yedek model işi sürdürür', async () => {

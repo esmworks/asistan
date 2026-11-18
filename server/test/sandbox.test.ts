@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sandboxOptions } from '../src/engine/claude';
+import { sandboxOptions, withCompactWindow } from '../src/engine/claude';
 import { probeShellSandbox } from '../src/shell-sandbox';
 
 describe('Bash yalıtımı', () => {
@@ -22,5 +22,14 @@ describe('Bash yalıtımı', () => {
   it('macOS yalıtımı her zaman var sayar, desteklenmeyen sistemde çalışmıyor der', async () => {
     expect(await probeShellSandbox('darwin')).toEqual({ status: 'ok', detail: null });
     expect((await probeShellSandbox('win32')).status).toBe('unavailable');
+  });
+});
+
+describe('özetleme sınırı', () => {
+  it("ayar yoksa 200 bin verir, 0 Claude'un kendi değerine bırakır", () => {
+    const base = { cleanupPeriodDays: 3650 };
+    expect(withCompactWindow(base)).toEqual({ cleanupPeriodDays: 3650, autoCompactWindow: 200_000 });
+    expect(withCompactWindow(base, 400_000)).toMatchObject({ autoCompactWindow: 400_000 });
+    expect(withCompactWindow(base, 0)).toEqual(base);
   });
 });
