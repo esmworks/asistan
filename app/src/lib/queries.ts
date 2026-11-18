@@ -1,4 +1,4 @@
-import type { UsageRange } from '@yumakbot/shared';
+import type { ModelInfo, UsageRange } from '@yumakbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from './api';
 
@@ -39,6 +39,28 @@ export const useProviderModels = (id: string | null) =>
     enabled: !!id,
     staleTime: Infinity,
   });
+/**
+ * A provider's models with names and thinking levels. A server older than that list gives names
+ * alone; their thinking levels are then unknown (null).
+ */
+export const useProviderModelInfo = (id: string | null) =>
+  useQuery({
+    queryKey: ['provider-models', id, 'info'],
+    queryFn: () =>
+      api.providerModelInfo(id!).catch(async (e): Promise<ModelInfo[]> => {
+        if (!(e instanceof ApiError && e.status === 404)) throw e;
+        return (await api.providerModels(id!)).map((m) => ({
+          id: m,
+          name: m,
+          efforts: null,
+          images: false,
+          contextWindow: null,
+          released: null,
+        }));
+      }),
+    enabled: !!id,
+    staleTime: 5 * 60_000,
+  });
 export const useApprovals = () => useQuery({ queryKey: ['approvals'], queryFn: api.approvals });
 export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: api.rules });
 export const useVault = () => useQuery({ queryKey: ['vault'], queryFn: api.vault });
@@ -58,6 +80,22 @@ export const useRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: api.skills });
 export const useUsage = (days: UsageRange, botId?: string) =>
   useQuery({ queryKey: ['usage', days, botId], queryFn: () => api.usage(days, botId), staleTime: 30_000 });
+/**
+ * The Claude plan's usage windows, as the last Claude turn heard them. A turn that hears new ones
+ * pushes a refresh; the slow poll keeps a page left open from showing a reset as still to come.
+ */
+export const usePlanUsage = () =>
+  useQuery({
+    queryKey: ['plan-usage'],
+    // A server older than the meter has no such route: nothing to show, nothing to retry.
+    queryFn: () =>
+      api
+        .planUsage()
+        .then((r) => r.plan)
+        .catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))),
+    staleTime: 60_000,
+    refetchInterval: 10 * 60_000,
+  });
 
 export const useThreads = (botId: string | null) =>
   useQuery({ queryKey: ['threads', botId], queryFn: () => api.threads(botId!), enabled: !!botId });

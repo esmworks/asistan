@@ -70,6 +70,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'DELETE /api/push/apns': 'admin',
   'GET /api/providers': 'signedIn',
   'GET /api/providers/:id/models': 'signedIn',
+  'GET /api/providers/:id/model-info': 'signedIn',
   'PUT /api/providers/:id/key': 'admin',
   'POST /api/providers/:id/test': 'admin',
   'POST /api/providers/:id/sign-in': 'admin',
@@ -95,6 +96,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/content-encryption': 'owner',
   'GET /api/usage': 'admin',
   'GET /api/usage/turns.csv': 'admin',
+  'GET /api/usage/plan': 'signedIn',
 
   // Everything at once: only the owner holds every person's data.
   'GET /api/setup-import': 'owner',

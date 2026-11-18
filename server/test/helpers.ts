@@ -69,6 +69,8 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
       browserPath: null,
       appDir: null,
       port: 0,
+      // Tests never reach the public model catalog.
+      modelCatalogUrl: null,
       ...overrides,
     },
   );

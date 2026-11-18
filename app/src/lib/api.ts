@@ -36,6 +36,7 @@ import type {
   Message,
   PermissionRule,
   ProviderInfo,
+  ModelInfo,
   CustomEndpointCreate,
   CustomEndpointUpdate,
   Routine,
@@ -265,6 +266,8 @@ export const api = {
   setBotAccess: (id: string, access: BotAccess) => http.put<Bot>(`/api/bots/${id}/access`, access),
   providers: () => http.get<ProviderInfo[]>('/api/providers'),
   providerModels: (id: string) => http.get<string[]>(`/api/providers/${encodeURIComponent(id)}/models`),
+  providerModelInfo: (id: string) =>
+    http.get<ModelInfo[]>(`/api/providers/${encodeURIComponent(id)}/model-info`),
   setProviderKey: (id: string, key: string) =>
     http.put<{ ok: true }>(`/api/providers/${encodeURIComponent(id)}/key`, { key }),
   testProviderModel: (id: string, model: string) =>
@@ -352,6 +355,7 @@ export const api = {
   disableWebhook: (id: string) => http.del<Routine>(`/api/routines/${id}/webhook`),
   usage: (days: UsageRange, botId?: string) =>
     http.get<UsageReport>(`/api/usage?days=${days}${botId ? `&bot=${encodeURIComponent(botId)}` : ''}`),
+  planUsage: () => http.get<{ plan: UsageReport['plan'] | null }>('/api/usage/plan'),
   openBrowserWindow: (botId: string, url?: string) =>
     http.post<{ ok: true }>(`/api/bots/${botId}/browser/window`, { url }),
   closeBrowserWindow: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/browser/window`),

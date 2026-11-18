@@ -29,7 +29,7 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { splitPiModel } from '@/lib/new-bot';
-import { useProviderModels, useProviders } from '@/lib/queries';
+import { useProviderModelInfo, useProviderModels, useProviders } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Chip } from './onboarding/Chip';
 
@@ -77,6 +77,15 @@ const PLANS = [
   { chip: '+chatgpt', provider: 'openai', name: 'ChatGPT' },
   { chip: '+copilot', provider: 'github-copilot', name: 'GitHub Copilot' },
 ] as const;
+/**
+ * How a usable provider is named in a list of connections: an endpoint by its own name, a provider
+ * used only through a plan by the plan (ChatGPT), any other by the provider.
+ */
+export function connectionName(p: ProviderInfo): string {
+  if (p.custom) return p.custom.name;
+  const plan = PLANS.find((x) => x.provider === p.id);
+  return plan && p.signIn?.signedIn && !p.hint ? plan.name : providerName(p.id);
+}
 /** Providers reached only by signing in to a plan: no key chip for them. */
 const PLAN_ONLY = new Set(['github-copilot']);
 /** Ollama's address on the same computer; an address, not a word to translate. */
@@ -748,7 +757,7 @@ export function PiModelPicker({
   const parts = splitPiModel(value);
   const provider = configured.includes(parts.provider) ? parts.provider : (configured[0] ?? '');
   const model = provider === parts.provider ? parts.model : '';
-  const { data: models = [] } = useProviderModels(provider || null);
+  const { data: models = [] } = useProviderModelInfo(provider || null);
   if (!configured.length) return <>{empty ?? <ProviderKeyForm />}</>;
   return (
     <div className="flex flex-wrap gap-2">
@@ -764,24 +773,39 @@ export function PiModelPicker({
           ))}
         </SelectContent>
       </Select>
-      <ModelSearch value={model} models={models} onChange={(m) => onChange(`${provider}/${m}`)} />
+      <ModelSearch
+        value={model}
+        models={models.map((m) => ({ value: m.id, name: m.name }))}
+        onChange={(m) => onChange(`${provider}/${m}`)}
+      />
     </div>
   );
 }
 
+/** A model the picker offers: the id that is saved, and a readable name when there is one. */
+export interface ModelOption {
+  value: string;
+  name?: string;
+}
+
 /**
- * A model name field with the provider's models below it, narrowed to those holding what is
- * typed. A name off the list stays allowed: the provider may serve models its list leaves out.
- * The list opens under the field and scrolls on its own, so a long one stays inside the window.
+ * A model name field with the provider's models below it, narrowed to those whose id or name holds
+ * what is typed. A name off the list stays allowed: the provider may serve models its list leaves
+ * out. The list opens under the field and scrolls on its own, so a long one stays inside the window.
  */
-function ModelSearch({
+export function ModelSearch({
   value,
   models,
   onChange,
+  placeholder,
+  className,
 }: {
   value: string;
-  models: string[];
+  models: ModelOption[];
   onChange(model: string): void;
+  placeholder?: string;
+  /** For the field, e.g. to match the other fields of a form. */
+  className?: string;
 }) {
   const t = useT();
   const listId = useId();
@@ -791,7 +815,9 @@ function ModelSearch({
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
   const q = query.toLowerCase();
-  const shown = q ? models.filter((m) => m.toLowerCase().includes(q)) : models;
+  const shown = q
+    ? models.filter((m) => m.value.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q))
+    : models;
   useEffect(() => {
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' });
   }, [active, open]);
@@ -808,7 +834,7 @@ function ModelSearch({
       setActive((i) => (shown.length ? (i + step + shown.length) % shown.length : 0));
     } else if (e.key === 'Enter' && open && shown[active]) {
       e.preventDefault();
-      pick(shown[active]);
+      pick(shown[active].value);
     } else if (e.key === 'Escape' && open) {
       e.preventDefault();
       e.stopPropagation();
@@ -829,7 +855,12 @@ function ModelSearch({
           const field = e.currentTarget;
           setTimeout(() => field.select());
           setQuery('');
-          setActive(Math.max(0, models.indexOf(value)));
+          setActive(
+            Math.max(
+              0,
+              models.findIndex((m) => m.value === value),
+            ),
+          );
           setOpen(true);
         }}
         onBlur={() => setOpen(false)}
@@ -843,10 +874,10 @@ function ModelSearch({
         }}
         onKeyDown={onKeyDown}
         aria-label={t('provider.model')}
-        placeholder={models[0] ?? t('provider.model')}
+        placeholder={placeholder ?? models[0]?.value ?? t('provider.model')}
         spellCheck={false}
         autoComplete="off"
-        className="h-10 rounded-full px-4 pr-9 font-mono"
+        className={cn('h-10 rounded-full px-4 pr-9 font-mono', className)}
       />
       <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
       {open && (shown.length > 0 || q) && (
@@ -855,22 +886,29 @@ function ModelSearch({
             <ul ref={list} id={listId} role="listbox" className="max-h-64 overflow-y-auto p-1">
               {shown.map((m, i) => (
                 <li
-                  key={m}
+                  key={m.value}
                   role="option"
-                  aria-selected={m === value}
+                  aria-selected={m.value === value}
                   // Keeps the focus in the field, so the list does not close before the pick.
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    pick(m);
+                    pick(m.value);
                   }}
                   onMouseMove={() => setActive(i)}
                   className={cn(
-                    'flex cursor-pointer items-center gap-2 truncate rounded-xl px-3 py-1.5 font-mono text-sm',
+                    'flex cursor-pointer items-center gap-2 rounded-xl px-3 py-1.5 text-sm',
                     i === active && 'bg-accent text-accent-foreground',
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate">{m}</span>
-                  {m === value && <Check className="size-4 shrink-0 text-muted-foreground" />}
+                  {m.name && m.name !== m.value ? (
+                    <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                      <span className="truncate">{m.name}</span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">{m.value}</span>
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate font-mono">{m.value}</span>
+                  )}
+                  {m.value === value && <Check className="size-4 shrink-0 text-muted-foreground" />}
                 </li>
               ))}
             </ul>
