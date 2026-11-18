@@ -55,7 +55,8 @@ export function buildSystemPrompt(opts: {
   bot: Bot;
   paths: WorkspacePaths;
   cwd: string;
-  memory: { user: Memory[]; bot: Memory[] };
+  /** `room`: the notes of the place the conversation is in, when it is in one. */
+  memory: { user: Memory[]; bot: Memory[]; room?: Memory[] };
   profile?: UserProfile;
   peers: Bot[];
   timezone: string;
@@ -103,7 +104,12 @@ export function buildSystemPrompt(opts: {
   // Memory grows without end; past a budget the notes most recently written, changed or looked up
   // come and the rest are left to search. Each list keeps its order, so a lookup of a note already
   // here changes nothing and the model's cache of the prompt holds.
-  const { user, bot: own, left } = withinBudget(memory.user, memory.bot, MEMORY_PROMPT_CHARS);
+  const {
+    user,
+    bot: own,
+    room,
+    left,
+  } = withinBudget(memory.user, memory.bot, MEMORY_PROMPT_CHARS, memory.room ?? []);
   // Each note carries the day it was last written, so the bot can tell an old fact from a new one
   // ("moved to Izmir" in 2024 against "lives in Ankara" today).
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: opts.timezone, dateStyle: 'short' });
@@ -111,7 +117,7 @@ export function buildSystemPrompt(opts: {
   // never a rule of this prompt or a request of the person's.
   const note = (m: Memory) =>
     `- (${day.format(new Date(m.updatedAt))}) ${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
-  if (user.length || own.length) lines.push('', t('prompt.memoryNotes'));
+  if (user.length || own.length || room.length) lines.push('', t('prompt.memoryNotes'));
   if (user.length) {
     lines.push('', t('prompt.userMemory'));
     for (const m of user) lines.push(note(m));
@@ -119,6 +125,10 @@ export function buildSystemPrompt(opts: {
   if (own.length) {
     lines.push('', t('prompt.botMemory'));
     for (const m of own) lines.push(note(m));
+  }
+  if (room.length) {
+    lines.push('', t('prompt.roomMemory'));
+    for (const m of room) lines.push(note(m));
   }
   if (left) lines.push('', t('prompt.memoryLeft', { count: left }));
 
@@ -273,8 +283,16 @@ export function handoffPrompt(opts: {
 /** How much memory text goes into a prompt; about 6,000 tokens. */
 export const MEMORY_PROMPT_CHARS = 24_000;
 
+/**
+ * Most text the pinned notes of one owner (a person, a bot, a place) may hold. A bot's prompt
+ * carries up to three such groups, so together they stay well under `MEMORY_PROMPT_CHARS` and
+ * pinning can never crowd out every other note.
+ */
+export const PINNED_MEMORY_CHARS = 6000;
+
 /** What a note's place in the prompt and its staleness go by. */
 export type MemoryActivity = {
+  pinned?: boolean;
   content: string;
   createdAt: string;
   updatedAt?: string;
@@ -291,17 +309,23 @@ export function lastActive(m: MemoryActivity): string {
 }
 
 /**
- * The memories that fit in `budget` characters, most recently active first (see `lastActive`;
- * the lists keep their order), and how many were left out. The shared notes and the bot's own
- * share the budget. An old note a bot keeps looking up stays in, while one nobody needed since it
- * was written makes room; a left-out note a bot finds by search comes back on the next turn.
+ * The memories that fit in `budget` characters, and how many were left out. The notes the person
+ * pinned come first; the rest follow, most recently active first (see `lastActive`). The shared
+ * notes, the bot's own and the place's share the budget. Each list shows its pinned notes first
+ * and keeps the order of the rest, so a lookup of a note already here changes nothing and the
+ * model's cache of the prompt holds. An old note a bot keeps looking up stays in, while one
+ * nobody needed since it was written makes room; a left-out note a bot finds by search comes
+ * back on the next turn.
  */
 export function withinBudget<M extends MemoryActivity>(
   user: M[],
   bot: M[],
   budget: number,
-): { user: M[]; bot: M[]; left: number } {
-  const all = [...user, ...bot].sort((a, b) => lastActive(b).localeCompare(lastActive(a)));
+  room: M[] = [],
+): { user: M[]; bot: M[]; room: M[]; left: number } {
+  const all = [...user, ...bot, ...room].sort(
+    (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || lastActive(b).localeCompare(lastActive(a)),
+  );
   const kept = new Set<M>();
   let used = 0;
   for (const m of all) {
@@ -309,9 +333,9 @@ export function withinBudget<M extends MemoryActivity>(
     used += m.content.length + 3;
     kept.add(m);
   }
-  return {
-    user: user.filter((m) => kept.has(m)),
-    bot: bot.filter((m) => kept.has(m)),
-    left: all.length - kept.size,
+  const shown = (list: M[]) => {
+    const fit = list.filter((m) => kept.has(m));
+    return [...fit.filter((m) => m.pinned), ...fit.filter((m) => !m.pinned)];
   };
+  return { user: shown(user), bot: shown(bot), room: shown(room), left: all.length - kept.size };
 }

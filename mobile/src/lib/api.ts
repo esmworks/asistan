@@ -20,6 +20,7 @@ import type {
   Group,
   Memory,
   MemoryChange,
+  MemoryHistoryLine,
   Message,
   PermissionRule,
   ProviderInfo,
@@ -212,6 +213,8 @@ export interface Settings {
   /** The routine pre-check; missing on older servers. */
   routineGate?: RoutineGateMode;
   maxTurns?: number;
+  /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
+  memoryReviewEvery?: number;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -457,7 +460,9 @@ export function apiFor(origin: string) {
     memory: () => http.get<Memory[]>('/api/memory'),
     addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
       http.post<Memory>('/api/memory', m),
-    updateMemory: (id: string, p: { content: string }) => http.patch<Memory>(`/api/memory/${id}`, p),
+    updateMemory: (id: string, p: { content?: string; pinned?: boolean; updatedAt?: string }) =>
+      http.patch<Memory>(`/api/memory/${id}`, p),
+    memoryHistory: () => http.get<MemoryHistoryLine[]>('/api/memory-history'),
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
     /** Deletes every note the bot keeps for itself. */
     removeBotMemory: (botId: string) => http.del<{ count: number }>(`/api/bots/${botId}/memory`),

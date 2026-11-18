@@ -697,7 +697,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     // Every bot's level is read once, for what the person may talk with and what they may change.
     const levels = [...(await s.access.levels(me(req)))];
     const reach = (wanted: BotLevel) => levels.filter(([, l]) => atLeast(l, wanted)).map(([id]) => id);
-    const notes: MemoryReach = { userId: me(req).userId, botIds: reach('edit') };
+    const notes: MemoryReach = {
+      userId: me(req).userId,
+      botIds: reach('edit'),
+      places: await s.memory.placesFor(me(req).userId, managesServer(me(req).role)),
+    };
     return {
       ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
       staleMemory: (await s.memory.stale(new Date(), notes)).length,
@@ -1619,12 +1623,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   const memoryReach = async (req: FastifyRequest): Promise<MemoryReach> => ({
     userId: me(req).userId,
     botIds: await s.access.botIds(me(req), 'edit'),
+    places: await s.memory.placesFor(me(req).userId, managesServer(me(req).role)),
+    managesServer: managesServer(me(req).role),
   });
   /** A note the person reaches; another's reads as missing. */
   const ownNote = async (req: FastifyRequest, id: string) => {
     const reach = await memoryReach(req);
     const note = await s.memory.get(id);
-    if (!s.memory.canEdit(note, reach.botIds, reach.userId)) throw notFound('memory');
+    if (!s.memory.canEdit(note, reach.botIds, reach.userId, reach.places)) throw notFound('memory');
     return note;
   };
   /** A waiting change the person decides on; another's reads as missing. */
@@ -1636,7 +1642,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/memory', async (req) => {
     const q = z
       .object({
-        scope: z.enum(['bot', 'user']).optional(),
+        scope: z.enum(['bot', 'user', 'room']).optional(),
         botId: z.string().optional(),
       })
       .parse(req.query);
@@ -1646,12 +1652,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const b = MemoryCreate.parse(req.body);
     // A bot's note needs its bot, and leave to change it.
     if (b.scope === 'bot') await s.access.requireBot(me(req), b.botId ?? '', 'edit');
-    return s.memory.create({ ...b, userId: me(req).userId, source: 'user' });
+    // `source` says a person wrote it; the history says which person.
+    return s.memory.create({ ...b, userId: me(req).userId, source: 'user', actor: actorOf(req) });
   });
   app.patch('/api/memory/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
     await ownNote(req, id);
-    return s.memory.update(id, MemoryUpdate.parse(req.body), actorOf(req));
+    // A change of the words may carry the version it was made on; pinning alone has none.
+    const { updatedAt, ...patch } = MemoryUpdate.parse(req.body);
+    return s.memory.update(id, { ...patch, expectedUpdatedAt: updatedAt }, actorOf(req));
   });
   // Every note one bot keeps for itself.
   app.delete('/api/bots/:id/memory', async (req) =>

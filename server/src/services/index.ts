@@ -30,6 +30,7 @@ import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
+import { MemoryReviewService } from './memory-review';
 import { PushService } from './push';
 import { RoutineService } from './routines';
 import { SubscriptionService } from './subscriptions';
@@ -57,6 +58,7 @@ export class Services {
   readonly claudeAuth: ClaudeAuthService;
   readonly connections: ConnectionService;
   readonly memory: MemoryService;
+  readonly memoryReview: MemoryReviewService;
   readonly push: PushService;
   readonly settings: SettingsService;
   readonly botImport: BotImportService;
@@ -147,6 +149,9 @@ export class Services {
     this.tables = new TableService(ctx);
     this.contentSeal = new ContentSealService(ctx);
     this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
+    this.memoryReview = new MemoryReviewService(ctx, this, engineFor);
+    this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
+    this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
     this.slack = new SlackChannel(ctx, this, this.vault);

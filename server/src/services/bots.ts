@@ -10,7 +10,7 @@ import {
   type Group,
   type GroupMove,
 } from '@yumakbot/shared';
-import { asc, eq, isNull, max } from 'drizzle-orm';
+import { and, asc, eq, isNull, max } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
@@ -239,6 +239,10 @@ export class BotService {
   async purge(id: string): Promise<void> {
     const bot = await this.get(id);
     if (!bot.archivedAt) throw new HttpError(409, 'error.botNotArchived');
+    // Purging is meant to leave nothing of the bot, and the history of its notes holds their words.
+    await this.ctx.db
+      .delete(schema.auditLog)
+      .where(and(eq(schema.auditLog.targetType, 'memory'), eq(schema.auditLog.owner, `bot:${id}`)));
     await this.ctx.db.delete(schema.bots).where(eq(schema.bots.id, id));
     this.ctx.bus.refresh({ scope: 'bots' });
   }

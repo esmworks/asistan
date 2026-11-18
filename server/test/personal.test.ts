@@ -232,8 +232,12 @@ describe('her kişinin kendisine ait olanlar', () => {
       // Lines of the same millisecond have no order between them.
       await new Promise((r) => setTimeout(r, 3));
     }
-    const all = (await t.services.memory.history(1000, { userId: 'mert', botIds: [] })).map((h) => h.after);
-    const latest = (await t.services.memory.history(2, { userId: 'mert', botIds: [] })).map((h) => h.after);
+    const all = (await t.services.memory.history(1000, { userId: 'mert', botIds: [], places: [] })).map(
+      (h) => h.after,
+    );
+    const latest = (await t.services.memory.history(2, { userId: 'mert', botIds: [], places: [] })).map(
+      (h) => h.after,
+    );
     expect(all.slice(-2)).toEqual(['Mert notu 2', 'Mert notu 3']);
     expect(latest).toEqual(['Mert notu 2', 'Mert notu 3']);
   });

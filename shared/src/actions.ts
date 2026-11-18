@@ -210,6 +210,16 @@ function phraseFor(name: string, input: Record<string, unknown>): Phrase {
         tr: ['bir bilgiyi hafızaya', 'bu bilgiyi hafızaya', SAVE],
         en: ['save something to memory', 'save this to memory', 'save things to memory'],
       };
+    case 'memory_update':
+      return {
+        tr: ['hafızadaki bir notu', 'hafızadaki bu notu', CHANGE],
+        en: ['change a note in memory', 'change this note in memory', 'change notes in memory'],
+      };
+    case 'memory_forget':
+      return {
+        tr: ['hafızadaki bir notu', 'hafızadaki bu notu', DELETE],
+        en: ['delete a note from memory', 'delete this note from memory', 'delete notes from memory'],
+      };
     case 'bot_create':
       return {
         tr: [
@@ -349,6 +359,7 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
     case 'Agent':
       return str(input.description);
     case 'memory_write':
+    case 'memory_update':
       return str(input.content);
     case 'image_create':
       return str(input.prompt);

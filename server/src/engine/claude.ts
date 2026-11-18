@@ -26,6 +26,8 @@ import {
   resultText,
   type AccountStatus,
   type AppTool,
+  type CompleteRequest,
+  type Completion,
   type Engine,
   type GateRequest,
   type GateVerdict,
@@ -921,6 +923,14 @@ export class ClaudeEngine implements Engine {
     const { text, costUsd } = await this.quick(system, user, req.signal);
     if (req.signal.aborted) throw new Error('aborted');
     return parseGate(text, costUsd);
+  }
+
+  /**
+   * One answer without tools or a session, from the cheapest model: the memory review reads a
+   * conversation this way, so it neither starts a turn nor reaches a chat app.
+   */
+  async complete(req: CompleteRequest): Promise<Completion> {
+    return this.quick(req.system, req.user, req.signal);
   }
 
   /** The models this login can use and their effort levels. */
