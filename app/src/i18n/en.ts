@@ -1134,6 +1134,8 @@ export const en: Catalog<MessageKey> = {
   'bot.engine.pi': 'Another provider (API key)',
   'bot.engineHint.claude': 'Uses the Claude connection under Settings → Connection.',
   'bot.engineHint.pi': "No command line; file tools are limited to the bot's folder.",
+  'bot.connection': 'Connection',
+  'bot.connectionHint': 'Connect OpenAI, Gemini, xAI and other providers under Settings → Connection.',
   'bot.model': 'Model',
   'bot.modelRequired': 'Model name is required',
   'bot.modelPlaceholder.claude': 'Default',

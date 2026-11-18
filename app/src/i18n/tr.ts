@@ -1129,6 +1129,8 @@ export const tr = {
   'bot.engine.pi': 'Başka sağlayıcı (API anahtarı)',
   'bot.engineHint.claude': 'Ayarlar → Bağlantı bölümündeki Claude bağlantısını kullanır.',
   'bot.engineHint.pi': 'Komut satırı yok; dosya araçları botun klasörüyle sınırlı.',
+  'bot.connection': 'Bağlantı',
+  'bot.connectionHint': 'OpenAI, Gemini, xAI ve diğer sağlayıcıları Ayarlar → Bağlantı bölümünden bağlayın.',
   'bot.model': 'Model',
   'bot.modelRequired': 'Model adı gerekli',
   'bot.modelPlaceholder.claude': 'Varsayılan',

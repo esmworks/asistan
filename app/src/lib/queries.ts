@@ -1,4 +1,4 @@
-import type { UsageRange } from '@yumakbot/shared';
+import type { ModelInfo, UsageRange } from '@yumakbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from './api';
 
@@ -38,6 +38,28 @@ export const useProviderModels = (id: string | null) =>
     queryFn: () => api.providerModels(id!),
     enabled: !!id,
     staleTime: Infinity,
+  });
+/**
+ * A provider's models with names and thinking levels. A server older than that list gives names
+ * alone; their thinking levels are then unknown (null).
+ */
+export const useProviderModelInfo = (id: string | null) =>
+  useQuery({
+    queryKey: ['provider-models', id, 'info'],
+    queryFn: () =>
+      api.providerModelInfo(id!).catch(async (e): Promise<ModelInfo[]> => {
+        if (!(e instanceof ApiError && e.status === 404)) throw e;
+        return (await api.providerModels(id!)).map((m) => ({
+          id: m,
+          name: m,
+          efforts: null,
+          images: false,
+          contextWindow: null,
+          released: null,
+        }));
+      }),
+    enabled: !!id,
+    staleTime: 5 * 60_000,
   });
 export const useApprovals = () => useQuery({ queryKey: ['approvals'], queryFn: api.approvals });
 export const useRules = () => useQuery({ queryKey: ['rules'], queryFn: api.rules });

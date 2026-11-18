@@ -111,6 +111,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - The default model and effort for Claude bots are each picked from a drop-down, in Settings → Model and in the
   first setup, instead of a list of cards and a row of buttons that took up most of the screen.
 
+### Models
+
+- A bot's settings pick a connection (Claude or any provider connected under Settings → Connection), then a model by
+  its name, newest first, then how hard it thinks, offering only the levels that model takes; a model that does not
+  think shows no such choice.
+- Model names and release dates come from the public models.dev catalog, downloaded once a day. A model released after
+  this version shows up from it too, and runs with the catalog's limits and price. Without the catalog the lists are
+  the built-in ones. `YUMAKBOT_MODEL_CATALOG_URL=off` turns it off.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety

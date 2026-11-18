@@ -95,6 +95,11 @@ export interface Config {
   discordApi: string;
   /** Whether chat apps (Telegram, WhatsApp) connect at all; tests that do not use them leave them off. */
   channelsEnabled: boolean;
+  /**
+   * The public model catalog that fills in model names, thinking levels and limits the engine's own
+   * list lacks, and adds models released since; null keeps to the engine's list (tests, offline).
+   */
+  modelCatalogUrl: string | null;
 }
 
 const list = (v: string | undefined) =>
@@ -197,9 +202,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
     discordApi: (env.YUMAKBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
     channelsEnabled: true,
+    modelCatalogUrl: modelCatalogUrl(env.YUMAKBOT_MODEL_CATALOG_URL),
     aiEndpoints: aiEndpointsFrom(env),
     ...overrides,
   };
+}
+
+/** models.dev unless the environment names another address; `off` turns the catalog off. */
+function modelCatalogUrl(raw: string | undefined): string | null {
+  const v = raw?.trim();
+  if (v === 'off' || v === '0') return null;
+  return v || 'https://models.dev/api.json';
 }
 
 export interface EnvAiEndpoint {

@@ -334,6 +334,7 @@ The server reads these environment variables:
 | `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
 | `YUMAKBOT_SLACK_API`             | Slack's own         | Address of Slack's Web API; only tests change it                        |
 | `YUMAKBOT_DISCORD_API`           | Discord's own       | Address of Discord's API with its version; only tests change it         |
+| `YUMAKBOT_MODEL_CATALOG_URL`     | models.dev          | Public model catalog for model names and new models; `off` turns it off |
 | `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from
