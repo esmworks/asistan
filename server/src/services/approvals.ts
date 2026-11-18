@@ -19,6 +19,7 @@ import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
 import { OWNER_ID } from '../users';
 import { botLevel } from './access';
+import { commandParts, freePart } from './shell-parts';
 
 /** Built-in tools that only read inside the allowed folders. */
 export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'TodoWrite', 'NotebookRead']);
@@ -52,14 +53,40 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${globBody(glob)}$`, 's');
 }
 
-/** `Tool`, `Tool(arg-glob)`, with `*` wildcards in either part. */
-export function ruleMatches(pattern: string, toolName: string, input: Record<string, unknown>): boolean {
+/** `Tool`, `Tool(arg-glob)`, with `*` wildcards in either part, against the whole call. */
+function patternMatches(pattern: string, toolName: string, input: Record<string, unknown>): boolean {
   const m = /^([^()]+?)(?:\((.*)\))?$/s.exec(pattern.trim());
   if (!m) return false;
   const [, toolGlob, argGlob] = m;
   if (!globToRegExp(toolGlob!.trim()).test(toolName)) return false;
   if (argGlob === undefined) return true;
   return globToRegExp(argGlob).test(ruleSubject(toolName, input));
+}
+
+/**
+ * Each command a shell line could run, cut wherever one might start: at a chain, a pipe, a
+ * substitution or a group, quotes or not. More pieces than the shell runs, never fewer, so an
+ * "always ask" or block rule cannot be stepped around by putting its command after another.
+ */
+function commandPieces(command: string): string[] {
+  const rough = command.replace(/\\\n/g, ' ').split(/&&|\|\||[;&|\n`(){}]|\$\(/);
+  return [
+    ...new Set(
+      [...rough, ...(commandParts(command) ?? [])].map((p) => p.trim().replace(/\s+/g, ' ')).filter(Boolean),
+    ),
+  ];
+}
+
+/**
+ * `Tool`, `Tool(arg-glob)`, with `*` wildcards in either part. A command rule also covers a line
+ * that runs that command among others (`cd repo && git push` for `Bash(git push*)`).
+ */
+export function ruleMatches(pattern: string, toolName: string, input: Record<string, unknown>): boolean {
+  if (patternMatches(pattern, toolName, input)) return true;
+  if (toolName !== 'Bash') return false;
+  return commandPieces(ruleSubject(toolName, input)).some((command) =>
+    patternMatches(pattern, toolName, { command }),
+  );
 }
 
 /** What chains, pipes, redirects or substitutes in a shell command line. */
@@ -71,7 +98,7 @@ const SHELL_JOIN = /[;&|<>`\n]|\$\(/;
  * (`npm test && curl …`) is not covered unless the rule itself spells that out.
  */
 export function allowRuleMatches(pattern: string, toolName: string, input: Record<string, unknown>): boolean {
-  if (!ruleMatches(pattern, toolName, input)) return false;
+  if (!patternMatches(pattern, toolName, input)) return false;
   if (toolName !== 'Bash') return true;
   const arg = /\((.*)\)$/s.exec(pattern.trim())?.[1];
   if (arg === undefined) return true;
@@ -133,6 +160,53 @@ export function rememberedPattern(toolName: string, input: Record<string, unknow
     }
   }
   return toolName;
+}
+
+/** A step an "always allow" keeps: the rule's pattern, and the call it covers. */
+export interface RememberedStep {
+  pattern: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * The rule for one command of a shell line, as narrow as it: its first word and subcommand
+ * (`Bash(gh run:*)`), or the command itself when its program can do anything (`EXACT_ONLY`) or
+ * those words are quoted. Null when it cannot be written without a pattern character.
+ */
+function partPattern(part: string): string | null {
+  const words = part.split(' ');
+  const first = words[0]!;
+  const program = first.replace(/^.*\//, '');
+  // A program named by its path is another program in another folder (`./run.sh`); quoted words
+  // may not be what they look like.
+  const exact = EXACT_ONLY.has(program) || first.includes('/') || /["'\\]/.test(words.slice(0, 2).join(' '));
+  if (exact) return /[*?]/.test(part) ? null : `Bash(${part})`;
+  if (/[*?]/.test(first)) return null;
+  const sub = words[1] && /^[a-z][\w.-]*$/i.test(words[1]) ? ` ${words[1]}` : '';
+  return `Bash(${first}${sub}:*)`;
+}
+
+/**
+ * The rules a card's "always allow" keeps, each as narrow as its step (see `rememberedPattern`).
+ * A shell line of commands run in a row or piped keeps one for each command that needs one, so
+ * the same work tomorrow, in another folder or on other lines, is covered as well; `cd` and the
+ * like need none. Null when a step cannot be written that narrowly: the answer then counts for
+ * this time only.
+ */
+export function rememberedSteps(toolName: string, input: Record<string, unknown>): RememberedStep[] | null {
+  const parts = toolName === 'Bash' ? commandParts(ruleSubject(toolName, input)) : null;
+  const needed = parts?.filter((p) => !freePart(p)) ?? [];
+  if (needed.length) {
+    const steps = new Map<string, RememberedStep>();
+    for (const command of needed) {
+      const pattern = partPattern(command);
+      if (!pattern) return null;
+      if (!steps.has(pattern)) steps.set(pattern, { pattern, input: { command } });
+    }
+    return [...steps.values()];
+  }
+  const pattern = rememberedPattern(toolName, input);
+  return pattern ? [{ pattern, input }] : null;
 }
 
 /** A plain decimal number as text: `1500`, `-20`, `99.95`; no thousands marks, no exponent. */
@@ -198,9 +272,38 @@ export function blockRuleFor(rules: PermissionRule[], toolName: string, input: R
   return rules.find((r) => r.list === 'block' && ruleCovers(r, toolName, input)) ?? null;
 }
 
-/** The allow rule that lets this call through, if one does. */
+/**
+ * The allow rules that let this call through: one for the whole step, or, for a shell line of
+ * commands run in a row or piped, one for each command in it that needs one (see `freePart`).
+ * Null when they do not, or when the line cannot be cut into its commands (`commandParts`).
+ */
+export function allowRulesFor(
+  rules: PermissionRule[],
+  toolName: string,
+  input: Record<string, unknown>,
+): PermissionRule[] | null {
+  const allow = rules.filter((r) => r.list === 'allow');
+  const whole = allow.find((r) => ruleCovers(r, toolName, input));
+  if (whole) return [whole];
+  if (toolName !== 'Bash') return null;
+  const parts = commandParts(ruleSubject(toolName, input));
+  if (!parts) return null;
+  const used = new Set<PermissionRule>();
+  for (const command of parts) {
+    if (freePart(command)) continue;
+    // The part is one command: what its quotes hold is not a chain.
+    const rule = allow.find(
+      (r) => withinLimit(r, { command }) && patternMatches(r.pattern, 'Bash', { command }),
+    );
+    if (!rule) return null;
+    used.add(rule);
+  }
+  return used.size ? [...used] : null;
+}
+
+/** The allow rule that lets this call through, if one does (the first, for a chained command). */
 export function allowRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
-  return rules.find((r) => r.list === 'allow' && ruleCovers(r, toolName, input)) ?? null;
+  return allowRulesFor(rules, toolName, input)?.[0] ?? null;
 }
 
 /** From the strictest level to the freest. */
@@ -295,12 +398,13 @@ export function permissionSuggestions(o: {
   if (o.mode !== 'ask' && o.mode !== 'review') return { rules: [], mode: null };
   const steps = new Map<string, { latest: AnsweredCard; allowed: number; denied: number }>();
   for (const c of o.cards) {
-    const pattern = rememberedPattern(c.toolName, c.input);
-    if (!pattern) continue;
-    const step = steps.get(pattern) ?? { latest: c, allowed: 0, denied: 0 };
-    if (c.status === 'allowed') step.allowed++;
-    else step.denied++;
-    steps.set(pattern, step);
+    // A chained command counts toward a rule for each command in it.
+    for (const { pattern, input } of rememberedSteps(c.toolName, c.input) ?? []) {
+      const step = steps.get(pattern) ?? { latest: { ...c, input }, allowed: 0, denied: 0 };
+      if (c.status === 'allowed') step.allowed++;
+      else step.denied++;
+      steps.set(pattern, step);
+    }
   }
   const rules = [...steps]
     .filter(
@@ -570,16 +674,20 @@ export class ApprovalService {
     // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
     // that never applies and say the bot no longer asks. It counts as "this time" instead. So it
     // does on a card from a run outside text started: the step it allowed was the text's choice.
-    // The rule is kept for the bot that asked, and only as wide as the step (see
-    // `rememberedPattern`); a step that cannot be written that narrowly counts for this time.
-    const pattern = current.kind === 'tool' ? rememberedPattern(current.toolName, current.input) : null;
+    // The rules are kept for the bot that asked, and only as wide as the step (see
+    // `rememberedSteps`); a step that cannot be written that narrowly counts for this time. A
+    // command of a chained line that a rule already covers gets no second one.
+    const botRules = await this.rules(stored.botId);
+    const steps = (current.kind === 'tool' ? rememberedSteps(current.toolName, current.input) : null)?.filter(
+      (s) => !allowRulesFor(botRules, current.toolName, s.input),
+    );
     const remembered =
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
-      !!pattern &&
+      !!steps?.length &&
       !stored.outside &&
-      !askRuleMatches(await this.rules(stored.botId), current.toolName, current.input);
+      !askRuleMatches(botRules, current.toolName, current.input);
     let answer = d.answers ? JSON.stringify(d.answers) : (d.answer ?? null);
     /** What the waiting bot gets, when it differs from what the card keeps. */
     let given: string | null | undefined;
@@ -618,15 +726,11 @@ export class ApprovalService {
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
-    const rule =
-      remembered && pattern
-        ? await this.addRule({
-            list: 'allow',
-            pattern,
-            note: (await serverTranslator(this.ctx))('approval.ruleNote'),
-            botId: stored.botId,
-          })
-        : null;
+    const note = (await serverTranslator(this.ctx))('approval.ruleNote');
+    const added: PermissionRule[] = [];
+    for (const step of remembered ? (steps ?? []) : []) {
+      added.push(await this.addRule({ list: 'allow', pattern: step.pattern, note, botId: stored.botId }));
+    }
     // "Never allow": the tool is refused from now on, in every mode, without a card.
     if (d.remember && d.decision === 'deny' && current.kind === 'tool') {
       const t = await serverTranslator(this.ctx);
@@ -634,28 +738,34 @@ export class ApprovalService {
     }
     this.waiters.get(id)?.resolve({ status, answer: given ?? answer, ...(login && { login }) });
     this.waiters.delete(id);
-    if (rule) await this.allowWaiting(rule, id);
+    if (added.length) await this.allowWaiting(stored.botId, id, added);
     this.ctx.bus.refresh({ scope: 'approvals' });
     return toApproval(row);
   }
 
   /**
-   * After "always allow", other cards still waiting that the new rule covers are answered too, the
-   * way it would have: the same bot's, for the same step. A card an "always ask" rule covers keeps
-   * waiting.
+   * After "always allow", the same bot's other cards still waiting that the new rules cover, with
+   * the bot's other rules for the rest of a chained command, are answered too, the way they would
+   * have been. A card an "always ask" rule covers keeps waiting.
    */
-  private async allowWaiting(rule: PermissionRule, except: string) {
-    const ask = (await this.rules(rule.botId ?? undefined)).filter((r) => r.list === 'ask');
+  private async allowWaiting(botId: string, except: string, added: PermissionRule[]) {
+    const fresh = new Set(added.map((r) => r.id));
+    const rules = await this.rules(botId);
     const rows = await this.ctx.db
       .select()
       .from(schema.approvals)
-      .where(and(eq(schema.approvals.status, 'pending'), eq(schema.approvals.kind, 'tool')));
+      .where(
+        and(
+          eq(schema.approvals.status, 'pending'),
+          eq(schema.approvals.kind, 'tool'),
+          eq(schema.approvals.botId, botId),
+        ),
+      );
     for (const r of rows) {
       // A card from a run outside text started waits for its own answer.
       if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
-      if (rule.botId && r.botId !== rule.botId) continue;
-      if (!ruleCovers(rule, r.toolName, r.input)) continue;
-      if (ask.some((a) => ruleCovers(a, r.toolName, r.input))) continue;
+      if (!allowRulesFor(rules, r.toolName, r.input)?.some((rule) => fresh.has(rule.id))) continue;
+      if (askRuleMatches(rules, r.toolName, r.input)) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
         .set({ status: 'allowed', decidedBy: 'rule', decidedAt: new Date() })

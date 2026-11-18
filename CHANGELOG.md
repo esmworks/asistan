@@ -106,6 +106,17 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Bots are told to look up exact wording, numbers and earlier decisions in past conversations instead of guessing, and
   a message cut short when a conversation moves to a new session can be read whole.
 
+### Approvals
+
+- "Always allow" on a card for a line of commands run in a row or piped (`cd repo && gh run list | head -40`) keeps a
+  rule for each command in it (`Bash(gh run:*)`), not one for the whole line that the next day's folder or commit
+  would never match again. Such a line runs without a card when every command in it is covered; moving to a folder,
+  `echo` and filtering what is piped in need no rule. A line with a substitution, a variable or a redirect into a file
+  is kept whole, as before.
+- An "always ask" or block rule for a command also covers it inside such a line (`cd repo && git push`).
+- The auto review takes a routine's goal as asking for the reads it needs: "look at the commits that landed on main"
+  covers reading their diffs, without the routine naming each commit.
+
 ### Settings
 
 - The default model and effort for Claude bots are each picked from a drop-down, in Settings → Model and in the
