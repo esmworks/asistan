@@ -1,9 +1,9 @@
-import { isLocale } from '@yumakbot/shared';
+import { BRAND_COLOR, isLocale } from '@yumakbot/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { ShapeArt } from '@/components/BotAvatar';
+import { AppMascot } from '@/components/AppMascot';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { toast } from 'sonner';
@@ -214,7 +214,7 @@ function Workspace() {
     return desktop?.onOpenLink?.(take);
   }, [t]);
   useEffect(() => {
-    document.documentElement.style.setProperty('--brand', bot?.color ?? '#4f6bed');
+    document.documentElement.style.setProperty('--brand', bot?.color ?? BRAND_COLOR);
   }, [bot?.color]);
 
   // A phone shows the list or the chat, never both; the chat needs a bot to show.
@@ -257,7 +257,7 @@ function Workspace() {
           !isLoading && (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
               <div className="size-20">
-                <ShapeArt shape="cloud" color="var(--brand)" />
+                <AppMascot motion="always" />
               </div>
               <h1 className="text-2xl font-semibold">{t('welcome.title')}</h1>
               <p className="max-w-sm text-sm text-muted-foreground">{t('welcome.body')}</p>

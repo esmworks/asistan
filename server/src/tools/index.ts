@@ -1,4 +1,5 @@
 import {
+  BRAND_COLOR,
   ALL_TOOLS,
   catalogEntry,
   CONNECTION_CATALOG,
@@ -1483,7 +1484,7 @@ export class ToolFactory {
               isManager: false,
               // Without a group named, the new bot joins the manager's own section.
               groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
-              color: a.color ?? '#4f6bed',
+              color: a.color ?? BRAND_COLOR,
               avatar: 'shape:blob',
               // The level a bot the person creates starts at: the review asks only for what their
               // words do not cover. Loosening it further still takes the person's card.

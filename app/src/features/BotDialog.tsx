@@ -1,4 +1,5 @@
 import {
+  BRAND_COLOR,
   AVATAR_SHAPES,
   EFFORTS,
   PERMISSION_MODES,
@@ -45,6 +46,7 @@ import { MissingApps } from './MissingApps';
 import { Field } from './RoutineDialog';
 
 export const COLORS = [
+  BRAND_COLOR,
   '#4f6bed',
   '#7c5cff',
   '#c026d3',
@@ -52,7 +54,6 @@ export const COLORS = [
   '#e5484d',
   '#f97316',
   '#d4a017',
-  '#22a55a',
   '#0d9488',
   '#0891b2',
   '#64748b',

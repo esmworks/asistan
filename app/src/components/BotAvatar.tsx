@@ -1,4 +1,4 @@
-import type { AvatarShape } from '@yumakbot/shared';
+import { BRAND_COLOR, type AvatarShape } from '@yumakbot/shared';
 import { POSES, type ExpressionId } from '@norbert_bodziony/bloub';
 import {
   PlushBot,
@@ -97,7 +97,7 @@ function hash(s: string) {
 function hexColor(color: string) {
   const m = /^var\((--[\w-]+)\)$/.exec(color.trim());
   if (!m) return color;
-  return getComputedStyle(document.documentElement).getPropertyValue(m[1]!).trim() || '#4f6bed';
+  return getComputedStyle(document.documentElement).getPropertyValue(m[1]!).trim() || BRAND_COLOR;
 }
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
