@@ -157,6 +157,10 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       // The model catalog came in: lists fill in with names and new models.
       inv('provider-models');
       break;
+    case 'plan':
+      inv('plan-usage');
+      inv('usage');
+      break;
     case 'people':
       inv('people');
       // A changed role changes what this device may do.

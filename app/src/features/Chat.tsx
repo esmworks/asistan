@@ -87,6 +87,7 @@ import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@/lib/
 import { editAsTyped } from '@/lib/undoableEdit';
 import { useHoldReload } from '@/lib/update';
 import { ComputerButton } from './Computer';
+import { PlanMeter } from './PlanMeter';
 import { cn } from '@/lib/utils';
 import { useFitHeight } from '@/lib/fitHeight';
 import {
@@ -422,7 +423,7 @@ function Header({
   const exportConversation = useExportConversation(bot);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-background via-background/80 to-transparent pb-6">
+    <div className="@container/chathead pointer-events-none absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-background via-background/80 to-transparent pb-6">
       {/* Equal side columns keep the bot's name in the middle. */}
       <div className="window-drag grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 pt-3 sm:px-4">
         <div className="flex items-center">
@@ -620,6 +621,7 @@ function Header({
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="pointer-events-auto flex items-center justify-end gap-1">
+          {bot.engine === 'claude' && <PlanMeter />}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

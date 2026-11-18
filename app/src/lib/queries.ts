@@ -80,6 +80,22 @@ export const useRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: api.skills });
 export const useUsage = (days: UsageRange, botId?: string) =>
   useQuery({ queryKey: ['usage', days, botId], queryFn: () => api.usage(days, botId), staleTime: 30_000 });
+/**
+ * The Claude plan's usage windows, as the last Claude turn heard them. A turn that hears new ones
+ * pushes a refresh; the slow poll keeps a page left open from showing a reset as still to come.
+ */
+export const usePlanUsage = () =>
+  useQuery({
+    queryKey: ['plan-usage'],
+    // A server older than the meter has no such route: nothing to show, nothing to retry.
+    queryFn: () =>
+      api
+        .planUsage()
+        .then((r) => r.plan)
+        .catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))),
+    staleTime: 60_000,
+    refetchInterval: 10 * 60_000,
+  });
 
 export const useThreads = (botId: string | null) =>
   useQuery({ queryKey: ['threads', botId], queryFn: () => api.threads(botId!), enabled: !!botId });

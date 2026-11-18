@@ -915,6 +915,43 @@ export function planPace(w: Pick<PlanWindow, 'kind' | 'resetsAt'>, now: number):
   return Math.min(1, Math.max(0, 1 - left / length));
 }
 
+/**
+ * How a plan window's use reads: `near` at 90% used and over, `ahead` when at least half is used
+ * and faster than the window's time passes (it would run out before it resets), else `fine`. Early
+ * in a window any use is ahead of its time, which says nothing yet, so half is the threshold.
+ */
+export type PlanTone = 'fine' | 'ahead' | 'near';
+export function planTone(w: PlanWindow, now: number): PlanTone {
+  const used = w.used ?? 0;
+  if (used >= 0.9) return 'near';
+  const pace = planPace(w, now);
+  return used >= 0.5 && pace !== null && used > pace ? 'ahead' : 'fine';
+}
+
+/** The windows still running at `now`: what one said before its reset is no longer true. */
+export function currentPlanWindows(windows: readonly PlanWindow[], now: number): PlanWindow[] {
+  return windows.filter((w) => !w.resetsAt || !(Date.parse(w.resetsAt) <= now));
+}
+
+/**
+ * The window that says how much of the plan is left: of the five-hour and the weekly windows
+ * whose use is known, the fuller one. A model's own weekly window is left out, as it holds back
+ * only the bots on that model; null when neither is known.
+ */
+export function planHeadline(windows: readonly PlanWindow[], now: number): PlanWindow | null {
+  let fullest: PlanWindow | null = null;
+  for (const w of currentPlanWindows(windows, now)) {
+    if ((w.kind !== 'five_hour' && w.kind !== 'seven_day') || w.used === null) continue;
+    if (!fullest || w.used > (fullest.used ?? 0)) fullest = w;
+  }
+  return fullest;
+}
+
+/** The whole percent of a window left, 0–100. */
+export function planLeftPercent(w: Pick<PlanWindow, 'used'>): number {
+  return Math.max(0, Math.min(100, 100 - Math.round((w.used ?? 0) * 100)));
+}
+
 /** Spending and work over a period, from the finished turns. */
 const UsageTotals = z.object({
   /** Engine-reported cost in US dollars; for a Claude subscription an estimate at API prices. */
