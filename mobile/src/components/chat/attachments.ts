@@ -1,3 +1,4 @@
+import { startUpload } from '@yumakbot/shared';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { toast } from '@/components/overlay';
 import { t } from '@/i18n';
@@ -25,6 +26,8 @@ export interface Attachment {
   saved: StagedFile | null;
   /** When it was added; the server removes uploads left unsent for a day. */
   addedAt: number;
+  /** Why the upload failed; the file stays in the composer to be tried again or taken off. */
+  error: string | null;
 }
 
 /** A file or photo chosen on the phone. */
@@ -36,6 +39,11 @@ export interface Picked {
 }
 
 const EMPTY: Attachment[] = [];
+/**
+ * What a file not yet on the server needs and the composer's list does not keep: the picked
+ * file, for another try, the id the server knows its tries by, and the way to call it off.
+ */
+const uploads = new Map<string, { file: Picked; uploadId: string; ctrl: AbortController | null }>();
 // Kept outside the composer so, like the typed draft, files are still there after visiting
 // another conversation and coming back.
 const byThread = new Map<string, Attachment[]>();
@@ -75,6 +83,33 @@ export function useAttachments(threadId: string | undefined) {
     setFiles(threadId, (list) => list.filter((a) => !old.includes(a)));
   }, [threadId, discard]);
 
+  const patch = (id: string, key: string, change: Partial<Attachment>) =>
+    setFiles(id, (list) => list.map((a) => (a.key === key ? { ...a, ...change } : a)));
+
+  /** Sends one file up, once more on a passing failure; a failure leaves it in the composer. */
+  const upload = (id: string, key: string) => {
+    const u = uploads.get(key);
+    if (!u) return;
+    patch(id, key, { error: null });
+    u.ctrl = startUpload({
+      attempt: (signal) =>
+        api.uploadFile(id, { uri: u.file.uri, name: u.file.name }, { uploadId: u.uploadId, signal }),
+      onDone: (saved) => {
+        uploads.delete(key);
+        // Taken off while it was uploading.
+        if (!filesOf(id).some((a) => a.key === key)) return discard(id, saved.name);
+        patch(id, key, { saved, name: saved.name, addedAt: Date.now() });
+      },
+      onFail: (message) => {
+        // Taken off already: nothing left to undo.
+        if (!filesOf(id).some((a) => a.key === key)) return;
+        u.ctrl = null;
+        patch(id, key, { error: message });
+        toast(t('chat.uploadFailed', { name: u.file.name, error: message }), { tone: 'error' });
+      },
+    });
+  };
+
   const add = (files: Picked[]) => {
     if (!threadId) return;
     const room = MAX_FILES - filesOf(threadId).length;
@@ -92,37 +127,38 @@ export function useAttachments(threadId: string | undefined) {
         preview: image ? file.uri : null,
         saved: null,
         addedAt: Date.now(),
+        error: null,
       };
       setFiles(threadId, (list) => [...list, item]);
-      api.uploadFile(threadId, { uri: file.uri, name: file.name }).then(
-        (saved) => {
-          // Taken off while it was uploading.
-          if (!filesOf(threadId).some((a) => a.key === key)) return discard(threadId, saved.name);
-          setFiles(threadId, (list) =>
-            list.map((a) => (a.key === key ? { ...a, saved, name: saved.name, addedAt: Date.now() } : a)),
-          );
-        },
-        (e: Error) => {
-          // Taken off already: nothing left to undo.
-          if (!filesOf(threadId).some((a) => a.key === key)) return;
-          setFiles(threadId, (list) => list.filter((a) => a.key !== key));
-          toast(t('chat.uploadFailed', { name: file.name, error: e.message }), { tone: 'error' });
-        },
-      );
+      uploads.set(key, { file, uploadId: newClientId(), ctrl: null });
+      upload(threadId, key);
     }
+  };
+
+  /** Tries a failed file again, under the same upload id. */
+  const retry = (a: Attachment) => {
+    if (!threadId || a.saved || !a.error) return;
+    upload(threadId, a.key);
   };
 
   const remove = (a: Attachment) => {
     if (!threadId) return;
     setFiles(threadId, (list) => list.filter((x) => x.key !== a.key));
-    // Still uploading: removed from the server once the upload ends.
-    if (a.saved) discard(threadId, a.saved.name);
+    if (a.saved) return discard(threadId, a.saved.name);
+    // Not on the server yet: called off. Its upload may get through all the same (it was all
+    // sent and only the answer is missing); the server removes it then, by its upload id.
+    const u = uploads.get(a.key);
+    if (!u) return;
+    uploads.delete(a.key);
+    u.ctrl?.abort();
+    void api.cancelUpload(threadId, u.uploadId).catch(() => undefined);
   };
 
   /** Hands the uploaded files to a message and empties the composer. */
   const take = (): StagedFile[] => {
     if (!threadId) return [];
     const list = filesOf(threadId);
+    for (const a of list) uploads.delete(a.key);
     setFiles(threadId, () => EMPTY);
     return list.flatMap((a) => (a.saved ? [a.saved] : []));
   };
@@ -132,10 +168,18 @@ export function useAttachments(threadId: string | undefined) {
     if (!threadId) return;
     const now = Date.now();
     setFiles(threadId, (list) => [
-      ...files.map((f) => ({ key: newClientId(), name: f.name, preview: null, saved: f, addedAt: now })),
+      ...files.map((f) => ({
+        key: newClientId(),
+        name: f.name,
+        preview: null,
+        saved: f,
+        addedAt: now,
+        error: null,
+      })),
       ...list,
     ]);
   };
 
-  return { items, uploading: items.some((a) => !a.saved), add, remove, take, restore };
+  // A file that failed counts as not there yet: the message waits until it is tried again or taken off.
+  return { items, uploading: items.some((a) => !a.saved), add, remove, retry, take, restore };
 }

@@ -55,6 +55,7 @@ import type {
   ConnectionUpdate,
   UsageRange,
   UsageReport,
+  StorageReport,
   ProviderSignIn,
   SessionUser,
 } from '@yumakbot/shared';
@@ -72,14 +73,33 @@ export class ApiError extends Error {
 /** How long a request may wait for the server before it counts as unreachable. */
 const TIMEOUT_MS = 15_000;
 
-/** `fetch` that gives up after `ms`, so an address that never answers does not hang the screen. */
-async function fetchWithin(url: string, init: RequestInit, ms: number): Promise<Response> {
+/** A request that got no answer at all: the connection dropped or the server was not there. */
+export class NoAnswerError extends Error {
+  /** Read by the shared upload retry, which sees this error as "no answer". */
+  readonly noAnswer = true;
+}
+
+/**
+ * `fetch` that gives up after `ms`, so an address that never answers does not hang the screen;
+ * `signal` calls it off sooner.
+ */
+async function fetchWithin(
+  url: string,
+  init: RequestInit,
+  ms: number,
+  signal?: AbortSignal,
+): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
+  const stop = () => ctrl.abort();
+  // Called off before it started (the chip was removed during the wait before a second try).
+  if (signal?.aborted) stop();
+  else signal?.addEventListener('abort', stop, { once: true });
   try {
     return await fetch(url, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
   }
 }
 
@@ -87,7 +107,13 @@ async function fetchWithin(url: string, init: RequestInit, ms: number): Promise<
  * One request to the server at `origin`. The sign-in cookie lives in the phone's own cookie store,
  * which keeps it across launches, so no token is handled here.
  */
-async function request<T>(origin: string, method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  origin: string,
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const hasBody = method !== 'GET' && method !== 'DELETE';
   // The server writes its error messages in the language the app asks in.
   const headers: Record<string, string> = { 'accept-language': locale, accept: 'application/json' };
@@ -107,6 +133,7 @@ async function request<T>(origin: string, method: string, path: string, body?: u
     },
     // A large file may take a while to go up over a home network.
     raw ? 10 * 60_000 : TIMEOUT_MS,
+    signal,
   );
   const text = await res.text();
   let data: unknown = null;
@@ -326,6 +353,7 @@ export function apiFor(origin: string) {
     disableWebhook: (id: string) => http.del<Routine>(`/api/routines/${id}/webhook`),
     usage: (days: UsageRange, botId?: string) =>
       http.get<UsageReport>(`/api/usage?days=${days}${botId ? `&bot=${encodeURIComponent(botId)}` : ''}`),
+    storage: () => http.get<StorageReport>('/api/storage'),
     openBrowserWindow: (botId: string, url?: string) =>
       http.post<{ ok: true }>(`/api/bots/${botId}/browser/window`, { url }),
     closeBrowserWindow: (botId: string) => http.del<{ ok: true }>(`/api/bots/${botId}/browser/window`),
@@ -369,12 +397,29 @@ export function apiFor(origin: string) {
       http.post<unknown>(`/api/apps/${messageId}/call`, { name, arguments: args }),
     react: (messageId: string, emoji: string | null) =>
       http.put<Message>(`/api/messages/${messageId}/reaction`, { emoji }),
-    /** Puts a file in the conversation's folder; the server may pick another name if it is taken. */
-    uploadFile: async (threadId: string, file: PickedFile) =>
-      http.post<{ name: string; size: number }>(
-        `/api/threads/${threadId}/files?name=${encodeURIComponent(file.name)}`,
-        await blobOf(file),
-      ),
+    /**
+     * Puts a file in the conversation's folder; the server may pick another name if it is taken.
+     * `uploadId` is the same on a second try, so the server keeps one copy (see the shared retry).
+     */
+    uploadFile: async (
+      threadId: string,
+      file: PickedFile,
+      opts: { uploadId?: string; signal?: AbortSignal } = {},
+    ) => {
+      const path = `/api/threads/${threadId}/files?name=${encodeURIComponent(file.name)}${
+        opts.uploadId ? `&uploadId=${encodeURIComponent(opts.uploadId)}` : ''
+      }`;
+      const body = await blobOf(file);
+      try {
+        return await request<{ name: string; size: number }>(origin, 'POST', path, body, opts.signal);
+      } catch (err) {
+        if (err instanceof ApiError || opts.signal?.aborted) throw err;
+        throw new NoAnswerError(t('error.requestFailed', { status: 0 }));
+      }
+    },
+    /** Calls off a file still going up, by the id its upload carries. */
+    cancelUpload: (threadId: string, uploadId: string) =>
+      http.del<{ ok: true }>(`/api/threads/${threadId}/uploads/${encodeURIComponent(uploadId)}`),
     removeFile: (threadId: string, name: string) =>
       http.del<{ ok: true }>(`/api/threads/${threadId}/files/${encodeURIComponent(name)}`),
     stop: (threadId: string) => http.post<{ stopped: boolean }>(`/api/threads/${threadId}/stop`),

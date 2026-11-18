@@ -339,7 +339,12 @@ export function Composer({
         {attachments.items.length ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {attachments.items.map((a) => (
-              <Chip key={a.key} item={a} onRemove={() => attachments.remove(a)} />
+              <Chip
+                key={a.key}
+                item={a}
+                onRemove={() => attachments.remove(a)}
+                onRetry={() => attachments.retry(a)}
+              />
             ))}
           </ScrollView>
         ) : null}
@@ -404,18 +409,20 @@ export function Composer({
   );
 }
 
-function Chip({ item, onRemove }: { item: Attachment; onRemove: () => void }) {
+function Chip({ item, onRemove, onRetry }: { item: Attachment; onRemove: () => void; onRetry: () => void }) {
   const c = useColors();
   return (
     <View
       style={[
         styles.chip,
-        { borderColor: c.border, backgroundColor: c.background },
-        !item.saved && { opacity: 0.7 },
+        { borderColor: item.error ? c.destructive : c.border, backgroundColor: c.background },
+        !item.saved && !item.error && { opacity: 0.7 },
       ]}
     >
       <View style={[styles.thumb, { backgroundColor: c.muted }]}>
-        {!item.saved ? (
+        {item.error ? (
+          <Feather name="alert-circle" size={20} color={c.destructive} />
+        ) : !item.saved ? (
           <ActivityIndicator
             size="small"
             color={c.mutedForeground}
@@ -430,6 +437,18 @@ function Chip({ item, onRemove }: { item: Attachment; onRemove: () => void }) {
       <Text style={[styles.chipName, { color: c.foreground }]} numberOfLines={1}>
         {item.name}
       </Text>
+      {item.error ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('chat.retryUpload', { name: item.name })}
+          accessibilityHint={t('chat.uploadNotDone')}
+          onPress={onRetry}
+          hitSlop={8}
+          style={styles.chipRemove}
+        >
+          <Feather name="rotate-cw" size={16} color={c.mutedForeground} />
+        </Pressable>
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('chat.removeFile', { name: item.name })}

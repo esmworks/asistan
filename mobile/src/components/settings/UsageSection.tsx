@@ -7,16 +7,17 @@ import {
   type UsageRange,
   type UsageReport,
 } from '@yumakbot/shared';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { Loading, Note, PillButton, Row, Section, Segments } from '@/components/page';
-import { shareFile } from '@/components/panel/files';
+import { fileSize, shareFile } from '@/components/panel/files';
 import { ChoiceRow, Hint, Pad, Rows, useSaveSettings } from './common/controls';
 import { usd } from './more/money';
 import { BotMark, DailyChart, ShareBar, UsageCard, UsageLine } from './more/usageParts';
 import { locale, t } from '@/i18n';
 import { formatters } from '@/lib/format';
-import { useBots, useSettings, useUsage } from '@/lib/queries';
+import { useBots, useSettings, useStorage, useUsage } from '@/lib/queries';
+import { nav } from '@/lib/nav';
 import { useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
@@ -71,6 +72,7 @@ export function UsageSection() {
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
       <Parallel parallel={data?.parallel} />
+      <Storage />
       <PillButton
         icon="download"
         label={t('usage.downloadCsv')}
@@ -82,6 +84,123 @@ export function UsageSection() {
         }}
       />
     </>
+  );
+}
+
+/**
+ * How much room the bots' folders take on the server, with each bot's largest conversations.
+ * Read only: room is freed by deleting a conversation, which a row opens.
+ */
+function Storage() {
+  const { data, isPending, isError } = useStorage();
+  const { data: bots = [] } = useBots();
+  /** A size the walk did not finish counting is at least what it says. */
+  const size = (bytes: number, partial = false) =>
+    partial ? t('storage.atLeast', { size: fileSize(bytes) }) : fileSize(bytes);
+  const largest = Math.max(
+    1,
+    ...(data ? [...data.bots, ...data.groups, data.staged].map((r) => r.bytes) : []),
+  );
+  return (
+    <Section title={t('storage.title')}>
+      {isPending ? (
+        <Loading />
+      ) : isError || !data ? (
+        <Note>{t('storage.failed')}</Note>
+      ) : (
+        <Rows>
+          <Row
+            label={size(data.total, data.capped)}
+            detail={data.capped ? t('storage.capped') : t('storage.hint')}
+            detailLines={0}
+          />
+          {data.bots
+            .filter((b) => b.bytes > 0 || b.partial)
+            .map((b) => {
+              const bot = bots.find((x) => x.id === b.botId);
+              return (
+                <View key={b.botId}>
+                  <UsageSize
+                    lead={<BotMark name={b.name ?? '?'} color={bot?.color} avatar={bot?.avatar} />}
+                    name={b.name ?? t('storage.removedBot')}
+                    note={b.archived ? t('usage.archived') : null}
+                    size={size(b.bytes, b.partial)}
+                    share={b.bytes / largest}
+                  />
+                  {b.own.bytes > 0 ? (
+                    <Row label={t('storage.ownFolder')} value={size(b.own.bytes, b.own.partial)} />
+                  ) : null}
+                  {b.threads.map((th) =>
+                    b.name && th.title !== null ? (
+                      <Row
+                        key={th.threadId}
+                        label={th.title || t('chat.newThread')}
+                        value={size(th.bytes, th.partial)}
+                        onPress={() => nav.chat(b.botId, { threadId: th.threadId })}
+                      />
+                    ) : (
+                      <Row
+                        key={th.threadId}
+                        label={t('storage.removedThread')}
+                        value={size(th.bytes, th.partial)}
+                      />
+                    ),
+                  )}
+                </View>
+              );
+            })}
+          {data.groups
+            .filter((g) => g.bytes > 0 || g.partial)
+            .map((g) => (
+              <UsageSize
+                key={g.groupId}
+                name={t('storage.group', { name: g.name ?? t('storage.removedGroup') })}
+                size={size(g.bytes, g.partial)}
+                share={g.bytes / largest}
+              />
+            ))}
+          {data.staged.bytes > 0 || data.staged.partial ? (
+            <Row
+              label={t('storage.staged')}
+              detail={t('storage.stagedHint')}
+              value={size(data.staged.bytes, data.staged.partial)}
+            />
+          ) : null}
+        </Rows>
+      )}
+    </Section>
+  );
+}
+
+/** A folder's line: who it belongs to, its size, and its part of the largest. */
+function UsageSize({
+  lead,
+  name,
+  note,
+  size,
+  share,
+}: {
+  lead?: ReactNode;
+  name: string;
+  note?: string | null;
+  size: string;
+  share: number;
+}) {
+  const c = useColors();
+  return (
+    <Pad>
+      <View style={styles.sizeRow}>
+        {lead}
+        <View style={styles.sizeName}>
+          <Text style={[styles.sizeLabel, { color: c.foreground }]} numberOfLines={1}>
+            {name}
+            {note ? <Text style={{ color: c.mutedForeground }}>{` · ${note}`}</Text> : null}
+          </Text>
+          <ShareBar share={share} />
+        </View>
+        <Text style={[styles.small, { color: c.foreground }]}>{size}</Text>
+      </View>
+    </Pad>
   );
 }
 
@@ -323,6 +442,9 @@ function Report({
 }
 
 const styles = StyleSheet.create({
+  sizeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sizeName: { flex: 1, minWidth: 0, gap: 6 },
+  sizeLabel: { fontSize: 15 },
   small: { fontSize: 15 },
   planRow: { gap: 6, marginBottom: 14 },
   planName: { fontSize: 16, fontWeight: '500' },

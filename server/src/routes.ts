@@ -112,7 +112,8 @@ import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile, privateHost } from './services/skill-link';
 import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
-import { attachedFiles, saveUpload, stagingDir } from './uploads';
+import { attachedFiles, cancelStagedUpload, saveStagedUpload, stagingDir } from './uploads';
+import { storageReport } from './storage';
 import { OWNER_ID } from './users';
 import { HttpError, notFound, truncate } from './util';
 import { atLeast, managesServer } from './services/access';
@@ -135,6 +136,8 @@ const MAX_PAYLOAD = 50_000;
 const WEBHOOK_BODY_MAX = 5 * 1024 * 1024;
 /** Most bytes put in one ZIP download; it is built in memory. */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+/** The app's id for one attached file, the same on each of its tries (see `saveStagedUpload`). */
+const UploadId = z.string().regex(/^[\w-]{8,64}$/);
 import { eq } from 'drizzle-orm';
 
 interface Deps {
@@ -685,6 +688,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       .parse(req.query);
     return s.usage.report(q.days as UsageRange, q.bot);
   });
+  // How much room the bots' folders take; read fresh, so it is asked for only when shown.
+  app.get('/api/storage', async () => storageReport(s.ctx));
   // The plan's windows alone, for the meter beside the chat: everyone who talks with a Claude bot
   // spends the same plan, and its limit warnings already reach their conversations.
   app.get('/api/usage/plan', async () => ({ plan: (await s.usage.plan()) ?? null }));
@@ -1028,6 +1033,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const root = join(d.config.dataDir, 'workspaces', 'bots', botId, 'threads');
     await rm(join(root, id), { recursive: true, force: true }).catch(() => {});
     await rm(join(d.config.dataDir, 'uploads', id), { recursive: true, force: true }).catch(() => {});
+    await rm(join(d.config.dataDir, 'upload-ids', id), { recursive: true, force: true }).catch(() => {});
   };
   app.delete('/api/threads/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -1180,12 +1186,25 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.post('/api/threads/:id/files', async (req) => {
     const id = IdParams.parse(req.params).id;
-    const { name } = z.object({ name: z.string().min(1).max(500) }).parse(req.query);
+    const { name, uploadId } = z
+      .object({
+        name: z.string().min(1).max(500),
+        uploadId: UploadId.optional(),
+      })
+      .parse(req.query);
     if (!(req.body instanceof Readable)) throw new HttpError(415, 'error.uploadType');
     const thread = await s.threads.row(id);
     const bot = await s.bots.get(thread.botId);
     if (bot.archivedAt) throw new HttpError(409, 'error.botArchived');
-    return saveUpload(stagingDir(d.config.dataDir, id), name, req.body);
+    return saveStagedUpload(d.config.dataDir, id, name, req.body, uploadId);
+  });
+  // A file taken off while it was still going up: removed whether its upload got through already
+  // or gets through later, so nothing is left in the staging folder.
+  app.delete('/api/threads/:id/uploads/:uploadId', async (req) => {
+    const { id, uploadId } = z.object({ id: z.string().min(1), uploadId: UploadId }).parse(req.params);
+    await s.threads.row(id);
+    await cancelStagedUpload(d.config.dataDir, id, uploadId);
+    return { ok: true };
   });
   // Removes a file attached in the composer but taken off (or left) before sending. Only staged
   // uploads: files already in the conversation folder are not reached from here.
