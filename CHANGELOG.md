@@ -3,7 +3,7 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
-## Unreleased
+## 0.5.0 — 2026-11-19
 
 ### People
 
@@ -164,6 +164,135 @@ version is 0.x, a minor release may change the data format or the API; the serve
   none.
 - A push to a repository's default branch is refused there, whatever the bot was told: work reaches it through a pull
   request a person merges.
+
+### Keys, sign-ins and payment cards
+
+- API keys belong to a person or to the team; a member can no longer change the team's keys, and a card asking for a
+  key offers the saved key of the same kind.
+- Sign-ins can come from 1Password, Bitwarden or Proton Pass without copying passwords into the vault. Their secrets
+  reach the programs only through the environment, and a manager that cannot be read does not hold up the others.
+- Payment cards are sealed like passwords. The server fills them into a checkout's fields, only in a turn the card's
+  owner started, and asks before the first use on each site, frames of other sites included. Card numbers and codes
+  are masked in everything the bot reads.
+- A passkey prompt is refused at once instead of leaving the page waiting.
+- Sign-ins and keys can be imported from a browser's export or an `.env` file, and a one-time code set up from a QR
+  picture. A secret pasted into the chat is flagged, and replies going out to chat apps are masked by the shape of a
+  secret.
+- A deleted bot leaves the bot lists of vault entries.
+
+### Memory
+
+- A bot looks back at a conversation every few turns a person started (off, 10, 20 or 40; 20 by default) and keeps
+  the lasting facts. Only a bot's own notes from a person's own chat with no outside text are saved straight away;
+  shared, place, pinned or hand-written notes, and anything near outside text, wait for the person. Conversations
+  that existed before start from their latest message. Those who look after the server turn it on or off.
+- Notes can belong to a Slack or Discord channel or a room; they reach only the turns there, within a limit per place,
+  and go with a deleted room.
+- A pinned note always goes into the prompt first, within its own limit; a bot's change to a pinned note asks the
+  person.
+- Deleting a note removes its words from the history too, and purging a bot removes its memory history.
+- An edit made on an old version of a note is refused instead of writing over newer words.
+- What a stopped or failed turn changed in memory is taken back and waits for the person to accept it.
+- On the web and the phone notes are edited in place, pinned, searched and their history read.
+
+### Approvals and the review
+
+- A person who answers the bot's proposal with "ok, do it" no longer gets a card for the step it proposed: in their
+  own turn a step that sends goes to the review, which reads the bot's last reply as what the answer agreed to but may
+  quote only the person's words.
+- A step the review lets through no longer writes a notice with its whole input into the chat; the bot says what it
+  did, and the step is kept in the record. The list of steps a bot was let take left its side panel, since nothing in
+  it waits on the person.
+- Looking something up on the web after outside text was read goes to the review, which knows the text was read and
+  holds anything that sends data out; commands and API calls still ask.
+- A scheduled routine counts as the person's request, so a page read on the way no longer puts every bot down the
+  chain on a card per step. A run that a mail, a webhook or a watched page started stays on cards.
+- Handing work to another of the person's bots no longer asks, unless the other bot may do more than the sender.
+
+### Chat apps
+
+- Requests in progress are kept across a server restart, which tells the person to write again instead of leaving
+  "typing…" or a reaction hanging; requests whose turn is still queued go on when it resumes.
+- A send the chat app refuses for too many requests is tried again a few times within a capped wait, and every call to
+  a chat app has a time limit.
+- The Telegram card under Settings → Chat apps says when the person blocked the bot, until they unblock it.
+- Slack and Discord post a thread's replies in order before marking the request done, and mark it failed when a reply
+  could not be delivered. In Discord, a reply chain's context holds only the lines of that chain.
+- WhatsApp sends again after a dropped connection without the message arriving twice, reads messages held while the
+  device was away (newer than the last one read and under a day old), links a reply to the message it answers, and
+  marks quoted text not known here as outside text. The guard against a bot answering itself in the self chat counts
+  only what goes to the bot, lets commands and card answers through, and says when it held a message.
+- The bot is told which files did not arrive, and the person is told when a turn ended without a reply.
+
+### Routines
+
+- Each due routine runs on its own: one that cannot start is recorded as a failed run and its slot moves on, so the
+  others still run, and a run whose turn cannot be queued ends with an error at once instead of blocking later runs.
+- Watched pages and app checks are read on the side, at most four at a time, so a slow page does not hold up the
+  timer.
+- Schedules that run more often than every five minutes are refused, and a bot has at most 50 routines.
+- Runs skipped while an earlier one is still going are counted on one line, and a retry after a passing fault keeps
+  the schedule going from the slot it stands in for.
+
+### Browser and connected apps
+
+- A long page's outline is read whole and handed out by part, by words or by section, so the end of a long list can
+  be reached and every reference on it stays valid.
+- Files a site downloads are kept in the conversation's folder and reported to the bot, within limits of size, number
+  and time; a slow download no longer holds up the next steps.
+- A reference to an element the page removed fails at once with a clear message, without a card. A click under a
+  visible dialog or banner is refused and names what is in the way; a see-through layer or the field's own label is
+  still clicked through. Pages still drawing placeholder boxes get a short wait before they are read.
+- The bot can wait for a text to go away or the address to change, and drag one element onto another. At most ten
+  tabs stay open; extra tabs a site opens are closed and reported, as is a tab the site closes itself.
+- Each connected app has a few clients at once, so a long call or a question waiting for the person no longer holds up
+  the other calls; only token renewals and sign-ins run one at a time. A refused token is renewed once.
+- An app that answers that a permission is missing keeps its connection; its card offers Sign in, which asks for the
+  missing permission. An app added as needing no sign-in becomes one that signs in when it asks for it.
+- Connected apps' tool lists are read again every six hours and when the app says they changed, without dropping a
+  working connection over a passing failure; a connection is tried again once after a passing fault.
+- Signing out of or removing a connection revokes its tokens with the service, unless another connection signs in
+  through the same registered app. Secrets in the errors a service sends back are masked, cut-off ones included.
+
+### Plan usage
+
+- A ring beside a Claude bot's chat shows how much of the fuller of the five-hour and weekly windows is used, and a
+  click lists every window with its reset, so people see the limit coming before a turn is refused. Everyone signed in
+  sees it, since they all spend the same plan.
+- The windows are read from every rate-limit event, so a bot signed in with a token from `claude setup-token` shows
+  them too. Settings shows them with a line for the pace; the amber "ahead of time" colour needs at least half a window
+  used.
+- Settings sets how many turns run at once.
+
+### Reliability
+
+- A turn ends when the same tool call fails the same way five times, with a warning at three.
+- A Claude bot falls back to its backup model when the Claude sign-in fails and on server errors (500, 502, 504).
+- Large pictures are made smaller before they reach a model.
+- An answer written together with quick replies is kept on Claude bots too, instead of being replaced by the short
+  line after them.
+- A subagent the bot starts shows as a card in the chat, and its text stays out of the reply.
+- An attachment that fails to upload is tried once more when the failure looks passing, then stays in the message box
+  with a retry button; sending waits until it is up or taken off. The web shows upload progress.
+- Admins see what storage holds: each bot's folders, its largest conversations, the groups' folders and attachments
+  waiting to be sent.
+- The desktop app asks before quitting while bots are working.
+
+### Look
+
+- A new icon: a green plush coming in from the corner of a dark green tile, with oval eyes that lean with its head, on
+  the desktop, the web, the phone (Android's adaptive and themed icons included) and the menu bar. The first screens
+  greet with the same plush, and their accent and the ready-made bots' colour turn green.
+- The plush art's MIT notice is in NOTICE, which the desktop app and the server image now ship with LICENSE.
+
+### Server setup
+
+- A hosting panel such as Dokploy routes its domain to a small `gateway` service (`COMPOSE_PROFILES=gateway`) instead
+  of the server, so the server stays off the panel's shared network and goes out only through the firewalled bridge.
+- The name of the bridge the containers reach the internet through can be changed (`YUMAKBOT_BRIDGE`), so two
+  installations can run on one host.
+- `docker/README.md` explains the egress firewall for an installation run from a panel and how to keep it across
+  reboots; `docker/.env.example` lists the keys the VPS compose file reads.
 
 ## 0.4.1 — 2026-11-18
 

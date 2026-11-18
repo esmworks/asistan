@@ -339,7 +339,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
 
   const info = (): ServerInfo => ({
     name: 'yumakbot',
-    version: '0.4.1',
+    version: '0.5.0',
     bootId,
     buildId,
     claude: claudeStatus,
