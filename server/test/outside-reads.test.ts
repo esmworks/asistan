@@ -1,12 +1,4 @@
-import type {
-  Approval,
-  Message,
-  MemoryChange,
-  PermissionRule,
-  Room,
-  Routine,
-  Thread,
-} from '@yumakbot/shared';
+import type { Approval, MemoryChange, Room, Routine, Thread } from '@yumakbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
@@ -27,8 +19,6 @@ describe('çalıştırmanın yolda okuduğu dış metin', () => {
   afterEach(() => t.dispose());
 
   const main = async (botId: string) => (await t.api<Thread>('GET', `/api/bots/${botId}/main-thread`)).body;
-  const cardMessage = async (threadId: string): Promise<Message> =>
-    (await t.messages(threadId)).find((m) => m.role === 'approval')!;
   const routine = async (botId: string, prompt: string) =>
     (
       await t.api<Routine>('POST', '/api/routines', {
@@ -39,27 +29,22 @@ describe('çalıştırmanın yolda okuduğu dış metin', () => {
       })
     ).body;
 
-  it('gözetimsiz rutin bir sayfa okuyunca sonraki her değişiklik kart ister, kurallar sayılmaz', async () => {
+  it('kişinin zamanlanmış rutini bir sayfa okuyunca kendi düzeyinde sürer; işaret kalır', async () => {
     t = await testServer({ unattendedApprovalMs: 5_000 });
     const bot = await t.bot({ permissionMode: 'auto', internet: true });
-    await t.api<PermissionRule>('POST', '/api/rules', { list: 'allow', pattern: 'Write' });
     const r = await routine(bot.id, `${PAGE} ${WRITE}`);
-    // The person's own routine, run on schedule: nothing outside started it.
+    // The person's own routine, run on schedule: its instructions are their words.
     await t.services.routines.runNow(r.id);
-    const card = await waitFor(async () => (await pending(t))[0]);
-    expect(card.toolName).toBe('Write');
-    const msg = await cardMessage(card.threadId);
-    expect(msg.props.outside).toBe('web');
+    await t.services.turns.idle();
+    expect(await pending(t)).toHaveLength(0);
     // The mark stays with the run, its session and its report.
     const [run] = await t.db.db.select().from(schema.routineRuns);
     expect(run!.trigger).toBe('web');
-    const [thread] = await t.db.db.select().from(schema.threads).where(eq(schema.threads.id, card.threadId));
+    const [thread] = await t.db.db.select().from(schema.threads).where(eq(schema.threads.id, run!.threadId!));
     expect(thread!.outsideSession).toBe('web');
-    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
-    await t.services.turns.idle();
-    const reply = (await t.messages(card.threadId)).filter((m) => m.role === 'assistant').at(-1)!;
+    const reply = (await t.messages(run!.threadId!)).filter((m) => m.role === 'assistant').at(-1)!;
     expect(reply.text).toContain('WebFetch: izin verildi');
-    expect(reply.text).toContain('Write: reddedildi');
+    expect(reply.text).toContain('Write: izin verildi');
     expect(reply.props.outside).toBe('web');
   });
 
@@ -77,11 +62,12 @@ describe('çalıştırmanın yolda okuduğu dış metin', () => {
     const bot = await t.bot({ permissionMode: 'auto' });
     const r = await routine(bot.id, `[araç:tickets_list {}] ${WRITE}`);
     await t.services.routines.runNow(r.id);
-    const card = await waitFor(async () => (await pending(t))[0]);
-    expect((await cardMessage(card.threadId)).props.outside).toBe('stored');
-    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
     await t.services.turns.idle();
-    // With the person there, reading the board is their own work.
+    // Marked, but the person's own routine keeps the bot's level.
+    const [run] = await t.db.db.select().from(schema.routineRuns);
+    expect(run!.trigger).toBe('stored');
+    expect(await pending(t)).toHaveLength(0);
+    // With the person there, reading the board is their own work and marks nothing.
     const th = await main(bot.id);
     await t.send(th.id, `[araç:tickets_list {}] ${WRITE}`);
     await t.services.turns.idle();

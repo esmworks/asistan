@@ -39,7 +39,7 @@ import { publicHost } from '../services/skill-link';
 import type { PlanItem } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerAnswers, ownerWords, personAsked, quoteFound } from './owner-words';
+import { ownerAnswers, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -812,9 +812,10 @@ export class TurnManager {
         })
       : '';
 
-    // Whether the work goes back to the person's own message; read once, when it first matters.
-    let personRooted: Promise<boolean> | null = null;
-    const rootedInPerson = () => (personRooted ??= personAsked(this.ctx, turn));
+    // Who asked for the work: the person's message, their routine, or nobody just now; read once,
+    // when it first matters.
+    let asker: Promise<'message' | 'routine' | null> | null = null;
+    const askedBy = () => (asker ??= requestedBy(this.ctx, turn));
 
     let streamed = '';
     let shown = 0;
@@ -893,11 +894,11 @@ export class TurnManager {
           turn.modeCap,
         ),
         !!outside(),
-        !!outside() && (await rootedInPerson()),
+        !!outside() && !!(await askedBy()),
       );
       // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
       // the card says what started the run. In the person's own request they count as always.
-      const locked = !!outside() && !(await rootedInPerson());
+      const locked = !!outside() && !(await askedBy());
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -937,7 +938,10 @@ export class TurnManager {
       }
       // In work the person asked for, they said no to this very step and have not written since:
       // another card would only ask them the same thing again. A routine's later run still asks.
-      if ((await rootedInPerson()) && (await approvals.refusedLately(bot.id, ask.toolName, ask.input))) {
+      if (
+        (await askedBy()) === 'message' &&
+        (await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
         return { behavior: 'deny', message: t('turn.refusedLately') };
       }
       // Review mode: a small model may let a clearly safe request through. Never for what an

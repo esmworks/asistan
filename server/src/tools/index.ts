@@ -1074,7 +1074,10 @@ export class ToolFactory {
           });
           return t(expect_reply ? 'tool.sent' : 'tool.notified', { to: to.name, id: job.id });
         },
-        'internal',
+        // Handing work to another of the person's bots changes nothing by itself: that bot acts at
+        // its own level, with what this run read marked on the work. So it goes like a read,
+        // without a card, at every level.
+        'read',
         // Asking a bot with looser permissions to act would bypass this bot's own limits.
         async ({ bot: ref }) => {
           const to = await s.bots.resolve(ref, bot).catch(() => null);

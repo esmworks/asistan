@@ -1,6 +1,7 @@
 import { outsideIn, parseAnswers, questionItems } from '@yumakbot/shared';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Ctx } from '../context';
+import type { GateRequest } from '../engine/types';
 import { schema } from '../db';
 import { truncate } from '../util';
 
@@ -61,23 +62,41 @@ export async function ownerWords(ctx: Ctx, turn: TurnRow, hops = 0): Promise<str
   return thread?.kind === 'room' ? personWords(ctx, turn) : [];
 }
 
+/** Outside text that starts a routine's run, as against what the run reads on its way. */
+const STARTS_RUN: ReadonlySet<string> = new Set<GateRequest['trigger']>(['watch', 'webhook', 'email']);
+
 /**
- * Whether the work a turn does goes back to a message the person wrote: their own turn, or work
- * bots handed on from one, followed back. A routine, a room's round or a chain whose start is gone
- * is not: nobody asked for it just now.
+ * Who asked for the work a turn does, followed back through work bots handed on:
+ * - `message`: a message the person wrote (or their emoji);
+ * - `routine`: a routine the person saved, run on its schedule or by hand, whose instructions are
+ *   their words; a run a mail, a webhook or a watched page started is not;
+ * - null: nobody just now (a room's round, a run outside text started, a chain whose start is gone).
  */
-export async function personAsked(ctx: Ctx, turn: TurnRow, hops = 0): Promise<boolean> {
-  if (turn.source === 'user' || turn.source === 'reaction') return true;
-  if (!turn.jobId || hops >= MAX_HOPS) return false;
+export async function requestedBy(ctx: Ctx, turn: TurnRow, hops = 0): Promise<'message' | 'routine' | null> {
+  if (turn.source === 'user' || turn.source === 'reaction') return 'message';
+  if (turn.source === 'routine') {
+    if (!turn.routineRunId) return null;
+    const [run] = await ctx.db
+      .select({ trigger: schema.routineRuns.trigger })
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.id, turn.routineRunId))
+      .limit(1);
+    return run && !(run.trigger && STARTS_RUN.has(run.trigger)) ? 'routine' : null;
+  }
+  if (!turn.jobId || hops >= MAX_HOPS) return null;
   const [job] = await ctx.db
     .select({ fromTurnId: schema.jobs.fromTurnId })
     .from(schema.jobs)
     .where(eq(schema.jobs.id, turn.jobId))
     .limit(1);
-  if (!job?.fromTurnId) return false;
+  if (!job?.fromTurnId) return null;
   const [from] = await ctx.db.select().from(schema.turns).where(eq(schema.turns.id, job.fromTurnId)).limit(1);
-  return from ? personAsked(ctx, from, hops + 1) : false;
+  return from ? requestedBy(ctx, from, hops + 1) : null;
 }
+
+/** Whether the work goes back to a message the person wrote (see `requestedBy`). */
+export const personAsked = async (ctx: Ctx, turn: TurnRow): Promise<boolean> =>
+  (await requestedBy(ctx, turn)) === 'message';
 
 /**
  * The person's latest messages in the turn's conversation, oldest first; messages written while
