@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -900,6 +901,28 @@ export const channelMessages = pgTable(
     uniqueIndex('channel_messages_uq').on(t.channelId, t.externalId),
     index('channel_messages_message_idx').on(t.messageId),
   ],
+);
+
+/**
+ * A request from a chat app that the bot is still working on, with what the chat shows for it
+ * (a "working" post, a reaction, where to reply). Kept here rather than in memory so that, when the
+ * server stops in the middle, the next start can tell the person the request was cut short and
+ * clear what was left showing.
+ */
+export const channelRequests = pgTable(
+  'channel_requests',
+  {
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => channels.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    /** What each chat app needs to find its posts again; its own shape per app. */
+    place: jsonb('place').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: created(),
+  },
+  (t) => [primaryKey({ columns: [t.channelId, t.threadId] })],
 );
 
 /** The linked WhatsApp device's keys, each sealed with the vault key. */

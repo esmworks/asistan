@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import type { Approval, Thread, WhatsAppStatus } from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { WaLibrary, WaMessage, WaSocket } from '../src/channels/whatsapp';
+import {
+  WhatsAppChannel,
+  type WaConnectOptions,
+  type WaLibrary,
+  type WaMessage,
+  type WaSocket,
+} from '../src/channels/whatsapp';
+import { schema } from '../src/db';
 import { whatsappMessages } from '../src/channels/format';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -15,17 +22,34 @@ function fakeLibrary() {
   const presence: string[] = [];
   let socket: (WaSocket & { emit(e: string, v: unknown): void }) | null = null;
   let n = 0;
+  let connects = 0;
+  let options: WaConnectOptions | null = null;
+  const flags = { failDownload: false, dropOnSend: false };
+  /** Every send tried, with the id it carried, including those the connection dropped under. */
+  const tried: { content: Record<string, unknown>; id?: string }[] = [];
   const lib: WaLibrary = {
-    connect: () => {
+    connect: (_auth, o) => {
+      connects++;
+      options = o;
       const ev = new EventEmitter();
       socket = {
         ev: ev as unknown as WaSocket['ev'],
         user: null,
         emit: (e, v) => ev.emit(e, v),
-        sendMessage: async (jid, content) => {
-          const id = `sent-${++n}`;
+        sendMessage: async (jid, content, o) => {
+          tried.push({ content, id: o?.messageId });
+          if (flags.dropOnSend) {
+            // The message may have reached WhatsApp, but the answer is lost with the connection.
+            flags.dropOnSend = false;
+            ev.emit('connection.update', {
+              connection: 'close',
+              lastDisconnect: { error: { output: { statusCode: 428 } } },
+            });
+            throw new Error('Connection Closed');
+          }
+          const id = o?.messageId ?? `sent-${++n}`;
           sent.push({ jid, content, id });
-          return { key: { id } };
+          return { key: { id }, message: content };
         },
         sendPresenceUpdate: async (type) => {
           presence.push(type);
@@ -39,14 +63,29 @@ function fakeLibrary() {
     replacer: (_k, v) => v,
     reviver: (_k, v) => v,
     appStateKey: (v) => v,
-    download: async () => Readable.from([Buffer.from('ses kaydı')]),
+    download: async () => {
+      if (flags.failDownload) throw new Error('indirilemedi');
+      return Readable.from([Buffer.from('ses kaydı')]);
+    },
+    codes: { forbidden: 403, connectionReplaced: 440, multideviceMismatch: 411, restartRequired: 515 },
     loggedOut: 401,
   };
   return {
     lib,
     sent,
+    tried,
     presence,
+    flags,
+    connects: () => connects,
+    options: () => options!,
     socket: () => socket!,
+    /** WhatsApp drops the connection with `code`. */
+    drop(code: number) {
+      socket!.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: code } } },
+      });
+    },
     /** WhatsApp accepts the scan and the device is online as `number`. */
     linked(number: string) {
       socket!.user = { id: `${number}:3@s.whatsapp.net`, lid: '1234@lid' };
@@ -72,6 +111,7 @@ describe('WhatsApp', () => {
     t = await testServer();
     const wa = fakeLibrary();
     t.services.whatsapp.library = async () => wa.lib;
+    t.services.whatsapp.paceMs = 0;
     const asistan = await t.bot({ name: 'Asistan' });
     const yazar = await t.bot({ name: 'Yazar' });
     const set = await t.api<WhatsAppStatus>('PUT', '/api/whatsapp', {
@@ -290,6 +330,159 @@ describe('WhatsApp', () => {
     await t.services.turns.idle();
     const texts = (await t.messages(thread.id)).filter((m) => m.role === 'user').map((m) => m.text);
     expect(texts).toEqual(['şimdi', 'yokken yazdım']);
+  });
+
+  const status = async () => (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body;
+  /** The server starts again with the device that was linked: a second channel on the same records. */
+  const restart = async (wa: ReturnType<typeof fakeLibrary>, number: string) => {
+    wa.socket().emit('creds.update', { me: { id: `${number}:3@s.whatsapp.net` } });
+    await t.services.whatsapp.stop();
+    const again = new WhatsAppChannel(t.services.ctx, t.services, t.services.vault);
+    again.library = async () => wa.lib;
+    again.paceMs = 0;
+    await again.start();
+    return again;
+  };
+
+  it('bağlantı kopukken yazılan yanıt düşmez; bağlantı gelince gider', async () => {
+    const { wa } = await setUp();
+    wa.message(PERSON, { conversation: '[bekle:300] merhaba' });
+    wa.drop(428);
+    await waitFor(async () => (await status()).state === 'connecting');
+    await new Promise((r) => setTimeout(r, 500));
+    expect(wa.texts().some((x) => x.includes('merhaba'))).toBe(false);
+    await waitFor(async () => wa.connects() === 2);
+    wa.linked(BOT_NUMBER);
+    const reply = await waitFor(async () => wa.sent.find((s) => String(s.content.text).includes('merhaba')));
+    expect(reply.jid).toBe(`${PERSON}@s.whatsapp.net`);
+  });
+
+  it('gönderim sırasında kopan bağlantıdan sonra yanıt aynı kimlikle bir kez daha gider', async () => {
+    const { wa } = await setUp();
+    wa.flags.dropOnSend = true;
+    wa.message(PERSON, { conversation: '[bekle:100] merhaba' });
+    await waitFor(async () => wa.connects() === 2);
+    wa.linked(BOT_NUMBER);
+    await waitFor(async () => wa.sent.find((s) => String(s.content.text).includes('merhaba')));
+    const tries = wa.tried.filter((x) => String(x.content.text).includes('merhaba'));
+    expect(tries).toHaveLength(2);
+    expect(tries[0]!.id).toBeTruthy();
+    expect(tries[1]!.id).toBe(tries[0]!.id);
+  });
+
+  it('başka yerde açılan numara (440) döngüye girmeden durur ve nedenini söyler', async () => {
+    const { wa } = await setUp();
+    wa.drop(440);
+    const s = await waitFor(async () => {
+      const st = await status();
+      return st.state === 'error' ? st : null;
+    });
+    expect(s.error).toBe('replaced');
+    await new Promise((r) => setTimeout(r, 1300));
+    expect(wa.connects()).toBe(1);
+  });
+
+  it('süresi dolan yeni bağlantı eski cihazın anahtarlarını silmez; taranan yenisi onun yerine geçer', async () => {
+    const { wa } = await setUp();
+    // The device that works now has been saved with its account.
+    wa.socket().emit('creds.update', { me: { id: `${BOT_NUMBER}:3@s.whatsapp.net` } });
+    t.services.whatsapp.linkMs = 50;
+    await t.api('POST', '/api/whatsapp/link');
+    expect(await t.services.whatsapp.keyCount('link/')).toBe(1);
+    expect(await t.services.whatsapp.keyCount('creds')).toBe(1);
+    wa.socket().emit('connection.update', { qr: '2@abc,def' });
+    // Never scanned: the new keys go and the old device comes back.
+    await waitFor(async () => wa.connects() === 3);
+    expect(await t.services.whatsapp.keyCount('link/')).toBe(0);
+    expect(await t.services.whatsapp.keyCount('creds')).toBe(1);
+    wa.linked(BOT_NUMBER);
+    await waitFor(async () => (await status()).state === 'connected');
+    expect((await status()).linked).toBe(BOT_NUMBER);
+
+    t.services.whatsapp.linkMs = 60_000;
+    await t.api('POST', '/api/whatsapp/link');
+    wa.socket().emit('connection.update', { qr: '2@abc,def' });
+    wa.linked(BOT_NUMBER);
+    await waitFor(async () => (await status()).state === 'connected');
+    expect(await t.services.whatsapp.keyCount('link/')).toBe(0);
+    expect(await t.services.whatsapp.keyCount('creds')).toBe(1);
+
+    // What the new device writes after taking over stays its own across a restart.
+    const before = wa.connects();
+    const again = await restart(wa, BOT_NUMBER);
+    expect(await again.keyCount('link/')).toBe(0);
+    expect(await again.keyCount('creds')).toBe(1);
+    await waitFor(async () => wa.connects() === before + 1);
+    await again.stop();
+  });
+
+  it('gönderilen mesaj, telefonun yeniden gönderme isteği için geri verilir', async () => {
+    const { wa } = await setUp();
+    wa.message(PERSON, { conversation: 'selam' });
+    const reply = await waitFor(async () => wa.sent.find((s) => String(s.content.text).includes('selam')));
+    expect(await wa.options().getMessage({ id: reply.id })).toEqual(reply.content);
+    expect(await wa.options().getMessage({ id: 'hiç-gönderilmedi' })).toBeUndefined();
+  });
+
+  it('aynı mesaj numarası iki kez gelirse kart ikinci kez yanıtlanmaz, bota da gitmez', async () => {
+    const { wa, asistan } = await setUp();
+    wa.message(PERSON, { conversation: '[izin:Write {"file_path":"a.txt"}]' });
+    await waitFor(async () => wa.texts().find((x) => x.includes('1. İzin ver')));
+    const [pending] = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
+    wa.message(PERSON, { conversation: '1' }, { id: 'tekrar-1' });
+    wa.message(PERSON, { conversation: '1' }, { id: 'tekrar-1' });
+    await waitFor(
+      async () => (await t.api<Approval>('GET', `/api/approvals/${pending!.id}`)).body.status !== 'pending',
+    );
+    await t.services.turns.idle();
+    await new Promise((r) => setTimeout(r, 150));
+    const said = (await t.messages((await main(asistan.id)).id)).filter((m) => m.role === 'user');
+    expect(said.filter((m) => m.text === '1')).toHaveLength(0);
+  });
+
+  it('yeniden başlatmadan sonra kendi gönderdiği mesajı kayıttan tanır', async () => {
+    const { wa, asistan } = await setUp('own');
+    wa.message(PERSON, { conversation: 'kendime not' }, { fromMe: true });
+    const echoed = await waitFor(async () =>
+      wa.sent.find((s) => String(s.content.text).includes('kendime not')),
+    );
+    await waitFor(async () => (await t.db.db.select().from(schema.channelMessages)).length >= 2);
+    const again = await restart(wa, PERSON);
+    wa.linked(PERSON);
+    await waitFor(async () => (await status()).state === 'connected');
+    wa.message(PERSON, { conversation: String(echoed.content.text) }, { fromMe: true, id: echoed.id });
+    await new Promise((r) => setTimeout(r, 200));
+    const person = (await t.messages((await main(asistan.id)).id)).filter((m) => m.role === 'user');
+    expect(person.map((m) => m.text)).toEqual(['kendime not']);
+    await again.stop();
+  });
+
+  it('yarıda kalan istek, bağlantı açılınca kişiye haber verilip kayıttan silinir', async () => {
+    const { wa, asistan } = await setUp();
+    const thread = await main(asistan.id);
+    const [row] = await t.db.db.select().from(schema.channels);
+    await t.db.db
+      .insert(schema.channelRequests)
+      .values({ channelId: row!.id, threadId: thread.id, place: { jid: `${PERSON}@s.whatsapp.net` } });
+    const again = await restart(wa, BOT_NUMBER);
+    // Not before the connection is open: there is no one to tell yet.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(wa.texts()).toHaveLength(0);
+    expect(await t.db.db.select().from(schema.channelRequests)).toHaveLength(1);
+    wa.linked(BOT_NUMBER);
+    await waitFor(async () => wa.texts().find((x) => x.includes('yarıda kaldı')));
+    await waitFor(async () => (await t.db.db.select().from(schema.channelRequests)).length === 0);
+    await again.stop();
+  });
+
+  it('ulaşmayan dosya bota da söylenir', async () => {
+    const { wa, asistan } = await setUp();
+    wa.flags.failDownload = true;
+    wa.message(PERSON, { imageMessage: { caption: 'bak', mimetype: 'image/jpeg', fileLength: 9 } });
+    const thread = await main(asistan.id);
+    const said = await waitFor(async () => (await t.messages(thread.id)).find((m) => m.role === 'user'));
+    expect(said.text).toMatch(/^bak\n\n\(Ulaşmayan dosyalar: photo-.+\.jpg\)$/);
+    await waitFor(async () => wa.texts().find((x) => x.includes('alınamadı')));
   });
 
   it('bağlantı kesilince anahtarlar silinir', async () => {

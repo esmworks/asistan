@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { discordText } from '../src/channels/discord';
 import { discordMessages } from '../src/channels/format';
+import { holdRequest } from '../src/channels/common';
+import { schema } from '../src/db';
 import { redactSecrets } from '../src/services/secrets';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -30,9 +32,9 @@ const AYSE: Person = { id: '501', name: 'ayse' };
 const MERT: Person = { id: '502', name: 'mert' };
 
 /** Discord's REST API and a Gateway connection, enough for one bot; calls are recorded. */
-async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
+async function fakeDiscord(opts: { refuseContent?: boolean; heartbeat?: number; silent?: boolean } = {}) {
   const calls: Call[] = [];
-  const gateway = { identifies: 0, resumes: 0, intents: [] as number[] };
+  const gateway = { identifies: 0, resumes: 0, connections: 0, intents: [] as number[] };
   const history = new Map<string, Record<string, unknown>[]>();
   let id = 1000;
   let seq = 1;
@@ -84,6 +86,7 @@ async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
   const wss = new WebSocketServer({ server, path: '/gateway' });
   wss.on('connection', (ws) => {
     socket = ws;
+    gateway.connections++;
     ws.on('message', (data) => {
       const f = JSON.parse(String(data)) as { op: number; d: Record<string, unknown> };
       if (f.op === 6) {
@@ -112,9 +115,9 @@ async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
           }),
         );
       }
-      if (f.op === 1) ws.send(JSON.stringify({ op: 11 }));
+      if (f.op === 1 && !opts.silent) ws.send(JSON.stringify({ op: 11 }));
     });
-    ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 45_000 } }));
+    ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: opts.heartbeat ?? 45_000 } }));
   });
   const dispatch = async (t: string, d: Record<string, unknown>) => {
     await waitFor(async () => socket && identified);
@@ -125,6 +128,7 @@ async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
     calls,
     history,
     identified: () => identified,
+    dispatch,
     gateway,
     /** Discord asks the bot to connect again. */
     reconnect: () => socket?.send(JSON.stringify({ op: 7, d: null })),
@@ -137,6 +141,8 @@ async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
         mention?: boolean;
         replyTo?: { id: string; author: string; root?: string };
         dm?: boolean;
+        raw?: { content: string; mention_roles: string[] };
+        attachments?: Record<string, unknown>[];
       } = {},
     ) {
       const at = String(id++);
@@ -145,8 +151,11 @@ async function fakeDiscord(opts: { refuseContent?: boolean } = {}) {
         channel_id: where.channel ?? 'C1',
         ...(!where.dm && { guild_id: SERVER, member: { roles: who.roles ?? [] } }),
         author: { id: who.id, username: who.name },
-        content: where.mention === false ? text : `<@${BOT_USER}> ${text}`,
-        mentions: where.mention === false ? [] : [{ id: BOT_USER, username: 'Yumak', bot: true }],
+        content: where.raw?.content ?? (where.mention === false ? text : `<@${BOT_USER}> ${text}`),
+        ...(where.raw && { mention_roles: where.raw.mention_roles }),
+        ...(where.attachments && { attachments: where.attachments }),
+        mentions:
+          where.mention === false || where.raw ? [] : [{ id: BOT_USER, username: 'Yumak', bot: true }],
         type: where.replyTo ? 19 : 0,
         timestamp: new Date().toISOString(),
         ...(where.replyTo && {
@@ -423,6 +432,129 @@ describe('Discord', () => {
     await setUp();
     discord.reconnect();
     await waitFor(async () => discord.gateway.resumes === 1);
+    expect(discord.gateway.identifies).toBe(1);
+  });
+
+  it('bota ait rol etiketlenince cevap verir ve rol etiketi metinden silinir', async () => {
+    await setUp();
+    await discord.dispatch('GUILD_CREATE', {
+      id: SERVER,
+      roles: [
+        { id: SERVER, name: '@everyone' },
+        { id: '777', name: 'Yumak', managed: true, tags: { bot_id: BOT_USER } },
+        { id: '778', name: 'Başka', managed: true, tags: { bot_id: '12' } },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    // Another app's role is not the bot.
+    await discord.write(AYSE, '', { raw: { content: '<@&778> merhaba', mention_roles: ['778'] } });
+    await discord.write(AYSE, '', { raw: { content: '<@&777> rolden selam', mention_roles: ['777'] } });
+    await waitFor(async () => t.engine.requests.length === 1);
+    expect(t.engine.requests[0]!.prompt).toContain('ayse: rolden selam');
+    expect(t.engine.requests[0]!.prompt).not.toContain('@role');
+    await t.services.turns.idle();
+    expect(t.engine.requests).toHaveLength(1);
+  });
+
+  it('doğrudan mesaja kişi başına saatte bir kez cevap verilir', async () => {
+    await setUp();
+    await discord.write(AYSE, 'selam', { dm: true, channel: 'D1' });
+    await discord.write(AYSE, 'tekrar', { dm: true, channel: 'D1' });
+    await discord.write(MERT, 'selam', { dm: true, channel: 'D2' });
+    await waitFor(async () => discord.posts('D2').length === 1);
+    expect(discord.posts('D1')).toHaveLength(1);
+  });
+
+  it('bilinmeyen düğme basışı da tam bir kez yanıtlanır', async () => {
+    await setUp();
+    expect((await discord.press(AYSE, 'bilinmeyen')).body).toEqual({ type: 6 });
+    expect((await discord.press(AYSE, 'stop:yok')).body).toMatchObject({ type: 4, data: { flags: 64 } });
+  });
+
+  it('başlarken yarım kalan istek temizlenir: durum yazısı kesildi der, 👀 yerine ❌ gelir, kayıt silinir', async () => {
+    const bot = await setUp();
+    const own = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const [row] = await t.services.ctx.db.select().from(schema.channels);
+    await holdRequest(t.services.ctx, row!.id, own.id, {
+      channel: 'C1',
+      root: '3000',
+      requester: AYSE.id,
+      messages: ['3000'],
+      status: '3001',
+    });
+    await t.services.discord.settleHeld(row!);
+    const edit = discord.edits().find((c) => c.path === '/channels/C1/messages/3001')!;
+    expect(String(edit.body.content)).toContain('yarıda kaldı');
+    expect(edit.body.components).toEqual([]);
+    expect(discord.reactions('3000')).toContain('❌');
+    expect(await t.services.ctx.db.select().from(schema.channelRequests)).toHaveLength(0);
+  });
+
+  it('işlenirken istek kaydı tutulur, bitince silinir', async () => {
+    await setUp();
+    const first = await discord.write(AYSE, '[uzun-araç:10000]');
+    await waitFor(async () => (await t.services.ctx.db.select().from(schema.channelRequests)).length === 1);
+    const [held] = await t.services.ctx.db.select().from(schema.channelRequests);
+    expect(held!.place).toMatchObject({ channel: 'C1', root: first, requester: AYSE.id, messages: [first] });
+    // The request is kept before its turn starts: "stop" is sent once the turn is running.
+    await waitFor(async () => t.engine.requests.length === 1);
+    await discord.write(AYSE, 'stop', { replyTo: { id: '9999', author: BOT_USER, root: first } });
+    await waitFor(async () => (await t.services.ctx.db.select().from(schema.channelRequests)).length === 0);
+  });
+
+  it('botun içinde olduğu zincirde son isteğinden beri yazılanlar bota ulaşır', async () => {
+    await setUp();
+    const first = await discord.write(AYSE, 'ilk soru');
+    await waitFor(async () => t.engine.requests.length === 1);
+    await t.services.turns.idle();
+    discord.history.set('C1', [
+      {
+        id: '99999999',
+        author: { id: '503', username: 'zeynep' },
+        content: 'araya giren söz',
+        timestamp: new Date().toISOString(),
+        message_reference: { message_id: first },
+      },
+      {
+        id: '99999998',
+        author: { id: '504', username: 'can' },
+        content: 'kanalda başka bir konu',
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: '5',
+        author: { id: '503', username: 'zeynep' },
+        content: 'çok önceki söz',
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    await discord.write(MERT, 'ikinci soru', { replyTo: { id: '9999', author: BOT_USER, root: first } });
+    await waitFor(async () => t.engine.requests.length === 2);
+    const prompt = t.engine.requests[1]!.prompt;
+    expect(prompt).toContain('zeynep: araya giren söz');
+    expect(prompt).not.toContain('çok önceki söz');
+    // Talk in the same channel that is not part of this chain stays out.
+    expect(prompt).not.toContain('kanalda başka bir konu');
+    await t.services.turns.idle();
+  });
+
+  it('ulaşmayan dosya bota da söylenir', async () => {
+    await setUp();
+    await discord.write(AYSE, 'bunu oku', {
+      attachments: [{ id: 'a1', filename: 'rapor.pdf', size: 10, url: `${discord.base}/files/rapor.pdf` }],
+    });
+    await waitFor(async () => t.engine.requests.length === 1);
+    expect(t.engine.requests[0]!.prompt).toContain('Ulaşmayan dosyalar: rapor.pdf');
+    await t.services.turns.idle();
+  });
+
+  it('kalp atışına cevap gelmezse bağlantı hemen bırakılır ve oturum yeni bağlantıda sürer', async () => {
+    discord = await fakeDiscord({ heartbeat: 150, silent: true });
+    t = await testServer({ discordApi: discord.base });
+    await t.api('PUT', '/api/discord', { token: TOKEN, botId: null });
+    await waitFor(async () => discord.identified());
+    await waitFor(async () => discord.gateway.resumes >= 1, 15_000);
+    expect(discord.gateway.connections).toBeGreaterThanOrEqual(2);
     expect(discord.gateway.identifies).toBe(1);
   });
 

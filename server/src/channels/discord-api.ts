@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebStream } from 'node:stream/web';
+import { MAX_RATE_WAIT_MS } from './common';
 
 /** A refusal from Discord's API: its status, Discord's own code and message, and the wait it asks for. */
 export class DiscordError extends Error {
@@ -39,6 +40,11 @@ export interface DiscordMessage {
   member?: { roles?: string[]; nick?: string | null };
   content?: string;
   mentions?: (DiscordUser & { member?: { nick?: string | null } })[];
+  /** The roles the message mentions; a mention of the bot's own role is one of the bot. */
+  mention_roles?: string[];
+  embeds?: { title?: string; description?: string }[];
+  /** A forwarded message carries the original's content here, not in `content`. */
+  message_snapshots?: { message?: Pick<DiscordMessage, 'content' | 'embeds' | 'attachments'> }[];
   attachments?: DiscordAttachment[];
   message_reference?: { message_id?: string; channel_id?: string };
   referenced_message?: DiscordMessage | null;
@@ -89,6 +95,8 @@ const USER_AGENT = 'DiscordBot (https://discord.com, 1)';
 
 /** Most waits for a rate limit before the call is given up. */
 const RETRIES = 3;
+/** Most redirects a file download follows. */
+const MAX_REDIRECTS = 3;
 
 export const componentRows = (buttons: DiscordButton[]) => {
   const rows: { type: 1; components: Record<string, unknown>[] }[] = [];
@@ -155,7 +163,7 @@ export class DiscordApi {
       if (res.ok) return data as T;
       if (res.status === 429) {
         const wait = Number(data.retry_after ?? res.headers.get('retry-after') ?? 1);
-        if (attempt < RETRIES && wait <= 30) {
+        if (attempt < RETRIES && wait * 1000 <= MAX_RATE_WAIT_MS) {
           await new Promise((r) => setTimeout(r, Math.max(wait, 0.1) * 1000));
           continue;
         }
@@ -274,13 +282,22 @@ export class DiscordApi {
 
   /** A file a message carries, from Discord's file hosts only, as it arrives. */
   async download(url: string): Promise<Readable> {
-    if (!discordFileHost(url, this.base)) throw new DiscordError(400, 'foreign_file_host');
-    const res = await fetch(url, {
-      headers: { 'user-agent': USER_AGENT },
-      signal: AbortSignal.timeout(120_000),
-      redirect: 'error',
-    });
-    if (!res.ok || !res.body) throw new DiscordError(res.status, `http_${res.status}`);
-    return Readable.fromWeb(res.body as WebStream);
+    const signal = AbortSignal.timeout(120_000);
+    // Redirects are followed by hand: each hop is checked against the file hosts, so a redirect
+    // cannot lead the server to an address of someone else's choosing.
+    let target = url;
+    for (let hops = 0; ; hops++) {
+      if (!discordFileHost(target, this.base)) throw new DiscordError(400, 'foreign_file_host');
+      const res = await fetch(target, { headers: { 'user-agent': USER_AGENT }, signal, redirect: 'manual' });
+      const next = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (next) {
+        await res.body?.cancel().catch(() => {});
+        if (hops >= MAX_REDIRECTS) throw new DiscordError(400, 'too_many_redirects');
+        target = new URL(next, target).toString();
+        continue;
+      }
+      if (!res.ok || !res.body) throw new DiscordError(res.status, `http_${res.status}`);
+      return Readable.fromWeb(res.body as WebStream);
+    }
   }
 }

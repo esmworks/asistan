@@ -49,6 +49,8 @@ const sleep = (ms: number, signal: AbortSignal) =>
  * connection from before a sleep is usually dead without anyone saying so; it is dropped and
  * resumed.
  */
+/** The longest Discord may take to say hello after a socket opens, and to say ready after identify. */
+const HANDSHAKE_MS = 30_000;
 const TICK_MS = 30_000;
 const SLEPT_MS = 90_000;
 
@@ -126,8 +128,11 @@ export class DiscordGateway {
         this.state({ error: end.final, messageContent: this.messageContent });
         return;
       }
-      if (end.ready) wait = 1000;
-      else {
+      if (end.ready) {
+        wait = 1000;
+        // A server that keeps closing right after ready must not make a tight loop of new sessions.
+        if (!end.quick) await sleep(1000 + Math.floor(Math.random() * 4000), signal);
+      } else {
         await sleep(wait, signal);
         wait = Math.min(wait * 2, 60_000);
       }
@@ -135,7 +140,10 @@ export class DiscordGateway {
   }
 
   /** One connection, until it closes: whether Discord said ready (or resumed) on it, or why to stop. */
-  private connect(url: string, signal: AbortSignal): Promise<{ ready: boolean; final?: string }> {
+  private connect(
+    url: string,
+    signal: AbortSignal,
+  ): Promise<{ ready: boolean; final?: string; quick?: boolean }> {
     return new Promise((resolve) => {
       const address = new URL(url);
       address.searchParams.set('v', '10');
@@ -146,6 +154,11 @@ export class DiscordGateway {
       let beat: ReturnType<typeof setInterval> | undefined;
       let first: ReturnType<typeof setTimeout> | undefined;
       let acked = true;
+      // Discord asked for the new connection itself: no need to hold back.
+      let asked = false;
+      // Discord must say hello soon after the socket opens, and ready soon after identify or resume.
+      let handshake: ReturnType<typeof setTimeout> | undefined = setTimeout(() => giveUp(), HANDSHAKE_MS);
+      handshake.unref?.();
       let last = Date.now();
       const send = (f: Frame) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(f));
@@ -153,7 +166,9 @@ export class DiscordGateway {
       const heartbeat = () => {
         // No answer to the last beat: the connection is dead though open. It is left to resume.
         if (!acked) {
+          // A dead connection may never finish closing, so a new one is not waited for.
           ws.close(KEEP);
+          finish({ ready });
           return;
         }
         acked = false;
@@ -170,9 +185,14 @@ export class DiscordGateway {
       }, TICK_MS);
       watch.unref?.();
       let finished = false;
-      const finish = (r: { ready: boolean; final?: string }) => {
+      const giveUp = () => {
+        ws.close(KEEP);
+        finish({ ready });
+      };
+      const finish = (r: { ready: boolean; final?: string; quick?: boolean }) => {
         if (finished) return;
         finished = true;
+        clearTimeout(handshake);
         clearInterval(watch);
         clearInterval(beat);
         clearTimeout(first);
@@ -180,20 +200,22 @@ export class DiscordGateway {
         resolve(r);
       };
       ws.addEventListener('close', (ev) => {
+        // A connection already given up on closes late, while a new one runs: it changes nothing.
+        if (finished) return;
         const code = (ev as CloseEvent).code;
         if (FINAL[code]) return finish({ ready, final: FINAL[code] });
         if (code === DISALLOWED_INTENTS && this.messageContent) {
           // Not allowed the text of every message: the bot connects without it and reads mentions.
           this.intents &= ~MESSAGE_CONTENT;
           this.session = null;
-          return finish({ ready: true });
+          return finish({ ready: true, quick: true });
         }
         if (code === DISALLOWED_INTENTS) return finish({ ready, final: 'disallowed_intents' });
         if (FRESH.has(code)) {
           this.session = null;
           this.seq = null;
         }
-        finish({ ready });
+        finish({ ready, quick: asked });
       });
       ws.addEventListener('error', () => ws.close(KEEP));
       signal.addEventListener('abort', () => ws.close(1000), { once: true });
@@ -208,6 +230,7 @@ export class DiscordGateway {
         if (typeof f.s === 'number') this.seq = f.s;
         switch (f.op) {
           case 10: {
+            clearTimeout(handshake);
             const interval =
               Number((f.d as { heartbeat_interval?: number } | undefined)?.heartbeat_interval) || 41_250;
             // The first beat at a random point of the interval, as Discord asks, so many bots
@@ -221,6 +244,9 @@ export class DiscordGateway {
               Math.floor(interval * Math.random()),
             );
             first.unref?.();
+            // Identify or resume is sent next: ready or resumed must follow soon.
+            handshake = setTimeout(() => giveUp(), HANDSHAKE_MS);
+            handshake.unref?.();
             if (this.session && this.seq !== null) {
               send({ op: 6, d: { token: this.token, session_id: this.session.id, seq: this.seq } });
             } else {
@@ -243,6 +269,7 @@ export class DiscordGateway {
             return;
           case 7:
             // Discord asks for a new connection; the session goes on there.
+            asked = true;
             ws.close(KEEP);
             return;
           case 9:
@@ -265,6 +292,7 @@ export class DiscordGateway {
           this.session = { id: String(d.session_id ?? ''), url: resumeUrl };
           const user = d.user as { id?: string; username?: string; global_name?: string | null } | undefined;
           ready = true;
+          clearTimeout(handshake);
           this.state({
             error: null,
             messageContent: this.messageContent,
@@ -272,6 +300,7 @@ export class DiscordGateway {
           });
         } else if (t === 'RESUMED') {
           ready = true;
+          clearTimeout(handshake);
           this.state({ error: null, messageContent: this.messageContent });
         }
         void this.handle({ t, d }).catch((err: unknown) => console.warn('discord event', err));

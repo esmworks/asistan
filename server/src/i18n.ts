@@ -263,6 +263,10 @@ const tr = {
   'slack.talkingTo': 'Artık {bot} ile konuşuyorsun.',
   'slack.cardNotYours': 'Bu kartı yalnızca soran kişi ya da botu değiştirebilenler yanıtlayabilir.',
   'slack.answered': '✓ {result} ({name})',
+  'slack.tokenInvalid':
+    'Slack bot anahtarını artık kabul etmiyor ({reason}). Uygulamayı yeniden kurup anahtarları yeniden gir.',
+  'slack.scopesMissing':
+    'Slack uygulamasında eksik izinler var: {scopes}. Güncel manifest ile izinleri ekleyip uygulamayı yeniden kur.',
   'discord.dmOnly': 'Benimle konuşmak için bir sunucunun kanalında beni etiketle.',
   'discord.working': 'Üzerinde çalışıyorum…',
   'discord.stop': 'Durdur',
@@ -1178,6 +1182,18 @@ const tr = {
   'channel.cardClosed': 'Bu kart artık açık değil.',
   'channel.fileTooLarge': '{name} alınamayacak kadar büyük; Yumak Bot uygulamasından ekle.',
   'channel.fileFailed': '{name} alınamadı; yeniden gönder ya da uygulamadan ekle.',
+  'channel.cutShort': 'Sunucu yeniden başladığı için bu isteğin yarıda kaldı. Lütfen tekrar yaz.',
+  'channel.notDelivered': 'Cevabın bir kısmı buraya iletilemedi; tamamı uygulamada duruyor.',
+  'channel.telegramBlocked': "Telegram'da botu engelledin. Engeli kaldırıp Telegram'da Başlat'a bas.",
+  'channel.updateFailed': 'Mesajın işlenemedi. Lütfen tekrar dene.',
+  'channel.pressFailed': 'Bu işlem yapılamadı.',
+  'channel.noAnswer': 'Bu isteğe bir cevap çıkmadı. Lütfen tekrar dene.',
+  'channel.filesMissing': '(Ulaşmayan dosyalar: {names})',
+  'channel.filesTooLarge': '(Çok büyük olduğu için alınamayan dosyalar: {names})',
+  'channel.loopPaused':
+    'Çok kısa sürede çok fazla mesaj geldi; bu numarada başka bir bot cevap veriyor olabilir. Döngüye girmemek için 10 dakika isteklerini bota iletmeyeceğim; /stop ve /new gibi komutlar çalışır.',
+  'channel.loopHeld':
+    'Bu mesajın bota iletilmedi; döngüye girmemek için kısa bir ara verdim. {minutes} dakika sonra yeniden yaz.',
   'channel.fileInApp': '{name} buraya gönderilemedi; Yumak Bot uygulamasında duruyor.',
   'channel.routine': 'Rutin',
   'channel.otherChat': 'Başka bir konuşma',
@@ -1452,6 +1468,10 @@ const en: Catalog<ServerKey> = {
   'slack.talkingTo': "You're talking to {bot} now.",
   'slack.cardNotYours': 'Only the person who asked, or someone who may change the bot, can answer this card.',
   'slack.answered': '✓ {result} ({name})',
+  'slack.tokenInvalid':
+    'Slack no longer accepts the bot token ({reason}). Reinstall the app and enter the tokens again.',
+  'slack.scopesMissing':
+    'The Slack app is missing permissions: {scopes}. Add them with the current manifest and reinstall the app.',
   'discord.dmOnly': 'To talk with me, mention me in a channel of a server.',
   'discord.working': 'Working on it…',
   'discord.stop': 'Stop',
@@ -2355,6 +2375,18 @@ const en: Catalog<ServerKey> = {
   'channel.cardClosed': 'This card is no longer open.',
   'channel.fileTooLarge': '{name} is too large to receive; add it in the Yumak Bot app.',
   'channel.fileFailed': '{name} could not be received; send it again or add it in the app.',
+  'channel.cutShort': 'Your request was cut short because the server restarted. Please write again.',
+  'channel.notDelivered': 'Part of the answer could not be delivered here; all of it is in the app.',
+  'channel.telegramBlocked': 'You blocked the bot in Telegram. Unblock it and press Start in Telegram.',
+  'channel.updateFailed': 'Your message could not be handled. Please try again.',
+  'channel.pressFailed': 'This could not be done.',
+  'channel.noAnswer': 'There was no answer to this request. Please try again.',
+  'channel.filesMissing': '(Files that did not arrive: {names})',
+  'channel.filesTooLarge': '(Files that were too large to receive: {names})',
+  'channel.loopPaused':
+    'Too many messages came in a short time; another bot may be answering on this number. To avoid a loop I will not pass your requests to the bot for 10 minutes; commands such as /stop and /new still work.',
+  'channel.loopHeld':
+    'This message was not passed to the bot; I paused for a short while to avoid a loop. Write again in {minutes} minutes.',
   'channel.fileInApp': '{name} could not be sent here; it is in the Yumak Bot app.',
   'channel.routine': 'Routine',
   'channel.otherChat': 'Another conversation',

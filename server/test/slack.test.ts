@@ -4,7 +4,9 @@ import type { Approval, Bot, SlackLink, SlackStatus, Thread } from '@yumakbot/sh
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { slackMessages } from '../src/channels/format';
+import { holdRequest } from '../src/channels/common';
 import { namedBot, slackText } from '../src/channels/slack';
+import { schema } from '../src/db';
 import { testServer, waitFor, type Person, type TestServer } from './helpers';
 
 // Made-up tokens in Slack's shapes, put together here so no token-shaped text sits in the source.
@@ -26,6 +28,11 @@ async function fakeSlack() {
   let ts = 1000;
   let socket: WebSocket | null = null;
   let envelope = 1;
+  // Knobs a test turns: "slow down" answers left to give, refused posts, a refused token.
+  let limited = 0;
+  let refusePosts = false;
+  let tokenError: string | null = null;
+  let scopes: string | null = null;
   const read = async (req: IncomingMessage) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
@@ -38,6 +45,7 @@ async function fakeSlack() {
       const reply = (x: Record<string, unknown>) =>
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, ...x }));
       if (url.pathname === '/upload') return reply({});
+      if (url.pathname === '/missing') return void res.writeHead(404).end();
       const method = url.pathname.replace(/^\/api\//, '');
       const auth = req.headers.authorization;
       const wanted = method === 'apps.connections.open' ? APP : BOT;
@@ -46,8 +54,25 @@ async function fakeSlack() {
         return;
       }
       calls.push({ method, body });
+      if (tokenError && method !== 'apps.connections.open') {
+        return void res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ ok: false, error: tokenError }));
+      }
+      if (method === 'chat.postMessage' && limited > 0) {
+        limited--;
+        return void res.writeHead(429, { 'retry-after': '1' }).end('{}');
+      }
+      if (method === 'chat.postMessage' && refusePosts) {
+        return void res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end('{"ok":false,"error":"channel_not_found"}');
+      }
       if (method === 'apps.connections.open') return reply({ url: `${wsBase}/socket` });
-      if (method === 'auth.test') return reply({ team_id: 'T1', team: 'Günay', user_id: BOT_USER });
+      if (method === 'auth.test') {
+        if (scopes !== null) res.setHeader('x-oauth-scopes', scopes);
+        return reply({ team_id: 'T1', team: 'Günay', user_id: BOT_USER });
+      }
       if (method === 'users.info')
         return reply({ user: { profile: { display_name: NAMES[body.user!] ?? '' } } });
       if (method === 'chat.postMessage') return reply({ ts: String(ts++) });
@@ -92,7 +117,13 @@ async function fakeSlack() {
     async write(
       user: string,
       text: string,
-      where: { channel: string; type?: 'im' | 'channel'; thread?: string; mention?: boolean },
+      where: {
+        channel: string;
+        type?: 'im' | 'channel';
+        thread?: string;
+        mention?: boolean;
+        files?: Record<string, unknown>[];
+      },
     ) {
       const at = String(ts++);
       const event = {
@@ -103,6 +134,7 @@ async function fakeSlack() {
         text,
         ts: at,
         ...(where.thread && { thread_ts: where.thread }),
+        ...(where.files && { files: where.files, subtype: 'file_share' }),
       };
       await send('events_api', { event_id: `Ev${at}`, event });
       // A mention comes once more, as its own event.
@@ -119,6 +151,11 @@ async function fakeSlack() {
         actions: [{ action_id: value, value }],
       });
     },
+    limit: (n: number) => (limited = n),
+    refuse: (on: boolean) => (refusePosts = on),
+    revoke: (code: string | null) => (tokenError = code),
+    scopes: (list: string | null) => (scopes = list),
+    root: base,
     sent: (method = 'chat.postMessage') => calls.filter((c) => c.method === method),
     close: async () => {
       for (const c of wss.clients) c.terminate();
@@ -364,5 +401,110 @@ describe('Slack', () => {
     const req = t.engine.requests.at(-1)!;
     expect(req.systemPrompt).not.toContain('Sahibin gizli işi');
     expect((await t.services.threads.row(req.threadId)).kind).toBe('team');
+  });
+
+  const reacted = (name: string, ts: string) =>
+    slack.sent('reactions.add').some((c) => c.body.timestamp === ts && c.body.name === name);
+
+  it('Slack yavaşla (429) deyince bekleyip yeniden dener ve cevap kaybolmaz', async () => {
+    await setUp();
+    await link(ayse, 'UAYSE');
+    slack.limit(1);
+    const at = await slack.write('UAYSE', 'merhaba', { channel: 'DUAYSE', type: 'im' });
+    await waitFor(async () => (reacted('white_check_mark', at) ? true : null));
+    expect(slack.sent().filter((c) => c.body.text?.includes('Yankı'))).toHaveLength(2);
+    expect(reacted('x', at)).toBe(false);
+  });
+
+  it('gönderilemeyen cevap aynı yere haber verir ve mesaj ✅ almaz', async () => {
+    await setUp();
+    await link(ayse, 'UAYSE');
+    slack.refuse(true);
+    const at = await slack.write('UAYSE', 'merhaba', { channel: 'DUAYSE', type: 'im' });
+    await waitFor(async () => (reacted('x', at) ? true : null));
+    await posted('DUAYSE', 'iletilemedi');
+    expect(reacted('white_check_mark', at)).toBe(false);
+  });
+
+  it('rutin raporu Slack reddedince report() false döner', async () => {
+    await setUp();
+    expect(await t.services.slack.report('C0RAPOR01', 'Sabah', 'özet')).toBe(true);
+    slack.refuse(true);
+    expect(await t.services.slack.report('C0RAPOR01', 'Sabah', 'özet')).toBe(false);
+  });
+
+  it('yeniden başlarken yarım kalan istek temizlenir: 👀 gider, kesildiği söylenir, kayıt silinir', async () => {
+    const bot = await setUp();
+    const own = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const [row] = await t.services.ctx.db.select().from(schema.channels);
+    await holdRequest(t.services.ctx, row!.id, own.id, { channel: 'C7', threadTs: '700', ts: '701' });
+    await t.services.slack.settleHeld(row!);
+    const note = await posted('C7', 'yarıda');
+    expect(note.body.thread_ts).toBe('700');
+    expect(
+      slack.sent('reactions.remove').some((c) => c.body.timestamp === '701' && c.body.name === 'eyes'),
+    ).toBe(true);
+    expect(reacted('x', '701')).toBe(true);
+    expect(await t.services.ctx.db.select().from(schema.channelRequests)).toHaveLength(0);
+  });
+
+  it('bot anahtarı iptal edilince durum hata gösterir, anahtar çalışınca hata gider', async () => {
+    await setUp();
+    await link(ayse, 'UAYSE');
+    slack.revoke('token_revoked');
+    await slack.write('UAYSE', 'merhaba', { channel: 'DUAYSE', type: 'im' });
+    const bad = await waitFor(async () => {
+      const r = (await t.api<SlackStatus>('GET', '/api/slack')).body;
+      return r.error ? r : null;
+    });
+    expect(bad.error).toContain('token_revoked');
+    slack.revoke(null);
+    await slack.write('UAYSE', 'bir daha', { channel: 'DUAYSE', type: 'im' });
+    await waitFor(async () => ((await t.api<SlackStatus>('GET', '/api/slack')).body.error ? null : true));
+  });
+
+  it("bağlı thread'de son isteğinden beri yazılan, başkasına giden satırlar bota gelir", async () => {
+    await setUp();
+    await link(ayse, 'UAYSE');
+    const top = await slack.write('UAYSE', `<@${BOT_USER}> özetle`, { channel: 'C5', mention: true });
+    await waitFor(async () => t.engine.requests.length === 1);
+    await t.services.turns.idle();
+    slack.replies.set(top, [
+      { user: 'UAYSE', text: 'özetle', ts: top },
+      { user: 'UMERT', text: '<@UAYSE> şuna da bak', ts: `${top}.5` },
+    ]);
+    await slack.write('UMERT', '<@UAYSE> şuna da bak', { channel: 'C5', thread: top });
+    await slack.write('UAYSE', 'ne dersin', { channel: 'C5', thread: top });
+    await waitFor(async () => t.engine.requests.length === 2);
+    const prompt = t.engine.requests[1]!.prompt;
+    expect(prompt).toContain('mert.k: @ayse.s şuna da bak');
+    expect(prompt.indexOf('şuna da bak')).toBeLessThan(prompt.indexOf('ne dersin'));
+    await t.services.turns.idle();
+  });
+
+  it('alınamayan dosya bota da söylenir', async () => {
+    await setUp();
+    await link(ayse, 'UAYSE');
+    await slack.write('UAYSE', 'bu dosyaya bak', {
+      channel: 'DUAYSE',
+      type: 'im',
+      files: [{ id: 'F9', name: 'rapor.pdf', size: 10, url_private_download: `${slack.root}/missing` }],
+    });
+    await waitFor(async () => t.engine.requests.length === 1);
+    const prompt = t.engine.requests[0]!.prompt;
+    expect(prompt).toContain('bu dosyaya bak');
+    expect(prompt).toContain('rapor.pdf');
+    expect(prompt).toContain('Ulaşmayan');
+    await t.services.turns.idle();
+  });
+
+  it('bağlanırken eksik izinler durumda uyarı olarak görünür', async () => {
+    slack = await fakeSlack();
+    slack.scopes('chat:write,users:read');
+    t = await testServer({ slackApi: slack.base });
+    const r = await t.api<SlackStatus>('PUT', '/api/slack', { appToken: APP, botToken: BOT, botId: null });
+    expect(r.status).toBe(200);
+    expect(r.body.error).toContain('reactions:write');
+    expect(r.body.error).not.toContain('chat:write');
   });
 });
