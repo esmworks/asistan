@@ -68,6 +68,19 @@ version is 0.x, a minor release may change the data format or the API; the serve
   kept, never its body or headers; address parameters that may carry a secret and tokens printed to the console are
   hidden.
 
+### Long conversations
+
+- Bots on other providers no longer send the last 160 messages whatever their size. A request is measured against the
+  model's context window: past 80% of it, the older part is folded once into a summary written by the bot's own model
+  and kept with the conversation, so later turns reuse it. When no summary can be written, the newest of those
+  messages stand in word for word and the bot is told the rest is missing. Tool results are cut to what the window
+  allows, and a conversation that still overflows goes on in a new session that carries the summary.
+- Claude bots fold the conversation at 200k tokens instead of near the model's whole window, which for a
+  million-token model meant resending the whole conversation every turn. The size can be chosen in Settings → Model
+  (100k to 1M, or Claude's own value).
+- Bots are told to look up exact wording, numbers and earlier decisions in past conversations instead of guessing, and
+  a message cut short when a conversation moves to a new session can be read whole.
+
 ## 0.4.1 — 2026-11-18
 
 ### Safety
