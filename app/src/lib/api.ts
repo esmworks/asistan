@@ -178,6 +178,7 @@ export interface Settings {
   monthlyLimitUsd?: number;
   /** The routine pre-check; missing on older servers. */
   routineGate?: RoutineGateMode;
+  maxTurns?: number;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */

@@ -286,6 +286,8 @@ const tr = {
     'Bot {minutes} dakikadır hiçbir şey yapmadığı için durduruldu. Yeniden denemek için mesajını tekrar gönderebilirsin.',
   'turn.stalledTool':
     '{tool} aracı {minutes} dakikadır bitmediği için tur durduruldu. Yeniden denemek için mesajını tekrar gönderebilirsin.',
+  'turn.looped':
+    '{tool} aynı hatayla {count} kez üst üste başarısız olduğu için tur durduruldu; aynı şeyi denemeye devam etmek boşuna harcama olurdu. Ne yapılacağını değiştirip mesajını yeniden gönderebilirsin.',
   'turn.noReply': 'Bot yanıt yazmadan bitirdi.',
   'turn.contextFull':
     'Sohbet modelin bağlam penceresine sığmıyor. Yeni bir sohbet başlat ya da daha geniş pencereli bir model seç. ({message})',
@@ -296,6 +298,8 @@ const tr = {
   'turn.contextHandoff':
     'Sohbet modelin bağlamına sığmıyor; son konuşma yeni bir oturuma aktarılıp devam ediliyor.',
   'turn.backupBusy': 'Model şu an yanıt veremiyor; bu iş yedek model {model} ile sürüyor.',
+  'turn.backupAuth':
+    'Claude girişi artık geçerli değil; bu iş yedek model {model} ile sürüyor. Ayarlar → Bağlantı → Claude bölümünden yeniden giriş yap.',
   'turn.retryCut': 'Yanıt yarıda kesildi; aynı modelle bir kez daha deneniyor.',
   'turn.limitUntil': 'Claude kullanım sınırı doldu; {time} sonra yeniden dene.',
   'turn.limitActed':
@@ -829,6 +833,8 @@ const tr = {
   'browser.hung':
     'Tarayıcı {seconds} saniye yanıt vermedi; yeniden başlatıldı. Açık sekmeler kapandı, sayfayı yeniden aç.',
   'browser.dialogAccepted': 'Sayfa sordu ({type}): "{message}" — onaylandı.',
+  'browser.tabClosedBySite':
+    'Üzerinde olduğun sekmeyi site kendisi kapattı ({url}); şimdi öndeki başka bir sekmedesin. Ne gördüğünü sanmadan önce sayfaya yeniden bak.',
   'browser.dialogDismissed':
     'Sayfa sordu ({type}): "{message}" — iptal edildi. Onaylamak gerekiyorsa browser_dialog ile söyleyip adımı yeniden yap.',
   'browser.dialogWillAccept': 'Sayfanın bir sonraki sorusu onaylanacak.',
@@ -1345,6 +1351,8 @@ const en: Catalog<ServerKey> = {
   'turn.stalled': 'Stopped: the bot did nothing for {minutes} minutes. Send your message again to retry.',
   'turn.stalledTool':
     'Stopped: the {tool} tool had not finished after {minutes} minutes. Send your message again to retry.',
+  'turn.looped':
+    'Stopped: {tool} failed the same way {count} times in a row, and trying it again would only spend more. Change what you ask for and send it again.',
   'turn.noReply': 'The bot finished without writing a reply.',
   'turn.contextFull':
     "The conversation no longer fits the model's context window. Start a new chat, or choose a model with a larger window. ({message})",
@@ -1355,6 +1363,8 @@ const en: Catalog<ServerKey> = {
   'turn.contextHandoff':
     "The conversation no longer fits the model's context; the recent exchange moves to a new session and the work goes on.",
   'turn.backupBusy': 'The model cannot answer right now; this work goes on with the backup model {model}.',
+  'turn.backupAuth':
+    'The Claude sign-in no longer works; this work goes on with the backup model {model}. Sign in again in Settings → Connection → Claude.',
   'turn.retryCut': 'The reply was cut off midway; trying the same model once more.',
   'turn.limitUntil': 'The Claude usage limit is used up; try again after {time}.',
   'turn.limitActed':
@@ -1882,6 +1892,8 @@ const en: Catalog<ServerKey> = {
   'browser.hung':
     'The browser did not answer for {seconds} seconds and was started again. Its tabs are closed; open the page again.',
   'browser.dialogAccepted': 'The page asked ({type}): "{message}" — answered yes.',
+  'browser.tabClosedBySite':
+    'The site closed the tab you were on ({url}); you are now on another tab in front. Look at the page again before assuming what it shows.',
   'browser.dialogDismissed':
     'The page asked ({type}): "{message}" — cancelled. If it should go ahead, say so with browser_dialog and repeat the step.',
   'browser.dialogWillAccept': "The page's next question will be answered yes.",

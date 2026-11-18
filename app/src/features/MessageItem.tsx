@@ -14,6 +14,8 @@ import {
   type OutsideTrigger,
   type ReplyQuote,
   quoteExcerpt,
+  subagentOf,
+  type SubagentCard as Subagent,
 } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -230,6 +232,10 @@ export function MessageItem({
       );
     default:
       if (Array.isArray(m.props.plan)) return <PlanCard items={m.props.plan as PlanItem[]} />;
+      if (m.props.subagent) {
+        const sub = subagentOf(m.props);
+        if (sub) return <SubagentCard sub={sub} />;
+      }
       if (typeof m.props.connectionSignIn === 'string')
         return <SignInCard connectionId={m.props.connectionSignIn} text={m.text} botId={botId} />;
       if (m.props.app && typeof m.props.app === 'object') return <McpAppView m={m} />;
@@ -414,6 +420,38 @@ function PlanCard({ items }: { items: PlanItem[] }) {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** A helper the bot started for part of the work: what it was asked, how it stands, its steps. */
+function SubagentCard({ sub }: { sub: Subagent }) {
+  const t = useT();
+  return (
+    <section
+      aria-label={t('message.subagent')}
+      className="max-w-[80%] min-w-64 self-start rounded-2xl border bg-card/60 px-4 py-3 text-sm"
+    >
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
+          {sub.state === 'running' ? (
+            <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden />
+          ) : sub.state === 'done' ? (
+            <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : (
+            <AlertCircle className="size-4 text-muted-foreground" aria-hidden />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+            <span className="font-medium">{t('message.subagent')}</span>
+            <span className="tabular-nums">
+              {t(`message.subagentState.${sub.state}`)} · {t('message.subagentSteps', { count: sub.steps })}
+            </span>
+          </div>
+          {sub.description && <div className="mt-1 break-words">{sub.description}</div>}
+        </div>
+      </div>
     </section>
   );
 }

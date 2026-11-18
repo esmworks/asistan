@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { failureStreak, shellTimeoutHint } from '../src/engine/claude';
+import { shellTimeoutHint } from '../src/engine/claude';
+import { FAILURE_STOP, failureStreak } from '../src/engine/failures';
 
 describe('kabuk zaman aşımı ipucu', () => {
   it('süresi dolan komuta daha uzun süre ya da arka plan önerir', () => {
@@ -45,5 +46,12 @@ describe('aynı hatanın tekrarı', () => {
     f.note('Bash', { command: 'a' }, 'x');
     expect(f.note('Bash', { command: 'b' }, 'x')).toBeNull();
     expect(f.note('Bash', { command: 'b' }, 'y')).toBeNull();
+  });
+
+  it('uyarıya rağmen sürerse turu bir kez durdurur', () => {
+    const stops: [string, number][] = [];
+    const f = failureStreak((tool, count) => stops.push([tool, count]));
+    for (let i = 0; i < FAILURE_STOP + 2; i++) f.note('Bash', { command: 'npm test' }, 'Exit code 1');
+    expect(stops).toEqual([['Bash', FAILURE_STOP]]);
   });
 });

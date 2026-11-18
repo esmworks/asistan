@@ -402,9 +402,12 @@ export function browserTools(opts: {
       const refused = browser.takeRefused(bot.id);
       // The connection the sites see changed: the person's computer came or went.
       const exit = opts.exitNote?.() ?? null;
-      if (!asked.length && !refused.length && !exit) return r;
+      // Tabs the site closed itself while the bot was on them.
+      const closed = browser.takeClosedTabs(bot.id);
+      if (!asked.length && !refused.length && !exit && !closed.length) return r;
       const note = [
         ...(exit ? [t(exit === 'computer' ? 'browser.exitComputer' : 'browser.exitServer')] : []),
+        ...closed.map((url) => t('browser.tabClosedBySite', { url: url || '-' })),
         ...asked.map((d) =>
           t(d.accepted ? 'browser.dialogAccepted' : 'browser.dialogDismissed', {
             type: d.type,
@@ -1024,7 +1027,7 @@ export function browserTools(opts: {
           const target = index ? browser.pages(bot.id)?.pages[index - 1] : undefined;
           if (!target) return `${t('browser.noSuchTab')}\n${list()}`;
           if (action === 'close') {
-            await target.close();
+            await browser.closePage(bot.id, target);
             return list();
           }
           browser.select(bot.id, target);

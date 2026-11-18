@@ -88,6 +88,7 @@ import { translator } from './i18n';
 import { schema } from './db';
 import type { AccountStatus, ModelTest } from './engine/types';
 import type { Services } from './services';
+import { clientMetadata, clientMetadataUrlFor, OAUTH_CLIENT_PATH } from './connections/client';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile } from './services/skill-link';
 import { serverLocale, Settings } from './services/settings';
@@ -512,6 +513,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const result = await s.botApi.ask(id, body.text, { threadId: body.threadId, waitMs: body.wait * 1000 });
     return reply.code(result.status === 'running' ? 202 : 200).send(result);
   });
+  // How many turns run now, so the desktop app can ask before quitting stops them.
+  app.get('/api/turns/running', async () => ({ count: s.turns.runningCount() }));
   app.get('/api/turns/:id/result', async (req, reply) => {
     const q = z.object({ wait: z.coerce.number().int().min(0).max(600).default(0) }).parse(req.query);
     const result = await s.botApi.result(IdParams.parse(req.params).id, q.wait * 1000);
@@ -1067,6 +1070,16 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.put('/api/connections/:id/bots', async (req) =>
     s.connections.setBots(IdParams.parse(req.params).id, ConnectionBots.parse(req.body)),
   );
+  // This server as an OAuth client, for a service that takes an address as the client's id: the
+  // service reads it here, so the address names the callback it may send the person back to.
+  app.get(OAUTH_CLIENT_PATH, async (req, reply) => {
+    const redirect = redirectUrl(req);
+    const id = clientMetadataUrlFor(redirect, OAUTH_CLIENT_PATH);
+    if (!id) throw new HttpError(404, 'error.notFound');
+    return reply
+      .header('cache-control', 'public, max-age=3600')
+      .send({ client_id: id, ...clientMetadata(redirect) });
+  });
   // The service sends the person's browser back here, without the app's cookie: the one-time
   // state stands for the session that began the sign-in.
   app.get(OAUTH_CALLBACK_PATH, async (req, reply) => {

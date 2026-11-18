@@ -341,6 +341,9 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@26.6.6)
       socket.io:
         specifier: 4.8.4
         version: 4.8.4

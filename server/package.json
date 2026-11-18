@@ -28,6 +28,7 @@
     "postal-mime": "2.4.4",
     "postgres": "4.1.1",
     "qrcode": "1.5.4",
+    "sharp": "0.35.5",
     "socket.io": "4.8.4",
     "tldts": "6.1.86",
     "ws": "8.22.2",
