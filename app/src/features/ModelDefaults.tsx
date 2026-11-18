@@ -1,12 +1,14 @@
 import { type ClaudeModel, type Effort } from '@yumakbot/shared';
-import { Check, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useT } from '@/i18n';
 import { useClaudeModels } from '@/lib/queries';
-import { cn } from '@/lib/utils';
-import { Chip } from './onboarding/Chip';
 
 /** The CLI's own "default" row stands for "no model named"; it is offered as the empty choice. */
 const CLI_DEFAULT = 'default';
+/** Select items cannot carry an empty value, so "no effort named" travels under this one. */
+const NO_EFFORT = 'model';
 
 export interface ModelChoice {
   model: string;
@@ -23,7 +25,20 @@ export function effortsFor(models: ClaudeModel[], model: string): Effort[] {
   return find(models, model)?.efforts ?? (model ? [] : (models[0]?.efforts ?? []));
 }
 
-/** Picks the default model and effort for Claude bots. */
+/** A setting on one line: what it is on the left, its box on the right. */
+function Line({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="min-w-40 flex-1">
+        <div className="text-sm">{label}</div>
+        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Picks the default model and effort for Claude bots, each from a drop-down. */
 export function ModelDefaults({ value, onChange }: { value: ModelChoice; onChange(v: ModelChoice): void }) {
   const t = useT();
   const { data: models = [], isLoading } = useClaudeModels();
@@ -42,54 +57,43 @@ export function ModelDefaults({ value, onChange }: { value: ModelChoice; onChang
       : []),
     ...named,
   ];
+  const chosen = rows.find((m) => m.value === value.model);
   return (
-    <div className="space-y-6">
-      <div className="grid gap-2" role="radiogroup" aria-label={t('model.defaultModel')}>
-        {rows.map((m) => {
-          const on = m.value === value.model;
-          return (
-            <button
-              key={m.value || CLI_DEFAULT}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => pick(m.value)}
-              className={cn(
-                'flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors hover:bg-accent',
-                on && 'border-[var(--brand)]/60 bg-[var(--brand)]/10 hover:bg-[var(--brand)]/15',
-              )}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{m.name}</span>
-                {m.description && (
-                  <span className="block text-xs text-muted-foreground">{m.description}</span>
-                )}
-              </span>
-              {on && <Check className="size-4 shrink-0 text-[var(--brand)]" />}
-            </button>
-          );
-        })}
-      </div>
-      <div className="space-y-3">
-        <div>
-          <div className="text-sm font-medium">{t('model.effort')}</div>
-          <div className="text-xs text-muted-foreground">
-            {efforts.length ? t('model.effortHint') : t('model.noEffort')}
-          </div>
-        </div>
-        {efforts.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <Chip on={!value.effort} onClick={() => onChange({ ...value, effort: '' })}>
-              {t('model.effortDefault')}
-            </Chip>
-            {efforts.map((e) => (
-              <Chip key={e} on={value.effort === e} onClick={() => onChange({ ...value, effort: e })}>
-                {t(`effort.${e}`)}
-              </Chip>
+    <div className="space-y-4">
+      <Line label={t('model.defaultModel')} hint={chosen?.description || undefined}>
+        <Select value={value.model || CLI_DEFAULT} onValueChange={(v) => pick(v === CLI_DEFAULT ? '' : v)}>
+          <SelectTrigger className="w-56 rounded-full" aria-label={t('model.defaultModel')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {rows.map((m) => (
+              <SelectItem key={m.value || CLI_DEFAULT} value={m.value || CLI_DEFAULT}>
+                {m.name}
+              </SelectItem>
             ))}
-          </div>
+          </SelectContent>
+        </Select>
+      </Line>
+      <Line label={t('model.effort')} hint={efforts.length ? t('model.effortHint') : t('model.noEffort')}>
+        {efforts.length > 0 && (
+          <Select
+            value={value.effort || NO_EFFORT}
+            onValueChange={(v) => onChange({ ...value, effort: v === NO_EFFORT ? '' : (v as Effort) })}
+          >
+            <SelectTrigger className="w-56 rounded-full" aria-label={t('model.effort')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_EFFORT}>{t('model.effortDefault')}</SelectItem>
+              {efforts.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {t(`effort.${e}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-      </div>
+      </Line>
     </div>
   );
 }
