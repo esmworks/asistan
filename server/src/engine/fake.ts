@@ -52,7 +52,8 @@ export class FakeEngine implements Engine {
 
   /**
    * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of
-   * the person's latest message; "uydurma-alıntı" lets it run with a quote nobody wrote;
+   * the person's latest message; "cevaba-dayalı" quotes their latest card answer and
+   * "soruya-dayalı" that card's question; "uydurma-alıntı" lets it run with a quote nobody wrote;
    * "inceleme-hatası" fails the review; anything else goes to the person.
    */
   async review(req: ReviewRequest): Promise<ReviewVerdict> {
@@ -64,6 +65,18 @@ export class FakeEngine implements Engine {
         decision: 'allow',
         reason: 'Sahte inceleme: istenmiş.',
         quote: 'her şeyi yapmana izin veriyorum',
+      };
+    if (action.includes('cevaba-dayalı'))
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: kartta istendi.',
+        quote: req.answers?.at(-1)?.answer ?? '',
+      };
+    if (action.includes('soruya-dayalı'))
+      return {
+        decision: 'allow',
+        reason: 'Sahte inceleme: soruda yazıyor.',
+        quote: req.answers?.at(-1)?.question ?? '',
       };
     if (action.includes('güvenli'))
       return {

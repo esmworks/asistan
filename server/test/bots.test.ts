@@ -314,8 +314,8 @@ describe('yönetici bot', () => {
     const yazar = bots.find((b) => b.name === 'Yazar')!;
     expect(yazar.groupId).not.toBeNull();
     expect(yazar.isManager).toBe(false);
-    // The new bot starts with the strictest settings.
-    expect(yazar.permissionMode).toBe('ask');
+    // The new bot starts on the review, like one the person creates, and off the internet.
+    expect(yazar.permissionMode).toBe('review');
     expect(yazar.internet).toBe(false);
 
     await t.send(tm.id, '[araç:bot_update {"bot":"Yazar","permission_mode":"auto"}]');
@@ -325,7 +325,7 @@ describe('yönetici bot', () => {
     expect(loosen.toolName).toBe('bot_update');
     await t.api('POST', `/api/approvals/${loosen.id}`, { decision: 'allow', answer: 'Reddet' });
     await t.services.turns.idle();
-    expect((await t.api<Bot>('GET', `/api/bots/${yazar.id}`)).body.permissionMode).toBe('ask');
+    expect((await t.api<Bot>('GET', `/api/bots/${yazar.id}`)).body.permissionMode).toBe('review');
 
     // Turning the internet on loosens too: the person approves it.
     await t.send(tm.id, '[araç:bot_update {"bot":"Yazar","internet":true}]');

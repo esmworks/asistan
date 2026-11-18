@@ -39,7 +39,7 @@ import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
-import { ownerWords, personAsked, quoteFound } from './owner-words';
+import { ownerAnswers, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
@@ -818,9 +818,10 @@ export class TurnManager {
         })
       : '';
 
-    // Whether the work goes back to the person's own message; read once, when it first matters.
-    let personRooted: Promise<boolean> | null = null;
-    const rootedInPerson = () => (personRooted ??= personAsked(this.ctx, turn));
+    // Who asked for the work: the person's message, their routine, or nobody just now; read once,
+    // when it first matters.
+    let asker: Promise<'message' | 'routine' | null> | null = null;
+    const askedBy = () => (asker ??= requestedBy(this.ctx, turn));
 
     let streamed = '';
     let shown = 0;
@@ -899,8 +900,11 @@ export class TurnManager {
           turn.modeCap,
         ),
         !!outside(),
-        !!outside() && (await rootedInPerson()),
+        !!outside() && !!(await askedBy()),
       );
+      // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
+      // the card says what started the run. In the person's own request they count as always.
+      const locked = !!outside() && !(await askedBy());
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -922,7 +926,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: !!outside(),
+        outside: locked,
       });
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
@@ -940,7 +944,10 @@ export class TurnManager {
       }
       // In work the person asked for, they said no to this very step and have not written since:
       // another card would only ask them the same thing again. A routine's later run still asks.
-      if ((await rootedInPerson()) && (await approvals.refusedLately(bot.id, ask.toolName, ask.input))) {
+      if (
+        (await askedBy()) === 'message' &&
+        (await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
         return { behavior: 'deny', message: t('turn.refusedLately') };
       }
       // Review mode: a small model may let a clearly safe request through. Never for what an
@@ -986,7 +993,7 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: !!outside(),
+        outside: locked,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -997,7 +1004,7 @@ export class TurnManager {
               approvalId: a.id,
               ...held,
               // The card says what started the run, and offers no "always allow".
-              ...(outside() ? { outside: outside() } : {}),
+              ...(locked && outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
             },
             turnId: turn.id,
@@ -1402,7 +1409,9 @@ export class TurnManager {
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
     const words = await ownerWords(this.ctx, o.turn);
-    if (!words.length) return { allowed: false, reason: t('review.noWords') };
+    // What they chose on the bot's question cards is theirs too; the question is the bot's.
+    const answers = await ownerAnswers(this.ctx, o.turn);
+    if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
     let verdict;
     try {
       verdict = await engine.review({
@@ -1410,6 +1419,7 @@ export class TurnManager {
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
         words,
+        answers,
         outside: o.outside,
         locale: o.locale,
         signal: o.signal,
@@ -1421,7 +1431,9 @@ export class TurnManager {
     if (o.signal.aborted) return no;
     if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
     // The reviewer must point at what the person said; a quote that is not there does not count.
-    if (!quoteFound(verdict.quote, words)) return { allowed: false, reason: t('review.noQuote') };
+    // Only the person's own text can be quoted: their messages and answers, never a card's question.
+    const own = [...words, ...answers.map((a) => a.answer)];
+    if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
     const action = summarize(o.ask.toolName, o.ask.input);
     await this.services.threads.addMessage({
       threadId: o.thread.id,

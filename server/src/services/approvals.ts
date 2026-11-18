@@ -221,15 +221,16 @@ export function cappedMode(mode: PermissionMode, cap: PermissionMode | null | un
 }
 
 /**
- * The level a step is decided at. An `outside` run has read text someone else wrote, so it is
- * never freer than the review: what the text says cannot make the bot change anything by itself.
- * When the work goes back to the person's own message (`personAsked`), a bot that may act without
- * a card is reviewed against those words, which nothing the run read can add to; otherwise (a
- * mail, a webhook, a watched page started it) every change asks.
+ * The level a step is decided at. When the work goes back to the person's own message
+ * (`personAsked`), the bot keeps its own level even after reading text someone else wrote: that
+ * text is marked as data in the prompt, and the review, which reads only the person's words, is
+ * told it was read. A card for every step of the person's own request, in every bot it was handed
+ * to, buried the cards that matter. When nobody asked for the work (a mail, a webhook, a watched
+ * page started it), nothing it read may change anything by itself: every change asks.
  */
 export function modeFor(mode: PermissionMode, outside: boolean, personAsked = false): PermissionMode {
-  if (!outside || mode === 'readonly') return mode;
-  return personAsked && (mode === 'review' || mode === 'auto') ? 'review' : 'ask';
+  if (!outside || mode === 'readonly' || personAsked) return mode;
+  return 'ask';
 }
 
 export function decide(opts: {
@@ -239,7 +240,7 @@ export function decide(opts: {
   input: Record<string, unknown>;
   rules: PermissionRule[];
   readOnlyTools: Set<string>;
-  /** A run outside text started: "always allow" rules, given for the person's own work, do not count. */
+  /** A run outside text started that nobody asked for: "always allow" rules, given for the person's own work, do not count. */
   outside?: boolean;
 }): Verdict {
   const { mode, toolName, input, rules } = opts;

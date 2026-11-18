@@ -143,7 +143,7 @@ describe('bot içe aktarma', () => {
     expect((await list<Bot>('/api/bots'))[0]).toMatchObject({
       isManager: false,
       pinned: false,
-      permissionMode: 'ask',
+      permissionMode: 'review',
       internet: true,
       projectDir: null,
       engine: 'claude',

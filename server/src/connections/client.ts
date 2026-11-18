@@ -450,7 +450,7 @@ const CONNECT_RETRY_MS = 1000;
 async function connectOnce(target: ClientTarget): Promise<Client> {
   // Forms only: a server asking to open a web page is declined.
   const client = new Client(
-    { name: 'YumakBot', version: '0.4.0' },
+    { name: 'YumakBot', version: '0.4.1' },
     {
       capabilities: {
         elicitation: { form: {} },

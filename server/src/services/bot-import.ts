@@ -226,7 +226,8 @@ export class BotImportService {
           // Set here, never read from the file.
           isManager: false,
           pinned: false,
-          permissionMode: 'ask',
+          // The level a bot the person creates starts at, whatever the file says.
+          permissionMode: 'review',
           // What every new bot starts with; the file cannot turn it off or on.
           internet: true,
           projectDir: null,
