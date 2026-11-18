@@ -1,7 +1,7 @@
 import {
   currentPlanWindows,
   planHeadline,
-  planLeftPercent,
+  planUsedPercent,
   planPace,
   planTone,
   type PlanWindow,
@@ -99,9 +99,9 @@ describe('Claude planının kullanım pencereleri', () => {
       'model:Fable',
     ]);
     expect(planHeadline([{ kind: 'five_hour', used: null, resetsAt: null }], now)).toBeNull();
-    expect(planLeftPercent({ used: 0.424 })).toBe(58);
-    expect(planLeftPercent({ used: 1 })).toBe(0);
-    expect(planLeftPercent({ used: null })).toBe(100);
+    expect(planUsedPercent({ used: 0.424 })).toBe(42);
+    expect(planUsedPercent({ used: 1 })).toBe(100);
+    expect(planUsedPercent({ used: null })).toBe(0);
   });
 
   it('rengi doluluğa ve pencerenin geçen kısmına göre verir; pencerenin başındaki az kullanım uyarı sayılmaz', () => {

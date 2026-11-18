@@ -203,9 +203,9 @@ export const tr = {
   'usage.plan.hint':
     'Çizgi pencerenin ne kadarının geçtiğini gösterir; çubuk çizgiyi geçtiyse plan, pencere bitmeden dolacak hızda kullanılıyor.',
   'usage.plan.seen': 'Son Claude turundaki bilgi: {time}',
-  'planMeter.left': '%{percent} kaldı',
+  'planMeter.used': '%{percent} kullanıldı',
   'planMeter.none': 'Sınıra ulaşıldı',
-  'planMeter.label': 'Claude planı: %{percent} kaldı ({window})',
+  'planMeter.label': 'Claude planı: %{percent} kullanıldı ({window})',
   'usage.parallel.hint':
     'Botların aynı anda en fazla kaç işi yürüttüğü. Azı harcamayı yavaşlatır, fazlası daha çok işi birlikte bitirir; geri kalanlar sırada bekler.',
   'usage.parallel.default': 'Varsayılan ({count})',

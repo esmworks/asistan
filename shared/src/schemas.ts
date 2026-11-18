@@ -953,9 +953,9 @@ export function planHeadline(windows: readonly PlanWindow[], now: number): PlanW
   return fullest;
 }
 
-/** The whole percent of a window left, 0–100. */
-export function planLeftPercent(w: Pick<PlanWindow, 'used'>): number {
-  return Math.max(0, Math.min(100, 100 - Math.round((w.used ?? 0) * 100)));
+/** The whole percent of a window used, 0–100. */
+export function planUsedPercent(w: Pick<PlanWindow, 'used'>): number {
+  return Math.max(0, Math.min(100, Math.round((w.used ?? 0) * 100)));
 }
 
 /** Spending and work over a period, from the finished turns. */

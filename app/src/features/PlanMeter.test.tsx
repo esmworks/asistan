@@ -35,20 +35,20 @@ describe('sohbetteki plan göstergesi', () => {
         { kind: 'seven_day_opus', used: 0.95, resetsAt: '2026-11-21T00:00:00.000Z' },
       ],
     });
-    const button = screen.getByRole('button', { name: 'Claude plan: 58% left (5-hour window)' });
-    expect(button.textContent).toBe('58% left');
+    const button = screen.getByRole('button', { name: 'Claude plan: 42% used (5-hour window)' });
+    expect(button.textContent).toBe('42% used');
     expect(button.dataset.planMeter).toBe('fine');
     expect(view.container.querySelector('[data-plan-row]')).toBeNull();
 
     fireEvent.click(button);
     const rows = [...document.querySelectorAll<HTMLElement>('[data-plan-row]')];
     expect(rows.map((r) => r.dataset.planRow)).toEqual(['five_hour', 'seven_day', 'seven_day_opus']);
-    expect(rows[0]!.textContent).toContain('58% left');
+    expect(rows[0]!.textContent).toContain('42% used');
     expect(rows[0]!.textContent).toContain('Resets');
-    expect(rows[2]!.textContent).toContain('5% left');
-    // The bars fill with what is left, like the ring and the words.
+    expect(rows[2]!.textContent).toContain('95% used');
+    // The bars fill up as the plan is used, like the ring and the words.
     const bars = rows.map((r) => r.querySelector<HTMLElement>('[data-plan-bar]')!.style.width);
-    expect(bars).toEqual(['58%', '88%', '5%']);
+    expect(bars).toEqual(['42%', '12%', '95%']);
   });
 
   it('sınırdaki pencereyi kırmızı ve “sınıra ulaşıldı” diye gösterir', () => {
@@ -56,7 +56,7 @@ describe('sohbetteki plan göstergesi', () => {
       at: '2026-11-17T23:50:00.000Z',
       windows: [{ kind: 'seven_day', used: 1, resetsAt: '2026-11-19T00:00:00.000Z' }],
     });
-    const button = screen.getByRole('button', { name: 'Claude plan: 0% left (Weekly)' });
+    const button = screen.getByRole('button', { name: 'Claude plan: 100% used (Weekly)' });
     expect(button.dataset.planMeter).toBe('near');
     fireEvent.click(button);
     expect(document.querySelector('[data-plan-row="seven_day"]')?.textContent).toContain('Limit reached');
