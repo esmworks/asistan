@@ -1,5 +1,4 @@
-import { ShapeArt, type AvatarMotion } from '@/components/BotAvatar';
-import type { BotActivity } from '@/lib/botActivity';
+import mascot from '@/assets/mascot.webp';
 import { cn } from '@/lib/utils';
 
 /**
@@ -10,28 +9,18 @@ const TILE = 'linear-gradient(180deg, #2a5a3c 0%, #12281a 100%)';
 export const MASCOT_COLOR = '#4fae74';
 
 /**
- * Yumak Bot itself, drawn as its icon: the green plush rising from the bottom of a dark green tile.
- * Its eyes live like a bot's, so the first screens greet with the same character the Dock shows.
+ * Yumak Bot itself, drawn as its icon: the green plush coming in from the bottom right corner of a dark
+ * green tile. A picture of the icon's own art rather than a live plush: the live one keeps its eyes in the
+ * middle of its body, which here lies outside the tile.
  */
-export function AppMascot({
-  activity,
-  motion = 'still',
-  className,
-}: {
-  activity?: BotActivity;
-  motion?: AvatarMotion;
-  className?: string;
-}) {
+export function AppMascot({ className }: { className?: string }) {
   return (
     <span
       className={cn('relative block size-full overflow-hidden rounded-[22%] shadow-sm', className)}
       style={{ background: TILE }}
       aria-hidden
     >
-      {/* Wider than the tile and set low, so the body fills it side to side and is cut by its bottom. */}
-      <span className="absolute top-[24%] left-[-7.5%] block h-[115%] w-[115%]">
-        <ShapeArt shape="blob" color={MASCOT_COLOR} activity={activity} motion={motion} seed="yumakbot" />
-      </span>
+      <img src={mascot} alt="" className="size-full" draggable={false} />
     </span>
   );
 }

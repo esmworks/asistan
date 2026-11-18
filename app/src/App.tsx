@@ -257,7 +257,7 @@ function Workspace() {
           !isLoading && (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
               <div className="size-20">
-                <AppMascot motion="always" />
+                <AppMascot />
               </div>
               <h1 className="text-2xl font-semibold">{t('welcome.title')}</h1>
               <p className="max-w-sm text-sm text-muted-foreground">{t('welcome.body')}</p>

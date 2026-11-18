@@ -364,7 +364,7 @@ function LanguageStep({ onNext }: { onNext(): void }) {
       <div className="flex w-full max-w-sm flex-col items-center gap-8 text-center">
         <div className="flex flex-col items-center gap-3">
           <div className="size-16">
-            <AppMascot motion="always" />
+            <AppMascot />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('onboarding.languageTitle')}</h1>
           <p className="text-sm text-muted-foreground">{t('onboarding.languageBody')}</p>
