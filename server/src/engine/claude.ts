@@ -8,11 +8,13 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { EFFORTS, type ClaudeModel, type Effort } from '@yumakbot/shared';
+import { EFFORTS, type ClaudeModel, type Effort, type PlanWindow } from '@yumakbot/shared';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { translator } from '../i18n';
 import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
+import { failureStreak } from './failures';
+import { fitResult } from './fit-image';
 import { gatePrompt, parseGate } from './gate';
 import { parseVerdict, reviewPrompt } from './review';
 import { startSandboxProxy } from './sandbox-proxy';
@@ -29,6 +31,7 @@ import {
   type ReviewRequest,
   type ReviewVerdict,
   type Sandbox,
+  type SubagentState,
   type TurnOutcome,
   type TurnRequest,
   OVERLOADED,
@@ -76,31 +79,75 @@ export function shellTimeoutHint(toolName: string, toolInput: unknown, error: st
   ].join(' ');
 }
 
-/** How many times in a row the same call may fail the same way before the bot is told to stop. */
-export const FAILURE_STREAK = 3;
+/** The plan windows asked of the CLI, in the order they are shown. */
+const PLAN_KINDS = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'] as const;
+
+/** How often a turn asks the CLI for the plan's usage, so it does not slow every turn. */
+const PLAN_USAGE_EVERY_MS = 5 * 60_000;
+let planUsageAskedAt = 0;
 
 /**
- * Counts the same tool call failing the same way back to back, and says so to the bot once that
- * happens {@link FAILURE_STREAK} times: a model retrying an unchanged call rarely gets another
- * answer. A call that works, or a different call, starts the count again; a poll that keeps
- * succeeding with the same output is never counted.
+ * The plan's usage windows from the CLI's usage answer (percentages there, 0–1 here); empty for
+ * an answer of another shape, since the CLI marks this answer as one that may still change.
  */
-export function failureStreak() {
-  let last = '';
-  let count = 0;
-  return {
-    reset() {
-      last = '';
-      count = 0;
-    },
-    note(toolName: string, toolInput: unknown, error: string): string | null {
-      const key = JSON.stringify([toolName, toolInput, error.slice(0, 2000)]);
-      count = key === last ? count + 1 : 1;
-      last = key;
-      if (count < FAILURE_STREAK) return null;
-      return `This call has failed the same way ${count} times in a row. Do not run it again unchanged: change the approach, or tell the person what is in the way.`;
-    },
+export function planWindows(raw: unknown): PlanWindow[] {
+  const limits = (raw as { rate_limits?: unknown } | null)?.rate_limits;
+  if (!limits || typeof limits !== 'object') return [];
+  const one = (v: unknown) => {
+    const o = (v ?? {}) as { utilization?: unknown; resets_at?: unknown };
+    const used = typeof o.utilization === 'number' && Number.isFinite(o.utilization) ? o.utilization : null;
+    const at =
+      typeof o.resets_at === 'string' && Number.isFinite(Date.parse(o.resets_at)) ? o.resets_at : null;
+    return { used: used === null ? null : Math.min(1, Math.max(0, used / 100)), resetsAt: at };
   };
+  const out: PlanWindow[] = [];
+  const l = limits as Record<string, unknown>;
+  for (const kind of PLAN_KINDS) {
+    if (l[kind] && typeof l[kind] === 'object') out.push({ kind, ...one(l[kind]) });
+  }
+  if (Array.isArray(l.model_scoped)) {
+    for (const m of l.model_scoped.slice(0, 6)) {
+      const name = (m as { display_name?: unknown } | null)?.display_name;
+      if (typeof name !== 'string' || !name.trim()) continue;
+      out.push({ kind: `model:${name.trim().slice(0, 50)}`, label: name.trim().slice(0, 60), ...one(m) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Asks the running CLI for the plan's usage, within a few seconds; nothing when it cannot say
+ * (an API key, a CLI without the question, no answer in time).
+ */
+async function askPlanUsage(q: unknown): Promise<PlanWindow[]> {
+  const ask = (q as { usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: unknown })
+    .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+  if (typeof ask !== 'function') return [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      (ask as (o: { skipBehaviors: boolean }) => Promise<unknown>).call(q, { skipBehaviors: true }),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 3000);
+      }),
+    ]);
+    return planWindows(answer);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A window from a rate-limit event of the CLI, whose `utilization` runs from 0 to 1. */
+export function eventWindow(info: { rateLimitType?: string; utilization?: number; resetsAt?: number }) {
+  if (!info.rateLimitType || info.rateLimitType === 'overage') return null;
+  const at = resetTime(info.resetsAt);
+  return {
+    kind: info.rateLimitType,
+    used: typeof info.utilization === 'number' ? Math.min(1, Math.max(0, info.utilization)) : null,
+    resetsAt: at ? at.toISOString() : null,
+  } satisfies PlanWindow;
 }
 
 /**
@@ -220,7 +267,11 @@ function connectionServer(name: string, tools: AppTool[]): McpSdkServerConfigWit
   server.server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const t = byName.get(req.params.name);
     if (!t) return { content: [{ type: 'text' as const, text: req.params.name }], isError: true };
-    return { content: toContent(await t.handler((req.params.arguments ?? {}) as Record<string, unknown>)) };
+    return {
+      content: toContent(
+        await fitResult(await t.handler((req.params.arguments ?? {}) as Record<string, unknown>)),
+      ),
+    };
   });
   // The SDK only connects the instance to its transport; the two packages' types differ in name only.
   return { type: 'sdk', name, instance: server as unknown as McpSdkServerConfigWithInstance['instance'] };
@@ -246,7 +297,7 @@ function mcpServer(tools: AppTool[]) {
     version: '0.4.0',
     tools: tools.map((t) =>
       tool(t.name, t.description, t.input, async (args) => ({
-        content: toContent(await t.handler(args as Record<string, unknown>)),
+        content: toContent(await fitResult(await t.handler(args as Record<string, unknown>))),
       })),
     ),
   });
@@ -316,7 +367,7 @@ export class ClaudeEngine implements Engine {
     const home = this.opts.home ?? homedir();
     const hidden = [home, ...(this.opts.hidden ?? [])];
     if (this.opts.configDir) hidden.push(this.opts.configDir);
-    const failures = failureStreak();
+    const failures = failureStreak((tool, count) => req.onRepeatedFailure?.(tool, count));
     const base = (await this.baseOptions()).options;
     // A bot with internet reaches the web from its commands through a proxy of this run's own.
     const proxy =
@@ -460,11 +511,15 @@ export class ClaudeEngine implements Engine {
     let limited: { resetsAt: Date | null } | null = null;
     // What a failed API call said, when the CLI reported one.
     let apiError: string | null = null;
+    // Subagents the bot started this run, by the id of the call that started each.
+    const subagents = new Map<string, SubagentState>();
     try {
       for await (const m of q as AsyncIterable<SDKMessage>) {
         req.onActivity?.();
         if (m.type === 'rate_limit_event') {
           const info = m.rate_limit_info;
+          const w = eventWindow(info);
+          if (w && w.used !== null) req.onPlanUsage?.([w]);
           if (info.status === 'rejected') limited = { resetsAt: resetTime(info.resetsAt) };
           else if (info.status === 'allowed_warning') {
             req.onLimitNear?.({ used: info.utilization ?? null, resetsAt: resetTime(info.resetsAt) });
@@ -474,7 +529,18 @@ export class ClaudeEngine implements Engine {
         } else if (m.type === 'system' && m.subtype === 'init') {
           sessionId = m.session_id;
           req.onSession(m.session_id);
+          // Asked while the turn runs, so its end never waits for the answer.
+          const onPlanUsage = req.onPlanUsage;
+          if (onPlanUsage && Date.now() - planUsageAskedAt > PLAN_USAGE_EVERY_MS) {
+            planUsageAskedAt = Date.now();
+            void askPlanUsage(q).then((windows) => {
+              if (windows.length) onPlanUsage(windows);
+            });
+          }
         } else if (m.type === 'stream_event') {
+          // A subagent's words are its own work, not the reply: they stay out of the chat as the
+          // finished text does.
+          if (m.parent_tool_use_id) continue;
           const ev = m.event as { type: string; delta?: { type: string; text?: string } };
           if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
             req.onText(ev.delta.text);
@@ -482,7 +548,13 @@ export class ClaudeEngine implements Engine {
         } else if (m.type === 'user' && Array.isArray(m.message.content)) {
           // A tool's result, a refused call's too, ends that call.
           for (const c of m.message.content) {
-            if (c.type === 'tool_result') req.onActivity?.({ id: c.tool_use_id, name: '', running: false });
+            if (c.type !== 'tool_result') continue;
+            req.onActivity?.({ id: c.tool_use_id, name: '', running: false });
+            const sub = subagents.get(c.tool_use_id);
+            if (sub && sub.state === 'running') {
+              sub.state = c.is_error ? 'failed' : 'done';
+              req.onSubagent?.({ ...sub });
+            }
           }
         } else if (m.type === 'assistant') {
           const err = (m as { error?: string }).error;
@@ -494,6 +566,32 @@ export class ClaudeEngine implements Engine {
             apiError = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('') || err;
             continue;
           }
+          // A subagent's own steps come with the id of the call that started it.
+          const parent = m.parent_tool_use_id ? subagents.get(m.parent_tool_use_id) : undefined;
+          for (const c of m.message.content) {
+            if (c.type !== 'tool_use') continue;
+            if (parent) {
+              parent.steps += 1;
+              req.onSubagent?.({ ...parent });
+            } else if (c.name === 'Task' || c.name === 'Agent') {
+              const input = (c.input ?? {}) as { description?: unknown; subagent_type?: unknown };
+              const description =
+                typeof input.description === 'string'
+                  ? input.description
+                  : typeof input.subagent_type === 'string'
+                    ? input.subagent_type
+                    : '';
+              const sub: SubagentState = {
+                id: c.id,
+                description: description.slice(0, 200),
+                state: 'running',
+                steps: 0,
+              };
+              subagents.set(c.id, sub);
+              req.onSubagent?.({ ...sub });
+            }
+          }
+          if (parent) continue;
           for (const c of m.message.content) {
             if (c.type === 'tool_use' && c.name === 'TodoWrite') {
               const plan = planItems(c.input);
@@ -526,6 +624,12 @@ export class ClaudeEngine implements Engine {
       errorMessage = errorMessage ?? apiError ?? (err as Error).message;
       if (/not logged in|\/login/i.test(errorMessage)) authFailed = true;
     } finally {
+      // A subagent the run left behind did not finish.
+      for (const sub of subagents.values()) {
+        if (sub.state !== 'running') continue;
+        sub.state = 'stopped';
+        req.onSubagent?.({ ...sub });
+      }
       clearTimeout(closer);
       req.signal.removeEventListener('abort', onAbort);
       input.close();

@@ -204,6 +204,94 @@ describe('WhatsApp', () => {
     expect(s.error).toBe('ownNumber');
   });
 
+  it('botun yanıtına verilen yanıt o mesaja bağlanır; bilinmeyen mesajın metni ve dosyası gelir', async () => {
+    const { wa, asistan } = await setUp();
+    const thread = await main(asistan.id);
+    wa.message(PERSON, { conversation: 'ilk soru' });
+    const reply = await waitFor(async () => wa.sent.find((s) => String(s.content.text).includes('ilk soru')));
+    wa.message(PERSON, {
+      extendedTextMessage: {
+        text: 'bunu açar mısın',
+        contextInfo: { stanzaId: reply.id, quotedMessage: { conversation: 'yanıt' } },
+      },
+    });
+    const answer = await waitFor(async () =>
+      (await t.messages(thread.id)).find((m) => m.role === 'user' && m.text === 'bunu açar mısın'),
+    );
+    expect(answer.props.replyTo).toBeTruthy();
+    expect(answer.props.outside).toBeUndefined();
+
+    wa.message(PERSON, {
+      extendedTextMessage: {
+        text: 'buna bak',
+        contextInfo: {
+          stanzaId: 'eski-mesaj',
+          quotedMessage: { imageMessage: { caption: 'fatura', mimetype: 'image/jpeg', fileLength: 9 } },
+        },
+      },
+    });
+    const withQuote = await waitFor(async () =>
+      (await t.messages(thread.id)).find((m) => m.role === 'user' && m.text.endsWith('buna bak')),
+    );
+    expect(withQuote.text).toBe('> fatura\n\nbuna bak');
+    expect(withQuote.props.replyTo).toBeUndefined();
+    expect((withQuote.props.files as { name: string }[])[0]!.name).toMatch(/^photo-.+\.jpg$/);
+    // Whose words the quote holds is not known here: never the person's request.
+    expect(withQuote.props.outside).toBe('stored');
+
+    wa.message(PERSON, {
+      extendedTextMessage: {
+        text: 'tamam',
+        contextInfo: {
+          stanzaId: 'iletilen',
+          quotedMessage: {
+            extendedTextMessage: { text: 'parayı gönder', contextInfo: { isForwarded: true } },
+          },
+        },
+      },
+    });
+    const forward = await waitFor(async () =>
+      (await t.messages(thread.id)).find((m) => m.role === 'user' && m.text.endsWith('tamam')),
+    );
+    expect(forward.props.outside).toBe('forward');
+  });
+
+  it('cihaz yokken bekletilen mesajları okur, eski geçmişi okumaz', async () => {
+    const { wa, asistan } = await setUp();
+    const thread = await main(asistan.id);
+    const now = Math.floor(Date.now() / 1000);
+    const append = (id: string, text: string, at: number) =>
+      wa.socket().emit('messages.upsert', {
+        type: 'append',
+        messages: [
+          {
+            key: { remoteJid: `${PERSON}@s.whatsapp.net`, fromMe: false, id },
+            message: { conversation: text },
+            messageTimestamp: at,
+          },
+        ],
+      });
+    // Nothing read yet: an appended message is history, not new.
+    append('gecmis-1', 'eski geçmiş', now - 60);
+    wa.socket().emit('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: `${PERSON}@s.whatsapp.net`, fromMe: false, id: 'yeni-1' },
+          message: { conversation: 'şimdi' },
+          messageTimestamp: now - 30,
+        },
+      ],
+    });
+    await waitFor(async () => (await t.messages(thread.id)).find((m) => m.text === 'şimdi'));
+    append('gecmis-2', 'daha eski', now - 45);
+    append('bekleyen-1', 'yokken yazdım', now - 10);
+    await waitFor(async () => (await t.messages(thread.id)).find((m) => m.text === 'yokken yazdım'));
+    await t.services.turns.idle();
+    const texts = (await t.messages(thread.id)).filter((m) => m.role === 'user').map((m) => m.text);
+    expect(texts).toEqual(['şimdi', 'yokken yazdım']);
+  });
+
   it('bağlantı kesilince anahtarlar silinir', async () => {
     await setUp();
     expect(await t.services.whatsapp.keyCount('creds')).toBe(1);

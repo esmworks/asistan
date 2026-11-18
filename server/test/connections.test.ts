@@ -25,6 +25,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { schema } from '../src/db';
+import { clientMetadataUrlFor, OAUTH_CLIENT_PATH } from '../src/connections/client';
 import { mcpServers } from '../src/engine/claude';
 import { translator } from '../src/i18n';
 import { exposedNames, oauthRedirectUrl } from '../src/services/connections';
@@ -53,6 +54,8 @@ async function mcpFixture(
      * service not enabled for the app does.
      */
     forbidden: false,
+    /** How many next requests to the MCP endpoint fail with a 502, as a proxy restarting does. */
+    failNext: 0,
     /** The client secret the last code exchange carried. */
     secret: null as string | null,
     /** Ends the access token, as its lifetime running out does. */
@@ -221,6 +224,11 @@ async function mcpFixture(
       }
     }
     if (path !== '/mcp') return json(res, 404, {});
+    if (oauth.failNext > 0) {
+      oauth.failNext--;
+      res.writeHead(502, { 'content-type': 'text/html' });
+      return res.end('<h1>502 Bad Gateway</h1>');
+    }
     if (req.method === 'GET') oauth.gets++;
     const want = opts.token ?? (opts.oauth ? oauth.access : undefined);
     if (want && req.headers.authorization !== `Bearer ${want}`) {
@@ -301,6 +309,48 @@ describe('bağlantılar', () => {
       ['search', 'read'],
       ['create.note', 'write'],
     ]);
+  });
+
+  it('ilk denemede bir anlık düşen sunucuya bir kez daha bağlanır', async () => {
+    const f = await fixture();
+    f.oauth.failNext = 1;
+    const r = await t.api<Connection>('POST', '/api/connections', {
+      name: 'Notlar',
+      url: f.url,
+      auth: 'none',
+    });
+    expect(r.body.status).toBe('connected');
+    expect(f.oauth.failNext).toBe(0);
+  });
+
+  it('istemci kimlik belgesini yalnızca herkese açık https adresinde verir', async () => {
+    const cb = 'https://bot.example.com/api/connections/oauth/callback';
+    expect(clientMetadataUrlFor(cb, OAUTH_CLIENT_PATH)).toBe(`https://bot.example.com${OAUTH_CLIENT_PATH}`);
+    for (const local of [
+      'http://bot.example.com/cb',
+      'https://localhost:4319/cb',
+      'https://192.168.1.5/cb',
+      'https://kutu.local/cb',
+    ])
+      expect(clientMetadataUrlFor(local, OAUTH_CLIENT_PATH)).toBeUndefined();
+    // The test server is reached at a loopback address, which no service could fetch.
+    const res = await t.app.inject({ method: 'GET', url: OAUTH_CLIENT_PATH });
+    expect(res.statusCode).toBe(404);
+    const pub = await testServer({ publicUrl: 'https://bot.example.com' });
+    try {
+      const secure = await pub.app.inject({ method: 'GET', url: OAUTH_CLIENT_PATH });
+      expect(secure.statusCode).toBe(200);
+      const doc = secure.json<{
+        client_id: string;
+        redirect_uris: string[];
+        token_endpoint_auth_method: string;
+      }>();
+      expect(doc.client_id).toBe(`https://bot.example.com${OAUTH_CLIENT_PATH}`);
+      expect(doc.redirect_uris).toEqual([cb]);
+      expect(doc.token_endpoint_auth_method).toBe('none');
+    } finally {
+      await pub.dispose();
+    }
   });
 
   it('bota açılınca okuma aracı kartsız çalışır, yazma aracı onay ister', async () => {

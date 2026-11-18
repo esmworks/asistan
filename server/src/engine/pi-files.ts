@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DEFAULT_LOCALE } from '@yumakbot/shared';
 import { z } from 'zod';
 import { translator, type T } from '../i18n';
+import { canFitImages } from './fit-image';
 import type { Sandbox, ToolResult } from './types';
 
 /**
@@ -33,8 +34,12 @@ const IMAGE_TYPES: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
 };
-/** Providers refuse larger pictures. */
-const MAX_IMAGE = 5 * 1024 * 1024;
+/**
+ * A phone's photo is larger than providers take; it is made smaller before it goes (see fitImage).
+ * Where it cannot be made smaller, only what providers take is read.
+ */
+const MAX_IMAGE = 25 * 1024 * 1024;
+const MAX_IMAGE_UNFITTED = 5 * 1024 * 1024;
 const MAX_LIST = 500;
 const MAX_MATCHES = 200;
 
@@ -133,7 +138,9 @@ export function fileTools(
       const mimeType = IMAGE_TYPES[abs.split('.').pop()?.toLowerCase() ?? ''];
       if (mimeType) {
         if (!seesImages) return t('files.imageUnseen');
-        if (info.size > MAX_IMAGE) throw new PathError(t('files.tooLarge'));
+        if (info.size > ((await canFitImages()) ? MAX_IMAGE : MAX_IMAGE_UNFITTED)) {
+          throw new PathError(t('files.tooLarge'));
+        }
         return {
           text: t('files.image', { path: String(a.path) }),
           images: [{ data: (await readFile(abs)).toString('base64'), mimeType }],

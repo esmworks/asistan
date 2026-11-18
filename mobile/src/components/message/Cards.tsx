@@ -1,4 +1,5 @@
 import {
+  type SubagentCard as SubagentCardProps,
   catalogEntry,
   connectionToolParts,
   describeAction,
@@ -633,6 +634,39 @@ export function PlanCard({ items }: { items: PlanItem[] }) {
           </Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** A helper the bot started for part of the work: what it was asked, how it stands, its steps. */
+export function SubagentCard({ sub }: { sub: SubagentCardProps }) {
+  const c = useColors();
+  return (
+    <View
+      accessibilityLabel={t('message.subagent')}
+      style={[styles.service, styles.plan, { borderColor: c.border, backgroundColor: c.card }]}
+    >
+      <View style={styles.planHead}>
+        <Text style={[styles.small, styles.medium, { color: c.mutedForeground }]}>
+          {t('message.subagent')}
+        </Text>
+        <Text style={[styles.small, { color: c.mutedForeground }]}>
+          {t(`message.subagentState.${sub.state}`)} · {t('message.subagentSteps', { count: sub.steps })}
+        </Text>
+      </View>
+      {sub.description ? (
+        <View style={styles.planItem}>
+          <Feather
+            name={sub.state === 'running' ? 'loader' : sub.state === 'done' ? 'check-circle' : 'alert-circle'}
+            size={20}
+            color={sub.state === 'done' ? c.success : sub.state === 'running' ? c.brand : c.mutedForeground}
+            style={styles.planIcon}
+          />
+          <Text style={[styles.small, styles.sizeSm, styles.flex, { color: c.foreground }]}>
+            {sub.description}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

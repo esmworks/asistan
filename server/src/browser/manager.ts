@@ -59,6 +59,9 @@ export interface Frame {
   height: number;
 }
 
+/** How much slower the tabs the bot is not on run. */
+const BACKGROUND_CPU_RATE = 4;
+
 interface Live {
   botId: string;
   /** Set when connected to a browser that runs elsewhere (the bot's desktop); closing disconnects. */
@@ -90,6 +93,15 @@ interface Live {
   nextAnswer: { accept: boolean; text?: string } | null;
   /** Hosts on this computer or a private network the page tried to reach, since the bot last heard. */
   refused: Set<string>;
+  /** Addresses of tabs the bot was on that the site closed itself, since the bot last heard. */
+  closedBySite: string[];
+  /** Tabs the bot or this server is closing, which the site did not close. */
+  closing: WeakSet<Page>;
+  /**
+   * The session each tab's speed is set through. One per tab, kept open: its commands arrive in
+   * the order sent, and the setting lasts as long as the session that made it.
+   */
+  speed: WeakMap<Page, Promise<CDPSession | null>>;
   /** What the person showed in teach mode, step by step; null when not teaching. */
   lesson: TeachStep[] | null;
 }
@@ -296,6 +308,21 @@ export class BrowserManager {
     const out = l.dialogs;
     l.dialogs = [];
     return out;
+  }
+
+  /** Tabs the bot was on that the site closed itself, since the bot last heard; heard once. */
+  takeClosedTabs(botId: string): string[] {
+    const l = this.live.get(botId);
+    if (!l) return [];
+    const out = l.closedBySite;
+    l.closedBySite = [];
+    return out;
+  }
+
+  /** Closes one of the bot's tabs at its own wish, which is not the site closing it. */
+  async closePage(botId: string, page: Page) {
+    this.live.get(botId)?.closing.add(page);
+    await page.close();
   }
 
   /** How the bot wants the page's next confirm or prompt answered. */
@@ -735,6 +762,9 @@ export class BrowserManager {
       dialogs: [],
       nextAnswer: null,
       refused: new Set(),
+      closedBySite: [],
+      closing: new WeakSet(),
+      speed: new WeakMap(),
     };
     await this.guardNetwork(live, context);
     for (const p of context.pages()) this.track(live, p);
@@ -795,11 +825,18 @@ export class BrowserManager {
         const fresh = await live.context.newPage();
         if (/^https?:/i.test(url)) await fresh.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
         this.activate(live, fresh);
+        live.closing.add(page);
         await page.close().catch(() => {});
       })().catch(() => {});
     });
     page.on('close', () => {
       if (live.page !== page || !this.live.has(live.botId)) return;
+      // The site closed the tab the bot was on (a sign-in pop-up done, a `window.close()`): the bot
+      // hears of it, or it would read whichever tab is in front now as if it were the same page.
+      if (!live.closing.has(page)) {
+        live.closedBySite.push(page.url());
+        if (live.closedBySite.length > 5) live.closedBySite.shift();
+      }
       const rest = live.context.pages().filter((p) => p !== page);
       if (rest.length) this.activate(live, rest.at(-1)!);
       else void live.context.newPage().catch(() => {});
@@ -808,7 +845,12 @@ export class BrowserManager {
 
   private activate(live: Live, page: Page) {
     if (live.page === page) return;
+    const before = live.page;
     live.page = page;
+    // A tab out of sight still runs its page's scripts and timers; slowed down, it leaves the
+    // computer to the tab the bot works in. The tab in front runs at full speed again.
+    void this.throttle(live, before, BACKGROUND_CPU_RATE);
+    void this.throttle(live, page, 1);
     live.title = null;
     void page
       .title()
@@ -819,6 +861,22 @@ export class BrowserManager {
       .catch(() => {});
     if (this.watchers.has(live.botId)) void this.startCast(live);
     this.emitState(live);
+  }
+
+  /**
+   * Slows a tab's scripts by `rate` (1 is full speed); a closed tab or a refused call is let be.
+   * Calls for one tab take effect in the order made, so the last switch decides its speed.
+   */
+  private async throttle(live: Live, page: Page, rate: number) {
+    if (page.isClosed()) return;
+    let session = live.speed.get(page);
+    if (!session) {
+      session = live.context.newCDPSession(page).catch(() => null);
+      live.speed.set(page, session);
+    }
+    const cdp = await session;
+    // Some browsers (another engine, an old Chromium) do not take it; the tab just runs as it is.
+    await cdp?.send('Emulation.setCPUThrottlingRate', { rate }).catch(() => {});
   }
 
   private async startCast(live: Live) {

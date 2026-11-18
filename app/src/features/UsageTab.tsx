@@ -1,4 +1,11 @@
-import { ROUTINE_GATE_MODES, USAGE_RANGES, type UsageRange, type UsageReport } from '@yumakbot/shared';
+import {
+  planPace,
+  ROUTINE_GATE_MODES,
+  USAGE_RANGES,
+  type PlanWindow,
+  type UsageRange,
+  type UsageReport,
+} from '@yumakbot/shared';
 import { Download, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -68,8 +75,10 @@ export function UsageTab() {
       ) : (
         <Report data={data} filtered={botId !== null} onPickBot={setBotId} />
       )}
+      <PlanUsage plan={data?.plan} />
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
+      <Parallel parallel={data?.parallel} />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
         <a href={`/api/usage/turns.csv?days=${days}`} download>
           <Download /> {t('usage.downloadCsv')}
@@ -174,6 +183,101 @@ function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
     </Card>
   );
 }
+
+const PLAN_LABELS = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'] as const;
+
+/** A plan window's name: the account's own, a known one translated, else its kind as given. */
+export function planLabel(w: PlanWindow, t: ReturnType<typeof useT>): string {
+  if (w.label) return w.label;
+  const known = PLAN_LABELS.find((k) => k === w.kind);
+  return known ? t(`usage.plan.${known}`) : w.kind;
+}
+
+/**
+ * The Claude plan's usage windows, each a bar with a line where the window's time stands: a bar
+ * past its line spends the plan faster than the window lasts.
+ */
+function PlanUsage({ plan }: { plan?: UsageReport['plan'] }) {
+  const t = useT();
+  const f = useFormat();
+  // The time the page opened: the marks stay put while it is read.
+  const [now] = useState(() => Date.now());
+  if (!plan?.windows.length) return null;
+  return (
+    <Card title={t('usage.plan')}>
+      <div className="space-y-4 px-4 py-4">
+        {plan.windows.map((w) => {
+          const pace = planPace(w, now);
+          const used = w.used ?? 0;
+          return (
+            <div key={w.kind} className="space-y-1.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                <span className="font-medium">{planLabel(w, t)}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {w.used === null ? '–' : t('usage.plan.used', { percent: Math.round(used * 100) })}
+                  {w.resetsAt && ` · ${t('usage.plan.resets', { time: f.dayLabel(w.resetsAt) })}`}
+                </span>
+              </div>
+              <div className="relative h-2 rounded-full bg-secondary">
+                <div
+                  className={cn(
+                    'h-full rounded-full',
+                    used >= 0.9
+                      ? 'bg-red-500'
+                      : pace !== null && used > pace
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500',
+                  )}
+                  style={{ width: `${used * 100}%` }}
+                />
+                {pace !== null && (
+                  <div
+                    className="absolute -top-1 -bottom-1 w-0.5 rounded-full bg-foreground/60"
+                    style={{ left: `calc(${pace * 100}% - 1px)` }}
+                    aria-hidden
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <p className="text-xs text-muted-foreground">{t('usage.plan.hint')}</p>
+        <p className="text-xs text-muted-foreground">{t('usage.plan.seen', { time: f.dayLabel(plan.at) })}</p>
+      </div>
+    </Card>
+  );
+}
+
+/** How many turns may run at once; 0 leaves it to the server. */
+function Parallel({ parallel }: { parallel?: UsageReport['parallel'] }) {
+  const t = useT();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  // A server older than the setting does not offer it.
+  if (!parallel || settings?.maxTurns === undefined) return null;
+  const value = settings.maxTurns;
+  return (
+    <Card title={t('usage.parallel')}>
+      <Row label={t('usage.parallel')} hint={t('usage.parallel.hint')}>
+        <Select value={String(value)} onValueChange={(v) => save.mutate({ maxTurns: Number(v) })}>
+          <SelectTrigger className="w-40 rounded-full" aria-label={t('usage.parallel')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PARALLEL_CHOICES.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n === 0 ? t('usage.parallel.default', { count: parallel.serverDefault }) : String(n)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Row>
+    </Card>
+  );
+}
+
+/** 0 is the server's own number. */
+const PARALLEL_CHOICES = [0, 1, 2, 3, 4, 5, 6, 8, 10];
 
 /** The bot filter's value for every bot; bot ids never take this form. */
 const ALL = '*';

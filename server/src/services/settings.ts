@@ -16,6 +16,9 @@ import {
   type Locale,
 } from '@yumakbot/shared';
 
+/** The most turns the person may let run at the same time. */
+export const MAX_TURNS_LIMIT = 10;
+
 export const Settings = z.object({
   userName: z.string().max(80).default(''),
   /** How bots should address the person, e.g. a first name. */
@@ -69,6 +72,11 @@ export const Settings = z.object({
    * watching only (it records what it would do), or on (it skips runs with nothing new).
    */
   routineGate: z.enum(ROUTINE_GATE_MODES).default('off'),
+  /**
+   * How many turns may run at the same time across every bot; 0 leaves it to the server's
+   * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
+   */
+  maxTurns: z.number().int().min(0).max(MAX_TURNS_LIMIT).default(0),
   /**
    * The bots' browsers reach the web through the person's own computer while its desktop app is
    * connected, so sites see that connection instead of the server's; otherwise from the server.

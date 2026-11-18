@@ -1,4 +1,4 @@
-import type { ClaudeModel, Effort, Locale } from '@yumakbot/shared';
+import type { ClaudeModel, Effort, Locale, PlanWindow } from '@yumakbot/shared';
 import type { z } from 'zod';
 import type { T } from '../i18n';
 import { readableError } from '../util';
@@ -119,6 +119,11 @@ export interface TurnRequest {
   /** A shell command reached a host on the internet: what came back is outside text. */
   onReach?(host: string): void;
   onText(delta: string): void;
+  /**
+   * A helper the bot started for part of the work (a subagent): when it starts, each step it takes
+   * and how it ended. `id` stays the same from start to end.
+   */
+  onSubagent?(e: SubagentState): void;
   /** The bot's plan for the task, each time it changes. */
   onPlan?(items: PlanItem[]): void;
   /**
@@ -127,6 +132,8 @@ export interface TurnRequest {
    * (the bot answered without another tool call) gets a turn of its own afterwards.
    */
   steering?(): string[];
+  /** How much of the Claude plan's usage windows is used, as the engine last heard. */
+  onPlanUsage?(windows: PlanWindow[]): void;
   /** The account is close to its usage limit: how much is used (0–1) and when it resets. */
   onLimitNear?(info: { used: number | null; resetsAt: Date | null }): void;
   onSession(sessionId: string): void;
@@ -137,8 +144,22 @@ export interface TurnRequest {
    * or ended. A turn silent for too long is stopped as stalled.
    */
   onActivity?(tool?: { id: string; name: string; running: boolean }): void;
+  /**
+   * The same tool call failed the same way `count` times in a row, past the point where the bot
+   * was told to stop: the turn ends instead of spending more on it.
+   */
+  onRepeatedFailure?(toolName: string, count: number): void;
   /** Aborted when the user stops the turn. */
   signal: AbortSignal;
+}
+
+/** A subagent as the chat shows it. */
+export interface SubagentState {
+  id: string;
+  description: string;
+  state: 'running' | 'done' | 'failed' | 'stopped';
+  /** Tool calls it has made so far. */
+  steps: number;
 }
 
 /** One step of a bot's plan. */
@@ -213,7 +234,13 @@ export type TurnOutcome = (
 export const withContext = (req: Pick<TurnRequest, 'prompt' | 'context'>) =>
   req.context ? `${req.context}\n\n${req.prompt}` : req.prompt;
 
-export const OVERLOADED = /overloaded|\b(503|529)\b|service unavailable|temporarily unavailable/i;
+/**
+ * A provider that is down or busy for now. 503 and 529 mean only that; 500, 502 and 504 count
+ * when they stand as a status (first, or after "status", "code", "HTTP" or "API Error"), since the
+ * same numbers appear in other errors ("max_tokens: 500").
+ */
+export const OVERLOADED =
+  /overloaded|\b(503|529)\b|(?:^|api error|status(?: code)?|\bcode|\bhttp(?:\/[\d.]+)?)\W{0,3}50[024]\b|service unavailable|temporarily unavailable|internal server error|bad gateway|gateway time-?out|"api_error"/i;
 /** A reply the provider closed before its end, as the client libraries word it. */
 const CUT =
   /stream ended without finish_reason|premature close|other side closed|\bECONNRESET\b|^(TypeError:\s*)?terminated$/i;

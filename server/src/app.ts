@@ -49,7 +49,7 @@ import type { AccountStatus, Engine, ModelTest } from './engine/types';
 import { registerMcpServer } from './mcp-server';
 import { EMAIL_INBOUND_PATH, registerRoutes, WEBHOOK_PATH } from './routes';
 import { OAUTH_CALLBACK_PATH } from './services/connections';
-import { dropAllClients, setToolCallTimeout } from './connections/client';
+import { dropAllClients, OAUTH_CLIENT_PATH, setToolCallTimeout } from './connections/client';
 import { Services } from './services';
 import { BackupService } from './services/backup';
 import { probeShellSandbox } from './shell-sandbox';
@@ -94,6 +94,7 @@ const PUBLIC_API = new Set([
   '/api/pair',
   '/api/session',
   OAUTH_CALLBACK_PATH,
+  OAUTH_CLIENT_PATH,
   // A mail relay signs in with the mail secret, checked by the route itself.
   EMAIL_INBOUND_PATH,
 ]);

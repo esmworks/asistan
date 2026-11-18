@@ -110,6 +110,34 @@ export function clientMetadata(redirectUrl: string): OAuthClientMetadata {
 }
 
 /**
+ * Where this server describes itself as an OAuth client, so a service that accepts such an
+ * address as the client's id signs in without registering the app first.
+ */
+export const OAUTH_CLIENT_PATH = '/api/connections/oauth/client.json';
+
+/**
+ * The address of this server's client description for a sign-in coming back to `redirect`, or
+ * undefined when the service could not fetch it: only a public `https` address can be one.
+ */
+export function clientMetadataUrlFor(redirect: string, path: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(redirect);
+  } catch {
+    return undefined;
+  }
+  const host = url.hostname.toLowerCase();
+  const local =
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    /^[\d.]+$/.test(host) ||
+    host.startsWith('[');
+  return url.protocol === 'https:' && !local ? `${url.origin}${path}` : undefined;
+}
+
+/**
  * The server's side of an OAuth sign-in, with PKCE. It signs in as the app the person registered
  * with the service when there is one, else registers itself (dynamic client registration). A
  * registration names one redirect address; when the server is reached at another one it registers
@@ -142,6 +170,14 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata() {
     return clientMetadata(this.redirect);
+  }
+
+  /**
+   * A service that takes an address as the client's id reads this server's description there,
+   * instead of a registration it may refuse. Not used with the person's own app.
+   */
+  get clientMetadataUrl() {
+    return this.secrets.ownClient ? undefined : clientMetadataUrlFor(this.redirect, OAUTH_CLIENT_PATH);
   }
 
   state() {
@@ -394,7 +430,24 @@ export type Elicit = (form: ElicitForm) => Promise<ElicitResult>;
  */
 const askers = new Map<string, Elicit>();
 
+/**
+ * Opens a connection, once more after a moment when the first try met a dropped network or a
+ * server error: a passing fault would otherwise leave the app out of the bot's turn.
+ */
 async function connect(target: ClientTarget): Promise<Client> {
+  try {
+    return await connectOnce(target);
+  } catch (error) {
+    if (!(error instanceof ConnectionClientError) || !(error as { passing?: boolean }).passing) throw error;
+    await new Promise((r) => setTimeout(r, CONNECT_RETRY_MS));
+    return connectOnce(target);
+  }
+}
+
+/** How long a connection that failed in passing waits before its second try. */
+const CONNECT_RETRY_MS = 1000;
+
+async function connectOnce(target: ClientTarget): Promise<Client> {
   // Forms only: a server asking to open a web page is declined.
   const client = new Client(
     { name: 'YumakBot', version: '0.4.0' },
@@ -424,7 +477,11 @@ async function connect(target: ClientTarget): Promise<Client> {
   } catch (error) {
     await client.close().catch(() => undefined);
     const failure = classify(error);
-    throw failure.code === 'tool' ? new ConnectionClientError('notMcp', failure.message) : failure;
+    const out = failure.code === 'tool' ? new ConnectionClientError('notMcp', failure.message) : failure;
+    const status = (error as { code?: unknown })?.code;
+    const passing =
+      failure.code === 'unreachable' || (typeof status === 'number' && status >= 500 && status < 600);
+    throw Object.assign(out, { passing });
   }
   return client;
 }

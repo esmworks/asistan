@@ -819,7 +819,45 @@ app.on('activate', () => showWindow());
 app.on('will-quit', () => globalShortcut.unregisterAll());
 // Keep running in the menu bar when every window is closed.
 app.on('window-all-closed', () => {});
+/**
+ * Whether quitting may stop the local server now: with bots at work, the person is asked first,
+ * since their work would stop with it. A server that does not answer in time does not hold it up.
+ */
+async function confirmQuit(): Promise<boolean> {
+  if (config.mode !== 'local' || !origin) return true;
+  const count = await session.defaultSession
+    .fetch(`${origin}/api/turns/running`, { signal: AbortSignal.timeout(2000) })
+    .then(async (res) => (res.ok ? ((await res.json()) as { count?: unknown }).count : 0))
+    .catch(() => 0);
+  if (typeof count !== 'number' || count < 1) return true;
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    message: t('dialog.quitWorking', { count }),
+    detail: t('dialog.quitWorkingDetail'),
+    buttons: [t('dialog.quitAnyway'), t('dialog.keepWorking')],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
+let quitAsked = false;
 app.on('before-quit', (e) => {
+  if (server?.running && !stopped && !quitting && !quitAsked) {
+    e.preventDefault();
+    quitAsked = true;
+    void confirmQuit().then((ok) => {
+      quitAsked = false;
+      if (!ok) return;
+      quitting = true;
+      app.quit();
+    });
+    return;
+  }
+  if (quitAsked) {
+    e.preventDefault();
+    return;
+  }
   quitting = true;
   if (server?.running && !stopped) {
     e.preventDefault();

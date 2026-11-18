@@ -8,6 +8,8 @@ import { clampThinkingLevel } from '@earendil-works/pi-ai/models';
 import type { Locale } from '@yumakbot/shared';
 import { z } from 'zod';
 import { translator, type T } from '../i18n';
+import { failureStreak } from './failures';
+import { fitResult } from './fit-image';
 import { fileTools, PathError, type FileTool } from './pi-files';
 import {
   providerTrouble,
@@ -374,6 +376,22 @@ export class PiEngine implements Engine {
       );
     }
 
+    // The same call failing the same way: the bot is told after a few, and the turn ends after more.
+    const failures = failureStreak((tool, count) => req.onRepeatedFailure?.(tool, count));
+    for (const tool of tools) {
+      const execute = tool.execute;
+      tool.execute = async (...args) => {
+        const r = await execute(...args);
+        if (!r.isError) {
+          failures.reset();
+          return r;
+        }
+        const error = r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n');
+        const hint = failures.note(byName.get(tool.name)?.perm ?? tool.name, args[1], error);
+        return hint ? { ...r, content: [...r.content, { type: 'text' as const, text: hint }] } : r;
+      };
+    }
+
     const agent = new Agent({
       initialState: {
         systemPrompt: left.length
@@ -533,7 +551,7 @@ export class PiEngine implements Engine {
           };
         }
         try {
-          const r = await run(parsed.data, signal ?? new AbortController().signal);
+          const r = await fitResult(await run(parsed.data, signal ?? new AbortController().signal));
           return {
             content: [
               { type: 'text', text: resultText(r) },

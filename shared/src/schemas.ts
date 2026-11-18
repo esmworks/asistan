@@ -778,9 +778,57 @@ export interface ClaudeModel {
   efforts: Effort[];
 }
 
+/** A subagent's card in the chat: what it was asked to do, how it stands and the steps it took. */
+export interface SubagentCard {
+  description: string;
+  state: 'running' | 'done' | 'failed' | 'stopped';
+  steps: number;
+}
+
+/** The subagent a message is the card of, or null. */
+export function subagentOf(props: Record<string, unknown>): SubagentCard | null {
+  const s = props.subagent as Partial<SubagentCard> | undefined;
+  if (!s || typeof s !== 'object') return null;
+  const state = (['running', 'done', 'failed', 'stopped'] as const).find((x) => x === s.state) ?? 'running';
+  return {
+    description: typeof s.description === 'string' ? s.description : '',
+    state,
+    steps: typeof s.steps === 'number' ? s.steps : 0,
+  };
+}
+
 /** How far back the usage report looks, in days. */
 export const USAGE_RANGES = [7, 30, 90] as const;
 export type UsageRange = (typeof USAGE_RANGES)[number];
+
+/**
+ * One window of a Claude plan's usage limit: `five_hour`, `seven_day`, a model's weekly window
+ * (`seven_day_opus`) or one the account names itself (`label`). `used` runs from 0 to 1.
+ */
+export const PlanWindow = z.object({
+  kind: z.string().max(60),
+  label: z.string().max(60).optional(),
+  used: z.number().min(0).max(1).nullable(),
+  resetsAt: z.string().nullable(),
+});
+export type PlanWindow = z.infer<typeof PlanWindow>;
+
+/** How long a plan window lasts, for the mark of how much of it has passed. */
+export function planWindowMs(kind: string): number {
+  return kind === 'five_hour' ? 5 * 3_600_000 : 7 * 86_400_000;
+}
+
+/**
+ * How much of a window has passed (0–1) at `now`, from when it resets; null when that is not known.
+ * Usage ahead of this spends the window faster than it lasts.
+ */
+export function planPace(w: Pick<PlanWindow, 'kind' | 'resetsAt'>, now: number): number | null {
+  if (!w.resetsAt) return null;
+  const left = Date.parse(w.resetsAt) - now;
+  if (!Number.isFinite(left)) return null;
+  const length = planWindowMs(w.kind);
+  return Math.min(1, Math.max(0, 1 - left / length));
+}
 
 /** Spending and work over a period, from the finished turns. */
 const UsageTotals = z.object({
@@ -810,6 +858,16 @@ export const UsageReport = z.object({
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
   month: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
+  /**
+   * How many turns may run at once: the person's choice (0 for the server's own) and the server's
+   * own number; missing on older servers.
+   */
+  parallel: z.object({ max: z.number().int(), serverDefault: z.number().int() }).optional(),
+  /**
+   * The Claude plan's usage windows as the last Claude turn saw them, and when; missing when no
+   * turn has seen them (an API key, or no Claude turn yet).
+   */
+  plan: z.object({ at: z.string(), windows: z.array(PlanWindow) }).optional(),
   /**
    * The routine pre-check over the period, when it looked at any run: what it cost, the runs it
    * would have skipped while only watching and what those runs cost, and the runs it did skip.
