@@ -27,7 +27,10 @@ patchedDependencies:
 #     already uses 0.19 directly, so formulas are drawn by the version whose styles the page loads.
 #   esbuild (drizzle-kit, a development tool): its development server answered any website.
 #   minimatch 7 to 11.0.0 (eslint and electron-builder tools): denial of service through a pattern.
+#   zod 3 (sandbox-runtime): a large array could exhaust memory while it was checked, and no 3.x
+#     release fixes it. The package reads zod only through `zod/v3`, which zod 4 also ships.
 overrides:
   'katex@<0.18.2': 0.19.1
   'esbuild@<0.24.3': 0.25.12
   'minimatch@>=7.0.0 <11.0.1': 11.0.8
+  '@anthropic-ai/sandbox-runtime>zod': 4.6.7
