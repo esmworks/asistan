@@ -218,6 +218,11 @@ export const meetings = pgTable(
     error: text('error'),
     /** The bots that were told, and whether each note waits for the bot's owner. */
     sentTo: jsonb('sent_to').$type<{ botId: string; waiting: boolean }[]>().notNull().default([]),
+    /** The reminders set for its tasks: routines that run once on a task's day. */
+    reminders: sealedJson('reminders')
+      .$type<{ routineId: string; botId: string; task: string; date: string; time: string }[]>()
+      .notNull()
+      .default([]),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

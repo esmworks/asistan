@@ -443,6 +443,109 @@ describe('toplantı tutanağı', () => {
     });
   });
 
+  /** A meeting of the room, written and waiting for approval. */
+  const drafted = async (roomId: string) => {
+    const m = (await t.api<Meeting>('POST', `/api/rooms/${roomId}/meetings`)).body;
+    await say(roomId, 'Görevleri dağıtalım');
+    t.engine.completer = () => minutes();
+    await call(roomId, m.id, 'end');
+    await written();
+    return m;
+  };
+  const tasks: MeetingMinutes['tasks'] = [
+    { text: 'Basın bültenini yaz', owner: 'Ada', botId: '', due: '2026-11-25' },
+    { text: 'Bütçeyi onayla', owner: 'Erhan', botId: null, due: '2026-11-27' },
+    { text: 'Eski iş', owner: 'Bora', botId: '', due: '2026-11-10' },
+    { text: 'Günsüz iş', owner: 'Bora', botId: '', due: null },
+  ];
+  const approved = (): MeetingMinutes => ({
+    title: 'Lansman',
+    summary: '',
+    decisions: [],
+    questions: [],
+    tasks: tasks.map((x) => ({
+      ...x,
+      botId: x.owner === 'Ada' ? ada.id : x.owner === 'Bora' ? bora.id : null,
+    })),
+  });
+  const routines = () => t.db.db.select().from(schema.routines);
+
+  it('son günü olan işlere hatırlatma kurulur: işi üstlenen bot kendi işine, kişinin işine odanın botu bakar', async () => {
+    const r = await room();
+    const m = await drafted(r.id);
+    const saved = await call(r.id, m.id, 'save', {
+      minutes: approved(),
+      botIds: [ada.id],
+      reminders: [0, 1, 2, 3],
+      remindAt: '08:30',
+    });
+    expect(saved.status).toBe(200);
+    // A day already past and a task with no day get none.
+    expect(saved.body.reminders).toEqual([
+      expect.objectContaining({
+        botId: ada.id,
+        task: 'Basın bültenini yaz',
+        date: '2026-11-25',
+        time: '08:30',
+      }),
+      expect.objectContaining({ botId: ada.id, task: 'Bütçeyi onayla', date: '2026-11-27', time: '08:30' }),
+    ]);
+    const made = await routines();
+    expect(made).toHaveLength(2);
+    const own = made.find((x) => x.id === saved.body.reminders[0]!.routineId)!;
+    expect(own).toMatchObject({
+      botId: ada.id,
+      name: 'Hatırlatma: Basın bültenini yaz',
+      schedule: { type: 'once', date: '2026-11-25', time: '08:30' },
+      timezone: 'Europe/Istanbul',
+      inMain: true,
+      enabled: true,
+    });
+    expect(own.prompt).toContain('şu işi üstlendin: Basın bültenini yaz');
+    const other = made.find((x) => x.id === saved.body.reminders[1]!.routineId)!;
+    expect(other.prompt).toContain('bu işi Erhan üstlendi: Bütçeyi onayla');
+    expect(other.prompt).toContain('Kişiye bu işi kısaca hatırlat');
+  });
+
+  it('çalışıp kapanmış eski hatırlatmalar yenisi kurulurken silinir', async () => {
+    const r = await room();
+    const first = await drafted(r.id);
+    const one = await call(r.id, first.id, 'save', { minutes: approved(), botIds: [], reminders: [0] });
+    const spent = one.body.reminders[0]!.routineId;
+    await t.db.db
+      .update(schema.routines)
+      .set({ enabled: false, lastRunAt: new Date() })
+      .where(eq(schema.routines.id, spent));
+    await longAgo(r.id);
+    const [asked] = await meetings(r.id).then((all) => all.filter((x) => x.status === 'asked'));
+    if (asked) await call(r.id, asked.id, 'answer', { answer: 'no' });
+    const second = await drafted(r.id);
+    const two = await call(r.id, second.id, 'save', { minutes: approved(), botIds: [], reminders: [1] });
+    const left = (await routines()).map((x) => x.id);
+    expect(left).toEqual([two.body.reminders[0]!.routineId]);
+    expect(left).not.toContain(spent);
+  });
+
+  it('değiştiremediği botlar için hatırlatma kurulmaz', async () => {
+    await t.api('PUT', `/api/bots/${ada.id}/access`, { everyone: 'chat', people: {} });
+    const ayse = await t.person('ayse');
+    const r = await ayse.api<Room>('POST', '/api/rooms', { title: 'Ayşe', botIds: [ada.id] });
+    const m = (await ayse.api<Meeting>('POST', `/api/rooms/${r.body.id}/meetings`)).body;
+    await ayse.api('POST', `/api/rooms/${r.body.id}/messages`, { clientId: 'c-ayse-remind', text: 'Plan' });
+    await t.services.turns.idle();
+    t.engine.completer = () => minutes();
+    await ayse.api('POST', `/api/rooms/${r.body.id}/meetings/${m.id}/end`);
+    await written();
+    const saved = await ayse.api<Meeting>('POST', `/api/rooms/${r.body.id}/meetings/${m.id}/save`, {
+      minutes: approved(),
+      botIds: [],
+      reminders: [0, 1],
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.reminders).toEqual([]);
+    expect(await routines()).toEqual([]);
+  });
+
   it('modelin cevabı hoşgörüyle okunur', () => {
     expect(parseMinutes('yok')).toBe(null);
     expect(

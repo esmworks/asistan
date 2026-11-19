@@ -406,6 +406,21 @@ export type MeetingMinutes = z.infer<typeof MeetingMinutes>;
 export const MeetingRecipient = z.object({ botId: Id, waiting: z.boolean() });
 export type MeetingRecipient = z.infer<typeof MeetingRecipient>;
 
+/**
+ * A reminder set for a task of the minutes: a routine that runs once on the task's day, in the
+ * reminding bot's main conversation. The bot that took the task on looks at where it stands; a
+ * person's task is brought up by a bot of the room.
+ */
+export const MeetingReminder = z.object({
+  routineId: Id,
+  botId: Id,
+  task: z.string(),
+  /** The local day and time it runs, as `YYYY-MM-DD` and `HH:MM`. */
+  date: z.string(),
+  time: z.string(),
+});
+export type MeetingReminder = z.infer<typeof MeetingReminder>;
+
 /** A meeting in a room, and its minutes once written. */
 export const Meeting = z.object({
   id: Id,
@@ -417,6 +432,7 @@ export const Meeting = z.object({
   /** Why the minutes could not be written, for `failed`. */
   error: z.string().nullable(),
   sentTo: z.array(MeetingRecipient),
+  reminders: z.array(MeetingReminder),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -429,6 +445,13 @@ export type MeetingAnswer = z.infer<typeof MeetingAnswer>;
 export const MeetingSave = z.object({
   minutes: MeetingMinutes,
   botIds: z.array(Id).max(100),
+  /** The tasks, by their place in the list, to be reminded of on their day. */
+  reminders: z.array(z.number().int().min(0)).max(MAX_MINUTES_ITEMS).default([]),
+  /** The local time reminders run at on the task's day. */
+  remindAt: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'validation.time')
+    .default('09:00'),
 });
 export type MeetingSave = z.infer<typeof MeetingSave>;
 
