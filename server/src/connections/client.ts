@@ -193,8 +193,15 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
     return this.redirect;
   }
 
+  /**
+   * The SDK asks for the scope a 401 names, else the one the resource's metadata lists, else this
+   * one. A service that publishes no resource metadata and names no scope would get a sign-in page
+   * with no scope at all, which Microsoft Entra refuses (AADSTS900144): such a service asks for
+   * what its sign-in server lists.
+   */
   get clientMetadata() {
-    return clientMetadata(this.redirect);
+    const scope = authorizationServerScope(this.secrets.oauth?.discovery);
+    return { ...clientMetadata(this.redirect), ...(scope ? { scope } : {}) };
   }
 
   /**
@@ -491,6 +498,19 @@ export function authFetch(target: ClientTarget): typeof fetch {
 }
 
 // ---------------------------------------------------------------------------------------- scope
+
+/**
+ * The scopes a sign-in server lists, for a service with no resource metadata; undefined when the
+ * resource has metadata (it names the scope, or none is wanted) or the server lists none.
+ */
+export function authorizationServerScope(discovery: unknown): string | undefined {
+  const d = discovery as
+    { resourceMetadata?: unknown; authorizationServerMetadata?: { scopes_supported?: unknown } } | undefined;
+  if (!d || d.resourceMetadata) return undefined;
+  const listed = d.authorizationServerMetadata?.scopes_supported;
+  if (!Array.isArray(listed)) return undefined;
+  return listed.filter((s): s is string => typeof s === 'string' && !!s).join(' ') || undefined;
+}
 
 /** Scope lists joined, each scope once; undefined when there is none. */
 export function joinScopes(...lists: (string | undefined)[]): string | undefined {
