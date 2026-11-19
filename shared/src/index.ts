@@ -28,3 +28,4 @@ export * from './email-preview';
 export * from './secret-shapes';
 export * from './upload-retry';
 export * from './storage';
+export * from './word-bold';

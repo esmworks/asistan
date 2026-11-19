@@ -159,3 +159,21 @@ describe('tablo onarımı', () => {
     expect(renderToStaticMarkup(<Markdown text={'| Ad | Tutar |\n| Ali | 9 |'} />)).toContain('<table');
   });
 });
+
+describe('leftover bold', () => {
+  it('bolds a quoted word that a Turkish suffix follows', () => {
+    const html = renderToStaticMarkup(
+      <Markdown text={'Sonra **"Yenile"**ye bas, **@esmworksdev**\'e tıkla.'} />,
+    );
+    expect(html).toContain('<strong>&quot;Yenile&quot;</strong>ye bas');
+    expect(html).toContain('<strong>@esmworksdev</strong>&#x27;e');
+    expect(html).not.toContain('**');
+  });
+
+  it('keeps asterisks written escaped and those inside code', () => {
+    const html = renderToStaticMarkup(<Markdown text={'\\*\\*"a"\\*\\*b ve `**"c"**d`'} />);
+    expect(html).not.toContain('<strong>');
+    expect(html).toContain('**&quot;a&quot;**b');
+    expect(html).toContain('<code');
+  });
+});

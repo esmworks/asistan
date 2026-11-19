@@ -1,6 +1,7 @@
 import { Lexer, type Token, type Tokens } from 'marked';
 import { memo, type ReactNode } from 'react';
 import { Linking, Platform, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import { leftoverBold } from '@yumakbot/shared';
 
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
@@ -154,7 +155,24 @@ function inline(tokens: Token[], p: Palette): ReactNode[] {
         const t = tok as Tokens.Text;
         // A single line break inside a paragraph is a space, as Markdown reads it; `breaks`
         // turns those into `br` tokens before they get here.
-        return t.tokens ? <Text key={i}>{inline(t.tokens, p)}</Text> : t.text.replace(/\n/g, ' ');
+        if (t.tokens) return <Text key={i}>{inline(t.tokens, p)}</Text>;
+        const plain = t.text.replace(/\n/g, ' ');
+        // Bold the lexer left as asterisks, such as a suffix after a quoted word (`**"Yenile"**ye`).
+        const pieces = leftoverBold(plain);
+        if (!pieces) return plain;
+        return (
+          <Text key={i}>
+            {pieces.map((piece, j) =>
+              piece.bold ? (
+                <Text key={j} style={styles.bold}>
+                  {piece.text}
+                </Text>
+              ) : (
+                piece.text
+              ),
+            )}
+          </Text>
+        );
       }
       default:
         return 'text' in tok && typeof tok.text === 'string' ? tok.text : '';
