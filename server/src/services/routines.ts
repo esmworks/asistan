@@ -27,7 +27,9 @@ import {
   lte,
   ne,
   notExists,
+  notLike,
   or,
+  type SQL,
   sql,
 } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -221,6 +223,10 @@ export class RoutineService {
     if (made >= MAX_ROUTINES_PER_BOT)
       throw new HttpError(400, 'error.routineLimit', { max: MAX_ROUTINES_PER_BOT });
     if (input.check) await this.checkCheck(input.botId, input.check, userId, !!input.slackChannel);
+    if (input.whatsappGroup || input.whatsappPeople) {
+      checkWhatsAppPlace(input.slackChannel);
+      await this.checkGroup(userId ?? (await this.services.access.botOwner(input.botId)));
+    }
     const now = this.clock();
     this.checkOnce(input.schedule, input.timezone, now);
     // The routine and the first line of its history are written together, or neither is.
@@ -270,6 +276,16 @@ export class RoutineService {
     const check = patch.check !== undefined ? patch.check : person !== was ? current.check : null;
     const slackChannel = patch.slackChannel !== undefined ? patch.slackChannel : current.slackChannel;
     if (check) await this.checkCheck(current.botId, check, person, !!slackChannel);
+    // WhatsApp is read for the person whose WhatsApp it is, also once the routine changes hands.
+    const group = patch.whatsappGroup !== undefined ? patch.whatsappGroup : current.whatsappGroup;
+    const people = patch.whatsappPeople ?? current.whatsappPeople ?? false;
+    if (group || people) {
+      checkWhatsAppPlace(slackChannel);
+      const turnedOn =
+        (patch.whatsappGroup !== undefined && !!patch.whatsappGroup) ||
+        (patch.whatsappPeople && !current.whatsappPeople);
+      if (turnedOn || person !== was) await this.checkGroup(person);
+    }
     // A changed instruction goes into the history in the same write: a failed save leaves none.
     const row = await this.ctx.db.transaction(async (tx) => {
       const [saved] = await tx
@@ -791,6 +807,115 @@ export class RoutineService {
   }
 
   /**
+   * Only the person whose WhatsApp is linked has a routine read its chats: anyone else who may
+   * change a bot would read their messages.
+   */
+  private async checkGroup(person: string) {
+    if ((await this.services.whatsapp.ownerId()) !== person)
+      throw new HttpError(403, 'error.whatsappGroupNotYours');
+  }
+
+  /**
+   * The enabled routines that read WhatsApp, and only those working for the person whose WhatsApp
+   * is linked now: once someone else links theirs, another person's routine reads none of it.
+   */
+  private async whatsappRoutines(where?: SQL) {
+    const owner = await this.services.whatsapp.ownerId();
+    if (!owner) return [];
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.routines)
+      .where(
+        and(
+          eq(schema.routines.enabled, true),
+          or(isNotNull(schema.routines.whatsappGroup), eq(schema.routines.whatsappPeople, true)),
+          where,
+        ),
+      );
+    const mine = await Promise.all(rows.map(async (r) => (await this.personOf(toRoutine(r))) === owner));
+    return rows.filter((_, i) => mine[i]);
+  }
+
+  /** The bots with a routine that reads WhatsApp: they get its chats and replies. */
+  async whatsappBots(): Promise<Set<string>> {
+    return new Set((await this.whatsappRoutines()).map((r) => r.botId));
+  }
+
+  /** What WhatsApp is read for: the groups the routines follow, and whether any reads people's chats. */
+  async whatsappReads(): Promise<{ groups: Set<string>; people: boolean }> {
+    const rows = await this.whatsappRoutines();
+    return {
+      groups: new Set(rows.flatMap((r) => (r.whatsappGroup ? [r.whatsappGroup] : []))),
+      people: rows.some((r) => r.whatsappPeople),
+    };
+  }
+
+  /** What one bot's routines read: only these chats are its to see and answer. */
+  async whatsappReadsOf(botId: string): Promise<{ groups: Set<string>; people: boolean }> {
+    const rows = await this.whatsappRoutines(eq(schema.routines.botId, botId));
+    return {
+      groups: new Set(rows.flatMap((r) => (r.whatsappGroup ? [r.whatsappGroup] : []))),
+      people: rows.some((r) => r.whatsappPeople),
+    };
+  }
+
+  /** The routines that read a WhatsApp chat: a group by its address, a person's by the switch. */
+  private readersOf(chat: string, kind: 'person' | 'group') {
+    return this.whatsappRoutines(
+      kind === 'group' ? eq(schema.routines.whatsappGroup, chat) : eq(schema.routines.whatsappPeople, true),
+    );
+  }
+
+  /** The bots whose routines read a WhatsApp chat: its files go in their folders. */
+  async chatReaders(chat: string, kind: 'person' | 'group'): Promise<string[]> {
+    return [...new Set((await this.readersOf(chat, kind)).map((r) => r.botId))];
+  }
+
+  /**
+   * Starts the routines that read a WhatsApp chat, for a batch of its new messages. The batch goes
+   * to the bot as outside text after the instruction, like a mail, worded for each bot by
+   * `payloadFor` (its files are in that bot's folder); `batch` names it, so a batch handed over
+   * again does not run a routine twice. Each routine works on each chat in a conversation of its
+   * own, so one customer's exchange never becomes the context of another's. `done` is false when
+   * a routine was too busy to take the batch, which is then offered again later.
+   */
+  async runFromWhatsApp(
+    chat: { jid: string; kind: 'person' | 'group'; name: string; threads: Record<string, string> },
+    batch: string,
+    payloadFor: (botId: string) => string,
+  ): Promise<{ done: boolean; threads: Record<string, string> }> {
+    const threads: Record<string, string> = {};
+    let done = true;
+    for (const r of await this.readersOf(chat.jid, chat.kind)) {
+      const routine = toRoutine(r);
+      let threadId: string | undefined;
+      if (!routine.inMain) {
+        const person = await this.personOf(routine);
+        const title = `${routine.name} · ${chat.name}`.slice(0, 200);
+        const thread = await this.services.threads.routineThread(
+          routine.botId,
+          title,
+          chat.threads[routine.id] ?? null,
+          person,
+        );
+        threadId = thread.id;
+        if (chat.threads[routine.id] !== thread.id) threads[routine.id] = thread.id;
+      }
+      const payload = payloadFor(r.botId);
+      const run = await this.fire(
+        routine,
+        `wa:${batch}`.slice(0, 250),
+        payload,
+        false,
+        { trigger: 'whatsapp', input: payload },
+        threadId,
+      );
+      if (run?.status === 'skipped') done = false;
+    }
+    return { done, threads };
+  }
+
+  /**
    * A notification-style webhook: what the call carries lands in the routine's conversation as the
    * bot's own message, with no AI turn and no cost. The run is recorded as done.
    */
@@ -875,7 +1000,14 @@ export class RoutineService {
       .select({ threadId: schema.routineRuns.threadId })
       .from(schema.routineRuns)
       .innerJoin(schema.threads, eq(schema.threads.id, schema.routineRuns.threadId))
-      .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.threads.kind, 'routine')))
+      .where(
+        and(
+          eq(schema.routineRuns.routineId, routine.id),
+          eq(schema.threads.kind, 'routine'),
+          // A WhatsApp chat's runs work in that chat's own conversation, not the routine's.
+          notLike(schema.routineRuns.occurrence, 'wa:%'),
+        ),
+      )
       .orderBy(desc(schema.routineRuns.startedAt))
       .limit(1);
     return this.services.threads.routineThread(botId, routine.name, last?.threadId ?? null, person);
@@ -953,11 +1085,15 @@ export class RoutineService {
     payload?: string,
     retried = false,
     check?: { trigger: GateRequest['trigger']; input: string },
+    /** The conversation to work in, when it is not the routine's usual one (a WhatsApp chat's). */
+    threadId?: string,
   ): Promise<RoutineRun | null> {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
     if (!bot || bot.archivedAt) return this.record(routine, occurrence, 'skipped', t('routine.botMissing'));
-    const thread = await this.threadFor(routine, bot.id);
+    const thread = threadId
+      ? await this.services.threads.row(threadId)
+      : await this.threadFor(routine, bot.id);
     let run: typeof schema.routineRuns.$inferSelect;
     try {
       [run] = (await this.ctx.db
@@ -986,16 +1122,12 @@ export class RoutineService {
       if (dup) return null;
       // An earlier run stuck on a question nobody answered gives way to this one, once.
       if (!retried && (await this.endStaleWait(routine.id, t, STALE_WAIT_MS, 'routine.staleWait')))
-        return this.fire(routine, occurrence, payload, true, check);
+        return this.fire(routine, occurrence, payload, true, check, threadId);
       // A mail or a changed page does not come again: it waits for the run going now to end. A
       // webhook caller is told to send it again instead.
       if (check && !occurrence.startsWith('hook:'))
         return this.queue(routine, thread.id, occurrence, payload, check.trigger, t);
-      // A delivery skipped here must still run when its sender sends it again.
-      const skipped = occurrence.startsWith('hook:')
-        ? `${occurrence}:busy:${newId().slice(0, 8)}`
-        : occurrence;
-      return this.recordBusy(routine, skipped, t);
+      return this.recordBusy(routine, retriable(occurrence), t);
     }
     await this.ctx.db
       .update(schema.routines)
@@ -1116,7 +1248,7 @@ export class RoutineService {
       .select({ queued: count() })
       .from(schema.routineRuns)
       .where(and(eq(schema.routineRuns.routineId, routine.id), eq(schema.routineRuns.status, 'queued')));
-    if (queued >= MAX_QUEUED) return this.recordBusy(routine, occurrence, t);
+    if (queued >= MAX_QUEUED) return this.recordBusy(routine, retriable(occurrence), t);
     try {
       const [row] = await this.ctx.db
         .insert(schema.routineRuns)
@@ -1208,7 +1340,10 @@ export class RoutineService {
     if (!enforce) await start();
     let verdict: GateVerdict | null = null;
     try {
-      const report = await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel));
+      // A WhatsApp chat's batch is judged on its own: no other chat's report is beside it.
+      const report = run.occurrence.startsWith('wa:')
+        ? null
+        : await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel));
       verdict = await engine.gate!({
         routine: { name: routine.name, prompt: routine.prompt },
         trigger: check.trigger,
@@ -1271,9 +1406,10 @@ export class RoutineService {
   ) {
     // A run that reports to a Slack channel works with team data only, so it carries on only a
     // report written that way, not one from before it was moved there.
-    const report = routine.carryReport
-      ? await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel))
-      : null;
+    const report =
+      routine.carryReport && !run.occurrence.startsWith('wa:')
+        ? await this.lastReport(routine.id, run.id, Boolean(routine.slackChannel))
+        : null;
     // A report written from outside text carries it on: this run reads it too.
     const outside = run.trigger ?? report?.outside ?? null;
     if (outside && !run.trigger) {
@@ -1336,6 +1472,8 @@ export class RoutineService {
           eq(schema.messages.role, 'assistant'),
           except ? ne(schema.routineRuns.id, except) : undefined,
           teamOnly ? eq(schema.threads.kind, 'team') : undefined,
+          // What a run wrote about one WhatsApp chat is that chat's: never carried into another run.
+          notLike(schema.routineRuns.occurrence, 'wa:%'),
         ),
       )
       .orderBy(desc(schema.routineRuns.startedAt), desc(schema.messages.createdAt))
@@ -1558,6 +1696,16 @@ export class RoutineService {
 
 /** A run waiting this long on a card nobody answered gives way to the routine's next run. */
 const STALE_WAIT_MS = 30 * 60_000;
+
+/**
+ * The occurrence a busy skip is recorded under. A webhook delivery and a WhatsApp batch are
+ * offered again by whoever sent them, so their skip must not take the occurrence their next try
+ * runs under.
+ */
+const retriable = (occurrence: string) =>
+  occurrence.startsWith('hook:') || occurrence.startsWith('wa:')
+    ? `${occurrence}:busy:${newId().slice(0, 8)}`
+    : occurrence;
 /** The most runs of one routine kept waiting for the one going to end. */
 const MAX_QUEUED = 20;
 /** A run that failed for a passing reason starts again this long after. */
@@ -1607,4 +1755,9 @@ function sameSecret(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** A routine that reports to a Slack channel shares what it reads there: never WhatsApp chats. */
+function checkWhatsAppPlace(slackChannel: string | null | undefined) {
+  if (slackChannel) throw new HttpError(400, 'error.whatsappSlack');
 }

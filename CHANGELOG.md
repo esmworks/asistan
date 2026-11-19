@@ -18,6 +18,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   and the card warns which site it looks like. Such a card offers no "always allow". The sites measured against are
   often copied ones (mail, social media, stores, payments, banks, e-Devlet), the sites the person keeps a sign-in
   for, and the domains they wrote.
+- A routine can read WhatsApp: the chats people start with the linked account, and groups the person picks. A chat's
+  new messages reach the routine as outside text a couple of minutes after it goes quiet, with its last messages for
+  context, each chat in a conversation of its own. Messages are kept encrypted for 30 days; codes, passwords and
+  sign-in links are never kept, only a line saying one was left out. A bot drafts a reply or a WhatsApp Status post
+  on a card, and nothing is sent until the person approves it. Groups are only read, and only the person who linked
+  WhatsApp can have a routine read it.
 
 ### Fixed
 

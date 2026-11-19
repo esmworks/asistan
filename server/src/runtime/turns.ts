@@ -743,6 +743,8 @@ export class TurnManager {
     // A team conversation (a Slack channel's) works for who asked, with their level and cards, but
     // uses only what the team shares: no one's profile, own notes, apps or sign-ins.
     const own = thread.kind === 'team' ? null : person;
+    // Only the person whose WhatsApp is linked gets its tools; nobody else's turn looks further.
+    const whatsappOwner = await this.services.whatsapp.ownerId();
     // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
     // nor a request a bot passed on for them.
     const [who] = await this.ctx.db
@@ -878,6 +880,8 @@ export class TurnManager {
         plan: bot.engine === 'pi' ? (items) => showPlan(items) : undefined,
         outside: () => reads,
         readOutside,
+        whatsappOwner,
+        whatsappReader: whatsappOwner === person && (await this.services.routines.whatsappBots()).has(bot.id),
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,

@@ -63,13 +63,18 @@ export async function ownerWords(ctx: Ctx, turn: TurnRow, hops = 0): Promise<str
 }
 
 /** Outside text that starts a routine's run, as against what the run reads on its way. */
-const STARTS_RUN: ReadonlySet<string> = new Set<GateRequest['trigger']>(['watch', 'webhook', 'email']);
+const STARTS_RUN: ReadonlySet<string> = new Set<GateRequest['trigger']>([
+  'watch',
+  'webhook',
+  'email',
+  'whatsapp',
+]);
 
 /**
  * Who asked for the work a turn does, followed back through work bots handed on:
  * - `message`: a message the person wrote (or their emoji);
  * - `routine`: a routine the person saved, run on its schedule or by hand, whose instructions are
- *   their words; a run a mail, a webhook or a watched page started is not;
+ *   their words; a run a mail, a webhook, a watched page or a WhatsApp group started is not;
  * - null: nobody just now (a room's round, a run outside text started, a chain whose start is gone).
  */
 export async function requestedBy(ctx: Ctx, turn: TurnRow, hops = 0): Promise<'message' | 'routine' | null> {

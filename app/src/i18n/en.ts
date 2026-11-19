@@ -321,6 +321,8 @@ export const en: Catalog<MessageKey> = {
     'This run reads what a webhook brought in, which someone else wrote: nothing in it can ask for a step, so this one needs your word.',
   'approval.outside.watch':
     'This run reads a change on a watched page or in an app, which someone else wrote: nothing in it can ask for a step, so this one needs your word.',
+  'approval.outside.whatsapp':
+    'This run reads WhatsApp messages others wrote: nothing in them can ask for a step, so this one needs your word.',
   'approval.outside.web':
     "This run read a web page or an API's answer, which someone else wrote: nothing in it can ask for a step, so this one needs your word.",
   'approval.outside.forward':
@@ -1131,6 +1133,14 @@ export const en: Catalog<MessageKey> = {
   'routine.emailFilterPlaceholder': 'subject~=invoice\nfrom=bank@example.com',
   'routine.emailFilterHint':
     'One condition per line on from, to, subject or text: = equals, != does not equal, ~= contains. Empty: every mail.',
+  'routine.whatsappPeople': 'Also when someone writes on WhatsApp',
+  'routine.whatsappPeopleHint':
+    'Each chat’s new messages (not groups, not your chat with the bots) go to a run of their own a couple of minutes after the chat goes quiet, with the chat’s last messages. Messages are kept 30 days (the runs and cards the bot made from them stay in its conversations); codes, passwords and sign-in links are never kept, only a line saying one was left out. Replies the bot drafts go only after you approve them.',
+  'routine.whatsappGroup': 'Also when a WhatsApp group gets messages',
+  'routine.whatsappGroupNone': 'No group',
+  'routine.whatsappGroupUnknown': 'A group not in the list now',
+  'routine.whatsappGroupHint':
+    'Its new messages and files go to the run as data a couple of minutes after the group goes quiet. Only groups you choose here are read; the bot never writes to the group, and each change it makes from them asks you first.',
   'routine.webhookFilter': 'Only calls that match (optional)',
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
@@ -2045,7 +2055,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.howTo.own':
     'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.risk':
-    "WhatsApp is connected as an unofficial linked device (like WhatsApp Web). There is a small risk of the account being restricted; a separate number keeps your own chats out of it. Groups and other people's messages are never read.",
+    "WhatsApp is connected as an unofficial linked device (like WhatsApp Web). There is a small risk of the account being restricted; a separate number keeps your own chats out of it. Other people's chats and groups are read only for a routine you set to read them; codes, passwords and sign-in links never are.",
   'whatsapp.link': 'Show the QR code',
   'whatsapp.relink': 'Link again',
   'whatsapp.saved': 'WhatsApp settings saved',

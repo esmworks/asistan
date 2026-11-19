@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
-import type { Approval, Thread, WhatsAppStatus } from '@yumakbot/shared';
-import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Approval, Routine, RoutineRun, Thread, WhatsAppStatus } from '@yumakbot/shared';
+import { eq } from 'drizzle-orm';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   WhatsAppChannel,
   type WaConnectOptions,
@@ -25,6 +28,8 @@ function fakeLibrary() {
   let connects = 0;
   let options: WaConnectOptions | null = null;
   const flags = { failDownload: false, dropOnSend: false };
+  /** The groups the linked account is in. */
+  const groups: Record<string, { id: string; subject: string }> = {};
   /** Every send tried, with the id it carried, including those the connection dropped under. */
   const tried: { content: Record<string, unknown>; id?: string }[] = [];
   const lib: WaLibrary = {
@@ -54,6 +59,7 @@ function fakeLibrary() {
         sendPresenceUpdate: async (type) => {
           presence.push(type);
         },
+        groupFetchAllParticipating: async () => groups,
         logout: async () => {},
         end: () => {},
       };
@@ -100,6 +106,21 @@ function fakeLibrary() {
       });
     },
     texts: () => sent.map((s) => s.content.text).filter((x): x is string => typeof x === 'string'),
+    groups,
+    /** A message in any chat: someone else's, or a group's (`participant` says who wrote it). */
+    chat(
+      remoteJid: string,
+      message: Record<string, unknown>,
+      key: Partial<WaMessage['key']> = {},
+      pushName?: string,
+    ) {
+      const id = `in-${++n}`;
+      socket!.emit('messages.upsert', {
+        type: 'notify',
+        messages: [{ key: { remoteJid, fromMe: false, id, ...key }, message, pushName }],
+      });
+      return id;
+    },
   };
 }
 
@@ -500,5 +521,399 @@ describe('WhatsApp biçimi', () => {
       '# Başlık\n\n**kalın**, _eğik_, ~~çizik~~ ve [site](https://ornek.com)\n\n- madde',
     );
     expect(m).toBe('*Başlık*\n\n*kalın*, _eğik_, ~çizik~ ve site (https://ornek.com)\n\n• madde');
+  });
+});
+
+describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
+  let t: TestServer;
+  afterEach(() => t?.dispose());
+  const CUSTOMER = '905001112233';
+  const GROUP = '120363000000000001@g.us';
+
+  const setUp = async () => {
+    t = await testServer();
+    const wa = fakeLibrary();
+    t.services.whatsapp.library = async () => wa.lib;
+    t.services.whatsapp.paceMs = 0;
+    t.services.whatsapp.chatQuietMs = 30;
+    const asistan = await t.bot({ name: 'Asistan' });
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id });
+    await t.api('POST', '/api/whatsapp/link');
+    wa.socket().emit('connection.update', { qr: '2@abc,def' });
+    await waitFor(async () => (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.qr);
+    wa.linked(PERSON);
+    await waitFor(
+      async () => (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.state === 'connected',
+    );
+    return { wa, asistan };
+  };
+  const routine = async (botId: string, body: Record<string, unknown>) => {
+    const r = await t.api<Routine>('POST', '/api/routines', {
+      botId,
+      name: 'Gelenler',
+      prompt: 'Teklif isteği varsa hazırla.',
+      schedule: { type: 'daily', time: '09:00' },
+      ...body,
+    });
+    expect(r.status).toBe(200);
+    return r.body;
+  };
+  const reads = () => t.services.whatsapp as unknown as { people: boolean; followed: Set<string> };
+  const runs = (id: string) =>
+    waitFor(async () => {
+      const r = (await t.api<RoutineRun[]>('GET', `/api/routines/${id}/runs`)).body;
+      return r.length ? r : undefined;
+    });
+
+  it('kişinin mesajı saklanır, sohbet sessizleşince kendi konuşmasında rutine gider; kodlar hiç saklanmaz', async () => {
+    const { wa, asistan } = await setUp();
+    const r = await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    wa.chat(
+      `${CUSTOMER}@s.whatsapp.net`,
+      { conversation: '2 adet soğuk oda için teklif istiyorum' },
+      {},
+      'Ahmet',
+    );
+    wa.chat('905009998877@s.whatsapp.net', {
+      conversation: 'Doğrulama kodunuz: 482913. Kimseyle paylaşmayın.',
+    });
+    // The person's own chat with the bots is not a customer's.
+    wa.chat(`${PERSON}@s.whatsapp.net`, { conversation: 'kendime not' }, { fromMe: true });
+    const [run] = await runs(r.id);
+    await t.services.turns.idle();
+    expect(run!.occurrence).toMatch(/^wa:/);
+    const [row] = await t.db.db.select({ trigger: schema.routineRuns.trigger }).from(schema.routineRuns);
+    expect(row!.trigger).toBe('whatsapp');
+    const prompt = t.engine.requests.at(-1)!.prompt;
+    expect(prompt).toContain('teklif istiyorum');
+    expect(prompt).toContain(`Ahmet (+${CUSTOMER})`);
+    expect(prompt).toContain(`${CUSTOMER}@s.whatsapp.net`);
+    expect(t.engine.requests.map((q) => q.prompt).join('\n')).not.toContain('482913');
+    const chats = await t.db.db.select().from(schema.whatsappChats);
+    expect(chats.map((c) => c.jid)).toEqual([`${CUSTOMER}@s.whatsapp.net`]);
+    // A conversation of its own for this chat, not the bot's main one.
+    const thread = (await t.api<Thread>('GET', `/api/threads/${run!.threadId}`)).body;
+    expect(thread.title).toContain('Ahmet');
+    expect(wa.sent.filter((x) => x.jid.startsWith(CUSTOMER))).toHaveLength(0);
+  });
+
+  it('yalnızca takip edilen grup okunur; dosyası botun klasörüne iner, gruba hiçbir şey yazılmaz', async () => {
+    const { wa, asistan } = await setUp();
+    wa.groups[GROUP] = { id: GROUP, subject: '3E Soğutma - Finans' };
+    const list = await t.api<{ id: string; name: string }[]>('GET', '/api/whatsapp/groups');
+    expect(list.body).toEqual([{ id: GROUP, name: '3E Soğutma - Finans' }]);
+    const r = await routine(asistan.id, { whatsappGroup: GROUP });
+    await waitFor(async () => reads().followed.has(GROUP));
+    expect(wa.options().ignore(GROUP)).toBe(false);
+    expect(wa.options().ignore('120363999999999999@g.us')).toBe(true);
+    wa.chat(
+      '120363999999999999@g.us',
+      { conversation: 'başka grup' },
+      { participant: `${CUSTOMER}@s.whatsapp.net` },
+    );
+    wa.chat(
+      GROUP,
+      { imageMessage: { caption: 'Ödeme yapıldı 15.000 TL', mimetype: 'image/jpeg' } },
+      { participant: `${CUSTOMER}@s.whatsapp.net` },
+      'Ayşe',
+    );
+    await runs(r.id);
+    await t.services.turns.idle();
+    const prompt = t.engine.requests.at(-1)!.prompt;
+    expect(prompt).toContain('WhatsApp grubu: 3E Soğutma - Finans');
+    expect(prompt).toContain('Ödeme yapıldı 15.000 TL');
+    expect(prompt).not.toContain('başka grup');
+    const path = /: (\S+\.jpg) \(/.exec(prompt)![1]!;
+    expect(path.startsWith(join(t.dataDir, 'workspaces', 'bots', asistan.id, 'files', 'whatsapp'))).toBe(
+      true,
+    );
+    expect(readFileSync(path, 'utf8')).toBe('ses kaydı');
+    expect(wa.sent.filter((x) => x.jid.endsWith('@g.us'))).toHaveLength(0);
+  });
+
+  it('cevap taslağı kartla sunulur; "Gönderme" gitmez, "Gönder" müşteriye gider', async () => {
+    const { wa, asistan } = await setUp();
+    const send = (text: string) =>
+      `[araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"${text}"}]`;
+    const r = await routine(asistan.id, {
+      whatsappPeople: true,
+      prompt: `Cevap hazırla. ${send('Teklifimiz 120.000 TL')}`,
+    });
+    await waitFor(async () => reads().people);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Fiyat alabilir miyim?' }, {}, 'Ahmet');
+    await runs(r.id);
+    await t.services.turns.idle();
+    const card = await waitFor(async () => {
+      const list = (await t.api<Approval[]>('GET', '/api/approvals')).body;
+      return list.find((a) => a.toolName === 'whatsapp_send');
+    });
+    expect(card.summary).toContain('Teklifimiz 120.000 TL');
+    expect(wa.sent.filter((x) => x.jid.startsWith(CUSTOMER))).toHaveLength(0);
+    // Cards from before a restart are let go, but a draft's card stays.
+    await t.services.approvals.expireAllPending();
+    expect((await t.services.approvals.get(card.id)).status).toBe('pending');
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: 'Gönder' });
+    await waitFor(async () => wa.sent.some((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`));
+    expect(wa.sent.find((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`)!.content.text).toBe(
+      'Teklifimiz 120.000 TL',
+    );
+    const [draft] = await t.db.db.select().from(schema.whatsappDrafts);
+    expect(draft!.status).toBe('sent');
+
+    // A second draft turned down goes nowhere.
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Peki teslim ne zaman?' }, {}, 'Ahmet');
+    const second = await waitFor(async () => {
+      const list = (await t.api<Approval[]>('GET', '/api/approvals')).body;
+      return list.find((a) => a.toolName === 'whatsapp_send' && a.id !== card.id && a.status === 'pending');
+    });
+    await t.api('POST', `/api/approvals/${second.id}`, { decision: 'allow', answer: 'Gönderme' });
+    await waitFor(async () => {
+      const rows = await t.db.db.select().from(schema.whatsappDrafts);
+      return rows.some((d) => d.status === 'dropped');
+    });
+    expect(wa.sent.filter((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`)).toHaveLength(1);
+  });
+
+  it('kod gibi görünen mesaj saklanmaz ama atlandığı söylenir; bilinmeyen numaradan gelen iz bırakmaz', async () => {
+    const { wa, asistan } = await setUp();
+    const r = await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    // A code from a number with no chat here: nothing at all.
+    wa.chat('905007776655@s.whatsapp.net', { conversation: 'Giriş kodunuz 552211' });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Dekontu da gönderiyorum' }, {}, 'Ahmet');
+    wa.chat(
+      `${CUSTOMER}@s.whatsapp.net`,
+      { conversation: 'Havale yapıldı, işlem onay kodu 845123' },
+      {},
+      'Ahmet',
+    );
+    await runs(r.id);
+    await t.services.turns.idle();
+    const prompt = t.engine.requests.at(-1)!.prompt;
+    expect(prompt).toContain('Bir mesaj atlandı');
+    expect(prompt).toContain('Dekontu da gönderiyorum');
+    expect(prompt).not.toContain('845123');
+    const chats = await t.db.db.select().from(schema.whatsappChats);
+    expect(chats.map((c) => c.jid)).toEqual([`${CUSTOMER}@s.whatsapp.net`]);
+  });
+
+  it('kart WhatsApp’a numaralı gelir; "1" yazmak taslağı gönderir', async () => {
+    const { wa, asistan } = await setUp();
+    // The person talks to the bot from WhatsApp, so its cards come there.
+    wa.message(PERSON, { conversation: 'merhaba' }, { fromMe: true });
+    await waitFor(async () => wa.texts().length > 0);
+    await t.services.turns.idle();
+    const r = await routine(asistan.id, {
+      whatsappPeople: true,
+      prompt: `[araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"Teslim 2 hafta"}]`,
+    });
+    await waitFor(async () => reads().people);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Teslim süresi?' }, {}, 'Ahmet');
+    await runs(r.id);
+    await t.services.turns.idle();
+    await waitFor(async () =>
+      wa.texts().some((x) => x.includes('Teslim 2 hafta') && x.includes('1. Gönder')),
+    );
+    wa.message(PERSON, { conversation: '1' }, { fromMe: true });
+    await waitFor(async () => wa.sent.some((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`));
+    expect(wa.sent.find((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`)!.content.text).toBe('Teslim 2 hafta');
+  });
+
+  it('kartın ardından numaralı bir rapor gelince "1" kartı onaylamaz', async () => {
+    const { wa, asistan } = await setUp();
+    wa.message(PERSON, { conversation: 'merhaba' }, { fromMe: true });
+    await waitFor(async () => wa.texts().length > 0);
+    await t.services.turns.idle();
+    const r = await routine(asistan.id, {
+      whatsappPeople: true,
+      prompt: `[araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"Teslim 2 hafta"}]`,
+    });
+    await waitFor(async () => reads().people);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Teslim süresi?' }, {}, 'Ahmet');
+    await runs(r.id);
+    await t.services.turns.idle();
+    await waitFor(async () => wa.texts().some((x) => x.includes('1. Gönder')));
+    const card = (await t.api<Approval[]>('GET', '/api/approvals')).body.find(
+      (a) => a.toolName === 'whatsapp_send',
+    )!;
+    // A report whose own list a "1" may mean.
+    await t.services.threads.addMessage({
+      threadId: card.threadId,
+      role: 'assistant',
+      author: `bot:${asistan.id}`,
+      text: '1. Fatura kaydedildi\n2. Ödeme bekleniyor',
+      props: { routineReport: true, routineName: 'Finans' },
+    });
+    await waitFor(async () => wa.texts().some((x) => x.includes('Fatura kaydedildi')));
+    const asked = t.engine.requests.length;
+    wa.message(PERSON, { conversation: '1' }, { fromMe: true });
+    // It goes to the bot as a message instead.
+    await waitFor(async () => t.engine.requests.length > asked);
+    await t.services.turns.idle();
+    expect(wa.sent.filter((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`)).toHaveLength(0);
+    expect((await t.services.approvals.get(card.id)).status).toBe('pending');
+  });
+
+  it('meşgul bir rutin yüzünden yeniden sunulan parti, aynı adla ve eklenmeden gelir', async () => {
+    const { wa, asistan } = await setUp();
+    await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    const routines = t.services.routines;
+    const batches: string[] = [];
+    const real = routines.runFromWhatsApp.bind(routines);
+    vi.spyOn(routines, 'runFromWhatsApp').mockImplementation(async (chat, batch, payloadFor) => {
+      batches.push(batch);
+      // The first offer finds a routine too busy.
+      if (batches.length === 1) return { done: false, threads: {} };
+      return real(chat, batch, payloadFor);
+    });
+    t.services.whatsapp.chatQuietMs = 300;
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'birinci' }, {}, 'Ahmet');
+    await waitFor(async () => batches.length === 1);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'ikinci' }, {}, 'Ahmet');
+    await waitFor(async () => batches.length >= 3);
+    expect(batches[1]).toBe(batches[0]);
+    expect(batches[2]).not.toBe(batches[0]);
+    const [chat] = await t.db.db.select().from(schema.whatsappChats);
+    expect(chat!.heldSeq).toBeNull();
+  });
+
+  it('bir partinin metni sınırlıdır; kalan mesajlar sonraki partide gelir', async () => {
+    const { wa, asistan } = await setUp();
+    await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    const routines = t.services.routines;
+    const sizes: number[] = [];
+    vi.spyOn(routines, 'runFromWhatsApp').mockImplementation(async (_chat, _batch, payloadFor) => {
+      sizes.push(payloadFor(asistan.id).length);
+      return { done: true, threads: {} };
+    });
+    for (let i = 0; i < 20; i++)
+      wa.chat(
+        `${CUSTOMER}@s.whatsapp.net`,
+        { conversation: `${i} ${'x'.repeat(3990)}` },
+        { id: `uzun-${i}` },
+      );
+    await waitFor(async () => sizes.length >= 2);
+    expect(Math.max(...sizes)).toBeLessThan(70_000);
+  });
+
+  it('bot yalnızca kendi rutinlerinin okuduğu sohbetleri görür', async () => {
+    const { wa, asistan } = await setUp();
+    const finans = await t.bot({ name: 'Finans' });
+    wa.groups[GROUP] = { id: GROUP, subject: 'Finans' };
+    await routine(asistan.id, { whatsappPeople: true });
+    await routine(finans.id, { whatsappGroup: GROUP });
+    await waitFor(async () => reads().people && reads().followed.has(GROUP));
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'özel konu' }, {}, 'Ahmet');
+    wa.chat(GROUP, { conversation: 'ödeme geldi' }, { participant: `${CUSTOMER}@s.whatsapp.net` });
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappChats)).length === 2);
+    const wa_ = t.services.whatsapp;
+    const ofFinans = await t.services.routines.whatsappReadsOf(finans.id);
+    expect((await wa_.chats(10, ofFinans)).map((c) => c.jid)).toEqual([GROUP]);
+    expect(await wa_.history(`${CUSTOMER}@s.whatsapp.net`, 10, finans.id, ofFinans)).toBeNull();
+    expect(await wa_.knownChat(`${CUSTOMER}@s.whatsapp.net`, ofFinans)).toBeNull();
+    const ofAsistan = await t.services.routines.whatsappReadsOf(asistan.id);
+    expect((await wa_.chats(10, ofAsistan)).map((c) => c.jid)).toEqual([`${CUSTOMER}@s.whatsapp.net`]);
+  });
+
+  it('WhatsApp başkası tarafından bağlanınca öncekinin rutinleri onu okumaz', async () => {
+    const { asistan } = await setUp();
+    await routine(asistan.id, { whatsappPeople: true });
+    expect((await t.services.routines.whatsappReads()).people).toBe(true);
+    const other = await t.person('ayse', 'admin');
+    await t.db.db
+      .update(schema.channels)
+      .set({ userId: other.id })
+      .where(eq(schema.channels.kind, 'whatsapp'));
+    expect((await t.services.routines.whatsappReads()).people).toBe(false);
+    expect([...(await t.services.routines.whatsappBots())]).toEqual([]);
+    expect(await t.services.routines.chatReaders(`${CUSTOMER}@s.whatsapp.net`, 'person')).toEqual([]);
+  });
+
+  it('gruba taslak yazılmaz; Durum taslağı kartla sunulur ve onayla paylaşılır', async () => {
+    const { wa, asistan } = await setUp();
+    wa.groups[GROUP] = { id: GROUP, subject: 'Finans' };
+    const r = await routine(asistan.id, {
+      whatsappGroup: GROUP,
+      whatsappPeople: true,
+      prompt: [
+        `[araç:whatsapp_send {"chat":"${GROUP}","text":"tamam"}]`,
+        '[araç:whatsapp_send {"chat":"x@s.whatsapp.net","text":"tamam","file":"/etc/hosts"}]',
+        '[araç:whatsapp_status {"text":"Yeni ürünümüz çıktı"}]',
+      ].join(' '),
+    });
+    await waitFor(async () => reads().followed.has(GROUP));
+    // Someone to see the Status.
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'iyi günler' }, {}, 'Ahmet');
+    await runs(r.id);
+    await t.services.turns.idle();
+    const cards = (await t.api<Approval[]>('GET', '/api/approvals')).body;
+    expect(cards.filter((a) => a.toolName === 'whatsapp_send')).toHaveLength(0);
+    const status = cards.find((a) => a.toolName === 'whatsapp_status')!;
+    expect(status.summary).toContain('1 kişi görecek');
+    await t.api('POST', `/api/approvals/${status.id}`, { decision: 'allow', answer: 'Paylaş' });
+    await waitFor(async () => wa.sent.some((x) => x.jid === 'status@broadcast'));
+    expect(wa.sent.filter((x) => x.jid.endsWith('@g.us'))).toHaveLength(0);
+  });
+
+  it('rutinin kendi çalıştırması müşteri sohbetinin konuşmasına düşmez', async () => {
+    const { wa, asistan } = await setUp();
+    const r = await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'merhaba' }, {}, 'Ahmet');
+    const [first] = await runs(r.id);
+    await t.services.turns.idle();
+    const own = await t.api<RoutineRun>('POST', `/api/routines/${r.id}/run`);
+    expect(own.status).toBe(200);
+    await t.services.turns.idle();
+    const all = (await t.api<RoutineRun[]>('GET', `/api/routines/${r.id}/runs`)).body;
+    const manual = all.find((x) => !x.occurrence.startsWith('wa:'))!;
+    expect(manual.threadId).not.toBe(first!.threadId);
+  });
+
+  it('30 günden eski mesajlar dosyalarıyla silinir', async () => {
+    const { wa, asistan } = await setUp();
+    await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    wa.chat(
+      `${CUSTOMER}@s.whatsapp.net`,
+      { imageMessage: { caption: 'katalog', mimetype: 'image/jpeg' } },
+      {},
+      'Ahmet',
+    );
+    const [msg] = await waitFor(async () => {
+      const rows = await t.db.db.select().from(schema.whatsappMessages);
+      return rows[0]?.file ? rows : undefined;
+    });
+    const file = msg!.file as { name: string };
+    const path = join(t.dataDir, 'workspaces', 'bots', asistan.id, 'files', 'whatsapp', CUSTOMER, file.name);
+    expect(existsSync(path)).toBe(true);
+    // A settled draft goes too; one whose card is still open stays.
+    const draft = { approvalId: 'kart', botId: asistan.id, threadId: 'konusma', kind: 'message' as const };
+    await t.db.db.insert(schema.whatsappDrafts).values([
+      { ...draft, id: 'gitti', text: 'eski cevap', approve: 'Gönder', status: 'sent' },
+      { ...draft, id: 'bekliyor', text: 'açık kart', approve: 'Gönder' },
+    ]);
+    await t.services.whatsapp.prune(new Date(Date.now() + 31 * 24 * 3600_000));
+    expect((await t.db.db.select().from(schema.whatsappDrafts)).map((d) => d.id)).toEqual(['bekliyor']);
+    expect(await t.db.db.select().from(schema.whatsappMessages)).toHaveLength(0);
+    expect(await t.db.db.select().from(schema.whatsappChats)).toHaveLength(0);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('WhatsApp okuyan rutini yalnızca WhatsApp’ı bağlayan kişi kurar', async () => {
+    const { asistan } = await setUp();
+    const other = await t.person('ayse', 'admin');
+    const r = await other.api('POST', '/api/routines', {
+      botId: asistan.id,
+      name: 'Gizli okuma',
+      prompt: 'oku',
+      schedule: { type: 'daily', time: '09:00' },
+      whatsappPeople: true,
+    });
+    expect(r.status).toBe(403);
+    expect((await other.api('GET', '/api/whatsapp/groups')).status).toBe(403);
   });
 });

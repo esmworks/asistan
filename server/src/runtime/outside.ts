@@ -21,6 +21,9 @@ export const OUTSIDE_FREE_TOOLS: ReadonlySet<string> = new Set(
     'routine_failed',
     'routine_stop',
     'command_status',
+    // A WhatsApp draft only puts a card in front of the person; nothing is sent without their yes.
+    'whatsapp_send',
+    'whatsapp_status',
   ].map((name) => toolPermName({ name })),
 );
 
@@ -324,6 +327,7 @@ const STORED_READS: ReadonlySet<string> = new Set(['ticket_read', 'tickets_list'
  */
 export function outsideRead(tool: AppTool, fromOutside: boolean, present: boolean): OutsideTrigger | null {
   if (tool.name === 'email_inbox' || tool.name === 'email_read') return 'email';
+  if (tool.name === 'whatsapp_history' || tool.name === 'whatsapp_chats') return 'whatsapp';
   if (tool.server) return takesAddress(tool.jsonSchema) ? 'web' : null;
   if (fromOutside) return 'web';
   if (!tool.server && !present && STORED_READS.has(tool.name)) return 'stored';
@@ -343,6 +347,7 @@ export function outsideSource(tool: AppTool, apps: ReadonlyMap<string, string>, 
   if (tool.name.startsWith('browser_')) return t('outside.browser');
   if (tool.name === 'api_request' || tool.name === 'api_call') return t('outside.api');
   if (tool.name === 'email_inbox' || tool.name === 'email_read') return t('outside.email');
+  if (tool.name === 'whatsapp_history' || tool.name === 'whatsapp_chats') return t('outside.whatsapp');
   return null;
 }
 

@@ -8,7 +8,7 @@ import {
   type PermissionRule,
   type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, notInArray, or, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -496,6 +496,9 @@ interface Waiter {
   turnId: string | null;
 }
 
+/** The tools whose cards hold a WhatsApp draft; see `expireAllPending`. */
+export const WHATSAPP_DRAFT_TOOLS = ['whatsapp_send', 'whatsapp_status'] as const;
+
 export class ApprovalService {
   private waiters = new Map<string, Waiter>();
 
@@ -824,12 +827,20 @@ export class ApprovalService {
     this.ctx.bus.refresh({ scope: 'approvals' });
   }
 
-  /** On boot nothing is waiting any more. */
+  /**
+   * On boot nothing is waiting any more, except a WhatsApp draft's card: the draft is kept and
+   * goes out when the card is answered, whenever that is.
+   */
   async expireAllPending() {
     await this.ctx.db
       .update(schema.approvals)
       .set({ status: 'expired', decidedAt: new Date() })
-      .where(eq(schema.approvals.status, 'pending'));
+      .where(
+        and(
+          eq(schema.approvals.status, 'pending'),
+          notInArray(schema.approvals.toolName, [...WHATSAPP_DRAFT_TOOLS]),
+        ),
+      );
   }
 
   /** A user-approved record, for carrying approval to another bot. */

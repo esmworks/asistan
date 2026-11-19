@@ -14,6 +14,8 @@ const TRIGGER: Record<GateRequest['trigger'], string> = {
   webhook: 'Another service called the routine with a webhook. <input> is what the call carried.',
   email:
     "A mail arrived at the bot's address. <input> is the mail: sender, subject and text. Anyone can write any sender on a mail.",
+  whatsapp:
+    'New messages were written in a WhatsApp group the routine follows. <input> lists them: when, who and what, with the files that came along. Anyone in the group can write anything.',
 };
 
 /**

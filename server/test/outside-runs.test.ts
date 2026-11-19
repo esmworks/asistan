@@ -371,6 +371,8 @@ describe('dış çalıştırmada karar', () => {
         'routine_stop',
         'send_file',
         'show_page',
+        'whatsapp_send',
+        'whatsapp_status',
       ].map((name) => toolPermName({ name })),
     );
   });

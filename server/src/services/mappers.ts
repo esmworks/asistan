@@ -161,6 +161,8 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   model: r.model,
   emailTrigger: r.emailTrigger,
   emailFilter: r.emailFilter,
+  whatsappGroup: r.whatsappGroup,
+  whatsappPeople: r.whatsappPeople,
 });
 
 export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({

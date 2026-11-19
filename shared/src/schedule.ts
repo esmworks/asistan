@@ -101,6 +101,10 @@ export const Routine = z.object({
   emailTrigger: z.boolean(),
   /** Conditions a mail must meet to start it, one per line, on from, to, subject and text. */
   emailFilter: z.string(),
+  /** The WhatsApp group whose new messages also start it; null for none. Missing on older servers. */
+  whatsappGroup: z.string().nullable().optional(),
+  /** Also runs when someone writes to the linked WhatsApp account. Missing on older servers. */
+  whatsappPeople: z.boolean().optional(),
   /**
    * The secret part of the address that starts the routine from another service (a webhook);
    * null when it has none.
@@ -158,6 +162,22 @@ export const RoutineCreate = z.object({
   model: z.string().trim().max(200).default(''),
   emailTrigger: z.boolean().default(false),
   emailFilter: z.string().max(2000).default(''),
+  /**
+   * A WhatsApp group's address (`…@g.us`): its new messages, with their files, start a run a few
+   * minutes after the group goes quiet. Only groups a routine follows are read; null for none.
+   */
+  whatsappGroup: z
+    .string()
+    .trim()
+    .regex(/^[\d-]{5,60}@g\.us$/, 'validation.whatsappGroup')
+    .nullable()
+    .default(null),
+  /**
+   * Also runs when someone writes to the linked WhatsApp account in a chat of their own (not a
+   * group, not the person's own chat with the bots): each chat's new messages start a run of its
+   * own, a couple of minutes after the chat goes quiet.
+   */
+  whatsappPeople: z.boolean().default(false),
 });
 export type RoutineCreate = z.infer<typeof RoutineCreate>;
 export const RoutineUpdate = patchOf(RoutineCreate.omit({ botId: true }));

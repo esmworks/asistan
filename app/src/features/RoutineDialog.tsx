@@ -67,6 +67,9 @@ const Form = z.object({
   webhookPost: z.boolean(),
   emailTrigger: z.boolean(),
   emailFilter: z.string().max(2000),
+  /** The followed WhatsApp group's address; empty for none. */
+  whatsappGroup: z.string(),
+  whatsappPeople: z.boolean(),
   model: z.string().max(200),
   slackChannel: z
     .string()
@@ -144,6 +147,8 @@ function fromRoutine(r?: Routine): Form {
     webhookPost: r?.webhookPost ?? false,
     emailTrigger: r?.emailTrigger ?? false,
     emailFilter: r?.emailFilter ?? '',
+    whatsappGroup: r?.whatsappGroup ?? '',
+    whatsappPeople: r?.whatsappPeople ?? false,
     model: r?.model ?? '',
   };
 }
@@ -197,6 +202,8 @@ export function RoutineDialog({
         webhookPost: f.webhookPost,
         emailTrigger: f.emailTrigger,
         emailFilter: f.emailFilter.trim(),
+        whatsappGroup: f.whatsappGroup || null,
+        whatsappPeople: f.whatsappPeople,
         model: f.model.trim(),
       };
       return routine
@@ -479,6 +486,13 @@ export function RoutineDialog({
                 <p className="mt-1 text-xs text-muted-foreground">{t('routine.emailFilterHint')}</p>
               </Field>
             )}
+            <WhatsAppFields
+              open={open}
+              group={values.whatsappGroup}
+              people={values.whatsappPeople}
+              onGroup={(v) => form.setValue('whatsappGroup', v, { shouldDirty: true })}
+              onPeople={(v) => form.setValue('whatsappPeople', v, { shouldDirty: true })}
+            />
             {routine && <Check routine={routine} />}
             {routine && <Webhook routine={routine} />}
             {routine?.webhookToken && (
@@ -666,7 +680,72 @@ export function runCommand(origin: string, routineId: string): string {
   ].join(' \\\n');
 }
 
-/** The routine's secret address for other services, with buttons to make, copy, renew or remove it. */
+/** No group: a value the select can hold, since an empty one means "nothing chosen" to it. */
+const NO_GROUP = 'none';
+
+/**
+ * What on WhatsApp also starts the routine: people writing to the account, and one group. Offered
+ * when WhatsApp is connected, or when the routine already reads it; only the person who linked
+ * WhatsApp gets its list of groups.
+ */
+function WhatsAppFields({
+  open,
+  group: value,
+  people,
+  onGroup: onChange,
+  onPeople,
+}: {
+  open: boolean;
+  group: string;
+  people: boolean;
+  onGroup(v: string): void;
+  onPeople(v: boolean): void;
+}) {
+  const t = useT();
+  const { data: wa } = useQuery({ queryKey: ['whatsapp'], queryFn: api.whatsapp, enabled: open });
+  const connected = wa?.state === 'connected';
+  const groups = useQuery({
+    queryKey: ['whatsapp-groups'],
+    queryFn: api.whatsappGroups,
+    enabled: open && connected,
+    retry: false,
+  });
+  if (!connected && !value && !people) return null;
+  const list = groups.data ?? [];
+  // A followed group the list does not show (WhatsApp is off, or the account left it) keeps its place.
+  const known = !value || list.some((g) => g.id === value);
+  return (
+    <>
+      <label className="flex items-start gap-3 rounded-2xl bg-secondary/60 px-3 py-2">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">{t('routine.whatsappPeople')}</span>
+          <span className="block text-xs text-muted-foreground">{t('routine.whatsappPeopleHint')}</span>
+        </span>
+        <Switch checked={people} onCheckedChange={onPeople} />
+      </label>
+      <Field label={t('routine.whatsappGroup')}>
+        <Select value={value || NO_GROUP} onValueChange={(v) => onChange(v === NO_GROUP ? '' : v)}>
+          <SelectTrigger className="w-full rounded-xl">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_GROUP}>{t('routine.whatsappGroupNone')}</SelectItem>
+            {!known && <SelectItem value={value}>{t('routine.whatsappGroupUnknown')}</SelectItem>}
+            {list.map((g) => (
+              <SelectItem key={g.id} value={g.id}>
+                {g.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {groups.error ? (groups.error as Error).message : t('routine.whatsappGroupHint')}
+        </p>
+      </Field>
+    </>
+  );
+}
+
 /**
  * The app tool a routine calls before each run (bots set it up when asked to act on an app event);
  * here the person sees which, with what, and can remove it.
@@ -708,6 +787,7 @@ function Check({ routine: given }: { routine: Routine }) {
   );
 }
 
+/** The routine's secret address for other services, with buttons to make, copy, renew or remove it. */
 function Webhook({ routine: given }: { routine: Routine }) {
   const t = useT();
   const qc = useQueryClient();

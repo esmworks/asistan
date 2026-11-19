@@ -1704,6 +1704,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.whatsapp.configure(body, me(req).userId);
   });
   app.post('/api/whatsapp/link', async () => s.whatsapp.link());
+  // Its groups are listed only to the person whose WhatsApp it is.
+  app.get('/api/whatsapp/groups', async (req) => {
+    if ((await s.whatsapp.ownerId()) !== me(req).userId)
+      throw new HttpError(403, 'error.whatsappGroupNotYours');
+    return s.whatsapp.groups();
+  });
   app.delete('/api/whatsapp', async () => s.whatsapp.disconnect());
   // The server's Slack app, set up by those who look after the server; each person links their own
   // Slack account to it with a code.

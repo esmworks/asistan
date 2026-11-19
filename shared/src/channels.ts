@@ -66,6 +66,13 @@ export interface WhatsAppStatus {
   error: string | null;
 }
 
+/** A WhatsApp group the linked account is in, which a routine can follow. */
+export interface WhatsAppGroup {
+  /** Its address, `…@g.us`. */
+  id: string;
+  name: string;
+}
+
 /** The server's Slack app: its app-level token (Socket Mode) and its bot token. */
 export const SlackConnect = z.object({
   appToken: z.string().trim().min(1).max(500),

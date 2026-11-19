@@ -22,13 +22,21 @@ export type EngineKind = z.infer<typeof EngineKind>;
 export const PermissionMode = z.enum(['ask', 'review', 'auto', 'readonly']);
 /**
  * Outside text a run reads: what started a routine run (a mail, a webhook's body, a watched page
- * or an app's new answer), or what the run read on its way: a page, an API's or a connected app's
- * answer (`web`), a message the person forwarded from someone else (`forward`), or text kept here
+ * or an app's new answer, WhatsApp messages a routine reads), or what the run read on its way: a
+ * page, an API's or a connected app's answer (`web`), a message the person forwarded from someone else (`forward`), or text kept here
  * that came from outside before (`stored`). Unattended, such a run reaches no other host without a
  * card, and changes nothing without one unless the work goes back to the person's own message and
  * the review passes it on their words; a card from one says what it read.
  */
-export const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email', 'web', 'forward', 'stored'] as const;
+export const OUTSIDE_TRIGGERS = [
+  'watch',
+  'webhook',
+  'email',
+  'whatsapp',
+  'web',
+  'forward',
+  'stored',
+] as const;
 export type OutsideTrigger = (typeof OUTSIDE_TRIGGERS)[number];
 /** The outside trigger a card's `outside` prop names, if it names one. */
 export const outsideTrigger = (value: unknown): OutsideTrigger | undefined =>

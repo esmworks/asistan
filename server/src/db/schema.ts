@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
+  bigserial,
   boolean,
   doublePrecision,
   index,
@@ -16,7 +18,7 @@ import type { BotAccess } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
-const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email', 'web', 'forward', 'stored'] as const;
+const OUTSIDE_TRIGGERS = ['watch', 'webhook', 'email', 'whatsapp', 'web', 'forward', 'stored'] as const;
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const created = () => ts('created_at').notNull().defaultNow();
@@ -473,6 +475,10 @@ export const routines = pgTable('routines', {
   emailTrigger: boolean('email_trigger').notNull().default(false),
   /** Conditions a mail must meet to start it (as the webhook filter, on from, to, subject, text). */
   emailFilter: text('email_filter').notNull().default(''),
+  /** The WhatsApp group (`…@g.us`) whose new messages also start it; null for none. */
+  whatsappGroup: text('whatsapp_group'),
+  /** Also runs when someone writes to the linked WhatsApp account in a chat of their own. */
+  whatsappPeople: boolean('whatsapp_people').notNull().default(false),
 });
 
 export const routineRuns = pgTable(
@@ -996,6 +1002,80 @@ export const channelRequests = pgTable(
 export const whatsappKeys = pgTable('whatsapp_keys', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
+});
+
+/**
+ * A WhatsApp chat a routine reads: a person who wrote to the linked account, or a followed group.
+ * `batchedSeq` is the last stored message already handed to the routines, so a restart neither
+ * loses nor repeats a batch; `threads` keeps each routine's own conversation for this chat, so one
+ * customer's exchange never becomes the context of another's.
+ */
+export const whatsappChats = pgTable('whatsapp_chats', {
+  jid: text('jid').primaryKey(),
+  kind: text('kind', { enum: ['person', 'group'] }).notNull(),
+  name: sealedText('name').notNull().default(''),
+  batchedSeq: bigint('batched_seq', { mode: 'number' }).notNull().default(0),
+  /**
+   * The end of a batch a busy routine did not take: the next hand-over offers that same batch
+   * again, so the routines that did take it know it by its name and do not run it twice.
+   */
+  heldSeq: bigint('held_seq', { mode: 'number' }),
+  threads: jsonb('threads').$type<Record<string, string>>().notNull().default({}),
+  lastAt: timestamp('last_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Messages of the chats routines read, kept 30 days so a bot answering one sees what was said
+ * before. Codes, passwords and sign-in links are never written here.
+ */
+export const whatsappMessages = pgTable(
+  'whatsapp_messages',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    chat: text('chat')
+      .notNull()
+      .references(() => whatsappChats.jid, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    fromMe: boolean('from_me').notNull().default(false),
+    /** Left out as a code, a password or a sign-in link: only a line saying so is kept. */
+    hidden: boolean('hidden').notNull().default(false),
+    writer: sealedText('writer').notNull().default(''),
+    text: sealedText('text').notNull().default(''),
+    /** A file that came with it, saved under this name in each following bot's folder. */
+    file: jsonb('file').$type<{ name: string; size: number } | { failed: string }>(),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('whatsapp_messages_chat_external_uq').on(t.chat, t.externalId),
+    index('whatsapp_messages_at_idx').on(t.at),
+  ],
+);
+
+/**
+ * What a bot wants to send on WhatsApp (a reply in a chat, or a Status post), waiting for the
+ * person's answer on its card. It is kept here, not in a run's memory, so the card still works
+ * after a restart; nothing is sent until the card is answered "send".
+ */
+export const whatsappDrafts = pgTable('whatsapp_drafts', {
+  id: text('id').primaryKey(),
+  approvalId: text('approval_id').notNull(),
+  botId: text('bot_id')
+    .notNull()
+    .references(() => bots.id, { onDelete: 'cascade' }),
+  threadId: text('thread_id').notNull(),
+  kind: text('kind', { enum: ['message', 'status'] }).notNull(),
+  /** The chat it answers; null for a Status post. */
+  chat: text('chat'),
+  text: sealedText('text').notNull().default(''),
+  /** A file in the bot's own folder that goes along. */
+  file: text('file'),
+  /** The card's option that means "send". */
+  approve: text('approve').notNull(),
+  status: text('status', { enum: ['pending', 'sent', 'dropped', 'failed'] })
+    .notNull()
+    .default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**

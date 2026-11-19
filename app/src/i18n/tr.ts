@@ -317,6 +317,8 @@ export const tr = {
     'Bu çalıştırma bir webhook’un getirdiği, başkasının yazdığı bir metni okuyor: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.watch':
     'Bu çalıştırma izlenen bir sayfadaki ya da bir uygulamadaki, başkasının yazdığı bir değişikliği okuyor: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
+  'approval.outside.whatsapp':
+    'Bu çalıştırma başkalarının yazdığı WhatsApp mesajlarını okuyor: içlerindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.web':
     'Bu çalıştırma başkasının yazdığı bir web sayfasını ya da bir API’nin yanıtını okudu: içindeki hiçbir şey bir adım isteyemez, bu adım için senin sözün gerekiyor.',
   'approval.outside.forward':
@@ -1122,6 +1124,14 @@ export const tr = {
   'routine.emailFilterPlaceholder': 'subject~=fatura\nfrom=banka@ornek.com',
   'routine.emailFilterHint':
     'Her satıra bir koşul; from, to, subject ya da text üzerinde: = eşit, != eşit değil, ~= içerir. Boş: her posta.',
+  'routine.whatsappPeople': 'WhatsApp’ta biri yazınca da',
+  'routine.whatsappPeopleHint':
+    'Her sohbetin yeni mesajları (gruplar ve botlarla sohbetiniz hariç), sohbet birkaç dakika sessiz kalınca sohbetin son mesajlarıyla birlikte ayrı bir çalıştırmaya gelir. Mesajlar 30 gün saklanır (botun bunlarla yaptığı çalıştırmalar ve kartlar konuşmalarda kalır); kodlar, şifreler ve giriş bağlantıları hiç saklanmaz, yalnızca atlandıkları yazılır. Botun hazırladığı cevaplar yalnızca siz onaylayınca gider.',
+  'routine.whatsappGroup': 'WhatsApp grubunda mesaj gelince de',
+  'routine.whatsappGroupNone': 'Grup yok',
+  'routine.whatsappGroupUnknown': 'Şu an listede olmayan bir grup',
+  'routine.whatsappGroupHint':
+    'Gruptaki yeni mesajlar ve dosyalar, grup birkaç dakika sessiz kalınca çalıştırmaya veri olarak gelir. Yalnızca burada seçtiğiniz gruplar okunur; bot gruba hiç yazmaz ve bunlardan yola çıkan her değişiklik için önce size sorar.',
   'routine.webhookFilter': 'Yalnız uyan çağrılar (isteğe bağlı)',
   'routine.webhookFilterPlaceholder': 'action=opened',
   'routine.webhookFilterHint':
@@ -2042,7 +2052,7 @@ export const tr = {
   'whatsapp.howTo.own':
     'WhatsApp\'ta "Kendine mesaj" sohbetine yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
   'whatsapp.risk':
-    'WhatsApp, resmi olmayan bir bağlı cihaz yoluyla (WhatsApp Web gibi) bağlanır. Hesabın kısıtlanma riski küçük de olsa vardır; ayrı bir numara kendi sohbetlerinizi bunun dışında tutar. Gruplar ve başkalarının mesajları hiç okunmaz.',
+    'WhatsApp, resmi olmayan bir bağlı cihaz yoluyla (WhatsApp Web gibi) bağlanır. Hesabın kısıtlanma riski küçük de olsa vardır; ayrı bir numara kendi sohbetlerinizi bunun dışında tutar. Başkalarının sohbetleri ve gruplar yalnızca onları okumaya ayarladığınız bir rutin için okunur; kodlar, şifreler ve giriş bağlantıları hiç okunmaz.',
   'whatsapp.link': 'QR kodunu göster',
   'whatsapp.relink': 'Yeniden bağla',
   'whatsapp.saved': 'WhatsApp ayarları kaydedildi',

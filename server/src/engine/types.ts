@@ -401,11 +401,12 @@ export interface ReviewVerdict {
 
 /**
  * One routine run a small model looks at before the bot starts on it (the routine pre-check): a
- * watched page or app check that changed, or what a webhook call carried.
+ * watched page or app check that changed, what a webhook call carried, a mail, or new messages in a
+ * WhatsApp group.
  */
 export interface GateRequest {
   routine: { name: string; prompt: string };
-  trigger: 'watch' | 'webhook' | 'email';
+  trigger: 'watch' | 'webhook' | 'email' | 'whatsapp';
   /** What changed on the page or in the app's answer, or the webhook body. */
   input: string;
   /** What the routine's previous run reported, when it has one. */

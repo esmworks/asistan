@@ -38,6 +38,7 @@ import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
+import { whatsappRoots, whatsappTools } from './whatsapp';
 import { tableTools } from './tables';
 import { ticketTools } from './tickets';
 import { placeOf, ROOM_NOTES_PER_PLACE, sourceOf, type AppliedChange } from '../services/memory';
@@ -188,6 +189,10 @@ export type ToolName =
   | 'table_delete_rows'
   | 'email_inbox'
   | 'email_read'
+  | 'whatsapp_chats'
+  | 'whatsapp_history'
+  | 'whatsapp_send'
+  | 'whatsapp_status'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -316,6 +321,10 @@ export class ToolFactory {
     outside?: () => OutsideTrigger | null;
     /** Tells the turn a tool showed it outside text. */
     readOutside?: (kind: OutsideTrigger) => Promise<void>;
+    /** Who linked WhatsApp; a turn working for them gets its chats and drafts. */
+    whatsappOwner?: string | null;
+    /** Whether a routine of the bot reads WhatsApp chats. */
+    whatsappReader?: boolean;
   }): AppTool[] {
     const { bot, thread, turn, signal, t, plan } = opts;
     const reads = () => opts.outside?.() ?? null;
@@ -792,6 +801,9 @@ export class ToolFactory {
               model: a.model ?? '',
               emailTrigger: a.on_email,
               emailFilter: a.email_filter ?? '',
+              // A group is chosen by the person in the app, where its list is shown.
+              whatsappGroup: null,
+              whatsappPeople: false,
             },
             person,
           );
@@ -1416,6 +1428,22 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    // Someone's WhatsApp chats are theirs alone: not in a team conversation, nor for a guest.
+    if (opts.whatsappOwner && opts.whatsappOwner === person && !team && !guest) {
+      tools.push(
+        ...whatsappTools({
+          def,
+          services: s,
+          bot,
+          person,
+          roots: whatsappRoots(this.ctx.config.dataDir, bot),
+          cwd: bot.projectDir ?? workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, null).threadDir,
+          drafts: bot.permissionMode !== 'readonly',
+          reader: !!opts.whatsappReader,
+          t,
+        }),
+      );
+    }
     tools.push(...ticketTools({ def, services: s, bot, turn, t, reach: (ref) => reachBot(ref, 'chat') }));
     tools.push(...tableTools({ def, services: s, botId: bot.id, t, hasTables: opts.hasTables ?? true }));
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
