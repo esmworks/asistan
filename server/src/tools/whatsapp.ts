@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
-import type { Bot } from '@yumakbot/shared';
+import type { Bot, WhatsAppGroup } from '@yumakbot/shared';
 import { z } from 'zod';
 import { schema } from '../db';
 import type { AppTool } from '../engine/types';
@@ -188,4 +188,24 @@ export function whatsappTools(opts: {
 /** The folders a bot's files for WhatsApp may come from: its own, and its project's. */
 export function whatsappRoots(dataDir: string, bot: Bot): string[] {
   return [join(resolve(dataDir, 'workspaces'), 'bots', bot.id), ...(bot.projectDir ? [bot.projectDir] : [])];
+}
+
+/**
+ * The group a bot names, by its address or its name: an exact name first (case and accents as
+ * WhatsApp keeps them aside), else the one name that contains it. `many` lists the names when more
+ * than one fits; null when none does.
+ */
+export function pickGroup(
+  groups: WhatsAppGroup[],
+  ref: string,
+): { group: WhatsAppGroup } | { many: string[] } | null {
+  const fold = (x: string) => x.normalize('NFKC').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim();
+  const wanted = fold(ref);
+  if (!wanted) return null;
+  const byId = groups.find((g) => g.id === ref.trim());
+  if (byId) return { group: byId };
+  const exact = groups.filter((g) => fold(g.name) === wanted);
+  const hits = exact.length ? exact : groups.filter((g) => fold(g.name).includes(wanted));
+  if (hits.length === 1) return { group: hits[0]! };
+  return hits.length ? { many: hits.map((g) => g.name) } : null;
 }

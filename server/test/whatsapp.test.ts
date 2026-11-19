@@ -13,6 +13,7 @@ import {
   type WaSocket,
 } from '../src/channels/whatsapp';
 import { schema } from '../src/db';
+import { pickGroup } from '../src/tools/whatsapp';
 import { whatsappMessages } from '../src/channels/format';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -818,6 +819,44 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect((await wa_.chats(10, ofAsistan)).map((c) => c.jid)).toEqual([`${CUSTOMER}@s.whatsapp.net`]);
   });
 
+  it('sohbetten bir grubu takibe alır; tam erişimde de önce kart sorar, "Hayır" bir şey değiştirmez', async () => {
+    const { wa } = await setUp();
+    wa.groups[GROUP] = { id: GROUP, subject: '3E Soğutma - Finans' };
+    const finans = await t.bot({ name: 'Finans', permissionMode: 'auto' });
+    const r = await routine(finans.id, {});
+    const thread = (await t.api<Thread>('GET', `/api/bots/${finans.id}/main-thread`)).body;
+    const follow = (group: string) => `[araç:whatsapp_follow {"routine":"Gelenler","group":"${group}"}]`;
+    const card = () =>
+      waitFor(async () =>
+        (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+          (a) => a.toolName === 'ask_user',
+        ),
+      );
+    await t.send(thread.id, follow('finans'));
+    const first = await card();
+    expect(first.summary).toContain('Gelenler');
+    expect(JSON.stringify(first.input)).toContain('3E Soğutma - Finans');
+    await t.api('POST', `/api/approvals/${first.id}`, { decision: 'allow', answer: 'Hayır' });
+    await t.services.turns.idle();
+    expect((await t.services.routines.get(r.id)).whatsappGroup).toBeNull();
+
+    await t.send(thread.id, follow('finans'));
+    const second = await card();
+    await t.api('POST', `/api/approvals/${second.id}`, { decision: 'allow', answer: 'Evet, okusun' });
+    await t.services.turns.idle();
+    expect((await t.services.routines.get(r.id)).whatsappGroup).toBe(GROUP);
+    await waitFor(async () => reads().followed.has(GROUP));
+    expect((await t.messages(thread.id)).map((m) => m.text).join('\n')).toContain(
+      '“3E Soğutma - Finans” grubu',
+    );
+
+    // Stopping needs no card.
+    await t.send(thread.id, follow(''));
+    await t.services.turns.idle();
+    expect((await t.services.routines.get(r.id)).whatsappGroup).toBeNull();
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toEqual([]);
+  });
+
   it('WhatsApp başkası tarafından bağlanınca öncekinin rutinleri onu okumaz', async () => {
     const { asistan } = await setUp();
     await routine(asistan.id, { whatsappPeople: true });
@@ -915,5 +954,21 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     });
     expect(r.status).toBe(403);
     expect((await other.api('GET', '/api/whatsapp/groups')).status).toBe(403);
+  });
+});
+
+describe('WhatsApp grubunu adla seçme', () => {
+  it('grup adla bulunur: önce tam ad, yoksa adında geçen tek grup', () => {
+    const groups = [
+      { id: '1@g.us', name: '3E Soğutma - Finans' },
+      { id: '2@g.us', name: 'Finans' },
+      { id: '3@g.us', name: '3E Soğutma - Üretim' },
+    ];
+    expect(pickGroup(groups, 'finans')).toEqual({ group: groups[1] });
+    expect(pickGroup(groups, '3e soğutma - FİNANS')).toEqual({ group: groups[0] });
+    expect(pickGroup(groups, 'üretim')).toEqual({ group: groups[2] });
+    expect(pickGroup(groups, '3E Soğutma')).toEqual({ many: ['3E Soğutma - Finans', '3E Soğutma - Üretim'] });
+    expect(pickGroup(groups, '2@g.us')).toEqual({ group: groups[1] });
+    expect(pickGroup(groups, 'muhasebe')).toBeNull();
   });
 });

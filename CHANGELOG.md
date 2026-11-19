@@ -23,7 +23,8 @@ version is 0.x, a minor release may change the data format or the API; the serve
   context, each chat in a conversation of its own. Messages are kept encrypted for 30 days; codes, passwords and
   sign-in links are never kept, only a line saying one was left out. A bot drafts a reply or a WhatsApp Status post
   on a card, and nothing is sent until the person approves it. Groups are only read, and only the person who linked
-  WhatsApp can have a routine read it.
+  WhatsApp can have a routine read it. A bot can also set a routine to follow a group by its name or read people's
+  chats when asked in a conversation; it asks the person on a card first, at every level.
 
 ### Fixed
 

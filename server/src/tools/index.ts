@@ -21,6 +21,7 @@ import {
   type OutsideTrigger,
   type Routine,
   type Skill,
+  type WhatsAppGroup,
 } from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -38,7 +39,7 @@ import { pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
-import { whatsappRoots, whatsappTools } from './whatsapp';
+import { pickGroup, whatsappRoots, whatsappTools } from './whatsapp';
 import { tableTools } from './tables';
 import { ticketTools } from './tickets';
 import { placeOf, ROOM_NOTES_PER_PLACE, sourceOf, type AppliedChange } from '../services/memory';
@@ -193,6 +194,7 @@ export type ToolName =
   | 'whatsapp_history'
   | 'whatsapp_send'
   | 'whatsapp_status'
+  | 'whatsapp_follow'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -801,7 +803,7 @@ export class ToolFactory {
               model: a.model ?? '',
               emailTrigger: a.on_email,
               emailFilter: a.email_filter ?? '',
-              // A group is chosen by the person in the app, where its list is shown.
+              // WhatsApp is turned on with whatsapp_follow, which asks the person on its own card.
               whatsappGroup: null,
               whatsappPeople: false,
             },
@@ -1442,6 +1444,84 @@ export class ToolFactory {
           reader: !!opts.whatsappReader,
           t,
         }),
+        def(
+          'whatsapp_follow',
+          {
+            routine: z.string().min(1).max(200),
+            bot: z.string().min(1).max(200).optional(),
+            /** A group's name or address; an empty string stops following one. */
+            group: z.string().max(200).optional(),
+            people: z.boolean().optional(),
+          },
+          async (a) => {
+            if (!(await mayChange())) return t('tool.changeNotAllowed');
+            const found = await pickRoutine(a.routine, a.bot);
+            if (typeof found === 'string') return found;
+            const r = found.routine;
+            let group: WhatsAppGroup | null | undefined;
+            if (a.group?.trim()) {
+              const groups = await s.whatsapp.groups().catch(() => null);
+              if (!groups) return t('tool.whatsappGroupsUnavailable');
+              const picked = pickGroup(groups, a.group);
+              if (!picked) {
+                const names = groups.map((g) => g.name).join(', ') || '-';
+                return t('tool.whatsappGroupNotFound', { group: a.group, names });
+              }
+              if ('many' in picked)
+                return t('tool.whatsappGroupAmbiguous', { group: a.group, names: picked.many.join(', ') });
+              group = picked.group;
+            } else if (a.group !== undefined) {
+              group = null;
+            }
+            const patch: z.infer<typeof RoutineUpdate> = {
+              ...(group !== undefined &&
+                group?.id !== r.whatsappGroup && { whatsappGroup: group?.id ?? null }),
+              ...(a.people !== undefined && a.people !== !!r.whatsappPeople && { whatsappPeople: a.people }),
+            };
+            if (!Object.keys(patch).length) return t('tool.routineNoChange');
+            // Reading someone's chats starts only on the person's own word, whatever the bot's level.
+            if (patch.whatsappGroup || patch.whatsappPeople) {
+              const yes = t('tool.whatsappFollowYes');
+              const owner = r.botId === bot.id ? bot : await s.bots.get(r.botId);
+              const c = await askPerson(s, {
+                bot,
+                thread,
+                turn,
+                signal,
+                timeoutMs: unattended,
+                title: t('tool.whatsappFollowTitle', { bot: owner.name, routine: r.name }),
+                items: [
+                  {
+                    question: [
+                      ...(patch.whatsappGroup ? [t('tool.whatsappFollowGroup', { group: group!.name })] : []),
+                      ...(patch.whatsappPeople ? [t('tool.whatsappFollowPeople')] : []),
+                    ].join(' '),
+                    context: t('tool.whatsappFollowKeep'),
+                    options: [yes, t('tool.whatsappFollowNo')],
+                  },
+                ],
+              });
+              if (c.timedOut) return t('tool.questionTimedOut');
+              if (c.status !== 'allowed' || c.answers[0] !== yes) return t('tool.whatsappFollowSkipped');
+            }
+            const updated = await s.routines.update(r.id, patch, person);
+            const groupName = updated.whatsappGroup
+              ? ((group?.id === updated.whatsappGroup ? group.name : null) ??
+                (await s.whatsapp.groups().catch(() => [])).find((g) => g.id === updated.whatsappGroup)
+                  ?.name ??
+                updated.whatsappGroup)
+              : null;
+            const what = [
+              ...(groupName ? [t('tool.whatsappFollowWhatGroup', { group: groupName })] : []),
+              ...(updated.whatsappPeople ? [t('tool.whatsappFollowWhatPeople')] : []),
+            ];
+            return what.length
+              ? t('tool.whatsappFollowed', { routine: updated.name, what: what.join(', ') })
+              : t('tool.whatsappFollowNone', { routine: updated.name });
+          },
+          // It asks the person on its own card before reading starts, at every level.
+          'internal',
+        ),
       );
     }
     tools.push(...ticketTools({ def, services: s, bot, turn, t, reach: (ref) => reachBot(ref, 'chat') }));

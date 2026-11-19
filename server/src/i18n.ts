@@ -1298,6 +1298,25 @@ const tr = {
   'tool.whatsapp_status':
     'WhatsApp Durum paylaşımı taslağı hazırlar (yazı ve isteğe bağlı görsel); yalnızca kişi kartta "Paylaş" derse paylaşılır.',
   'tool.whatsappNotYours': 'WhatsApp’ı bu kişi bağlamadı; sohbetlerine erişilemez.',
+  'tool.whatsapp_follow':
+    'Botun bir rutinine WhatsApp okutur ya da okumayı bırakır: bağlı hesabın bir grubunu adıyla takip etmek (group; boş bırakılırsa takip biter) ve hesaba yazan kişilerin sohbetlerini okumak (people). Okumayı açmadan önce kişiye her seviyede bir kart sorulur. Gruplar yalnızca okunur.',
+  'tool.whatsappFollowTitle': '{bot} · “{routine}” rutini WhatsApp’ı okusun mu?',
+  'tool.whatsappFollowGroup':
+    '“{group}” grubunun yeni mesajları ve dosyaları, grup birkaç dakika sessiz kalınca bu rutine gelir. Bot gruba hiçbir şey yazmaz.',
+  'tool.whatsappFollowPeople':
+    'WhatsApp’tan size yazan kişilerin mesajları (gruplar hariç) bu rutine gelir. Botun hazırladığı cevaplar yalnızca siz onaylayınca gider.',
+  'tool.whatsappFollowKeep':
+    'Mesajlar 30 gün şifreli saklanır; kodlar, şifreler ve giriş bağlantıları hiç saklanmaz.',
+  'tool.whatsappFollowYes': 'Evet, okusun',
+  'tool.whatsappFollowNo': 'Hayır',
+  'tool.whatsappFollowSkipped': 'Kişi onaylamadı; rutin değişmedi.',
+  'tool.whatsappFollowed': '“{routine}” rutini artık WhatsApp’ta şunları okuyor: {what}.',
+  'tool.whatsappFollowNone': '“{routine}” rutini artık WhatsApp okumuyor.',
+  'tool.whatsappFollowWhatGroup': '“{group}” grubu',
+  'tool.whatsappFollowWhatPeople': 'size yazan kişiler',
+  'tool.whatsappGroupNotFound': '“{group}” adında bir WhatsApp grubu yok. Hesabın grupları: {names}',
+  'tool.whatsappGroupAmbiguous': '“{group}” birden fazla gruba uyuyor: {names}. Grubun tam adını yazın.',
+  'tool.whatsappGroupsUnavailable': 'WhatsApp bağlı değil; gruplar şu an okunamıyor.',
   'tool.whatsappNoChats': 'Saklanan WhatsApp sohbeti yok.',
   'tool.whatsappUnknownChat':
     'Bu WhatsApp sohbeti burada saklanmıyor: {chat}. Yalnızca son 30 günde yazan kişilere ve takip edilen gruplara cevap verilebilir.',
@@ -2672,6 +2691,26 @@ const en: Catalog<ServerKey> = {
   'tool.whatsapp_status':
     'Drafts a WhatsApp Status post (text and an optional picture); it is posted only if the person answers "Post" on its card.',
   'tool.whatsappNotYours': 'This person did not link WhatsApp; its chats are not theirs to read.',
+  'tool.whatsapp_follow':
+    'Has one of the bot’s routines read WhatsApp, or stop reading it: follow a group of the linked account by its name (group; empty stops following) and read the chats of people who write to the account (people). Before reading starts, the person is asked on a card at every level. Groups are only read.',
+  'tool.whatsappFollowTitle': '{bot} · should the routine “{routine}” read WhatsApp?',
+  'tool.whatsappFollowGroup':
+    'New messages and files in the group “{group}” come to this routine a couple of minutes after the group goes quiet. The bot never writes to the group.',
+  'tool.whatsappFollowPeople':
+    'Messages from people who write to you on WhatsApp (not groups) come to this routine. Replies the bot drafts go only after you approve them.',
+  'tool.whatsappFollowKeep':
+    'Messages are kept encrypted for 30 days; codes, passwords and sign-in links are never kept.',
+  'tool.whatsappFollowYes': 'Yes, read it',
+  'tool.whatsappFollowNo': 'No',
+  'tool.whatsappFollowSkipped': 'The person did not approve; the routine is unchanged.',
+  'tool.whatsappFollowed': 'The routine “{routine}” now reads on WhatsApp: {what}.',
+  'tool.whatsappFollowNone': 'The routine “{routine}” no longer reads WhatsApp.',
+  'tool.whatsappFollowWhatGroup': 'the group “{group}”',
+  'tool.whatsappFollowWhatPeople': 'people who write to you',
+  'tool.whatsappGroupNotFound': 'There is no WhatsApp group named “{group}”. The account’s groups: {names}',
+  'tool.whatsappGroupAmbiguous':
+    '“{group}” matches more than one group: {names}. Write the group’s full name.',
+  'tool.whatsappGroupsUnavailable': 'WhatsApp is not connected; its groups cannot be read now.',
   'tool.whatsappNoChats': 'No WhatsApp chats are kept.',
   'tool.whatsappUnknownChat':
     'This WhatsApp chat is not kept here: {chat}. Only people who wrote in the last 30 days and followed groups can be answered.',
