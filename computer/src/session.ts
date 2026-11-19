@@ -26,6 +26,13 @@ const chromiumArgs = [
   '--no-default-browser-check',
   '--disable-session-crashed-bubble',
   '--start-maximized',
+  // The DevTools pipe makes Chromium report navigator.webdriver = true, which bot guards (Akamai
+  // and the like) read as a program driving the browser and answer by cutting the site's requests.
+  '--disable-blink-features=AutomationControlled',
+  // Chromium sends the experimental TLS Trust Anchor IDs extension (0xca34), which Chrome itself
+  // does not; the extra extension makes the handshake unlike any Chrome a site knows, and the same
+  // bot guards refuse it.
+  '--disable-features=TLSTrustAnchorIDs',
   // The controller's proxy: the way out through the person's own computer when it is connected.
   // WebRTC would otherwise send UDP around it and show sites this machine's address.
   ...(process.env.YUMAKBOT_PROXY

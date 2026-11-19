@@ -3,6 +3,14 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Fixed
+
+- The bots' desktop browser no longer shows bot guards such as Akamai two marks of a program: started with the
+  DevTools pipe, Chromium reported `navigator.webdriver` as true and sent an experimental TLS extension Chrome does
+  not, and these sites cut the page's requests after the first one.
+
 ## 0.6.0 — 2026-11-19
 
 ### Added
