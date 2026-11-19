@@ -17,6 +17,9 @@ interface Desk {
   git?: string | null;
   /** The key handover in progress: one at a time, so two cannot cross. */
   gitSync?: Promise<void>;
+  /** Whether the session's browser leaves through the service's own SOCKS, which refuses private
+   * addresses itself; false while the desktop is off. */
+  browserProxied: boolean;
 }
 
 export interface ComputerOptions {
@@ -58,6 +61,14 @@ export class ComputerService {
   /** Whether a person has control of this bot's desktop right now. */
   userHasControl(botId: string): boolean {
     return !!this.desks.get(botId)?.user;
+  }
+
+  /**
+   * Whether the session's browser leaves through the service's own SOCKS, which refuses private
+   * addresses itself. The browser needs no second, per-request guard of its own then.
+   */
+  browserProxied(botId: string): boolean {
+    return !!this.desks.get(botId)?.browserProxied;
   }
 
   /** Whether this socket's person is the one in control. */
@@ -114,6 +125,7 @@ export class ComputerService {
             throw new ComputerError('failed', `desktop did not start${why}`);
           }
           d.status = 'running';
+          d.browserProxied = s.browserProxied;
           // Also for a desktop a person woke or the bot's browser started: git may run there first.
           await this.syncGit(botId, d).catch(() => undefined);
         } catch (err) {
@@ -200,6 +212,7 @@ export class ComputerService {
       const d = this.desk(s.id);
       if (d.status === 'running' || d.starting) continue;
       d.status = 'running';
+      d.browserProxied = s.browserProxied;
       d.lastUsed = Date.now();
       this.emit(s.id);
     }
@@ -280,7 +293,7 @@ export class ComputerService {
   private desk(botId: string): Desk {
     let d = this.desks.get(botId);
     if (!d) {
-      d = { status: 'off', user: null, busy: 0, lastUsed: Date.now(), starting: null };
+      d = { status: 'off', user: null, busy: 0, lastUsed: Date.now(), starting: null, browserProxied: false };
       this.desks.set(botId, d);
     }
     return d;

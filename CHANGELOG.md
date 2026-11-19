@@ -73,6 +73,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Changed
 
+- A desktop's browser that leaves through the service's own SOCKS skips the per-request
+  private-network guard: the SOCKS refuses private addresses itself, and the guard only cost that
+  browser its HTTP cache and its service workers. A browser without that SOCKS keeps the guard —
+  without it nothing would keep the pages it opens away from the server's private network.
 - A bot check that stays now gets its own wait, one click on a Turnstile checkbox, and one more
   wait before the page goes to a person. The single click is the one gesture a person makes at a
   Turnstile and the check stays the one that decides; a second click, a reload or a puzzle is the

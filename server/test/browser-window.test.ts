@@ -94,7 +94,10 @@ describe('botun tarayıcısı ayrı pencerede', () => {
     await expect(
       managerWith({ windows: false, spawn: program.spawn }).openWindow('b1'),
     ).rejects.toMatchObject({ code: 'unavailable' });
-    const remote = managerWith({ spawn: program.spawn, connect: async () => 'ws://masaustu' });
+    const remote = managerWith({
+      spawn: program.spawn,
+      connect: async () => ({ url: 'ws://masaustu', proxied: false }),
+    });
     expect(remote.windowAvailable).toBe(false);
     await expect(remote.openWindow('b1')).rejects.toMatchObject({ code: 'unavailable' });
     await expect(

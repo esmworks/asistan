@@ -40,6 +40,12 @@ export const DesktopStatus = z.object({
   startedAt: z.string().nullable(),
   /** Why the last start of this desktop failed, while it is off; the bot and the person are told. */
   lastError: z.string().nullable().optional(),
+  /**
+   * Whether the session's browser leaves through the service's own SOCKS, which refuses private
+   * addresses itself. The server then skips its own per-request guard — that guard would only cost
+   * the browser its HTTP cache and its service workers — and keeps the guard when it does not.
+   */
+  browserProxied: z.boolean(),
 });
 export type DesktopStatus = z.infer<typeof DesktopStatus>;
 

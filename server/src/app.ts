@@ -178,7 +178,10 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     ...(computer && {
       connect: async (botId: string) => {
         await computer.ensure(botId);
-        return computer.client.socketUrl(botId, 'cdp');
+        return {
+          url: computer.client.socketUrl(botId, 'cdp'),
+          proxied: computer.browserProxied(botId),
+        };
       },
       blocked: (botId: string) => computer.userHasControl(botId),
       hold: (botId: string) => computer.hold(botId),

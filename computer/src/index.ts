@@ -80,6 +80,12 @@ interface Session {
   relayKey: string;
   /** The GitHub key the server gave for this bot; held here only, never in the session. */
   gitToken: string | null;
+  /**
+   * Whether the session's browser leaves through the service's own SOCKS, which refuses private
+   * addresses itself. The server skips its own per-request guard on such a browser — the guard
+   * costs it the HTTP cache and its service workers — and keeps the guard when it does not.
+   */
+  browserProxied: boolean;
 }
 
 const sessions = new Map<string, Session>();
@@ -94,6 +100,7 @@ const statusOf = (id: string): DesktopStatus => {
     status: s?.status ?? 'off',
     startedAt: s?.startedAt ?? null,
     lastError: s ? null : (startErrors.get(id) ?? null),
+    browserProxied: s?.browserProxied ?? false,
   };
 };
 
@@ -190,6 +197,7 @@ async function startSession(id: string, start: DesktopStart): Promise<DesktopSta
     cdpOpen: false,
     relayKey,
     gitToken: null,
+    browserProxied: false,
   } as Session;
   sessions.set(id, placeholder);
   try {
@@ -225,7 +233,13 @@ async function startSession(id: string, start: DesktopStart): Promise<DesktopSta
     proc.stderr?.on('data', (c: Buffer) => {
       stderr = (stderr + c.toString('utf8')).slice(-2000);
     });
-    const s: Session = { ...placeholder, status: 'starting', startedAt: new Date().toISOString(), proc };
+    const s: Session = {
+      ...placeholder,
+      status: 'starting',
+      startedAt: new Date().toISOString(),
+      proc,
+      browserProxied: socksReady && start.internet,
+    };
     sessions.set(id, s);
     log(`desktop ${id}: starting on :${display}`);
 

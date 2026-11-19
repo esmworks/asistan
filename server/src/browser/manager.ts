@@ -174,6 +174,9 @@ interface Live {
   botId: string;
   /** Set when connected to a browser that runs elsewhere (the bot's desktop); closing disconnects. */
   remote: Browser | null;
+  /** Set when that browser leaves through the service's own SOCKS, which refuses private addresses
+   * itself; the per-request guard would then only cost the browser its cache and its workers. */
+  proxied: boolean;
   context: BrowserContext;
   page: Page;
   title: string | null;
@@ -262,10 +265,11 @@ export interface BrowserManagerOptions {
   localHosts?: string[];
   headless?: boolean;
   /**
-   * Use the Chromium on the bot's desktop instead of starting one here: returns its DevTools
-   * WebSocket address, starting the desktop if needed.
+   * Use the Chromium on the bot's desktop instead of starting one here: its DevTools WebSocket
+   * address and whether that browser leaves through the service's own SOCKS — that SOCKS refuses
+   * private addresses itself — starting the desktop if needed.
    */
-  connect?: (botId: string) => Promise<string>;
+  connect?: (botId: string) => Promise<{ url: string; proxied: boolean }>;
   /** True while a person has control of the bot's desktop; the bot's browser steps then wait. */
   blocked?: (botId: string) => boolean;
   /** Keeps the bot's desktop awake during a browser step; returns the release. */
@@ -914,10 +918,13 @@ export class BrowserManager {
     await this.makeRoom();
     let context: BrowserContext;
     let remote: Browser | null = null;
+    let proxied = false;
     if (this.opts.connect) {
       try {
+        const desktop = await this.opts.connect(botId);
+        proxied = desktop.proxied;
         // Same API and version as playwright-core; only its overloaded types do not match by name.
-        remote = (await desktopChromium.connectOverCDP(await this.opts.connect(botId), {
+        remote = (await desktopChromium.connectOverCDP(desktop.url, {
           timeout: 30_000,
         })) as unknown as Browser;
       } catch (err) {
@@ -925,7 +932,7 @@ export class BrowserManager {
       }
       // The desktop's browser has one default context: its profile, tabs and windows.
       context = remote.contexts()[0] ?? (await remote.newContext());
-      return this.adopt(botId, context, remote);
+      return this.adopt(botId, context, remote, proxied);
     }
     const dir = this.opts.profileDir(botId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -967,7 +974,7 @@ export class BrowserManager {
     } catch (err) {
       throw new BrowserError('launch', (err as Error).message.split('\n')[0]);
     }
-    return this.adopt(botId, context, null);
+    return this.adopt(botId, context, null, false);
   }
 
   /**
@@ -1016,13 +1023,19 @@ export class BrowserManager {
     }
   }
 
-  private async adopt(botId: string, context: BrowserContext, remote: Browser | null): Promise<Live> {
+  private async adopt(
+    botId: string,
+    context: BrowserContext,
+    remote: Browser | null,
+    proxied: boolean,
+  ): Promise<Live> {
     context.setDefaultTimeout(15_000);
     // On a desktop the last tab is the one most likely in front.
     const page = context.pages().at(-1) ?? (await context.newPage());
     const live: Live = {
       botId,
       remote,
+      proxied,
       context,
       page,
       title: null,
@@ -1050,7 +1063,11 @@ export class BrowserManager {
       speed: new WeakMap(),
       logs: new WeakMap(),
     };
-    await this.guardNetwork(live, context);
+    // A desktop's browser that leaves through the service's own SOCKS skips the per-request guard:
+    // the SOCKS refuses private addresses itself, and the guard would only cost that browser its
+    // HTTP cache and its service workers. A browser without that SOCKS keeps the guard — without
+    // it nothing would keep the pages it opens away from the server's private network.
+    if (!live.proxied) await this.guardNetwork(live, context);
     // The wall leaves a binding on every page's window, one more mark of a program for bot guards.
     // A desktop shows the passkey window on its own screen, where the bot or the person closes it.
     if (!remote) await this.wallPasskeys(live, context);
