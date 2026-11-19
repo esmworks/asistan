@@ -128,13 +128,18 @@ class FakeComputer {
     if (req.url === '/desktops') {
       return send(
         200,
-        [...this.status].map(([id, status]) => ({ id, status, startedAt: null })),
+        [...this.status].map(([id, status]) => ({ id, status, startedAt: null, browserProxied: false })),
       );
     }
     const m = /^\/desktops\/([\w-]+)(?:\/([\w-]+))?$/.exec(req.url ?? '');
     if (!m) return send(404, { error: 'not found', code: 'badRequest' });
     const [, id, op] = m as unknown as [string, string, string | undefined];
-    const state = () => ({ id, status: this.status.get(id) ?? 'off', startedAt: null });
+    const state = () => ({
+      id,
+      status: this.status.get(id) ?? 'off',
+      startedAt: null,
+      browserProxied: false,
+    });
     if (!op) return send(200, state());
     if (op === 'start') {
       this.starts.push({ id, body: body as unknown as DesktopStart });
