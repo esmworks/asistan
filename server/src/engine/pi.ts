@@ -34,6 +34,7 @@ import {
   type Fold,
 } from './pi-context';
 import { fileTools, PathError, type FileTool } from './pi-files';
+import { parseVerdict, reviewPrompt } from './review';
 import {
   providerTrouble,
   replyOf,
@@ -47,6 +48,8 @@ import {
   type Engine,
   type ModelStep,
   type ModelTest,
+  type ReviewRequest,
+  type ReviewVerdict,
   type ToolResult,
   type TurnOutcome,
   type TurnRequest,
@@ -425,6 +428,32 @@ export class PiEngine implements Engine {
       throw new Error(reply.errorMessage || t('engine.testFailed'));
     }
     return { text: textOf(reply), costUsd: reply.usage?.cost?.total ?? null };
+  }
+
+  /**
+   * The `review` mode for a bot run on API keys: its own model, without tools, looks at one
+   * permission request. Without it such a bot's reviewer would be Claude, which a server holding
+   * only API keys cannot reach, and every step would open a card. A failure is "ask".
+   */
+  async review(req: ReviewRequest): Promise<ReviewVerdict> {
+    const ask: ReviewVerdict = { decision: 'ask', reason: '', quote: '' };
+    if (!req.model) return ask;
+    const { system, user } = reviewPrompt(req);
+    let text: string;
+    try {
+      ({ text } = await this.complete({
+        model: req.model,
+        system,
+        user,
+        signal: req.signal,
+        locale: req.locale,
+      }));
+    } catch (err) {
+      // A reviewer that cannot answer hands every request to the person; say so in the log.
+      if (!req.signal.aborted) console.warn(`Review failed, asking instead: ${(err as Error).message}`);
+      return ask;
+    }
+    return req.signal.aborted ? ask : parseVerdict(text);
   }
 
   async run(req: TurnRequest): Promise<TurnOutcome> {

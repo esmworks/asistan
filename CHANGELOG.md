@@ -3,6 +3,13 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Fixed
+
+- A bot run on API keys at the "review" level has its steps reviewed by its own model. The reviewer used to be Claude
+  alone, so on a server with only API keys and no Claude sign-in every reviewed step opened a card.
+
 ## 0.5.0 — 2026-11-19
 
 ### People

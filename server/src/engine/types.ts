@@ -365,6 +365,11 @@ export interface ReviewRequest {
   input: Record<string, unknown>;
   bot: { name: string; description: string };
   /**
+   * The bot's own model. An engine run on API keys reviews with it, since a key may reach only
+   * the model the person chose; Claude picks its cheapest model instead.
+   */
+  model?: string;
+  /**
    * The person's own words that could cover the action: their latest messages, or the routine's
    * saved instructions (see `ownerWords`). Never a payload, a page or another bot's message.
    */

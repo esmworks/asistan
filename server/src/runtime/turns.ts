@@ -1592,7 +1592,8 @@ export class TurnManager {
     signal: AbortSignal;
   }): Promise<{ allowed: boolean; reason: string }> {
     const no = { allowed: false, reason: '' };
-    const engine = this.reviewer?.();
+    // A bot on API keys reviews with its own model: Claude may not be signed in where only keys are.
+    const engine = o.bot.engine === 'pi' ? this.engineFor(o.bot) : this.reviewer?.();
     if (!engine?.review) return no;
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
@@ -1608,6 +1609,7 @@ export class TurnManager {
         toolName: o.ask.toolName,
         input: o.ask.input,
         bot: { name: o.bot.name, description: o.bot.description },
+        model: o.bot.model,
         words,
         answers,
         ...(proposal ? { proposal } : {}),
