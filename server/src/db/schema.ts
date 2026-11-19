@@ -188,8 +188,41 @@ export const rooms = pgTable('rooms', {
   roundSpoke: boolean('round_spoke').notNull().default(false),
   /** Turns bots may still start for one another (mentions and rounds) in this exchange. */
   botTurnsLeft: integer('bot_turns_left').notNull().default(0),
+  /** Whether a talk after a pause is asked about, always kept as a meeting, or never. */
+  minutes: text('minutes', { enum: ['ask', 'always', 'never'] })
+    .notNull()
+    .default('ask'),
   createdAt: created(),
 });
+
+/**
+ * A meeting held in a room. Its lines are the room's messages from `fromAt` to `toAt`; the times
+ * are compared in the database, which keeps the microseconds a Date loses. Once its minutes are
+ * approved, the bots chosen get a note of what concerns them.
+ */
+export const meetings = pgTable(
+  'meetings',
+  {
+    id: text('id').primaryKey(),
+    roomId: text('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    status: text('status', {
+      enum: ['asked', 'active', 'writing', 'draft', 'saved', 'declined', 'failed'],
+    }).notNull(),
+    fromAt: ts('from_at').notNull(),
+    /** Where its lines end; null while it goes on. */
+    toAt: ts('to_at'),
+    /** The minutes as written, then as the person approved them. */
+    minutes: sealedJson('minutes'),
+    error: text('error'),
+    /** The bots that were told, and whether each note waits for the bot's owner. */
+    sentTo: jsonb('sent_to').$type<{ botId: string; waiting: boolean }[]>().notNull().default([]),
+    createdAt: created(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('meetings_room_idx').on(t.roomId, t.createdAt)],
+);
 
 export const roomMembers = pgTable(
   'room_members',

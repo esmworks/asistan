@@ -13,6 +13,8 @@ export const useManagesServer = () => {
 export const usePeople = () => useQuery({ queryKey: ['people'], queryFn: api.people });
 export const useGroups = () => useQuery({ queryKey: ['groups'], queryFn: api.groups });
 export const useRooms = () => useQuery({ queryKey: ['rooms'], queryFn: api.rooms });
+export const useMeetings = (roomId: string) =>
+  useQuery({ queryKey: ['meetings', roomId], queryFn: () => api.meetings(roomId) });
 export const useSummaries = () => useQuery({ queryKey: ['summaries'], queryFn: api.summaries });
 export const useInfo = () => useQuery({ queryKey: ['info'], queryFn: api.info });
 export const useSettings = () => useQuery({ queryKey: ['settings'], queryFn: api.settings });

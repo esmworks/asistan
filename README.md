@@ -49,6 +49,8 @@ The interface is available in English and Turkish.
   connections and vault entries are theirs alone, admins included, and a bot works with what belongs to the person it
   works for. A note on a bot's own memory asked for by someone who may only talk with it waits for the bot's owner.
 - **Approvals** — bots ask before using tools you have not allowed; you can remember a decision per bot.
+- **Meeting minutes** — a room asks whether a talk is a meeting, writes its minutes when it ends, and once you approve
+  them each bot you pick keeps the decisions and its own tasks in memory.
 - **Memory and routines** — bots keep notes across chats (or work without memory) and look through their past
   conversations. Routines run on a schedule (including cron and day/hour windows), when the server starts, from a
   filtered webhook, or only when a watched page or a connected app's answer changes; they can build on their last report and run in the main
