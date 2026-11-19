@@ -224,8 +224,8 @@ bots' folders, into one password-sealed file that restores on another server.
 every screen of the web app's phone layout natively: the bot list with groups, rooms and the cards that wait,
 conversations with live replies, attachments, approval and question cards, the side panel with the bot's files and
 browser, rooms, Today, search, the bot and routine editors, apps, every settings section and the first-run setup.
-Notifications, the live screen of the bot's own desktop and picking an avatar image are still only in the web app. Run
-it in the iOS Simulator or on a phone with Expo Go:
+The live screen of the bot's own desktop and picking an avatar image are still only in the web app. Run it in the iOS
+Simulator or on a phone with Expo Go:
 
 ```bash
 pnpm --filter @yumakbot/mobile start
@@ -233,6 +233,11 @@ pnpm --filter @yumakbot/mobile start
 
 `pnpm --filter @yumakbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
 name, icon and network settings.
+
+The iPhone app is notified while it is closed: it hands its device token to the server, which sends each notice straight
+to Apple's push service. That needs an APNs key (`.p8`) from the Apple Developer account the app is signed with, added
+under Settings → Connection on the phone or the web, and an installed build of the app (Expo Go cannot receive them).
+Which notices arrive is chosen under Settings → General on the phone. Android has no notifications yet.
 
 A server on the internet is reached over HTTPS: an address typed without `http://` or `https://` falls back to plain
 http only for this device, the local network (private addresses, `.local`, single-word names) and a Tailscale tailnet,

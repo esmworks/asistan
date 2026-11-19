@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Keyboard, StyleSheet, Text, View } from 'react-native';
 import { Loading, Row, Section } from '@/components/page';
 import { ChoiceRow, Pad, Rows, useSaveSettings } from './common/controls';
+import { NotificationsSection } from './NotificationsSection';
 import { Field } from '@/components/ui';
 import { locale, t } from '@/i18n';
 import { useSettings } from '@/lib/queries';
@@ -157,6 +158,7 @@ export function GeneralSection() {
           onChange={(timezone) => save.mutate({ timezone })}
         />
       </Section>
+      <NotificationsSection />
     </>
   );
 }

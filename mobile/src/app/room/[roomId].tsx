@@ -4,6 +4,7 @@ import { Page, back, Empty, Loading } from '@/components/page';
 import { RoomView } from '@/components/rooms/RoomView';
 import { Button } from '@/components/ui';
 import { t } from '@/i18n';
+import { useViewingThread } from '@/lib/push';
 import { useRooms } from '@/lib/queries';
 
 /** A room, while it exists. */
@@ -12,6 +13,7 @@ export default function Room() {
   const rooms = useRooms();
   const room = rooms.data?.find((r) => r.id === roomId);
   const gone = !!rooms.data && !rooms.isFetching && !room;
+  useViewingThread(room?.id);
 
   // A room deleted here or elsewhere leaves nothing to show.
   useEffect(() => {

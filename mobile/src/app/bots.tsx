@@ -24,6 +24,7 @@ import { ordered } from '@/lib/bots';
 import { nav } from '@/lib/nav';
 import { useBots, useGroups, useRooms, useSummaries } from '@/lib/queries';
 import { syncSeen, useSeen } from '@/lib/seen';
+import { useOpenTappedNotice } from '@/lib/push';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
@@ -44,6 +45,7 @@ export default function Bots() {
   const [refreshing, setRefreshing] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const signedOut = bots.error instanceof ApiError && bots.error.status === 401;
+  useOpenTappedNotice(rooms.data, !rooms.isPending);
 
   useEffect(() => {
     if (signedOut) void queryClient.resetQueries({ queryKey: ['session', origin] });

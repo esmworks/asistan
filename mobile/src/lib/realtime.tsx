@@ -10,6 +10,7 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore, t
 import { io, type Socket } from 'socket.io-client';
 import { locale } from '@/i18n';
 import { apiFor } from './api';
+import { usePush } from './push';
 import { useServer } from './server';
 import { appendStream, dropStream, type Stream, type Streams } from './stream';
 
@@ -136,6 +137,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     enabled: !!origin,
   });
   const signedIn = session.data?.authenticated === true;
+  usePush(origin, signedIn);
 
   useEffect(() => {
     if (!origin || !signedIn) return;

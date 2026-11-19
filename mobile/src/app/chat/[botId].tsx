@@ -12,6 +12,7 @@ import { Button } from '@/components/ui';
 import { t } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { nav } from '@/lib/nav';
+import { useViewingThread } from '@/lib/push';
 import { useBots, useMainThread, useSummaries, useThreads } from '@/lib/queries';
 import { useSeen, markSeen } from '@/lib/seen';
 import { useServer } from '@/lib/server';
@@ -105,6 +106,7 @@ function Loaded({
 }) {
   const c = useColors();
   const actions = useThreadActions(bot);
+  useViewingThread(threadId);
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: c.background }]} edges={['top', 'left', 'right']}>
       <ChatHeader
