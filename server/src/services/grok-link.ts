@@ -1,8 +1,14 @@
-import { grokTemplateId, grokTemplatePage, type GrokTemplateCard } from '@yumakbot/shared';
+import {
+  grokLinkPage,
+  grokTemplatePathId,
+  parseGrokLink,
+  type GrokLink,
+  type GrokTemplateCard,
+} from '@yumakbot/shared';
 import { HttpError } from '../util';
 import { fetchPublicText, type PublicFetchOptions } from './skill-link';
 
-/** The share page is about 70 KB; anything far larger is not that page. */
+/** The share page is about 70 KB and the marketplace page about 100 KB; anything far larger is neither. */
 const PAGE_MAX = 1024 * 1024;
 
 /** A JSON string literal, quotes included. */
@@ -62,7 +68,8 @@ function field(card: Record<string, unknown>, name: string, max: number): string
  * layout changed gives empty fields rather than an error, since the card only names the bot.
  */
 export function parseGrokTemplatePage(html: string, id: string): GrokTemplateCard {
-  const empty: GrokTemplateCard = { id, name: null, sharer: null, description: null };
+  const link: GrokLink = { kind: 'template', id };
+  const empty: GrokTemplateCard = { link, name: null, sharer: null, description: null };
   const text = streamedText(html);
   // The template is the object whose first key is its id; only its own fields are read, so a
   // field it lacks is never taken from another object further on.
@@ -70,7 +77,7 @@ export function parseGrokTemplatePage(html: string, id: string): GrokTemplateCar
   const card = at < 0 ? null : objectAt(text, at);
   if (!card) return empty;
   return {
-    id,
+    link,
     name: field(card, 'botName', 60),
     sharer: field(card, 'sharerName', 60),
     description: field(card, 'description', 500),
@@ -78,25 +85,52 @@ export function parseGrokTemplatePage(html: string, id: string): GrokTemplateCar
 }
 
 /**
- * The card for a Grok Bot share link. Only the page built from the link's id is read, never the
- * address as pasted; when it cannot be reached, the card carries the link alone.
+ * The card for marketplace bot `slug` from its page's HTML. The page names the template its add
+ * button opens; when that cannot be found, the card keeps the marketplace page, which has the
+ * same button.
+ */
+export function parseGrokMarketplacePage(html: string, slug: string): GrokTemplateCard {
+  const fallback: GrokLink = { kind: 'marketplace', slug };
+  const text = streamedText(html);
+  const key = `"template":`;
+  const at = text.indexOf(`${key}{"id":${JSON.stringify(slug)}`);
+  const card = at < 0 ? null : objectAt(text, at + key.length);
+  if (!card) return { link: fallback, name: null, sharer: null, description: null };
+  // The add button's address comes from the page, so only a share page path is taken from it.
+  const id = typeof card.addHref === 'string' ? grokTemplatePathId(card.addHref) : null;
+  return {
+    link: id ? { kind: 'template', id } : fallback,
+    name: field(card, 'name', 60),
+    sharer: field(card, 'creatorName', 60),
+    description: field(card, 'description', 500),
+  };
+}
+
+/**
+ * The card for a Grok Bot share or marketplace link. Only the page built from the link's id or
+ * name is read, never the address as pasted; when it cannot be reached, the card carries the
+ * link alone.
  */
 export async function readGrokLink(
   input: string,
   o: Pick<PublicFetchOptions, 'resolve'> = {},
 ): Promise<GrokTemplateCard> {
-  const id = grokTemplateId(input);
-  if (!id) throw new HttpError(400, 'error.grokLinkInvalid');
+  const link = parseGrokLink(input);
+  if (!link) throw new HttpError(400, 'error.grokLinkInvalid');
+  const parse = (html: string) =>
+    link.kind === 'template'
+      ? parseGrokTemplatePage(html, link.id)
+      : parseGrokMarketplacePage(html, link.slug);
   try {
-    const html = await fetchPublicText(new URL(grokTemplatePage(id)), PAGE_MAX, {
+    const html = await fetchPublicText(new URL(grokLinkPage(link)), PAGE_MAX, {
       ...o,
       timeoutMs: 10_000,
       // The site answers a browser; a bare client may be turned away.
       userAgent: 'Mozilla/5.0',
       accept: 'text/html',
     });
-    return parseGrokTemplatePage(html, id);
+    return parse(html);
   } catch {
-    return parseGrokTemplatePage('', id);
+    return parse('');
   }
 }

@@ -1,4 +1,4 @@
-import { describeSchedule, grokTemplateId, grokTemplatePage, type BotImportPlan } from '@yumakbot/shared';
+import { describeSchedule, grokLinkPage, parseGrokLink, type BotImportPlan } from '@yumakbot/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArchiveRestore, Copy, Download, ExternalLink, FileUp, Link2, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -256,9 +256,10 @@ export function ImportTab() {
 }
 
 /**
- * A Grok Bot share link. Its page shows only the bot's name, who shared it and what it does; the
- * instructions, memory, skills and routines reach the Grok Bot app alone. So the bot is added
- * there first, then Grok Bot writes the import file for that one bot, which is loaded below.
+ * A Grok Bot share or marketplace link. Its page shows the bot's name, who shared it and what it
+ * does; the bot as a whole, with its instructions, memory, skills and routines, reaches the Grok
+ * Bot app alone. So the bot is added there first, then Grok Bot writes the import file for that
+ * one bot, which is loaded below.
  */
 function GrokLinkCard({ onCopy }: { onCopy: (scope: string) => void }) {
   const t = useT();
@@ -267,11 +268,11 @@ function GrokLinkCard({ onCopy }: { onCopy: (scope: string) => void }) {
     mutationFn: api.readGrokLink,
     onError: (e) => toast.error((e as Error).message),
   });
-  const valid = grokTemplateId(link) !== null;
+  const valid = parseGrokLink(link) !== null;
   // Only the answer for the link now in the field: one asked for an earlier link, or arriving
   // after the field changed, would name a different bot in the copied instructions.
   const card = read.data && read.variables === link.trim() ? read.data : null;
-  const page = card && grokTemplatePage(card.id);
+  const page = card && grokLinkPage(card.link);
   /**
    * The bot's name as the person's words to Grok Bot carry it. The sharer chose it, so the marks
    * that could close the quotes around it or start a new line are taken out.

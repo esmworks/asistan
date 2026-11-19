@@ -161,32 +161,68 @@ export interface BotImportResult {
 /** The id in a Grok Bot share link: letters, digits, `_` and `-`. */
 const GROK_TEMPLATE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
+/** The name a bot goes by in the Grok Bot marketplace address: letters, digits, `_` and `-`. */
+const GROK_MARKETPLACE_SLUG = /^[A-Za-z0-9_-]{1,100}$/;
+
 /**
- * The template id a Grok Bot share link names, or null. Takes the web page
- * (`https://x.ai/bot/<id>`) and the address the page hands to the app
- * (`grokbot://app/v1/bot-template?id=<id>`); anything else is refused so the server only ever
- * reads the one page it builds from the id.
+ * A Grok Bot link: a shared template, or a bot listed in the marketplace. The marketplace page
+ * names the template it adds, so both lead to the same steps.
  */
-export function grokTemplateId(input: string): string | null {
+export type GrokLink = { kind: 'template'; id: string } | { kind: 'marketplace'; slug: string };
+
+/**
+ * The Grok Bot link `input` names, or null. Takes the share page (`https://x.ai/bot/<id>`), the
+ * address the share page hands to the app (`grokbot://app/v1/bot-template?id=<id>`) and the
+ * marketplace page (`https://x.ai/bot/marketplace/bots/<name>`); anything else is refused so the
+ * server only ever reads a page it builds from the id or name.
+ */
+export function parseGrokLink(input: string): GrokLink | null {
   let url: URL;
   try {
     url = new URL(input.trim());
   } catch {
     return null;
   }
-  let id: string | null = null;
   if (url.protocol === 'https:' && (url.hostname === 'x.ai' || url.hostname === 'www.x.ai')) {
     const parts = url.pathname.split('/').filter(Boolean);
-    if (parts.length === 2 && parts[0] === 'bot') id = parts[1]!;
+    if (parts[0] !== 'bot') return null;
+    if (parts.length === 4 && parts[1] === 'marketplace' && parts[2] === 'bots') {
+      return GROK_MARKETPLACE_SLUG.test(parts[3]!) ? { kind: 'marketplace', slug: parts[3]! } : null;
+    }
+    // `/bot/marketplace` is the marketplace's own page, not a template, though its name fits.
+    if (parts.length === 2 && parts[1] !== 'marketplace' && GROK_TEMPLATE_ID.test(parts[1]!)) {
+      return { kind: 'template', id: parts[1]! };
+    }
   } else if (url.protocol === 'grokbot:') {
     // `grokbot://app/v1/bot-template`: the host is `app`, the rest is the path.
-    if (url.hostname === 'app' && url.pathname === '/v1/bot-template') id = url.searchParams.get('id');
+    const id =
+      url.hostname === 'app' && url.pathname === '/v1/bot-template' ? url.searchParams.get('id') : null;
+    if (id && GROK_TEMPLATE_ID.test(id)) return { kind: 'template', id };
   }
-  return id && GROK_TEMPLATE_ID.test(id) ? id : null;
+  return null;
+}
+
+/** The template id a Grok Bot share link names, or null; a marketplace link gives null. */
+export function grokTemplateId(input: string): string | null {
+  const link = parseGrokLink(input);
+  return link?.kind === 'template' ? link.id : null;
+}
+
+/** The template id in a share page's own path (`/bot/<id>`), as the marketplace page links it. */
+export function grokTemplatePathId(path: string): string | null {
+  const m = /^\/bot\/([A-Za-z0-9_-]+)$/.exec(path);
+  return m && m[1] !== 'marketplace' && GROK_TEMPLATE_ID.test(m[1]!) ? m[1]! : null;
 }
 
 /** The public page of a Grok Bot share link, built from its id. */
 export const grokTemplatePage = (id: string) => `https://x.ai/bot/${id}`;
+
+/** The marketplace page of a Grok Bot, built from its name there. */
+export const grokMarketplacePage = (slug: string) => `https://x.ai/bot/marketplace/bots/${slug}`;
+
+/** The page a Grok Bot link opens, where the bot is added to Grok Bot. */
+export const grokLinkPage = (link: GrokLink) =>
+  link.kind === 'template' ? grokTemplatePage(link.id) : grokMarketplacePage(link.slug);
 
 /**
  * What a Grok Bot share page shows to anyone: the bot's name, who shared it, its description and
@@ -194,8 +230,11 @@ export const grokTemplatePage = (id: string) => `https://x.ai/bot/${id}`;
  * import still goes through the file that app writes; this card names the bot to export.
  */
 export interface GrokTemplateCard {
-  /** The template; its share page, to add the bot in Grok Bot from, is `grokTemplatePage(id)`. */
-  id: string;
+  /**
+   * The page to add the bot in Grok Bot from is `grokLinkPage(link)`: the template's share page,
+   * or the marketplace page when it did not name its template.
+   */
+  link: GrokLink;
   /** Null when the page could not be read; the steps still work with the link alone. */
   name: string | null;
   sharer: string | null;
