@@ -560,9 +560,47 @@ export interface DialOptions {
   /** Any address: for a caller whose own network is already walled off from private ones. */
   anyAddress?: boolean;
   timeoutMs?: number;
+  /**
+   * Leave through this proxy instead of from here: sites behind some bot guards refuse a data
+   * centre's address before the page even loads, and let the same browser in from the proxy's.
+   * The address is still checked here, even with `anyAddress` (the proxy's own network is not
+   * known to be walled off), and the proxy is given that address rather than the name. The
+   * operator's `allowHosts` never go through it.
+   */
+  via?: UpstreamProxy;
+  /** The proxy could not be reached, so this connection left from here instead. */
+  onViaDown?: (err: Error) => void;
   /** Tests pass stand-ins. */
   lookup?: (host: string) => Promise<{ address: string }[]>;
   connect?: (address: string, port: number) => Socket;
+}
+
+/** A SOCKS5 proxy, without sign-in, that connections leave through. */
+export interface UpstreamProxy {
+  host: string;
+  port: number;
+}
+
+/**
+ * Reads `socks5://host:port` (`socks5h://` too); undefined when the setting is empty. Anything
+ * else throws, so a mistyped setting stops the start instead of quietly leaving from here.
+ */
+export function upstreamProxy(url: string | undefined): UpstreamProxy | undefined {
+  const text = url?.trim();
+  if (!text) return undefined;
+  const bad = () => new Error(`not a SOCKS5 proxy address (socks5://host:port): ${text}`);
+  let u: URL;
+  try {
+    u = new URL(text);
+  } catch {
+    throw bad();
+  }
+  const port = Number(u.port);
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (u.protocol !== 'socks5:' && u.protocol !== 'socks5h:') throw bad();
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || u.username || u.password) throw bad();
+  if ((u.pathname && u.pathname !== '/') || u.search || u.hash) throw bad();
+  return { host, port };
 }
 
 /** The ports a site is reached on: the web's own. */
@@ -576,8 +614,10 @@ export const WEB_PORTS = [80, 443] as const;
 export async function dialPublic(host: string, port: number, o: DialOptions = {}): Promise<Socket> {
   if (o.ports && !o.ports.includes(port)) throw new EgressError('refused', `port ${port}`);
   const name = host.replace(/^\[|\]$/g, '').toLowerCase();
+  const allowed = !!o.allowHosts?.includes(name);
+  const via = allowed ? undefined : o.via;
   let address: string;
-  if (o.anyAddress || o.allowHosts?.includes(name)) {
+  if (allowed || (o.anyAddress && !via)) {
     address = name;
   } else if (isIP(name)) {
     if (blockedAddress(name)) throw new EgressError('refused', name);
@@ -589,15 +629,27 @@ export async function dialPublic(host: string, port: number, o: DialOptions = {}
     if (found.some((a) => blockedAddress(a.address))) throw new EgressError('refused', name);
     address = found[0]!.address;
   }
-  const sock = (o.connect ?? ((a, p) => netConnect({ host: a, port: p, allowHalfOpen: true })))(
-    address,
-    port,
-  );
+  const connect = o.connect ?? ((a, p) => netConnect({ host: a, port: p, allowHalfOpen: true }));
+  if (via) {
+    try {
+      return await socksConnect(via, address, port, connect, o.timeoutMs);
+    } catch (err) {
+      // Only a proxy that is not there sends the connection out from here; a site the proxy could
+      // not reach would not be reached from here either, and trying would hide the answer.
+      if (!(err instanceof ProxyDown)) throw err;
+      o.onViaDown?.(err);
+    }
+  }
+  return connected(connect(address, port), o.timeoutMs);
+}
+
+/** Resolves once the socket is connected. */
+function connected(sock: Socket, timeoutMs = 20_000): Promise<Socket> {
   return new Promise<Socket>((resolve, reject) => {
     const timer = setTimeout(() => {
       sock.destroy();
       reject(new EgressError('timeout'));
-    }, o.timeoutMs ?? 20_000);
+    }, timeoutMs);
     sock.once('connect', () => {
       clearTimeout(timer);
       sock.off('error', onError);
@@ -608,5 +660,99 @@ export async function dialPublic(host: string, port: number, o: DialOptions = {}
       reject(new EgressError('failed', e.message));
     };
     sock.once('error', onError);
+  });
+}
+
+/** The upstream proxy was not there (or not a SOCKS5 proxy without sign-in). */
+class ProxyDown extends Error {}
+
+/** SOCKS5 CONNECT for an address: IPv4, IPv6, or a name when it is neither. */
+function connectRequest(address: string, port: number): Buffer {
+  const portBytes = Buffer.from([port >> 8, port & 255]);
+  const v = isIP(address);
+  if (v === 4)
+    return Buffer.concat([Buffer.from([5, 1, 0, 1, ...address.split('.').map(Number)]), portBytes]);
+  const words = v === 6 ? ipv6Words(address) : null;
+  if (words) {
+    const addr = Buffer.alloc(16);
+    words.forEach((w, i) => addr.writeUInt16BE(w, i * 2));
+    return Buffer.concat([Buffer.from([5, 1, 0, 4]), addr, portBytes]);
+  }
+  const name = Buffer.from(address, 'latin1');
+  return Buffer.concat([Buffer.from([5, 1, 0, 3, name.length]), name, portBytes]);
+}
+
+/** Why the proxy said it could not connect, as the error this module uses. */
+function proxyRefusal(code: number): EgressError {
+  if (code === SOCKS_REPLY.notAllowed) return new EgressError('refused', 'the proxy refused it');
+  if (code === SOCKS_REPLY.timeout) return new EgressError('timeout');
+  return new EgressError('failed', `the proxy could not connect (${code})`);
+}
+
+/**
+ * Connects to `address:port` through a SOCKS5 proxy. Until the proxy has greeted back the
+ * failure is `ProxyDown`; after the request it is about the target, as from a direct connection.
+ */
+function socksConnect(
+  via: UpstreamProxy,
+  address: string,
+  port: number,
+  connect: (address: string, port: number) => Socket,
+  timeoutMs = 20_000,
+): Promise<Socket> {
+  const sock = connect(via.host, via.port);
+  return new Promise<Socket>((resolve, reject) => {
+    let asked = false;
+    let greeted = false;
+    let buf = Buffer.alloc(0);
+    const stop = () => {
+      clearTimeout(timer);
+      // Paused before the reader goes: a flowing socket without a reader drops what arrives.
+      sock.pause();
+      sock.off('connect', onConnect);
+      sock.off('data', onData);
+      sock.off('error', onError);
+      sock.off('close', onClose);
+    };
+    const fail = (err: Error) => {
+      stop();
+      sock.destroy();
+      reject(err);
+    };
+    const failHere = (why: string) =>
+      fail(asked ? new EgressError('failed', why) : new ProxyDown(`proxy ${via.host}:${via.port}: ${why}`));
+    const onConnect = () => sock.write(Buffer.from([5, 1, 0]));
+    const onData = (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (!greeted) {
+        if (buf.length < 2) return;
+        if (buf[0] !== 5 || buf[1] !== 0) return failHere('not a SOCKS5 proxy without sign-in');
+        greeted = true;
+        asked = true;
+        buf = buf.subarray(2);
+        sock.write(connectRequest(address, port));
+      }
+      if (buf.length < 5) return;
+      if (buf[0] !== 5) return failHere('bad reply');
+      if (buf[1] !== SOCKS_REPLY.ok) return fail(proxyRefusal(buf[1]!));
+      const atyp = buf[3];
+      const length = atyp === 1 ? 10 : atyp === 4 ? 22 : atyp === 3 ? 7 + buf[4]! : 0;
+      if (!length) return failHere('bad reply');
+      if (buf.length < length) return;
+      const rest = buf.subarray(length);
+      stop();
+      if (rest.length) sock.unshift(rest);
+      resolve(sock);
+    };
+    const onError = (e: Error) => failHere(e.message);
+    const onClose = () => failHere('closed');
+    const timer = setTimeout(
+      () => (asked ? fail(new EgressError('timeout')) : failHere('timed out')),
+      timeoutMs,
+    );
+    sock.on('connect', onConnect);
+    sock.on('data', onData);
+    sock.on('error', onError);
+    sock.on('close', onClose);
   });
 }

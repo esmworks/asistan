@@ -5,6 +5,14 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Added
+
+- The bots' browsers can leave through Cloudflare WARP instead of the server's own address, which some sites behind
+  bot guards refuse for being a data centre's before their page even loads. An optional `warp` service in
+  `docker/compose.yml` (`YUMAKBOT_WARP=1` with the installer) and `YUMAKBOT_EGRESS_PROXY` turn it on; the person's own
+  computer still comes first when it is connected. Addresses are checked on the server as before, the operator's
+  local hosts go straight, and while the proxy cannot be reached the browsers leave from the server again.
+
 ### Fixed
 
 - The bots' desktop browser no longer shows bot guards such as Akamai two marks of a program: started with the

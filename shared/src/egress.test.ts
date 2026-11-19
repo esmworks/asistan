@@ -11,6 +11,7 @@ import {
   socksAccept,
   socksReply,
   SOCKS_REPLY,
+  upstreamProxy,
 } from './egress';
 
 /** Two muxes wired back to back, as over one channel; frames cross asynchronously like a socket. */
@@ -287,5 +288,122 @@ describe('dialPublic', () => {
     });
     expect(asked).toEqual(['104.244.42.1:443']);
     sock.destroy();
+  });
+});
+
+describe('dialPublic through an upstream proxy', () => {
+  /** A SOCKS5 proxy on loopback that answers each CONNECT with `reply` and says what it was asked. */
+  async function proxy(reply: number = SOCKS_REPLY.ok) {
+    const asked: { host: string; port: number }[] = [];
+    const port = await listen((s) => {
+      s.on('error', () => {});
+      void socksAccept(s).then((target) => {
+        asked.push(target);
+        socksReply(s, reply);
+        if (reply === SOCKS_REPLY.ok) s.end('hello from the site');
+      });
+    });
+    return { asked, via: { host: 'proxy.test', port } };
+  }
+
+  /** Reaches the proxy on loopback; anything else is a direct connection, recorded and faked. */
+  function connector(proxyPort: number) {
+    const direct: string[] = [];
+    const connectTo = (address: string, port: number): Socket => {
+      if (address === 'proxy.test')
+        return connect({ host: '127.0.0.1', port: proxyPort, allowHalfOpen: true });
+      direct.push(`${address}:${port}`);
+      const s = new PassThrough() as unknown as Socket;
+      setImmediate(() => s.emit('connect'));
+      return s;
+    };
+    return { direct, connectTo };
+  }
+
+  it('gives the proxy the address it checked, not the name, and carries the data', async () => {
+    const p = await proxy();
+    const c = connector(p.via.port);
+    const sock = await dialPublic('x.com', 443, {
+      via: p.via,
+      lookup: async () => [{ address: '104.244.42.1' }],
+      connect: c.connectTo,
+    });
+    expect(await read(sock)).toBe('hello from the site');
+    expect(p.asked).toEqual([{ host: '104.244.42.1', port: 443 }]);
+    expect(c.direct).toEqual([]);
+  });
+
+  it('carries an IPv6 address as one', async () => {
+    const p = await proxy();
+    const c = connector(p.via.port);
+    const sock = await dialPublic('2606:4700::1', 443, { via: p.via, connect: c.connectTo });
+    sock.destroy();
+    expect(p.asked).toEqual([{ host: '2606:4700:0:0:0:0:0:1', port: 443 }]);
+  });
+
+  it('still refuses private addresses, even for a caller that may reach any', async () => {
+    const p = await proxy();
+    const c = connector(p.via.port);
+    await expect(
+      dialPublic('10.0.0.2', 443, { via: p.via, anyAddress: true, connect: c.connectTo }),
+    ).rejects.toMatchObject({ code: 'refused' });
+    expect(p.asked).toEqual([]);
+  });
+
+  it("sends the operator's private hosts straight, not through the proxy", async () => {
+    const p = await proxy();
+    const c = connector(p.via.port);
+    const sock = await dialPublic('files.lan', 443, {
+      via: p.via,
+      allowHosts: ['files.lan'],
+      connect: c.connectTo,
+    });
+    sock.destroy();
+    expect(c.direct).toEqual(['files.lan:443']);
+    expect(p.asked).toEqual([]);
+  });
+
+  it('leaves from here when the proxy is not there, and says so', async () => {
+    const closed = await listen(() => {});
+    servers.pop()!.close();
+    const c = connector(closed);
+    const down: string[] = [];
+    const sock = await dialPublic('x.com', 443, {
+      via: { host: 'proxy.test', port: closed },
+      onViaDown: (e) => down.push(e.message),
+      lookup: async () => [{ address: '104.244.42.1' }],
+      connect: c.connectTo,
+    });
+    sock.destroy();
+    expect(c.direct).toEqual(['104.244.42.1:443']);
+    expect(down).toHaveLength(1);
+  });
+
+  it('does not go around the proxy when the proxy could not reach the site', async () => {
+    const p = await proxy(SOCKS_REPLY.notAllowed);
+    const c = connector(p.via.port);
+    await expect(
+      dialPublic('x.com', 443, {
+        via: p.via,
+        lookup: async () => [{ address: '104.244.42.1' }],
+        connect: c.connectTo,
+      }),
+    ).rejects.toBeInstanceOf(EgressError);
+    expect(c.direct).toEqual([]);
+  });
+});
+
+describe('upstreamProxy', () => {
+  it('reads a SOCKS5 address and leaves an empty setting off', () => {
+    expect(upstreamProxy('socks5://warp:1080')).toEqual({ host: 'warp', port: 1080 });
+    expect(upstreamProxy('socks5h://[::1]:40000')).toEqual({ host: '::1', port: 40000 });
+    expect(upstreamProxy(undefined)).toBeUndefined();
+    expect(upstreamProxy('  ')).toBeUndefined();
+  });
+
+  it('stops on anything else', () => {
+    for (const bad of ['warp:1080', 'http://warp:1080', 'socks5://warp', 'socks5://u:p@warp:1080']) {
+      expect(() => upstreamProxy(bad)).toThrow();
+    }
   });
 });

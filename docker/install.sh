@@ -202,6 +202,7 @@ random_hex() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 compose() {
   local args=(-f "$DIR/docker/compose.yml" -f "$DIR/docker/compose.vps.yml" --env-file "$(ENV_FILE)")
   [ "$(get_env YUMAKBOT_COMPUTER)" != 1 ] || args+=(--profile computer)
+  [ "$(get_env YUMAKBOT_WARP)" != 1 ] || args+=(--profile warp)
   docker compose "${args[@]}" "$@"
 }
 

@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:net';
 import type { Duplex } from 'node:stream';
 import {
   dialPublic,
+  type UpstreamProxy,
   EgressError,
   EgressMux,
   join,
@@ -135,12 +136,20 @@ export class EgressHub {
  * database, and on the person's own computer next to everything else they run. The address is
  * checked as it is connected to, so a name that answers with a public address for a check and a
  * private one a moment later still reaches nothing private. `allowHosts` are the private hosts the
- * operator lets the browsers reach.
+ * operator lets the browsers reach; `via` is the upstream proxy the rest leaves through instead of
+ * from here (see `DialOptions.via`).
  */
 export async function startLocalSocks(
   hub: EgressHub | null,
   allowHosts: readonly string[],
+  via?: UpstreamProxy,
 ): Promise<{ port: number; close(): void }> {
+  let downLogged = 0;
+  const onViaDown = (err: Error) => {
+    if (Date.now() - downLogged < 60_000) return;
+    downLogged = Date.now();
+    console.warn(`browser proxy: ${err.message}; leaving from here`);
+  };
   const server: Server = createServer({ allowHalfOpen: true }, (client) => {
     client.on('error', () => {});
     void (async () => {
@@ -152,7 +161,8 @@ export async function startLocalSocks(
       }
       let up: Duplex;
       try {
-        const direct = () => dialPublic(target.host, target.port, { allowHosts });
+        const direct = () =>
+          dialPublic(target.host, target.port, { allowHosts, ...(via && { via, onViaDown }) });
         up = hub
           ? await hub.dial(target.host, target.port).catch((err: unknown) => {
               if (err instanceof EgressError && err.code === 'unavailable') return direct();

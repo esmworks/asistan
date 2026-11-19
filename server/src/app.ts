@@ -161,7 +161,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   // computer the proxy has no other way out, but it still checks each address it connects to: the
   // browser would otherwise look a name up again after the server checked it.
   const localSocks =
-    !computer && config.browserPath ? await startLocalSocks(egress, config.browserLocalHosts) : null;
+    !computer && config.browserPath
+      ? await startLocalSocks(egress, config.browserLocalHosts, config.browserEgressProxy)
+      : null;
   const stopComputerLink = egress && config.computer ? linkComputer(egress, config.computer) : null;
   const browser = new BrowserManager({
     executable: config.browserPath,

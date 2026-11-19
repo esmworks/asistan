@@ -29,6 +29,7 @@ import {
   socksReply,
   socksReplyFor,
   SOCKS_REPLY,
+  upstreamProxy,
 } from '@yumakbot/shared/egress';
 import { createGitRelay } from './git-relay';
 import { allocateDisplay, bearerToken, CdpDecoder, checkToken, encodeCdp } from './lib';
@@ -42,6 +43,12 @@ if (TOKEN.length < 32) {
 const PORT = Number(process.env.YUMAKBOT_COMPUTER_PORT ?? 4320);
 /** The desktops' browsers go through a proxy on this loopback port (they share its network). */
 const SOCKS_PORT = Number(process.env.YUMAKBOT_COMPUTER_SOCKS_PORT ?? 4321);
+/**
+ * A SOCKS5 proxy the browsers leave through when they do not go through the person's computer:
+ * some sites refuse a data centre's address outright (see "Tarayıcının çıkış adresi" in
+ * docker/README.md). Unset, they leave from here.
+ */
+const EGRESS_PROXY = upstreamProxy(process.env.YUMAKBOT_EGRESS_PROXY);
 /** Git in the desktops reaches GitHub through a relay on this loopback port (see git-relay.ts). */
 const GIT_PORT = Number(process.env.YUMAKBOT_COMPUTER_GIT_PORT ?? 4322);
 const STATE = process.env.YUMAKBOT_COMPUTER_STATE ?? '/run/computer';
@@ -555,8 +562,24 @@ function bridgeEgress(ws: WebSocket): void {
   ws.on('error', end);
 }
 
-/** From here: the controller's network reaches the internet only, not the server's private one. */
-const dialHere = (host: string, port: number) => dialPublic(host, port, { anyAddress: true });
+/**
+ * From here: the controller's network reaches the internet only, not the server's private one.
+ * With the upstream proxy, through it; while it cannot be reached, from here, said in the log at
+ * most once a minute.
+ */
+let proxyDownLogged = 0;
+const dialHere = (host: string, port: number) =>
+  dialPublic(host, port, {
+    anyAddress: true,
+    ...(EGRESS_PROXY && {
+      via: EGRESS_PROXY,
+      onViaDown: (err: Error) => {
+        if (Date.now() - proxyDownLogged < 60_000) return;
+        proxyDownLogged = Date.now();
+        log(`browser proxy: ${err.message}; leaving from here`);
+      },
+    }),
+  });
 
 let socksReady = false;
 const socks = createNetServer({ allowHalfOpen: true }, (client) => {

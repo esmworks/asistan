@@ -41,6 +41,9 @@ services:
       YUMAKBOT_PROXY_SECRET: ${YUMAKBOT_PROXY_SECRET:-}
       # A SearXNG the bots on API keys search the web with; see "Web araması" in docker/README.md.
       WEB_SEARCH_URL: ${WEB_SEARCH_URL:-}
+      # The proxy the browsers this server starts itself (no computer service) leave through; see
+      # "Tarayıcının çıkış adresi" in docker/README.md.
+      YUMAKBOT_EGRESS_PROXY: ${YUMAKBOT_EGRESS_PROXY:-}
     # Only on the host's loopback; put a TLS reverse proxy in front for remote use.
     ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
     volumes:
@@ -49,6 +52,7 @@ services:
       internal: {}
       egress: {}
       computer: {}
+      warp: {}
       # The gateway's name for the server. A panel puts every service it routes to on one network it
       # shares with all its apps, where `yumakbot` can be another installation's server; this name
       # exists only on this installation's `edge`.
@@ -84,6 +88,9 @@ services:
       yumakbot: { condition: service_healthy }
     environment:
       YUMAKBOT_COMPUTER_TOKEN: ${YUMAKBOT_COMPUTER_TOKEN:?YUMAKBOT_COMPUTER_TOKEN gerekli}
+      # The proxy the desktops' browsers leave through; see "Tarayıcının çıkış adresi" in
+      # docker/README.md.
+      YUMAKBOT_EGRESS_PROXY: ${YUMAKBOT_EGRESS_PROXY:-}
     volumes:
       # Only the bots' folders, at the same path the server sees. `subpath` needs Docker Engine 26+.
       - type: volume
@@ -93,6 +100,7 @@ services:
     networks:
       egress: {}
       computer: { aliases: [computer-api] }
+      warp: {}
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
@@ -112,6 +120,32 @@ services:
     pids_limit: 2048
     # Chromium and office programs use shared memory.
     shm_size: 512m
+
+  # Optional: the bots' browsers leave through Cloudflare WARP instead of this host's address, which
+  # some sites refuse for being a data centre's. Started only with `--profile warp`, and used once
+  # YUMAKBOT_EGRESS_PROXY points at it; see "Tarayıcının çıkış adresi" in docker/README.md.
+  warp:
+    build: { context: ./warp }
+    profiles: [warp]
+    restart: unless-stopped
+    # `warp` is where the browsers' services reach it. Its own way out is `egress`, behind
+    # docker/firewall.sh like theirs: a desktop's shell shares that service's network and can reach
+    # this proxy directly, so what WARP is asked for must not get to private addresses either.
+    networks:
+      warp: { aliases: [yumakbot-warp] }
+      egress: {}
+    volumes:
+      # The free registration, kept across restarts.
+      - warp:/var/lib/cloudflare-warp
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /run:size=16m
+      - /var/log/cloudflare-warp:size=32m
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    pids_limit: 256
 
   # Optional: reach the server from anywhere through a Cloudflare Tunnel, with no port open on this
   # host and HTTPS from Cloudflare. Started only with `--profile cloudflare`; see "Uzaktan erişim"
@@ -208,8 +242,12 @@ networks:
     internal: true
   # The tunnel's own way out to its service.
   outbound: {}
+  # The browsers' services to the WARP proxy only; no route out.
+  warp:
+    internal: true
 
 volumes:
   db:
   data:
   tailscale:
+  warp:

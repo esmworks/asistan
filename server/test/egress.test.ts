@@ -109,6 +109,24 @@ describe('the way out through the person computer', () => {
     expect(await viaSocks(allowed.port, '127.0.0.1', port)).toEqual({ code: 0, text: 'private' });
   });
 
+  it("with an upstream proxy, still refuses private addresses and sends the operator's hosts straight", async () => {
+    const port = await answering('private');
+    let upstreamAsked = 0;
+    const upstream = createServer((s) => {
+      upstreamAsked++;
+      s.destroy();
+    });
+    servers.push(upstream);
+    upstream.listen(0, '127.0.0.1');
+    await once(upstream, 'listening');
+    const via = { host: '127.0.0.1', port: (upstream.address() as AddressInfo).port };
+    const socks = await startLocalSocks(null, ['localhost'], via);
+    cleanups.push(socks.close);
+    expect((await viaSocks(socks.port, '127.0.0.1', port)).code).toBe(2);
+    expect(await viaSocks(socks.port, 'localhost', port)).toEqual({ code: 0, text: 'private' });
+    expect(upstreamAsked).toBe(0);
+  });
+
   it('tells each bot once when the way out changes', () => {
     const hub = new EgressHub();
     expect(hub.takeExitNote('a')).toBeNull();

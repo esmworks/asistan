@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { upstreamProxy, type UpstreamProxy } from '@yumakbot/shared/egress';
 import { findBrowser } from './browser/find';
 import { BASH_MAX_TIMEOUT_MS, stallLimits, type StallLimits } from './runtime/watchdog';
 
@@ -64,6 +65,11 @@ export interface Config {
   browserIdleMs: number;
   /** Private-network hosts the bots' browsers may still reach; every other one is refused. */
   browserLocalHosts: string[];
+  /**
+   * A SOCKS5 proxy the bots' browsers leave through when this server starts them itself and they
+   * do not go through the person's computer: some sites refuse a data centre's address outright.
+   */
+  browserEgressProxy: UpstreamProxy | undefined;
   /** The longest one step in a bot's browser may take before the browser starts afresh. */
   browserCallMs: number;
   /**
@@ -186,6 +192,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     browserIdleMs: 15 * 60_000,
     browserCallMs: 90_000,
     browserLocalHosts: list(env.YUMAKBOT_BROWSER_LOCAL_HOSTS).map((h) => h.toLowerCase()),
+    browserEgressProxy: upstreamProxy(env.YUMAKBOT_EGRESS_PROXY),
     computer:
       env.YUMAKBOT_COMPUTER_URL && env.YUMAKBOT_COMPUTER_TOKEN
         ? { url: env.YUMAKBOT_COMPUTER_URL.replace(/\/+$/, ''), token: env.YUMAKBOT_COMPUTER_TOKEN }

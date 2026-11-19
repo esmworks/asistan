@@ -196,6 +196,49 @@ girişler ve çerezler orada kalır, botlar birbirinin profilini görmez.
   dayanır. Çalışmadığı bir ortamda `YUMAKBOT_BROWSER_SANDBOX=0` ile kapatılabilir; o zaman web sayfaları
   yalnızca kapsayıcının sınırlarıyla korunur.
 
+### Tarayıcının çıkış adresi
+
+Botların tarayıcısı internete varsayılan olarak sunucunun kendi adresinden çıkar. Bazı siteler (bot
+korumasının arkasındaki havayolu ve bilet siteleri gibi) bir veri merkezine ait adresleri sayfa daha
+açılmadan geri çevirir; tarayıcıda `ERR_HTTP2_PROTOCOL_ERROR` ya da "This site can't be reached" görünür.
+İki yol var:
+
+- **Kişinin bilgisayarı:** Ayarlardaki "Botların tarayıcısı bilgisayarımdan çıksın" açıkken ve masaüstü uygulaması
+  bağlıyken tarayıcı o bilgisayarın bağlantısından çıkar. Bu her zaman önce gelir.
+- **Cloudflare WARP:** Bilgisayar bağlı değilken tarayıcı sunucunun adresi yerine WARP'ın adresinden çıkar.
+  WARP'ın adresleri çok sayıda kişinin cihazıyla paylaşıldığından bu siteler çoğunlukla geçirir; yine de
+  geçireceği garanti değildir.
+
+WARP'ı açmak için `docker/.env` dosyasına şunları ekleyin:
+
+```
+YUMAKBOT_WARP=1
+YUMAKBOT_EGRESS_PROXY=socks5://yumakbot-warp:1080
+```
+
+Ardından kapsayıcıları yeni ayarla yeniden oluşturun. `docker/install.sh` ile kurulan sunucuda:
+
+```bash
+yumakbot compose up -d
+```
+
+Kurulum betiği olmadan compose'u elle çalıştırıyorsanız `up -d` komutuna `--profile warp` ekleyin
+(`yumakbot restart` yetmez; yeni servisi başlatmaz ve ayarı kapsayıcılara geçirmez). `warp` servisi ilk açılışta Cloudflare'in ücretsiz WARP
+hizmetine bir kayıt açar ve kayıt `warp` biriminde saklanır. Bu adımda Cloudflare'in WARP kullanım
+koşulları kabul edilmiş olur. Servise yalnızca sunucu ve botların bilgisayarı ulaşır; interneti açık bir
+botun masaüstündeki komutlar da buna dahildir. Servisin kendi çıkışı da `docker/firewall.sh` kurallarının
+arkasındadır, bu yüzden WARP üzerinden de özel adreslere ulaşılmaz.
+
+Kontrol etmek için bota `https://tls.peet.ws/api/all` adresini açtırın: `ip` satırında artık sunucunun
+adresi değil bir Cloudflare adresi görünmelidir.
+
+- Adresler yine sunucuda denetlenir; WARP üzerinden de yerel ağa ve özel adreslere ulaşılmaz.
+- `YUMAKBOT_BROWSER_LOCAL_HOSTS` içindeki adresler WARP'a gitmez, doğrudan bağlanır.
+- `warp` servisine ulaşılamazsa tarayıcı eskisi gibi sunucunun adresinden çıkar ve günlüğe
+  `browser proxy: … leaving from here` yazılır. WARP açık olduğu hâlde bir siteye ulaşamıyorsa bağlantı
+  sunucudan yeniden denenmez; hata o sitenin hatası olarak görünür.
+- Git ve botların diğer internet istekleri bu ayardan etkilenmez.
+
 ### Şifre kasası
 
 Bir siteye giriş gerektiğinde bot sohbette bir giriş kartı açar; kullanıcı adı ve şifreyi siz yazarsınız,
