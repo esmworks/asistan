@@ -283,6 +283,166 @@ describe('toplantı tutanağı', () => {
     ).toBeGreaterThanOrEqual(403);
   });
 
+  /** Moves a room's lines, and its meetings' times, this far into the past. */
+  const shift = async (roomId: string, minutesBack: number) => {
+    const back = sql.raw(`interval '${minutesBack} minutes'`);
+    await t.db.db
+      .update(schema.messages)
+      .set({ createdAt: sql`${schema.messages.createdAt} - ${back}` })
+      .where(eq(schema.messages.threadId, roomId));
+    await t.db.db
+      .update(schema.meetings)
+      .set({
+        fromAt: sql`${schema.meetings.fromAt} - ${back}`,
+        toAt: sql`${schema.meetings.toAt} - ${back}`,
+        updatedAt: sql`${schema.meetings.updatedAt} - ${back}`,
+      })
+      .where(eq(schema.meetings.roomId, roomId));
+  };
+
+  it('sessizlikle biten toplantıya dönülünce sayaç baştan başlar', async () => {
+    const r = await room();
+    await say(r.id, 'Başlayalım');
+    const [m] = await meetings(r.id);
+    await call(r.id, m!.id, 'answer', { answer: 'yes' });
+    t.engine.completer = () => minutes();
+    await shift(r.id, 40);
+    t.now.value = new Date();
+    await t.services.meetings.sweep();
+    await written();
+    expect((await meetings(r.id))[0]!.status).toBe('draft');
+
+    // Resumed after a long quiet: the next look finds it taken up a moment ago, not quiet.
+    expect((await call(r.id, m!.id, 'resume')).body.status).toBe('active');
+    t.now.value = new Date(Date.now() + 60_000);
+    await t.services.meetings.sweep();
+    expect((await meetings(r.id))[0]!.status).toBe('active');
+    expect((await t.messages(r.id)).filter((x) => x.props.meeting)).toHaveLength(2);
+
+    // A question accepted late counts from the answer too.
+    const other = await room({ title: 'Geç cevap' });
+    await say(other.id, 'Selam');
+    const [q] = await meetings(other.id);
+    await shift(other.id, 29);
+    await call(other.id, q!.id, 'answer', { answer: 'yes' });
+    t.now.value = new Date(Date.now() + 5 * 60_000);
+    await t.services.meetings.sweep();
+    expect((await meetings(other.id))[0]!.status).toBe('active');
+  });
+
+  it('bitir dendiğinde botların yazmakta olduğu cevaplar da tutanağa girer', async () => {
+    const r = await room();
+    const m = (await t.api<Meeting>('POST', `/api/rooms/${r.id}/meetings`)).body;
+    t.engine.completer = () => minutes();
+    // Ended while both bots are still answering.
+    const sent = await t.api('POST', `/api/rooms/${r.id}/messages`, {
+      clientId: 'c-busy-000001',
+      text: '[bekle:300] Sürümü kim üstleniyor?',
+    });
+    expect(sent.status).toBe(201);
+    const ended = (await call(r.id, m.id, 'end')).body;
+    expect(ended).toMatchObject({ status: 'writing', endedAt: null });
+    await t.services.turns.idle();
+    await written();
+    const [done] = await meetings(r.id);
+    expect(done!.status).toBe('draft');
+    const asked = t.engine.completions.at(-1)!.user;
+    expect(asked).toMatch(/<m from="Ada">Yankı:/);
+    expect(asked).toMatch(/<m from="Bora">Yankı:/);
+  });
+
+  it('bir toplantıyı silmek başka odanın yazılmakta olan tutanağını durdurmaz', async () => {
+    const a = await room({ title: 'A' });
+    const b = await room({ title: 'B' });
+    const ma = (await t.api<Meeting>('POST', `/api/rooms/${a.id}/meetings`)).body;
+    const mb = (await t.api<Meeting>('POST', `/api/rooms/${b.id}/meetings`)).body;
+    await say(a.id, 'A konusu');
+    await say(b.id, 'B konusu');
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    t.engine.completer = async (req) => {
+      if (req.user.includes('A konusu')) await held;
+      return minutes();
+    };
+    await call(a.id, ma.id, 'end');
+    await call(b.id, mb.id, 'end');
+    // A is being written, B waits behind it; B is deleted.
+    expect((await t.api('DELETE', `/api/rooms/${b.id}/meetings/${mb.id}`)).status).toBe(200);
+    release();
+    await written();
+    expect((await meetings(a.id))[0]!.status).toBe('draft');
+    expect(await meetings(b.id)).toEqual([]);
+  });
+
+  it('“bugün” ve notun günü kişinin saat diliminde', async () => {
+    // 23:30 in UTC is already the next day in Istanbul.
+    t.now.value = new Date('2026-11-19T23:30:00Z');
+    const r = await room();
+    const m = (await t.api<Meeting>('POST', `/api/rooms/${r.id}/meetings`)).body;
+    await say(r.id, 'Yarın konuşalım');
+    t.engine.completer = () => minutes();
+    await call(r.id, m.id, 'end');
+    await written();
+    expect(t.engine.completions.at(-1)!.system).toContain('2026-11-20');
+    await t.db.db
+      .update(schema.meetings)
+      .set({ fromAt: new Date('2026-11-19T22:30:00Z') })
+      .where(eq(schema.meetings.id, m.id));
+    const draft = (await meetings(r.id))[0]!.minutes!;
+    await call(r.id, m.id, 'save', { minutes: draft, botIds: [ada.id] });
+    const note = (await t.api<Memory[]>('GET', '/api/memory')).body.find((n) => n.botId === ada.id)!;
+    expect(note.content).toContain('(2026-11-20, “Planlama” odası)');
+  });
+
+  it('“hep tut” odasında toplantı sessizlikle bitince sonra gelen konuşma da tutulur', async () => {
+    const r = await room({ minutes: 'always' });
+    await say(r.id, 'Birinci toplantı');
+    const [first] = await meetings(r.id);
+    t.engine.completer = () => minutes();
+    await call(r.id, first!.id, 'end');
+    await written();
+    // Right after the end, a word of thanks starts nothing.
+    await say(r.id, 'Teşekkürler');
+    expect(await meetings(r.id)).toHaveLength(1);
+    // Back after 45 minutes: well short of two hours, but the meeting before it is over.
+    await shift(r.id, 45);
+    await say(r.id, 'İkinci konu');
+    const all = await meetings(r.id);
+    expect(all).toHaveLength(2);
+    expect(all[0]!.status).toBe('active');
+  });
+
+  it('“sor” odasında sessizlikle biten toplantıdan sonra dönülünce yeniden sorar', async () => {
+    const r = await room();
+    await say(r.id, 'Konuşalım');
+    const [m] = await meetings(r.id);
+    await call(r.id, m!.id, 'answer', { answer: 'yes' });
+    t.engine.completer = () => minutes();
+    await shift(r.id, 40);
+    t.now.value = new Date();
+    await t.services.meetings.sweep();
+    await written();
+    await shift(r.id, 45);
+    await say(r.id, 'Kaldığımız yerden');
+    expect((await meetings(r.id)).map((x) => x.status)).toEqual(['asked', 'draft']);
+  });
+
+  it('odanın üst satırı bekleyen taslağı yeni sorunun önünde gösterir', async () => {
+    const r = await room();
+    const m = (await t.api<Meeting>('POST', `/api/rooms/${r.id}/meetings`)).body;
+    await say(r.id, 'Dünkü toplantı');
+    t.engine.completer = () => minutes();
+    await call(r.id, m.id, 'end');
+    await written();
+    await longAgo(r.id);
+    await say(r.id, 'Yeni gün');
+    expect((await meetings(r.id)).map((x) => x.status)).toEqual(['asked', 'draft']);
+    expect((await t.api<Room>('GET', `/api/rooms/${r.id}`)).body.meeting).toEqual({
+      id: m.id,
+      status: 'draft',
+    });
+  });
+
   it('modelin cevabı hoşgörüyle okunur', () => {
     expect(parseMinutes('yok')).toBe(null);
     expect(

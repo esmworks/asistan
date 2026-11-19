@@ -157,6 +157,7 @@ export class Services {
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.meetings = new MeetingService(ctx, this, engineFor, clock);
+    this.turns.onFinished((t) => this.meetings.onTurnFinished(t));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
     this.slack = new SlackChannel(ctx, this, this.vault);

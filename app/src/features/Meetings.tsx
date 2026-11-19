@@ -1,11 +1,12 @@
-import type {
-  Bot,
-  Meeting,
-  MeetingAnswer,
-  MeetingMinutes,
-  MeetingTask,
-  Message,
-  Room,
+import {
+  MAX_MINUTES_ITEMS,
+  type Bot,
+  type Meeting,
+  type MeetingAnswer,
+  type MeetingMinutes,
+  type MeetingTask,
+  type Message,
+  type Room,
 } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -39,6 +40,7 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { exportFileName } from '@/lib/exportChat';
+import { fits, LINE_MAX, lines, localDay, oneLine } from '@/lib/minutes';
 import { useFormat } from '@/lib/format';
 import { useBots, useMeetings, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -386,8 +388,10 @@ function MinutesBody({
   const t = useT();
   const { dayLabel } = useFormat();
   const { data: meetings = [], isLoading } = useMeetings(room.id);
+  // The editor picks the room's bots to tell as it opens: it waits until they are known.
+  const { isLoading: botsLoading } = useBots();
   const meeting = meetingId ? meetings.find((m) => m.id === meetingId) : undefined;
-  if (isLoading) return null;
+  if (isLoading || botsLoading) return null;
   if (!meeting) {
     const listed = meetings.filter((m) => m.minutes);
     return (
@@ -463,7 +467,7 @@ function MinutesView({
   const t = useT();
   const qc = useQueryClient();
   const { dayLabel } = useFormat();
-  const day = meeting.startedAt.slice(0, 10);
+  const day = localDay(meeting.startedAt);
   const md = minutesMarkdown(minutes, { room: room.title, day: dayLabel(meeting.startedAt), t });
   const remove = useMutation({
     mutationFn: () => api.deleteMeeting(room.id, meeting.id),
@@ -582,12 +586,6 @@ function MinutesSections({ minutes, meta }: { minutes: MeetingMinutes; meta: str
   );
 }
 
-const lines = (text: string) =>
-  text
-    .split('\n')
-    .map((l) => l.replace(/^\s*[-*•]\s*/, '').trim())
-    .filter(Boolean);
-
 /** The written minutes, for the person to fix and approve, and the bots they go to. */
 function MinutesEditor({
   room,
@@ -606,8 +604,10 @@ function MinutesEditor({
   const { data: settings } = useSettings();
   const [title, setTitle] = useState(minutes.title);
   const [summary, setSummary] = useState(minutes.summary);
-  const [decisions, setDecisions] = useState(minutes.decisions.join('\n'));
-  const [questions, setQuestions] = useState(minutes.questions.join('\n'));
+  const [decisions, setDecisions] = useState(oneLine(minutes.decisions));
+  const [questions, setQuestions] = useState(oneLine(minutes.questions));
+  const decisionsFit = fits(lines(decisions));
+  const questionsFit = fits(lines(questions));
   const [tasks, setTasks] = useState<MeetingTask[]>(minutes.tasks);
   // The room's bots first, then the rest the person may talk with; only bots that keep memory.
   const members = room.members.flatMap((id) => bots.filter((b) => b.id === id && !b.archivedAt));
@@ -685,8 +685,10 @@ function MinutesEditor({
           onChange={(e) => setDecisions(e.target.value)}
           rows={Math.min(8, Math.max(2, decisions.split('\n').length))}
           placeholder={t('meeting.linesHint')}
+          aria-invalid={!decisionsFit}
           className="rounded-xl"
         />
+        {!decisionsFit && <TooLong />}
       </Field>
       <Field label={t('meeting.tasks')}>
         <div className="space-y-2">
@@ -741,6 +743,7 @@ function MinutesEditor({
             size="sm"
             variant="ghost"
             className="rounded-full"
+            disabled={tasks.length >= MAX_MINUTES_ITEMS}
             onClick={() => setTasks((all) => [...all, { text: '', owner: '', botId: null, due: null }])}
           >
             <Plus /> {t('meeting.addTask')}
@@ -753,8 +756,10 @@ function MinutesEditor({
           onChange={(e) => setQuestions(e.target.value)}
           rows={Math.min(6, Math.max(2, questions.split('\n').length))}
           placeholder={t('meeting.linesHint')}
+          aria-invalid={!questionsFit}
           className="rounded-xl"
         />
+        {!questionsFit && <TooLong />}
       </Field>
       <Field label={t('meeting.recipients')}>
         <div className="scroll-thin max-h-56 space-y-0.5 overflow-y-auto rounded-2xl border p-1">
@@ -776,11 +781,24 @@ function MinutesEditor({
         <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" className="rounded-full" disabled={save.isPending}>
+        <Button
+          type="submit"
+          className="rounded-full"
+          disabled={save.isPending || !decisionsFit || !questionsFit}
+        >
           {picked.length ? t('meeting.approve') : t('meeting.approveNone')}
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+function TooLong() {
+  const t = useT();
+  return (
+    <p className="text-sm text-destructive">
+      {t('meeting.linesTooLong', { max: MAX_MINUTES_ITEMS, chars: LINE_MAX })}
+    </p>
   );
 }
 

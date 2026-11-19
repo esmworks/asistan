@@ -13,7 +13,7 @@ import {
   type Message,
   type RoomMinutes,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -94,6 +94,12 @@ const data = (s: string) => s.replace(/</g, '\\u003c');
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The day a moment falls on where the person lives, as `YYYY-MM-DD`. */
+export const dayIn = (at: Date, timeZone: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+    at,
+  );
+
 /** Minutes that cannot be written, with the reason the person reads. */
 class MinutesError extends Error {
   constructor(readonly key: 'meeting.failedNoEngine' | 'meeting.failedAnswer') {
@@ -111,7 +117,8 @@ class MinutesError extends Error {
 export class MeetingService {
   private queue: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
-  private current: AbortController | null = null;
+  /** The request under way, and the meeting it writes. */
+  private current: { meetingId: string; controller: AbortController } | null = null;
   private stopped = false;
 
   constructor(
@@ -124,10 +131,13 @@ export class MeetingService {
   /** Looks for quiet meetings from now on, and writes the minutes a restart left unwritten. */
   async start() {
     const writing = await this.ctx.db
-      .select({ id: schema.meetings.id, roomId: schema.meetings.roomId })
+      .select({ id: schema.meetings.id, roomId: schema.meetings.roomId, toAt: schema.meetings.toAt })
       .from(schema.meetings)
       .where(eq(schema.meetings.status, 'writing'));
-    for (const m of writing) this.enqueue(m.roomId, m.id);
+    for (const m of writing) {
+      if (m.toAt) this.enqueue(m.roomId, m.id);
+      else await this.settle(m.roomId);
+    }
     this.timer = setInterval(() => void this.sweep().catch((err) => console.warn('meetings', err)), SWEEP_MS);
     this.timer.unref();
   }
@@ -135,7 +145,7 @@ export class MeetingService {
   async shutdown() {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
-    this.current?.abort();
+    this.current?.controller.abort();
     await this.queue.catch(() => {});
   }
 
@@ -192,7 +202,8 @@ export class MeetingService {
       .select({ id: schema.meetings.id, status: schema.meetings.status })
       .from(schema.meetings)
       .where(and(eq(schema.meetings.roomId, roomId), inArray(schema.meetings.status, OPEN_MEETING)))
-      .orderBy(desc(schema.meetings.createdAt))
+      // A question shows as its card; minutes under way or waiting for the person come first.
+      .orderBy(sql`${schema.meetings.status} = 'asked'`, desc(schema.meetings.createdAt))
       .limit(1);
     return row ?? null;
   }
@@ -254,7 +265,20 @@ export class MeetingService {
       )
       .orderBy(desc(schema.messages.createdAt))
       .limit(1);
-    if (before && new Date(message.createdAt).getTime() - before.at.getTime() < MEETING_GAP_MS) return;
+    // A talk is lines without a quiet spell between them as long as the one that ends a meeting. A
+    // room that keeps every talk starts one after such a pause; one that asks waits for a longer
+    // pause, so it does not ask often, unless the line before closed a meeting: that one is over.
+    const pause = before ? new Date(message.createdAt).getTime() - before.at.getTime() : Infinity;
+    if (pause < MEETING_IDLE_MS) return;
+    if (pause < MEETING_GAP_MS && room.minutes !== 'always') {
+      const [ended] = await this.ctx.db
+        .select({ toAt: schema.meetings.toAt })
+        .from(schema.meetings)
+        .where(and(eq(schema.meetings.roomId, roomId), isNotNull(schema.meetings.toAt)))
+        .orderBy(desc(schema.meetings.toAt))
+        .limit(1);
+      if (!ended?.toAt || !before || ended.toAt < before.at) return;
+    }
     const { t } = await this.translatorFor(roomId);
     const status = room.minutes === 'always' ? 'active' : 'asked';
     const id = newId();
@@ -317,25 +341,77 @@ export class MeetingService {
     this.ctx.bus.refresh({ scope: 'rooms' });
   }
 
-  /** The meeting is over: its lines end here and its minutes are written. */
+  /**
+   * The meeting is over. The answers the bots are still writing belong to it: its lines end with
+   * the last one written once the room is quiet, and then its minutes are written.
+   */
   async end(roomId: string, id: string): Promise<Meeting> {
     const row = await this.row(roomId, id);
     if (row.status !== 'active') throw new HttpError(409, 'error.meetingState');
-    await this.close(row, sql`clock_timestamp()`);
+    await this.close(row);
     return this.get(roomId, id);
   }
 
-  private async close(row: MeetingRow, toAt: ReturnType<typeof sql>) {
+  private async close(row: MeetingRow) {
     const [ended] = await this.ctx.db
       .update(schema.meetings)
-      .set({ status: 'writing', toAt, updatedAt: new Date() })
+      .set({ status: 'writing', toAt: null, updatedAt: new Date() })
       .where(and(eq(schema.meetings.id, row.id), eq(schema.meetings.status, 'active')))
       .returning({ id: schema.meetings.id });
     if (!ended) return;
     const { t } = await this.translatorFor(row.roomId);
     await this.card(row.roomId, row.id, 'end', t('meeting.endedLine'));
     await this.changed(row.roomId);
-    this.enqueue(row.roomId, row.id);
+    await this.settle(row.roomId);
+  }
+
+  /** Whether a bot is answering in the room, or waits to; `except` is a turn that is ending. */
+  private async busy(roomId: string, except?: string): Promise<boolean> {
+    const [turn] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(
+        and(
+          eq(schema.turns.threadId, roomId),
+          inArray(schema.turns.status, ['queued', 'running']),
+          except ? ne(schema.turns.id, except) : undefined,
+        ),
+      )
+      .limit(1);
+    return !!turn;
+  }
+
+  /**
+   * Meetings of the room that ended while its bots were answering get their last line once the
+   * room is quiet, the last line written then, and their minutes are written.
+   */
+  private async settle(roomId: string, except?: string) {
+    const ended = await this.ctx.db
+      .select({ id: schema.meetings.id })
+      .from(schema.meetings)
+      .where(
+        and(
+          eq(schema.meetings.roomId, roomId),
+          eq(schema.meetings.status, 'writing'),
+          isNull(schema.meetings.toAt),
+        ),
+      );
+    if (!ended.length || (await this.busy(roomId, except))) return;
+    for (const m of ended) {
+      const [set] = await this.ctx.db
+        .update(schema.meetings)
+        .set({
+          toAt: sql`greatest(${schema.meetings.fromAt}, coalesce((select max(created_at) from messages where thread_id = ${roomId} and role in ('user', 'assistant')), ${schema.meetings.fromAt}))`,
+        })
+        .where(and(eq(schema.meetings.id, m.id), isNull(schema.meetings.toAt)))
+        .returning({ id: schema.meetings.id });
+      if (set) this.enqueue(roomId, m.id);
+    }
+  }
+
+  /** A turn ended: a meeting of its room that ended while the bots answered may now be written. */
+  async onTurnFinished(turn: { id: string; threadId: string }) {
+    await this.settle(turn.threadId, turn.id);
   }
 
   /** The meeting goes on after all: the draft is dropped and later lines are kept too. */
@@ -367,8 +443,10 @@ export class MeetingService {
 
   /** A meeting and its minutes are forgotten; the notes the bots already got stay theirs. */
   async remove(roomId: string, id: string) {
-    const row = await this.row(roomId, id);
-    if (row.status === 'writing') this.current?.abort();
+    // The meeting must be this room's.
+    await this.row(roomId, id);
+    // Only the request for this meeting stops; another room's minutes go on being written.
+    if (this.current?.meetingId === id) this.current.controller.abort();
     await this.ctx.db.delete(schema.meetings).where(eq(schema.meetings.id, id));
     await this.changed(roomId);
   }
@@ -382,17 +460,15 @@ export class MeetingService {
     const rows = await this.ctx.db
       .select()
       .from(schema.meetings)
-      .where(inArray(schema.meetings.status, ['asked', 'active']));
+      .where(inArray(schema.meetings.status, ['asked', 'active', 'writing']));
     const quietSince = new Date(this.clock().getTime() - MEETING_IDLE_MS);
     for (const row of rows) {
-      const [busy] = await this.ctx.db
-        .select({ id: schema.turns.id })
-        .from(schema.turns)
-        .where(
-          and(eq(schema.turns.threadId, row.roomId), inArray(schema.turns.status, ['queued', 'running'])),
-        )
-        .limit(1);
-      if (busy) continue;
+      // A meeting ended while the bots answered, whose last turn's hook did not settle it.
+      if (row.status === 'writing') {
+        if (!row.toAt) await this.settle(row.roomId);
+        continue;
+      }
+      if (await this.busy(row.roomId)) continue;
       const [last] = await this.ctx.db
         .select({ at: schema.messages.createdAt })
         .from(schema.messages)
@@ -401,7 +477,11 @@ export class MeetingService {
         )
         .orderBy(desc(schema.messages.createdAt))
         .limit(1);
-      const lastAt = last && last.at > row.fromAt ? last.at : row.fromAt;
+      // Quiet counts from the last line, or from when the meeting was taken up again (accepted,
+      // started or resumed), whichever is later.
+      const lastAt = new Date(
+        Math.max(last?.at.getTime() ?? 0, row.fromAt.getTime(), row.updatedAt.getTime()),
+      );
       if (lastAt > quietSince) continue;
       if (row.status === 'asked') {
         await this.ctx.db
@@ -412,10 +492,7 @@ export class MeetingService {
         continue;
       }
       // Its lines end with the last one written, not with the quiet after it.
-      await this.close(
-        row,
-        sql`greatest(${schema.meetings.fromAt}, coalesce((select max(created_at) from messages where thread_id = ${row.roomId} and role in ('user', 'assistant')), ${schema.meetings.fromAt}))`,
-      );
+      await this.close(row);
     }
   }
 
@@ -428,7 +505,7 @@ export class MeetingService {
   /** Writes the minutes of an ended meeting; a failure is kept for the person to try again. */
   private async write(roomId: string, id: string): Promise<void> {
     const row = await this.row(roomId, id).catch(() => null);
-    if (!row || row.status !== 'writing') return;
+    if (!row || row.status !== 'writing' || !row.toAt) return;
     const { t, userId } = await this.translatorFor(roomId);
     const fail = async (error: string) => {
       await this.ctx.db
@@ -516,7 +593,7 @@ export class MeetingService {
     const thread = await this.services.threads.row(row.roomId);
     const person = settings.userName || t('room.person');
     const who = [person, ...members.map((b) => b.name)].map((n) => `- ${data(n)}`).join('\n');
-    const today = this.clock().toISOString().slice(0, 10);
+    const today = dayIn(this.clock(), settings.timezone);
     const system = t('meeting.system', { today });
     const head = `<room>${data(thread.title)}</room>\n<people>\n${who}\n</people>`;
 
@@ -538,7 +615,7 @@ export class MeetingService {
 
     const ask = async (system: string, user: string) => {
       const controller = new AbortController();
-      this.current = controller;
+      this.current = { meetingId: row.id, controller };
       try {
         const { text } = await engine.complete!({ model, system, user, signal: controller.signal, locale });
         if (controller.signal.aborted) throw new Error('stopped');
@@ -622,7 +699,7 @@ export class MeetingService {
       .from(schema.users)
       .where(eq(schema.users.id, viewer.userId))
       .limit(1);
-    const day = row.fromAt.toISOString().slice(0, 10);
+    const day = dayIn(row.fromAt, (await this.services.settings.all(thread.userId ?? undefined)).timezone);
     const sentTo: MeetingRecipient[] = [];
     for (const botId of [...new Set(body.botIds)]) {
       const bot = all.find((b) => b.id === botId);

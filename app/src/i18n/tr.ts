@@ -136,6 +136,7 @@ export const tr = {
   'meeting.summary': 'Özet',
   'meeting.decisions': 'Kararlar',
   'meeting.linesHint': 'Her satıra bir tane.',
+  'meeting.linesTooLong': 'En fazla {max} satır olabilir; her satır en fazla {chars} karakter.',
   'meeting.tasks': 'İşler',
   'meeting.taskText': 'Yapılacak iş',
   'meeting.taskOwner': 'Üstlenen',

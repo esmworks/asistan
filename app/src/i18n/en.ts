@@ -132,6 +132,7 @@ export const en: Catalog<MessageKey> = {
   'meeting.summary': 'Summary',
   'meeting.decisions': 'Decisions',
   'meeting.linesHint': 'One per line.',
+  'meeting.linesTooLong': 'At most {max} lines, each at most {chars} characters.',
   'meeting.tasks': 'Tasks',
   'meeting.taskText': 'What is to be done',
   'meeting.taskOwner': 'Taken on by',
