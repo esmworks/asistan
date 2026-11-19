@@ -5,9 +5,10 @@ import type { Page } from 'playwright-core';
  * few seconds ("Just a moment..."); `check`, a challenge a person has to answer (a CAPTCHA, a
  * "press and hold"); `blocked`, a refusal ("Access denied", a bare 403 or 429); or `clear`.
  *
- * The bot is never to get past a check itself: no clicking the box to pass as a person, no solving
- * services, no hiding that the browser is automated. All the server does is wait, reload once and
- * then hand the step to the person.
+ * A check first gets its own time to pass, then one click on its checkbox — the one gesture a
+ * person makes at a Turnstile, with the check still the one that decides. A second click, a reload,
+ * a puzzle, a solver service, hiding that the browser is automated: never. Whatever stays after the
+ * one click is handed to the person.
  */
 export type WallState = 'clear' | 'checking' | 'check' | 'blocked';
 
@@ -69,9 +70,65 @@ export async function lookAt(page: Page, status?: number | null): Promise<PageLo
   return { ...(got ?? { title: '', text: '', markers: [] }), status };
 }
 
+/** Pages whose checkbox the bot already clicked. A repeat reads as a bot and the check escalates,
+ * so a page gets one click, not until a read of it comes back clear. */
+const CLICKED = new WeakSet<Page>();
+
 /**
- * Waits out an interstitial that clears by itself: up to `waitMs`, reloading once halfway. Returns
- * the state the page ends in; `checking` at the end means it did not clear.
+ * Where a Turnstile checkbox sits: 28 px in from the frame's left edge, halfway down. Turnstile
+ * hangs its frame in a closed shadow root the page script cannot see; the frame list still holds
+ * it, and `frameElement` gives its box. A frame with no box, or a box that is not the short and
+ * wide checkbox bar, has nothing to click: an image puzzle is a person's step.
+ */
+async function turnstilePoint(page: Page): Promise<{ x: number; y: number } | null> {
+  for (const frame of page.frames()) {
+    if (!frame.url().includes('challenges.cloudflare.com')) continue;
+    const el = await frame.frameElement().catch(() => null);
+    if (!el) continue;
+    await el.scrollIntoViewIfNeeded({ timeout: 2_000 }).catch(() => {});
+    const box = await el.boundingBox().catch(() => null);
+    if (!box || box.width < 100 || box.height < 40 || box.height > 120) continue;
+    return { x: box.x + 28, y: box.y + box.height / 2 };
+  }
+  return null;
+}
+
+/** Reads the wall `stepMs` at a time until it stops being a check or `waitMs` passes. */
+async function settleCheck(page: Page, waitMs: number, stepMs: number): Promise<WallState> {
+  const start = Date.now();
+  for (;;) {
+    if (page.isClosed() || Date.now() - start >= waitMs) return 'check';
+    await page.waitForTimeout(stepMs);
+    const state = wallState(await lookAt(page));
+    if (state !== 'check') return state;
+  }
+}
+
+/**
+ * A check that stayed: the widget gets a last window to pass by itself — an early click reads as a
+ * bot — then one click on its checkbox, then one more wait. That is all the bot ever does to a
+ * check; whatever stays after the one click is the person's step.
+ */
+async function clickThroughCheck(page: Page, opts: { stepMs?: number } = {}): Promise<WallState> {
+  const stepMs = opts.stepMs ?? 1_000;
+  let state = await settleCheck(page, 3 * stepMs, stepMs);
+  if (state === 'clear') return state;
+  if (!CLICKED.has(page)) {
+    const point = await turnstilePoint(page);
+    if (point) {
+      CLICKED.add(page);
+      await page.mouse.click(point.x, point.y).catch(() => {});
+      state = await settleCheck(page, 6 * stepMs, stepMs);
+      if (state === 'clear') CLICKED.delete(page);
+    }
+  }
+  return state;
+}
+
+/**
+ * Waits out an interstitial that clears by itself: up to `waitMs`, reloading once halfway. A check
+ * that shows instead goes to `clickThroughCheck`. Returns the state the page ends in; `checking`
+ * at the end means it did not clear.
  */
 export async function waitOutWall(
   page: Page,
@@ -81,7 +138,8 @@ export async function waitOutWall(
   const waitMs = opts.waitMs ?? 24_000;
   const stepMs = opts.stepMs ?? 1_000;
   let state = wallState(await lookAt(page, status));
-  if (state === 'clear' || state === 'check') return state;
+  if (state === 'clear') return state;
+  if (state === 'check') return await clickThroughCheck(page, opts);
   const start = Date.now();
   let reloaded = false;
   // The status belongs to the first response: once the interstitial has run, the page in front
@@ -95,7 +153,8 @@ export async function waitOutWall(
       current = res?.status() ?? null;
     }
     state = wallState(await lookAt(page, current));
-    if (state === 'clear' || state === 'check') return state;
+    if (state === 'clear') return state;
+    if (state === 'check') return await clickThroughCheck(page, opts);
   }
   return state;
 }

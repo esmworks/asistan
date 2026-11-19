@@ -73,6 +73,14 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Changed
 
+- A bot check that stays now gets its own wait, one click on a Turnstile checkbox, and one more
+  wait before the page goes to a person. The single click is the one gesture a person makes at a
+  Turnstile and the check stays the one that decides; a second click, a reload or a puzzle is the
+  person's step (wall note updated in both languages).
+- The bots' Linux desktops run Google's own Chrome build instead of the distro's Chromium. Bot checks
+  like Cloudflare's read the open-source build's missing browser pieces as suspicious; running the
+  real browser is the honest fix — no imitating, no solving. Profiles keep their old path
+  (~/.config/chromium), so logins and cookies survive the switch.
 - Bots work by themselves by default ("Full access"). A new bot, one a manager creates and one imported without a
   level start there; the person can still pick "Ask" or "Read only". Only these still stop for the person, at every
   level: their "always ask" rules, a page that imitates a site they use, filling a saved card, a sign-in, and the

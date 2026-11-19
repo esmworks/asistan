@@ -1054,7 +1054,7 @@ const tr = {
   'browser.siteNotes': '{site} için daha önce aldığın notlar:',
   'browser.focused': 'Odak: {element}',
   'browser.wallCheck':
-    'Bu site bir bot denetimi gösteriyor (CAPTCHA, "insan olduğunu doğrula" ya da kendiliğinden geçmeyen bir bekleme sayfası); sunucu bekleyip sayfayı bir kez yeniledi, geçmedi. Denetimi kendin geçmeye ya da atlatmaya asla çalışma. ask_user ile kullanıcıdan Bilgisayar panelinde "Kontrolü al" ile bu adımı yapmasını iste; bitince devam et.',
+    'Bu site bir bot denetimi gösteriyor (CAPTCHA, "insan olduğunu doğrula" ya da kendiliğinden geçmeyen bir bekleme sayfası); sunucu bekledi — takılan bekleme sayfasını bir kez yeniledi — ve denetim bir Turnstile kutusuysa kutuyu bir kez tıkladı, yine de geçmedi. İkinci kez tıklama ya da atlatmaya çalışma: bulmaca ve tekrar insanın adımı. ask_user ile kullanıcıdan Bilgisayar panelinde "Kontrolü al" ile bu adımı yapmasını iste; bitince devam et.',
   'browser.wallBlocked':
     'Bu site tarayıcıyı geri çevirdi (erişim engellendi ya da çok fazla istek). Döngüde yeniden deneme ve engeli atlatmaya çalışma: başka bir kaynak kullan ya da kullanıcıya durumu söyle.',
   'browser.unchanged':
@@ -2465,7 +2465,7 @@ const en: Catalog<ServerKey> = {
   'browser.siteNotes': 'Your earlier notes on {site}:',
   'browser.focused': 'Focus: {element}',
   'browser.wallCheck':
-    'This site shows a bot check (a CAPTCHA, a "verify you are human", or a waiting page that did not clear by itself); the server waited and reloaded the page once, and it did not pass. Never try to pass or get around the check yourself. Use ask_user to ask the user to do this step with "Take control" in the Computer panel, then continue.',
+    'This site shows a bot check (a CAPTCHA, a "verify you are human", or a waiting page that did not clear by itself); the server waited — reloading a stuck waiting page once — and where the check was a Turnstile box it clicked the box once, and it still did not pass. Do not click again or try to get around the check: a puzzle and a repeat are the person\'s step. Use ask_user to ask the user to do this step with "Take control" in the Computer panel, then continue.',
   'browser.wallBlocked':
     'This site turned the browser away (access denied, or too many requests). Do not retry in a loop or try to get around it: use another source, or tell the user.',
   'browser.unchanged':
