@@ -19,6 +19,8 @@ await build({
     '@electric-sql/pglite',
     '@electric-sql/pglite/*',
     'playwright-core',
+    // The same Playwright, patched, for the desktop's browser (see src/browser/manager.ts).
+    'rebrowser-playwright-core',
     // A native image library, with a build for each platform beside it.
     'sharp',
     // Loaded only once WhatsApp is set up; it brings its own protocol files and native helpers.
