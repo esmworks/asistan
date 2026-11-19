@@ -20,12 +20,21 @@ const MAX_OUTPUT = 100_000;
 const MAX_BODY = 1024 * 1024;
 
 const PROFILE = join(HOME, '.config', 'chromium');
+/**
+ * The bot's language for the browser's menus and the pages it asks for. Left to itself Chromium
+ * asks every site in English, and a Turkish address asking in English is one more thing bot guards
+ * weigh against a browser.
+ */
+const browserLanguage = (process.env.LANG ?? '').startsWith('tr')
+  ? ['--lang=tr', '--accept-lang=tr-TR,tr,en-US,en']
+  : ['--lang=en-US', '--accept-lang=en-US,en'];
 const chromiumArgs = [
   '--user-data-dir=' + PROFILE,
   '--no-first-run',
   '--no-default-browser-check',
   '--disable-session-crashed-bubble',
   '--start-maximized',
+  ...browserLanguage,
   // The DevTools pipe makes Chromium report navigator.webdriver = true, which bot guards (Akamai
   // and the like) read as a program driving the browser and answer by cutting the site's requests.
   '--disable-blink-features=AutomationControlled',

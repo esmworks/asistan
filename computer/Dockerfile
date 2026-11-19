@@ -11,7 +11,8 @@ RUN pnpm install --frozen-lockfile --filter "@yumakbot/computer..." \
 
 FROM node:22-bookworm-slim
 # bubblewrap: one sandbox per bot. tigervnc: the virtual screen (Xvnc) the app watches. xfce parts:
-# started one by one, without a session manager. chromium: the bots' browser. python3 with openpyxl and
+# started one by one, without a session manager. chromium: the bots' browser, with chromium-l10n so it
+# speaks the bot's language (without it every page is asked for in English). python3 with openpyxl and
 # python-docx: bots edit spreadsheets and documents with them. git: bots work on repositories, with
 # GitHub reached through the controller's relay (computer/src/git-relay.ts). fonts: Turkish letters,
 # emoji and CJK.
@@ -23,7 +24,7 @@ RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-yum
     tigervnc-standalone-server tigervnc-tools xauth x11-utils x11-xserver-utils dbus dbus-x11 \
     xfce4-panel xfwm4 xfdesktop4 xfce4-settings xfce4-terminal thunar mousepad \
     adwaita-icon-theme gnome-themes-extra-data \
-    chromium libreoffice-calc libreoffice-writer libreoffice-gtk3 libreoffice-l10n-tr \
+    chromium chromium-l10n libreoffice-calc libreoffice-writer libreoffice-gtk3 libreoffice-l10n-tr \
     python3 python3-openpyxl python3-docx xdotool scrot git \
     fonts-dejavu-core fonts-liberation fonts-noto-color-emoji fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/* \
@@ -34,7 +35,9 @@ RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-yum
 # Desktop defaults (panel, wallpaper, default browser) and the browser launcher. Chromium's own
 # menu entry is hidden: a Chromium started without the DevTools pipe could not be driven by the bot.
 # The launcher's earlier name stays as a link: the panel copies its launchers into each bot's home on
-# first start, and homes created before the rename still call the old path.
+# first start, and homes created before the rename still call the old path. Chromium's managed policy
+# (etc/chromium/policies) hides the "unsupported command-line flag" bar the anti-automation flags in
+# computer/src/session.ts would put over every page: only a policy can turn it off.
 COPY --chown=root:root computer/rootfs/ /
 # corepack: the root file system is read-only for the bots, so the pnpm and yarn launchers go in here.
 RUN corepack enable \

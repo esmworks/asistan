@@ -18,6 +18,8 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - The bots' desktop browser no longer shows bot guards such as Akamai two marks of a program: started with the
   DevTools pipe, Chromium reported `navigator.webdriver` as true and sent an experimental TLS extension Chrome does
   not, and these sites cut the page's requests after the first one.
+- The bots' desktop browser speaks the bot's language: menus in Turkish for a Turkish bot, and pages asked for in its
+  language instead of always in English. The "unsupported command-line flag" bar no longer covers every page.
 
 ## 0.6.0 — 2026-11-19
 
