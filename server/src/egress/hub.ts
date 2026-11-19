@@ -23,10 +23,17 @@ export interface EgressState {
   device: string | null;
 }
 
+/**
+ * Why a computer's connection is ended: another computer took over, or this server is stopping.
+ * The desktop app connects again after a stop, so its computer is back once the server is; after
+ * a takeover it does not, or two computers would take the way out from each other in turns.
+ */
+export type LinkEnd = 'replaced' | 'shutdown';
+
 interface Link {
   device: string;
   mux: EgressMux;
-  close(): void;
+  close(why: LinkEnd): void;
 }
 
 /**
@@ -68,13 +75,13 @@ export class EgressHub {
    * A person's computer offers itself. The last one to connect is used; one connected before it
    * is let go. `send` puts a frame on its connection, `close` ends that connection.
    */
-  attach(device: string, send: (frame: Buffer) => void, close: () => void) {
+  attach(device: string, send: (frame: Buffer) => void, close: (why: LinkEnd) => void) {
     const link: Link = { device: device.slice(0, 100), mux: new EgressMux({ send }), close };
     const before = this.link;
     this.link = link;
     if (before) {
       before.mux.close();
-      before.close();
+      before.close('replaced');
     }
     this.changed();
     return {
@@ -113,7 +120,7 @@ export class EgressHub {
     const link = this.link;
     this.link = null;
     link?.mux.close();
-    link?.close();
+    link?.close('shutdown');
   }
 
   private changed() {

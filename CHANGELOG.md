@@ -18,6 +18,14 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 - A bot run on API keys at the "review" level has its steps reviewed by its own model. The reviewer used to be Claude
   alone, so on a server with only API keys and no Claude sign-in every reviewed step opened a card.
+- Opening a page on a site the person's own words name (a routine's instructions, their message) goes without a card
+  or a review, also after the run has read outside text. A conversation that once read a page stayed marked, so a
+  social media bot's routine asked again for the very site it was set up to check. What the bot does on the page
+  still asks as before.
+- The reviewer no longer hands a step to the person because it cannot see that an earlier step the instructions call
+  for was done; it sees one step only, and keeping to the order is the bot's job.
+- The desktop app connects again as the bots' way out to the web after the server restarts. A restart used to end
+  the connection the way a takeover by another computer does, and the app stayed away until it was opened again.
 
 ## 0.5.0 — 2026-11-19
 

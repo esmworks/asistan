@@ -38,7 +38,15 @@ import {
 import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import { browses, markedOutside, outsideFreeTools, outsideRead, outsideSource, reachesOut } from './outside';
+import {
+  browses,
+  markedOutside,
+  namesSite,
+  outsideFreeTools,
+  outsideRead,
+  outsideSource,
+  reachesOut,
+} from './outside';
 import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
@@ -72,6 +80,8 @@ function urlHost(url: unknown): string {
 
 /** Built-in tools that only read from the web. */
 const WEB_READS = ['WebSearch', 'WebFetch', SANDBOX_NETWORK];
+/** The app's own tool that opens a page in the bot's browser, by the name a permission request uses. */
+const BROWSER_OPEN = toolPermName({ name: 'browser_open' });
 
 /** Turns the person started from the app, who is likely there to answer a card. */
 /** How model servers say a request does not fit the context window (local servers included). */
@@ -962,6 +972,8 @@ export class TurnManager {
     // when it first matters.
     let asker: Promise<'message' | 'routine' | null> | null = null;
     const askedBy = () => (asker ??= requestedBy(this.ctx, turn));
+    // What the person themselves said for this work, read once when a step first needs it.
+    let ownWords: Promise<string[]> | null = null;
 
     let streamed = '';
     let shown = 0;
@@ -1114,6 +1126,21 @@ export class TurnManager {
         (await approvals.refusedLately(bot.id, ask.toolName, ask.input))
       ) {
         return { behavior: 'deny', message: t('turn.refusedLately') };
+      }
+      // Opening a page on a site the person's own words name ("check the Facebook group") is what
+      // they asked for, after outside text too: a card or a review for it only buried the cards
+      // that matter. Opening sends nothing but the address; what the bot then does on the page
+      // (a click that sends, a form) still goes by the level.
+      if (
+        (mode === 'ask' || mode === 'review') &&
+        !locked &&
+        !gated &&
+        (ask.toolName === BROWSER_OPEN || ask.toolName === 'WebFetch') &&
+        !askRuleMatches(rules, ask.toolName, ask.input) &&
+        (await publicHost(urlHost(ask.input.url))) &&
+        namesSite(ask.input.url, await (ownWords ??= ownerWords(this.ctx, turn)))
+      ) {
+        return { behavior: 'allow' };
       }
       // Review mode: a small model may let a clearly safe request through. Never for what an
       // "always ask" rule covers, what only the person may approve, or a step that sends, unless

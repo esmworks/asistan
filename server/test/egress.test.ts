@@ -244,6 +244,38 @@ describe('the desktop app connection', () => {
     }
   });
 
+  it('lets the desktop app connect again after the server stops, not after a takeover', async () => {
+    const reason = (lines: string[]) =>
+      lines.map((l) => /disconnected \((.+)\)/.exec(l)?.[1]).find((r): r is string => !!r);
+    const t = await testServer({ onUserComputer: false });
+    const url = await t.listen();
+    const start = (device: string, lines: string[]) =>
+      startEgress({
+        url,
+        headers: async () => ({ authorization: `Bearer ${KEY}` }),
+        device,
+        log: (_level, line) => lines.push(line),
+      });
+    const first: string[] = [];
+    const second: string[] = [];
+    const stopFirst = start('First Mac', first);
+    let stopSecond: (() => void) | null = null;
+    try {
+      const hub = t.services.ctx.egress!;
+      await waitFor(async () => hub.state().device === 'First Mac');
+      stopSecond = start('Second Mac', second);
+      // The one let go is told so: socket.io does not connect again after a server's disconnect.
+      expect(await waitFor(async () => reason(first))).toBe('io server disconnect');
+      await waitFor(async () => hub.state().device === 'Second Mac');
+      await t.dispose();
+      // A stop is a dropped connection, which the client connects again after.
+      expect(await waitFor(async () => reason(second))).toBe('transport close');
+    } finally {
+      stopFirst();
+      stopSecond?.();
+    }
+  });
+
   it('turns away a connection without the access key', async () => {
     const t = await testServer({ onUserComputer: false });
     const url = await t.listen();

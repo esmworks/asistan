@@ -512,7 +512,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     const link = egress.attach(
       typeof device === 'string' ? device : '',
       (f) => socket.emit('f', f),
-      () => socket.disconnect(true),
+      // A takeover tells the app it was let go, so it stays away; a stop only drops the
+      // connection, which the app reads as the server gone for a while and connects again.
+      (why) => (why === 'replaced' ? socket.disconnect(true) : socket.conn.close()),
     );
     socket.on('f', (f: unknown) => {
       if (Buffer.isBuffer(f)) link.receive(f);

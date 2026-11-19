@@ -1,4 +1,5 @@
 import type { OutsideTrigger } from '@yumakbot/shared';
+import { getDomain, getDomainWithoutSuffix } from 'tldts';
 import { toolPermName, type AppTool, type ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import { runsInlineCode } from './safety';
@@ -75,6 +76,35 @@ export function reachesOut(toolName: string, input: Record<string, unknown>, too
 export function browses(toolName: string, tool?: AppTool): boolean {
   if (toolName === 'WebSearch' || toolName === 'WebFetch') return true;
   return !!tool && !tool.server && tool.name.startsWith('browser_');
+}
+
+/** Text compared without case or accents, so "Facebook'ta" and "İnstagram" match a site's name. */
+const fold = (s: string) => s.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '');
+
+/**
+ * Whether the person's own words name the site of a page address: its domain ("facebook.com"),
+ * or its name at the start of a word ("Facebook'taki grup"). A name shorter than four letters
+ * counts only as the whole domain, since "x" or "ok" turn up in any sentence. Opening a page
+ * there is what they asked for, whatever text the run has read since.
+ */
+export function namesSite(url: unknown, words: readonly string[]): boolean {
+  if (typeof url !== 'string') return false;
+  let host: string;
+  try {
+    const u = new URL(/^[a-z][\w+.-]*:/i.test(url) ? url : `https://${url}`);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    host = u.hostname;
+  } catch {
+    return false;
+  }
+  const domain = getDomain(host);
+  const name = getDomainWithoutSuffix(host);
+  if (!domain || !name) return false;
+  const said = fold(words.join('\n'));
+  if (said.includes(fold(domain))) return true;
+  if (name.length < 4) return false;
+  const escaped = fold(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}`, 'u').test(said);
 }
 
 /** Words in an input's name that make it a place to send to: a page, a host, a hook. */
