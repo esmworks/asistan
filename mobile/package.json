@@ -2,7 +2,7 @@
   "name": "@yumakbot/mobile",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Yumak Bot's native app for iOS and Android",
   "main": "expo-router/entry",
   "scripts": {
