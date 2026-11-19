@@ -75,6 +75,10 @@ async function mcpFixture(
     echoRefresh: false,
     /** The authorization server's metadata is at its OpenID address, with a web page at the usual one. */
     pageAtMetadata: false,
+    /** No resource metadata is published, as Microsoft 365's MCP server does not. */
+    noResourceMetadata: false,
+    /** The scopes the authorization server lists. */
+    serverScopes: undefined as string[] | undefined,
     registrations: 0,
     /** Tokens the revocation endpoint was given. */
     revoked: [] as string[],
@@ -210,6 +214,7 @@ async function mcpFixture(
         path === '/.well-known/oauth-protected-resource/mcp' ||
         path === '/.well-known/oauth-protected-resource'
       ) {
+        if (oauth.noResourceMetadata) return json(res, 404, { error: 'not_found' });
         return json(res, 200, { resource: `${base.url}/mcp`, authorization_servers: [base.url] });
       }
       if (path === '/.well-known/oauth-authorization-server' && oauth.pageAtMetadata) {
@@ -234,6 +239,7 @@ async function mcpFixture(
           jwks_uri: `${base.url}/jwks`,
           subject_types_supported: ['public'],
           id_token_signing_alg_values_supported: ['RS256'],
+          ...(oauth.serverScopes ? { scopes_supported: oauth.serverScopes } : {}),
         });
       }
       if (path === '/revoke' && req.method === 'POST') {
@@ -651,6 +657,29 @@ describe('bağlantılar', () => {
     expect(out.body.status).toBe('signed-out');
     const refreshed = await t.api<Connection>('POST', `/api/connections/${c.id}/refresh`);
     expect(refreshed.body.status).toBe('signed-out');
+  });
+
+  it('OAuth: kaynak bilgisi yayımlamayan servis, oturum sunucusunun listelediği izinleri ister', async () => {
+    const f = await fixture({ oauth: true });
+    f.oauth.serverScopes = ['api://servis/.default', 'openid', 'offline_access'];
+    const signInScope = async () => {
+      const c = (
+        await t.api<Connection>('POST', '/api/connections', { name: 'Servis', url: f.url, auth: 'oauth' })
+      ).body;
+      const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${c.id}/signin`);
+      expect(start.status).toBe(200);
+      const scope = new URL(start.body.url!).searchParams.get('scope');
+      await t.api('DELETE', `/api/connections/${c.id}`);
+      return scope;
+    };
+
+    // Entra refuses a sign-in page with no scope: the listed ones are asked for.
+    f.oauth.noResourceMetadata = true;
+    expect(await signInScope()).toBe('api://servis/.default openid offline_access');
+
+    // A resource with metadata that names no scope wants none, whatever its sign-in server lists.
+    f.oauth.noResourceMetadata = false;
+    expect(await signInScope()).toBeNull();
   });
 
   it('OAuth: başka hesap, ilk bağlantının kayıtlı uygulamasıyla sırrı yeniden sormadan oturum açar', async () => {
