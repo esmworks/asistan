@@ -1139,6 +1139,12 @@ const tr = {
   'meeting.noteOthers': 'Diğer işler:',
   'meeting.noteQuestions': 'Açık kalan sorular:',
   'meeting.noteDue': '(son gün {due})',
+  'meeting.reminderName': 'Hatırlatma: {task}',
+  'meeting.reminderOwn':
+    '“{room}” odasındaki “{title}” toplantısında ({day}) şu işi üstlendin: {task}\n\nSon günü bugün. Ne durumda olduğuna bak ve kişiye kısaca bildir: bittiyse ne yapıldığını, bitmediyse ne kaldığını ve ne zaman biteceğini yaz.',
+  'meeting.reminderOther':
+    '“{room}” odasındaki “{title}” toplantısında ({day}) bu işi {owner} üstlendi: {task}\n\nSon günü bugün. Kişiye bu işi kısaca hatırlat ve işin bitmesine yardım edebileceğin bir şey olup olmadığını sor.',
+  'meeting.reminderNobody': 'kimse',
   'tool.memoryNotYours': 'Bu kayıt başka bir botun kendi notu; ona dokunamazsın.',
   'tool.memoryTeamPersonal':
     'Bu bir ekip konuşması: burada kişiye ait not yazılmaz. Kendi notun olarak (scope bot) yaz ya da bırak.',
@@ -2544,6 +2550,12 @@ const en: Catalog<ServerKey> = {
   'meeting.noteOthers': 'Other tasks:',
   'meeting.noteQuestions': 'Questions left open:',
   'meeting.noteDue': '(due {due})',
+  'meeting.reminderName': 'Reminder: {task}',
+  'meeting.reminderOwn':
+    'In the meeting “{title}” in the room “{room}” ({day}) you took this on: {task}\n\nIt is due today. Look at where it stands and tell the person briefly: if it is done, what was done; if not, what is left and when it will be done.',
+  'meeting.reminderOther':
+    'In the meeting “{title}” in the room “{room}” ({day}) {owner} took this on: {task}\n\nIt is due today. Remind the person of it briefly and ask whether there is anything you can do to help get it done.',
+  'meeting.reminderNobody': 'no one',
   'tool.memoryNotYours': "That entry is another bot's own note; you cannot touch it.",
   'tool.memoryTeamPersonal':
     'This is a team conversation: notes about one person are not written here. Write a note of your own (scope bot) or leave it.',

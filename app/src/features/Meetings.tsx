@@ -11,6 +11,8 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
+  Bell,
+  BellOff,
   CheckCircle2,
   ClipboardList,
   Copy,
@@ -280,6 +282,8 @@ function SentLine({ meeting }: { meeting: Meeting }) {
       {t('meeting.saved')}
       {meeting.sentTo.length > 0 && ` · ${t('meeting.sentCount', { count: meeting.sentTo.length })}`}
       {waiting > 0 && ` · ${t('meeting.waitingCount', { count: waiting })}`}
+      {meeting.reminders.length > 0 &&
+        ` · ${t('meeting.reminderCount', { count: meeting.reminders.length })}`}
     </span>
   );
 }
@@ -495,6 +499,7 @@ function MinutesView({
         </DialogDescription>
       </DialogHeader>
       <MinutesSections minutes={minutes} meta={`${room.title} · ${dayLabel(meeting.startedAt)}`} />
+      {meeting.reminders.length > 0 && <Reminders meeting={meeting} />}
       <DialogFooter className="gap-2">
         <Button
           type="button"
@@ -608,38 +613,51 @@ function MinutesEditor({
   const [questions, setQuestions] = useState(oneLine(minutes.questions));
   const decisionsFit = fits(lines(decisions));
   const questionsFit = fits(lines(questions));
-  const [tasks, setTasks] = useState<MeetingTask[]>(minutes.tasks);
   // The room's bots first, then the rest the person may talk with; only bots that keep memory.
   const members = room.members.flatMap((id) => bots.filter((b) => b.id === id && !b.archivedAt));
+  // A reminder runs as a routine of a bot the person may change: the one that took the task on,
+  // or else the room's first such bot. The server picks the same.
+  const editable = members.filter((b) => b.yourLevel !== 'chat');
+  const byName = (name: string) =>
+    members.find((b) => b.name.toLocaleLowerCase() === name.trim().replace(/^@/, '').toLocaleLowerCase());
+  const reminderBot = (owner: string) => {
+    const own = byName(owner);
+    return (own && editable.find((b) => b.id === own.id)) ?? editable[0];
+  };
+  const [remindAt, setRemindAt] = useState('09:00');
+  const upcoming = (due: string | null) => !!due && new Date(`${due}T${remindAt}`).getTime() > Date.now();
+  const [tasks, setTasks] = useState<(MeetingTask & { remind: boolean })[]>(() =>
+    minutes.tasks.map((x) => ({ ...x, remind: !!reminderBot(x.owner) && upcoming(x.due) })),
+  );
   const others = bots.filter((b) => !b.archivedAt && !room.members.includes(b.id));
   const [picked, setPicked] = useState<string[]>(members.filter((b) => b.memory).map((b) => b.id));
   const person = settings?.userName || t('export.you');
   const names = [...new Set([person, ...members.map((b) => b.name)])];
 
-  const setTask = (i: number, patch: Partial<MeetingTask>) =>
+  const setTask = (i: number, patch: Partial<MeetingTask & { remind: boolean }>) =>
     setTasks((all) => all.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const save = useMutation({
     mutationFn: () => {
-      const byName = (name: string) =>
-        members.find((b) => b.name.toLocaleLowerCase() === name.trim().replace(/^@/, '').toLocaleLowerCase());
+      const kept = tasks.filter((x) => x.text.trim());
       const approved: MeetingMinutes = {
         title: title.trim() || minutes.title,
         summary: summary.trim(),
         decisions: lines(decisions),
-        tasks: tasks
-          .filter((x) => x.text.trim())
-          .map((x) => {
-            const bot = byName(x.owner);
-            return {
-              text: x.text.trim(),
-              owner: (bot?.name ?? x.owner).trim(),
-              botId: bot?.id ?? null,
-              due: x.due || null,
-            };
-          }),
+        tasks: kept.map((x) => {
+          const bot = byName(x.owner);
+          return {
+            text: x.text.trim(),
+            owner: (bot?.name ?? x.owner).trim(),
+            botId: bot?.id ?? null,
+            due: x.due || null,
+          };
+        }),
         questions: lines(questions),
       };
-      return api.saveMeeting(room.id, meeting.id, { minutes: approved, botIds: picked });
+      const reminders = kept.flatMap((x, i) =>
+        x.remind && upcoming(x.due) && reminderBot(x.owner) ? [i] : [],
+      );
+      return api.saveMeeting(room.id, meeting.id, { minutes: approved, botIds: picked, reminders, remindAt });
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['meetings', room.id] });
@@ -736,6 +754,13 @@ function MinutesEditor({
               >
                 <X className="size-4" />
               </Button>
+              <ReminderToggle
+                due={task.due}
+                bot={reminderBot(task.owner)}
+                upcoming={upcoming(task.due)}
+                on={task.remind}
+                onToggle={() => setTask(i, { remind: !task.remind })}
+              />
             </div>
           ))}
           <Button
@@ -744,12 +769,25 @@ function MinutesEditor({
             variant="ghost"
             className="rounded-full"
             disabled={tasks.length >= MAX_MINUTES_ITEMS}
-            onClick={() => setTasks((all) => [...all, { text: '', owner: '', botId: null, due: null }])}
+            onClick={() =>
+              setTasks((all) => [...all, { text: '', owner: '', botId: null, due: null, remind: true }])
+            }
           >
             <Plus /> {t('meeting.addTask')}
           </Button>
         </div>
       </Field>
+      {tasks.some((x) => x.due) && editable.length > 0 && (
+        <Field label={t('meeting.remindAt')}>
+          <Input
+            type="time"
+            value={remindAt}
+            onChange={(e) => setRemindAt(e.target.value || '09:00')}
+            className="w-36 rounded-xl"
+          />
+          <p className="text-xs text-muted-foreground">{t('meeting.remindHint')}</p>
+        </Field>
+      )}
       <Field label={t('meeting.questions')}>
         <Textarea
           value={questions}
@@ -790,6 +828,73 @@ function MinutesEditor({
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** The reminders set for the meeting's tasks: when, by which bot, for what. */
+function Reminders({ meeting }: { meeting: Meeting }) {
+  const t = useT();
+  const { calendarDay } = useFormat();
+  const { data: bots = [] } = useBots();
+  return (
+    <section className="space-y-1.5 rounded-2xl border px-5 py-4">
+      <h3 className="text-sm font-semibold">{t('meeting.reminders')}</h3>
+      <ul className="space-y-1 text-[15px]">
+        {meeting.reminders.map((r) => (
+          <li key={r.routineId} className="flex flex-wrap items-baseline gap-x-2">
+            <Bell className="size-3.5 shrink-0 self-center text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {calendarDay(r.date)} {r.time} ·{' '}
+              {bots.find((b) => b.id === r.botId)?.name ?? t('room.unknownBot')}
+            </span>
+            <span>{r.task}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">{t('meeting.remindersHint')}</p>
+    </section>
+  );
+}
+
+/** Whether a task is reminded of on its day, and by which bot; why not, when it cannot be. */
+function ReminderToggle({
+  due,
+  bot,
+  upcoming,
+  on,
+  onToggle,
+}: {
+  due: string | null;
+  bot: Bot | undefined;
+  upcoming: boolean;
+  on: boolean;
+  onToggle(): void;
+}) {
+  const t = useT();
+  if (!due) return null;
+  const why = !bot ? t('meeting.remindNoBot') : !upcoming ? t('meeting.remindPast') : null;
+  return (
+    <div className="col-span-full flex items-center gap-2 px-1 text-xs text-muted-foreground">
+      {why ? (
+        <>
+          <BellOff className="size-3.5" />
+          {why}
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-pressed={on}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full px-2 py-0.5 hover:bg-accent',
+            on && 'bg-primary/10 text-foreground',
+          )}
+        >
+          {on ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
+          {on ? t('meeting.remindOn', { bot: bot!.name }) : t('meeting.remindOff')}
+        </button>
+      )}
+    </div>
   );
 }
 

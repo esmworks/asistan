@@ -7,11 +7,13 @@ import {
   type MeetingAnswer,
   type MeetingMinutes,
   type MeetingRecipient,
+  type MeetingReminder,
   type MeetingSave,
   type MeetingStatus,
   type MeetingTask,
   type Message,
   type RoomMinutes,
+  RoutineCreate,
 } from '@yumakbot/shared';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -178,6 +180,7 @@ export class MeetingService {
       minutes: (row.minutes as MeetingMinutes | null) ?? null,
       error: row.error,
       sentTo: row.sentTo,
+      reminders: (row.reminders as MeetingReminder[] | null) ?? [],
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -699,7 +702,8 @@ export class MeetingService {
       .from(schema.users)
       .where(eq(schema.users.id, viewer.userId))
       .limit(1);
-    const day = dayIn(row.fromAt, (await this.services.settings.all(thread.userId ?? undefined)).timezone);
+    const timezone = (await this.services.settings.all(thread.userId ?? undefined)).timezone;
+    const day = dayIn(row.fromAt, timezone);
     const sentTo: MeetingRecipient[] = [];
     for (const botId of [...new Set(body.botIds)]) {
       const bot = all.find((b) => b.id === botId);
@@ -746,13 +750,117 @@ export class MeetingService {
         console.warn(`Meeting note for bot ${botId} failed: ${(err as Error).message}`);
       }
     }
+    const reminders = await this.remind(roomId, minutes, body, viewer, {
+      t,
+      day,
+      room: thread.title,
+      timezone,
+    });
     await this.ctx.db
       .update(schema.meetings)
-      .set({ sentTo, updatedAt: new Date() })
+      .set({ sentTo, reminders, updatedAt: new Date() })
       .where(eq(schema.meetings.id, id));
     if (sentTo.some((s) => !s.waiting)) this.ctx.bus.refresh({ scope: 'memory' });
     await this.changed(roomId);
     return this.get(roomId, id);
+  }
+
+  /**
+   * Reminders for the tasks the person picked: a routine that runs once on the task's day, in the
+   * bot's main conversation, as the person. The bot that took the task on looks at where it stands;
+   * a person's task, or one of a bot the person may not change, is brought up by the first bot of
+   * the room the person may change. A task with no day, or a day already past, gets none.
+   */
+  private async remind(
+    roomId: string,
+    minutes: MeetingMinutes,
+    body: MeetingSave,
+    viewer: Viewer,
+    o: { t: T; day: string; room: string; timezone: string },
+  ): Promise<MeetingReminder[]> {
+    const picked = [...new Set(body.reminders)].flatMap((i) => {
+      const task = minutes.tasks[i];
+      return task?.due ? [task] : [];
+    });
+    if (!picked.length) return [];
+    const { members } = await this.bots(roomId);
+    const editable: Bot[] = [];
+    for (const b of members) {
+      if (atLeast(await this.services.access.level(viewer, b.id), 'edit')) editable.push(b);
+    }
+    const pruned = new Set<string>();
+    const made: MeetingReminder[] = [];
+    for (const task of picked) {
+      const own = editable.find((b) => b.id === task.botId);
+      const bot = own ?? editable[0];
+      if (!bot) break;
+      const prompt = own
+        ? o.t('meeting.reminderOwn', { title: minutes.title, day: o.day, room: o.room, task: task.text })
+        : o.t('meeting.reminderOther', {
+            title: minutes.title,
+            day: o.day,
+            room: o.room,
+            task: task.text,
+            owner: task.owner || o.t('meeting.reminderNobody'),
+          });
+      try {
+        if (!pruned.has(bot.id)) {
+          pruned.add(bot.id);
+          await this.pruneReminders(bot.id);
+        }
+        const routine = await this.services.routines.create(
+          {
+            ...RoutineCreate.parse({
+              botId: bot.id,
+              name: truncate(o.t('meeting.reminderName', { task: task.text }), 80),
+              prompt: redactSecrets(prompt, o.t('memory.redacted')).text,
+              schedule: { type: 'once', date: task.due, time: body.remindAt },
+              timezone: o.timezone,
+            }),
+            // In the conversation where the person talks with the bot, so they see it there.
+            inMain: true,
+          },
+          viewer.userId,
+        );
+        made.push({
+          routineId: routine.id,
+          botId: bot.id,
+          task: task.text,
+          date: task.due!,
+          time: body.remindAt,
+        });
+      } catch (err) {
+        // A day already past, or a bot with no room for another routine: that task gets none.
+        console.warn(`Meeting reminder for bot ${bot.id} not set: ${(err as Error).message}`);
+      }
+    }
+    return made;
+  }
+
+  /**
+   * Reminders of earlier meetings that already ran stay as routines turned off; they are removed
+   * before a new one is set, so they do not fill the bot's routines.
+   */
+  private async pruneReminders(botId: string) {
+    const rows = await this.ctx.db.select({ reminders: schema.meetings.reminders }).from(schema.meetings);
+    const ids = rows.flatMap((r) =>
+      ((r.reminders as MeetingReminder[] | null) ?? [])
+        .filter((x) => x.botId === botId)
+        .map((x) => x.routineId),
+    );
+    if (!ids.length) return;
+    const spent = await this.ctx.db
+      .select({ id: schema.routines.id })
+      .from(schema.routines)
+      .where(
+        and(
+          inArray(schema.routines.id, ids),
+          eq(schema.routines.botId, botId),
+          eq(schema.routines.enabled, false),
+          isNotNull(schema.routines.lastRunAt),
+        ),
+      );
+    for (const r of spent) await this.services.routines.remove(r.id);
   }
 }
 

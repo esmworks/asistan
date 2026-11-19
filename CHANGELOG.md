@@ -14,6 +14,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
   approves them, and picks which bots are to know: each gets a note in memory with the decisions and the tasks it took
   on first, so it knows them in every conversation, not only in the room. A note for a bot the person may only talk
   with waits for the bot's owner. Minutes can be copied or downloaded as Markdown, and are kept encrypted.
+- Tasks in approved minutes that have a day can be reminded of. On that day, at a time the person picks, the bot that
+  took the task on looks at where it stands and tells the person, in the conversation where they talk; a person's
+  task is brought up by the first bot of the room the person may change. Each reminder is a one-time routine among
+  the bot's routines, and reminders that already ran are cleared away as new ones are set.
 - Bots on API keys run shell commands in the same OS sandbox as Claude bots: kept to the bot's folders, with an
   environment of their own, the internet only when the bot has it on, and public addresses only. A bot with a
   desktop keeps running its commands there.
