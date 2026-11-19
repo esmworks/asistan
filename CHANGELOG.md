@@ -39,6 +39,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - "Always allow" on a card puts the bot on full access and lets through the cards it is waiting on, instead of
   keeping a narrow rule for that one step. The suggestion for a bot whose cards the person nearly always allows now
   offers full access.
+- A bot's memory changes take effect at once, wherever they come from: a routine, another bot, a turn that read
+  outside text, the background memory review, the shared memory, a place's notes, a pinned note or one the person
+  wrote. A stopped or failed turn keeps what it wrote. Every change still shows in the memory screen and its history,
+  where the person can change or delete it. Only a change to a bot's notes asked by someone who may not change that
+  bot still waits for someone who may; the background review skips such changes, and leaves the notes the person
+  wrote or pinned alone, instead of queuing them.
 
 ### Fixed
 

@@ -29,7 +29,7 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
       .values({ threadId: th.id, serverId: 'S1', channel, rootId: newId() });
     return th;
   };
-  /** Lets the turns finish, approving each card that asks about memory; returns what the cards said. */
+  /** Lets the turns finish, approving any memory card; returns what the cards said (none ask now). */
   const approving = async () => {
     const asked: string[] = [];
     for (;;) {
@@ -70,10 +70,8 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     await t.api('POST', '/api/memory', { scope: 'user', content: 'Kedisi Pamuk' });
 
     await t.send(a1.id, '[araç:memory_write {"content":"Cuma günü yayın yapılmaz","scope":"room"}]');
-    // Everyone in the channel reads it, so the person is asked even while they are there.
-    expect(await approving()).toEqual([
-      'Kanalcı, bu kanalda ya da odada konuşan herkesin göreceği yer notlarına yazmak istiyor: “Cuma günü yayın yapılmaz”',
-    ]);
+    // Written straight away; everyone in the channel reads it.
+    expect(await approving()).toEqual([]);
     const saved = (await notes()).find((m) => m.scope === 'room')!;
     expect(saved).toMatchObject({ place: 'slack:CA', botId: null, userId: null });
 
@@ -166,7 +164,7 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     expect((await ayse.api('DELETE', `/api/memory/${note.id}`)).status).toBe(200);
   });
 
-  it('sabitlenen not istemde önce gelir, bayat sayılmaz ve botun değişikliği karta düşer', async () => {
+  it('sabitlenen not istemde önce gelir ve bayat sayılmaz; bot onu da sormadan değiştirir', async () => {
     const bot = await t.bot({ name: 'Sabitçi' });
     const th = await main(bot.id);
     const post = async (body: object) => (await t.api<Memory>('POST', '/api/memory', body)).body;
@@ -192,16 +190,15 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     expect(staleNotes([old], [], new Date())).toEqual([]);
     expect(staleNotes([{ ...old, pinned: false }], [], new Date())).toHaveLength(1);
 
-    // A bot changing its own pinned note asks first, though it would not for an unpinned one.
+    // A bot changes its own pinned note as it does an unpinned one, without a card.
     const mine = await post({ scope: 'bot', botId: bot.id, content: 'benim notum' });
-    await t.send(th.id, `[araç:memory_update {"id":"${mine.id}","content":"değişti"}]`);
-    await t.services.turns.idle();
-    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
     await t.api('PATCH', `/api/memory/${mine.id}`, { pinned: true });
-    await t.send(th.id, `[araç:memory_update {"id":"${mine.id}","content":"yine değişti"}]`);
-    expect(await approving()).toHaveLength(1);
+    await t.send(th.id, `[araç:memory_update {"id":"${mine.id}","content":"değişti"}]`);
+    expect(await approving()).toEqual([]);
+    expect((await notes()).find((m) => m.id === mine.id)!.content).toBe('değişti');
     await t.send(th.id, `[araç:memory_forget {"id":"${mine.id}"}]`);
-    expect(await approving()).toHaveLength(1);
+    expect(await approving()).toEqual([]);
+    expect((await notes()).some((m) => m.id === mine.id)).toBe(false);
     expect(MEMORY_PROMPT_CHARS).toBeGreaterThan(PINNED_MEMORY_CHARS * 3);
   });
 
@@ -279,31 +276,8 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     expect((await t.messages(th.id)).at(-1)!.text).toContain('eski adres Kadıköy');
   });
 
-  it('durdurulan turun yazdığı not geri alınır ve onay bekleyenlere düşer; kabul edilince yazılır', async () => {
+  it('durdurulan turun yazdığı, değiştirdiği ve sildiği not olduğu gibi kalır; bekleyen değişiklik doğmaz', async () => {
     const bot = await t.bot({ name: 'Yarım' });
-    const th = await main(bot.id);
-    await t.send(th.id, '[araç:memory_write {"content":"yarım kalan not","scope":"bot"}] [bekle:10000]');
-    await waitFor(async () => (await notes()).length === 1);
-    await t.api('POST', `/api/threads/${th.id}/stop`);
-    await t.services.turns.idle();
-    expect(await notes()).toHaveLength(0);
-    const [waiting] = await changes();
-    expect(waiting).toMatchObject({
-      action: 'write',
-      content: 'yarım kalan not',
-      scope: 'bot',
-      botId: bot.id,
-      origin: { kind: 'stopped', name: 'Yarım' },
-    });
-    // The words of the taken-back note stay in no history line.
-    const lines = (await t.api<{ before: unknown; after: unknown }[]>('GET', '/api/memory-history')).body;
-    expect(JSON.stringify(lines)).not.toContain('yarım kalan not');
-    expect((await t.api('POST', `/api/memory-changes/${waiting!.id}/accept`, {})).status).toBe(200);
-    expect((await notes()).map((m) => m.content)).toEqual(['yarım kalan not']);
-  });
-
-  it('durdurulan turun değiştirdiği ve sildiği not eski haline döner', async () => {
-    const bot = await t.bot({ name: 'Kararsız' });
     const th = await main(bot.id);
     const a = (
       await t.api<Memory>('POST', '/api/memory', { scope: 'bot', botId: bot.id, content: 'adres Kadıköy' })
@@ -313,19 +287,14 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     ).body;
     await t.send(
       th.id,
-      `[araç:memory_update {"id":"${a.id}","content":"adres Beşiktaş"}] [araç:memory_forget {"id":"${b.id}"}] [bekle:10000]`,
+      `[araç:memory_write {"content":"yarım kalan not","scope":"bot"}] [araç:memory_update {"id":"${a.id}","content":"adres Beşiktaş"}] [araç:memory_forget {"id":"${b.id}"}] [bekle:10000]`,
     );
-    await waitFor(async () => (await notes()).length === 1);
+    await waitFor(async () => (await notes()).some((m) => m.content === 'adres Beşiktaş'));
+    await waitFor(async () => (await notes()).length === 2);
     await t.api('POST', `/api/threads/${th.id}/stop`);
     await t.services.turns.idle();
-    expect((await notes()).map((m) => m.content).sort()).toEqual(['adres Kadıköy', 'kedi Pamuk']);
-    const waiting = await changes();
-    expect(waiting.map((c) => c.action).sort()).toEqual(['forget', 'update']);
-    expect(waiting.every((c) => c.origin.kind === 'stopped')).toBe(true);
-    const update = waiting.find((c) => c.action === 'update')!;
-    expect(update).toMatchObject({ before: 'adres Kadıköy', content: 'adres Beşiktaş' });
-    await t.api('POST', `/api/memory-changes/${update.id}/accept`, {});
-    expect((await notes()).map((m) => m.content)).toContain('adres Beşiktaş');
+    expect((await notes()).map((m) => m.content).sort()).toEqual(['adres Beşiktaş', 'yarım kalan not']);
+    expect(await changes()).toHaveLength(0);
   });
 
   it('biten turun yazdığı not kalır', async () => {
@@ -386,34 +355,6 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     expect(await lines(kept.id)).not.toHaveLength(0);
   });
 
-  it('turda kartla onaylanan ortak not ile doğrudan yazılan bot notu birlikte yazılırsa, durdurulunca yalnızca doğrudan yazılan geri alınır', async () => {
-    const bot = await t.bot({ name: 'İkili' });
-    const th = await main(bot.id);
-    await t.send(
-      th.id,
-      '[araç:memory_write {"content":"ortak not","scope":"user"}] [araç:memory_write {"content":"kendi notum","scope":"bot"}] [bekle:10000]',
-    );
-    // The shared note asks on a card; the turn goes on only after the person says yes.
-    await waitFor(async () => {
-      const cards = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
-      for (const c of cards.filter((x) => x.toolName.startsWith('memory_')))
-        await t.api('POST', `/api/approvals/${c.id}`, { decision: 'allow', answer: 'Onayla' });
-      return (await notes()).length === 2;
-    });
-    await t.api('POST', `/api/threads/${th.id}/stop`);
-    await t.services.turns.idle();
-    // What the person approved on a card stays; the bot's own note is taken back and waits.
-    expect((await notes()).map((m) => m.content)).toEqual(['ortak not']);
-    const waiting = await changes();
-    expect(waiting).toHaveLength(1);
-    expect(waiting[0]).toMatchObject({
-      action: 'write',
-      content: 'kendi notum',
-      scope: 'bot',
-      origin: { kind: 'stopped', name: 'İkili' },
-    });
-  });
-
   it('sabitlenmiş notu sınırı aşacak biçimde uzatan memory_update fırlatmaz, botun anlayacağı cevabı verir', async () => {
     const bot = await t.bot({ name: 'Sığmayan' });
     const th = await main(bot.id);
@@ -426,13 +367,12 @@ describe('hafıza: yer notları, sabitleme, unutma ve yarım kalan turlar', () =
     const small = await post('kısa');
     expect((await t.api('PATCH', `/api/memory/${small.id}`, { pinned: true })).status).toBe(200);
     await t.send(th.id, `[araç:memory_update {"id":"${small.id}","content":"${'z'.repeat(1990)}"}]`);
-    // A pinned note is the person's choice, so the bot asks on a card before the limit is even met.
-    await approving();
+    await t.services.turns.idle();
     expect((await t.messages(th.id)).at(-1)!.text).toContain('Sabitlenen notların sınırı dolu');
     expect((await notes()).find((m) => m.id === small.id)!.content).toBe('kısa');
   });
 
-  it('turun yazdığı notu tur sürerken kişi düzenlerse ya da sabitlerse durdurulunca olduğu gibi kalır ve bekleyen değişiklik doğmaz', async () => {
+  it('turun yazdığı notu tur sürerken kişi düzenlerse ya da sabitlerse durdurulunca kişinin hali kalır', async () => {
     const bot = await t.bot({ name: 'Çakışan' });
     const th = await main(bot.id);
     for (const how of ['edit', 'pin'] as const) {

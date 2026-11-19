@@ -1,4 +1,4 @@
-import { outsideIn, type Bot, type Memory, type MemoryChange, type MemoryScope } from '@yumakbot/shared';
+import { outsideIn, type Bot, type Memory } from '@yumakbot/shared';
 import { and, count, desc, eq, gt, gte, inArray, isNotNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';
@@ -7,6 +7,7 @@ import type { Engine, TurnOutcome } from '../engine/types';
 import { translator, type T } from '../i18n';
 import { OWNER_ID } from '../users';
 import { HttpError, truncate } from '../util';
+import { atLeast } from './access';
 import { placeOf, ROOM_NOTES_PER_PLACE } from './memory';
 import { redactSecrets } from './secrets';
 import type { Services } from './index';
@@ -23,7 +24,7 @@ const SPAN_CHARS = 48_000;
 /** What of the notes goes into one request; a note left out is one the review cannot touch. */
 const NOTE_CHARS = 400;
 const NOTES_CHARS = 30_000;
-/** The most changes one review makes or proposes. */
+/** The most changes one review makes. */
 const MAX_OPERATIONS = 20;
 /** A conversation that was reset is looked at early when this many turns had not been reviewed. */
 const RESET_MIN_TURNS = 3;
@@ -265,6 +266,11 @@ export class MemoryReviewService {
     const notes = [...visible.bot, ...(team ? [] : visible.user), ...visible.room];
 
     const outside = await this.readOutside(thread, span);
+    // A bot's notes reach everyone who uses the bot: they change only from a conversation with
+    // someone who may change the bot, as the bot's memory tools allow.
+    const botNotes =
+      !(await this.guestIn(thread, span)) &&
+      atLeast(await this.services.access.level(await this.services.access.viewerOf(person), bot.id), 'edit');
     const request = this.request(t, { team, place, notes, span, outside });
     const controller = new AbortController();
     this.current = controller;
@@ -286,13 +292,32 @@ export class MemoryReviewService {
       bot,
       thread,
       person: team ? null : person,
-      owner: person,
       place,
       shown,
-      // Everything of a conversation that is not the person's own, alone with the bot, waits.
-      wait: outside || thread.kind !== 'user',
+      botNotes,
     });
     if (changed) this.ctx.bus.refresh({ scope: 'memory' });
+  }
+
+  /** Whether someone with no account here spoke in the stretch. */
+  private async guestIn(
+    thread: ThreadRow,
+    span: { turnId: string | null; createdAt: Date }[],
+  ): Promise<boolean> {
+    const ids = [...new Set(span.flatMap((m) => (m.turnId ? [m.turnId] : [])))];
+    const from = new Date((span[0]?.createdAt.getTime() ?? Date.now()) - 60_000);
+    const [guest] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(
+        and(
+          eq(schema.turns.threadId, thread.id),
+          or(ids.length ? inArray(schema.turns.id, ids) : undefined, gte(schema.turns.createdAt, from)),
+          eq(schema.turns.guest, true),
+        ),
+      )
+      .limit(1);
+    return !!guest;
   }
 
   /**
@@ -375,10 +400,9 @@ export class MemoryReviewService {
   }
 
   /**
-   * Makes or proposes what the model asked for, with the checks a bot's own memory tools make.
-   * Returns whether anything was saved or proposed. The review is unattended and its stretch may
-   * hold outside text, so only a bot's own note, from a stretch with none, is saved straight
-   * away; every other change waits for the person (see `needsPerson`).
+   * Makes what the model asked for, with the checks a bot's own memory tools make, straight away:
+   * the bot keeps its memory itself, and every change shows in the memory screen, where the person
+   * can change or delete it. Returns whether anything was saved.
    */
   private async apply(
     ops: Operation[],
@@ -388,11 +412,10 @@ export class MemoryReviewService {
       thread: ThreadRow;
       /** Whose notes about themselves it may write; null in a team conversation. */
       person: string | null;
-      /** The person the work is for: who decides on a proposal. */
-      owner: string;
       place: string | null;
       shown: Map<string, Memory>;
-      wait: boolean;
+      /** Whether the bot's own notes may change. */
+      botNotes: boolean;
     },
   ): Promise<boolean> {
     let changed = false;
@@ -413,21 +436,9 @@ export class MemoryReviewService {
     const content = op.content?.trim();
     if (op.op !== 'forget' && (!content || content.length > 2000)) return false;
     const clean = content ? redactSecrets(content, c.t('memory.redacted')) : null;
-    // What a change needs to wait for the person: a note shared beyond this bot or this place, or
-    // one the person pinned or wrote, or anything from a stretch that may hold outside text.
-    const waits = (scope: MemoryScope, protectedNote: boolean) => c.wait || scope !== 'bot' || protectedNote;
-    const propose = (
-      change: Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'userId' | 'threadId'>,
-    ) =>
-      memory.propose({
-        ...change,
-        proposedBy: bot.id,
-        origin: { kind: 'review', name: bot.name },
-        userId: c.owner,
-        threadId: thread.id,
-      });
 
     if (op.op === 'write') {
+      if (op.scope === 'bot' && !c.botNotes) return false;
       if (op.scope === 'user' && !c.person) return false;
       if (op.scope === 'room' && !c.place) return false;
       let host: string | null = null;
@@ -448,11 +459,7 @@ export class MemoryReviewService {
       };
       if (await memory.findSame(note)) return false;
       if (note.place && (await memory.roomCount(note.place)) >= ROOM_NOTES_PER_PLACE) return false;
-      if (waits(op.scope, false)) {
-        await propose({ action: 'write', memoryId: null, before: null, ...note, sourceUrl: null });
-      } else {
-        await memory.create({ ...note, source: actor, threadId: thread.id });
-      }
+      await memory.create({ ...note, source: actor, threadId: thread.id });
       return true;
     }
 
@@ -460,22 +467,11 @@ export class MemoryReviewService {
     const m = op.id ? c.shown.get(op.id) : undefined;
     if (!m) return false;
     if (!memory.canEdit(m, [bot.id], c.person ?? '', c.place ? [c.place] : [])) return false;
-    // A note of the person's own hand or one they pinned is theirs: a change only waits.
-    const protectedNote = !!m.pinned || m.source === 'user';
-    const base = {
-      memoryId: m.id,
-      scope: m.scope,
-      botId: m.botId,
-      place: m.place,
-      site: m.site,
-      sourceUrl: null,
-    };
+    if (m.scope === 'bot' && !c.botNotes) return false;
+    // A note the person wrote or pinned is theirs: the review leaves it alone, as it is told to.
+    if (m.pinned || m.source === 'user') return false;
     if (op.op === 'update') {
       if (clean!.text === m.content) return false;
-      if (waits(m.scope, protectedNote)) {
-        await propose({ action: 'update', before: m.content, content: clean!.text, ...base });
-        return true;
-      }
       try {
         await memory.update(
           m.id,
@@ -489,11 +485,7 @@ export class MemoryReviewService {
       }
       return true;
     }
-    if (waits(m.scope, protectedNote)) {
-      await propose({ action: 'forget', before: null, content: m.content, ...base });
-    } else {
-      await memory.remove(m.id, actor);
-    }
+    await memory.remove(m.id, actor);
     return true;
   }
 }

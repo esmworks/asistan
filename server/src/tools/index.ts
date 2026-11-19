@@ -42,7 +42,7 @@ import { emailTools } from './email';
 import { pickGroup, whatsappRoots, whatsappTools } from './whatsapp';
 import { tableTools } from './tables';
 import { ticketTools } from './tickets';
-import { placeOf, ROOM_NOTES_PER_PLACE, sourceOf, type AppliedChange } from '../services/memory';
+import { placeOf, ROOM_NOTES_PER_PLACE, sourceOf } from '../services/memory';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
@@ -373,46 +373,7 @@ export class ToolFactory {
     const fromUser = attended(turn.source);
     // Nobody may be watching a routine's or another bot's turn: its cards close unanswered in time.
     const unattended = fromUser ? undefined : this.ctx.config.unattendedApprovalMs;
-    /**
-     * Why nobody watches this turn, for a memory change it asks for: such a change waits for the
-     * person, since a webhook's payload, a page or another bot's message may be behind it.
-     */
-    let away: Promise<MemoryChange['origin']> | null = null;
-    const awayFrom = () =>
-      (away ??= (async (): Promise<MemoryChange['origin']> => {
-        // The person was there, but the run had read someone else's words.
-        if (fromUser) return { kind: 'outside', name: bot.name };
-        if (turn.source === 'routine' && turn.routineRunId) {
-          const [r] = await this.ctx.db
-            .select({ name: schema.routines.name })
-            .from(schema.routineRuns)
-            .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
-            .where(eq(schema.routineRuns.id, turn.routineRunId))
-            .limit(1);
-          return { kind: 'routine', name: r?.name ?? '' };
-        }
-        if (turn.jobId) {
-          const [j] = await this.ctx.db
-            .select({ name: schema.bots.name })
-            .from(schema.jobs)
-            .innerJoin(schema.bots, eq(schema.bots.id, schema.jobs.fromBotId))
-            .where(eq(schema.jobs.id, turn.jobId))
-            .limit(1);
-          return { kind: 'bot', name: j?.name ?? '' };
-        }
-        return { kind: 'bot', name: '' };
-      })());
     type Change = Omit<MemoryChange, 'id' | 'createdAt' | 'proposedBy' | 'origin' | 'threadId' | 'userId'>;
-    const propose = async (change: Change) => {
-      await s.memory.propose({
-        ...change,
-        proposedBy: bot.id,
-        origin: await awayFrom(),
-        threadId: thread.id,
-        userId: person,
-      });
-      return t(fromUser ? 'tool.memoryProposedOutside' : 'tool.memoryProposed');
-    };
     /**
      * A bot's notes reach everyone who uses the bot: a change to them asked by someone who may
      * only talk with it waits for those who may change it.
@@ -438,87 +399,17 @@ export class ToolFactory {
         ? mayChange()
         : !guest && atLeast(await s.access.level(await s.access.viewerOf(person), botId), 'edit');
     /**
-     * How a memory change goes: made now, or waiting for the person. A turn nobody watches, or one
-     * that read outside text, only proposes it: what it read may be behind it. The memory every
-     * bot shares, and another bot's own notes, reach other bots' prompts, so a change there
-     * asks the person on a card even while they are there. A place's notes reach everyone there,
-     * and a pinned note is one the person chose to keep, so changes to them ask the person too.
-     * `say`: the change is not made now, and this is the answer to give the bot. `card`: it is made
-     * now, and whether the person said yes to it on a card (each call answers for itself, as a
-     * turn may run memory tools side by side).
+     * How a memory change goes: made now, as the bot keeps its memory itself. Only a change to a
+     * bot's notes asked by someone who may not change that bot waits for those who may: it would
+     * reach everyone who uses the bot. `say`: the change is not made now, and this is the answer to
+     * give the bot.
      */
-    type Gate = { say: string } | { say?: undefined; card: boolean };
-    const memoryGate = async (change: Change, opts: { pinned?: boolean } = {}): Promise<Gate> => {
+    type Gate = { say?: string };
+    const memoryGate = async (change: Change): Promise<Gate> => {
       if (change.scope === 'bot' && change.botId && !(await mayChangeNotesOf(change.botId))) {
         return { say: await forReview(change) };
       }
-      if (!fromUser || reads()) return { say: await propose(change) };
-      const shared =
-        change.scope === 'user' ||
-        change.scope === 'room' ||
-        !!opts.pinned ||
-        (!!change.botId && change.botId !== bot.id);
-      if (!shared) return { card: false };
-      const summary =
-        change.action === 'write'
-          ? t(change.scope === 'room' ? 'tool.memoryCardWriteRoom' : 'tool.memoryCardWrite', {
-              bot: bot.name,
-              content: truncate(change.content, 400),
-            })
-          : change.action === 'update'
-            ? t('tool.memoryCardUpdate', {
-                bot: bot.name,
-                before: truncate(change.before ?? '', 300),
-                content: truncate(change.content, 400),
-              })
-            : t('tool.memoryCardForget', { bot: bot.name, content: truncate(change.content, 400) });
-      const approve = t('tool.approve');
-      const r = await s.approvals.ask({
-        threadId: thread.id,
-        botId: bot.id,
-        turnId: turn.id,
-        kind: 'question',
-        toolName: `memory_${change.action}`,
-        input: { scope: change.scope, content: change.content },
-        summary,
-        options: [approve, t('tool.reject')],
-        signal,
-        onCreated: async (a) => {
-          await s.threads.addMessage({
-            threadId: thread.id,
-            role: 'approval',
-            author: `bot:${bot.id}`,
-            text: a.summary,
-            props: { approvalId: a.id },
-            turnId: turn.id,
-          });
-        },
-      });
-      if (r.status === 'allowed' && (!r.answer || r.answer === approve)) return { card: true };
-      return { say: t('tool.memoryDeclined') };
-    };
-    /**
-     * Keeps a change made straight away, so a turn that is stopped or fails can take it back. One the
-     * person said yes to on a card stays: they agreed to that very change.
-     */
-    const applied = (
-      gate: Gate,
-      c: Pick<
-        AppliedChange,
-        'action' | 'memoryId' | 'before' | 'content' | 'scope' | 'botId' | 'userId' | 'place'
-      > &
-        Partial<Pick<AppliedChange, 'site' | 'sourceUrl' | 'noteSource'>>,
-    ) => {
-      if (gate.say !== undefined || gate.card) return;
-      s.memory.recordApplied(turn.id, {
-        site: null,
-        sourceUrl: null,
-        noteSource: `bot:${bot.id}`,
-        ...c,
-        proposedBy: bot.id,
-        threadId: thread.id,
-        person,
-      });
+      return {};
     };
     /**
      * The routine a bot names, by name or id: one of its own, or, for a manager, one of another
@@ -1127,14 +1018,6 @@ export class ToolFactory {
             threadId: thread.id,
             sourceUrl,
           });
-          applied(gate, {
-            ...note,
-            action: 'write',
-            memoryId: m.id,
-            before: null,
-            content: m.content,
-            sourceUrl,
-          });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
             : t('tool.memorySaved', { id: m.id });
@@ -1162,20 +1045,17 @@ export class ToolFactory {
             return t('tool.memoryNotYours');
           }
           const clean = redactSecrets(content, t('memory.redacted'));
-          const gate = await memoryGate(
-            {
-              action: 'update',
-              memoryId: m.id,
-              before: m.content,
-              content: clean.text,
-              scope: m.scope,
-              botId: m.botId,
-              place: m.place,
-              site: m.site,
-              sourceUrl,
-            },
-            { pinned: m.pinned },
-          );
+          const gate = await memoryGate({
+            action: 'update',
+            memoryId: m.id,
+            before: m.content,
+            content: clean.text,
+            scope: m.scope,
+            botId: m.botId,
+            place: m.place,
+            site: m.site,
+            sourceUrl,
+          });
           if (gate.say !== undefined) return gate.say;
           // Written against the version read above, so a change made while a card waited is not
           // written over.
@@ -1196,18 +1076,6 @@ export class ToolFactory {
               return t('tool.memoryPinnedFull');
             throw err;
           }
-          applied(gate, {
-            action: 'update',
-            memoryId: m.id,
-            before: m.content,
-            content: clean.text,
-            scope: m.scope,
-            botId: m.botId,
-            userId: m.userId ?? null,
-            place: m.place ?? null,
-            site: m.site,
-            sourceUrl,
-          });
           return clean.redacted
             ? `${t('tool.memoryUpdated')} ${t('tool.memoryRedacted')}`
             : t('tool.memoryUpdated');
@@ -1227,35 +1095,19 @@ export class ToolFactory {
           ) {
             return t('tool.memoryNotYours');
           }
-          const gate = await memoryGate(
-            {
-              action: 'forget',
-              memoryId: m.id,
-              before: null,
-              content: m.content,
-              scope: m.scope,
-              botId: m.botId,
-              place: m.place,
-              site: m.site,
-              sourceUrl: null,
-            },
-            { pinned: m.pinned },
-          );
-          if (gate.say !== undefined) return gate.say;
-          await s.memory.remove(id, `bot:${bot.id}`);
-          applied(gate, {
+          const gate = await memoryGate({
             action: 'forget',
             memoryId: m.id,
             before: null,
             content: m.content,
             scope: m.scope,
             botId: m.botId,
-            userId: m.userId ?? null,
-            place: m.place ?? null,
+            place: m.place,
             site: m.site,
-            sourceUrl: m.sourceUrl ?? null,
-            noteSource: m.source,
+            sourceUrl: null,
           });
+          if (gate.say !== undefined) return gate.say;
+          await s.memory.remove(id, `bot:${bot.id}`);
           // The words that went are in the answer, so the step shows what was forgotten. A manager
           // deleting another bot's note is told what that bot loses.
           const gone = t('tool.memoryForgot', { content: truncate(m.content, 200) });

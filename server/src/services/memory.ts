@@ -108,43 +108,12 @@ export async function placeOf(
 const placeNotes = (place: string | null) =>
   place ? and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)) : sql`false`;
 
-/**
- * A memory change a turn made straight away (the person was there and nothing outside was read),
- * kept until the turn ends so it can be taken back if the turn is stopped or fails.
- */
-export interface AppliedChange {
-  action: 'write' | 'update' | 'forget';
-  /** The note written, changed or deleted. */
-  memoryId: string;
-  /** For an update, the words before it. */
-  before: string | null;
-  /** The words after the change; for a forget, the words that went. */
-  content: string;
-  scope: MemoryScope;
-  botId: string | null;
-  userId: string | null;
-  place: string | null;
-  site: string | null;
-  sourceUrl: string | null;
-  /** What a deleted note was written by and in, to write it back as it was. */
-  noteSource: string;
-  proposedBy: string;
-  threadId: string | null;
-  /** The person the work was for. */
-  person: string;
-}
-
 /** One person's notes; none for null (a team conversation, which reads no one's own notes). */
 const userNotes = (userId: string | null) =>
   userId ? and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)) : sql`false`;
 
 export class MemoryService {
   private embeddings: EmbeddingService | null = null;
-  /**
-   * What each running turn changed straight away, by turn. In this process only: a restart in the
-   * middle of a turn loses the record, and its notes then stay as they were saved.
-   */
-  private applied = new Map<string, AppliedChange[]>();
 
   constructor(private ctx: Ctx) {}
 
@@ -675,81 +644,6 @@ export class MemoryService {
     });
     if (rows.length) this.ctx.bus.refresh({ scope: 'memory' });
     return { count: rows.length };
-  }
-
-  /** Keeps what a turn changed straight away, until it ends (see `settleTurn`). */
-  recordApplied(turnId: string, change: AppliedChange) {
-    const list = this.applied.get(turnId) ?? [];
-    list.push(change);
-    this.applied.set(turnId, list);
-  }
-
-  /**
-   * Called when a turn ends. A turn that completed keeps what it changed. One the person stopped,
-   * or that failed, may have written from a half-finished thought: its changes are taken back,
-   * the last first, and each waits for the person to accept or reject (`origin.kind` `stopped`),
-   * so nothing is lost and nothing stays as if the person had agreed to it.
-   */
-  async settleTurn(turnId: string, ok: boolean): Promise<void> {
-    const done = this.applied.get(turnId);
-    this.applied.delete(turnId);
-    if (ok || !done?.length) return;
-    for (const change of done.reverse()) {
-      try {
-        await this.takeBack(change);
-      } catch (err) {
-        console.warn('memory take-back', err);
-      }
-    }
-  }
-
-  private async takeBack(c: AppliedChange) {
-    const actor = `bot:${c.proposedBy}`;
-    const [bot] = await this.ctx.db
-      .select({ name: schema.bots.name })
-      .from(schema.bots)
-      .where(eq(schema.bots.id, c.proposedBy))
-      .limit(1);
-    const found = await this.get(c.memoryId).catch(() => null);
-    let memoryId: string | null = c.memoryId;
-    if (c.action === 'write') {
-      // A note the person changed or pinned while the turn ran is theirs now: it stays as it is.
-      if (found && (found.content !== c.content || found.pinned)) return;
-      if (found) await this.remove(c.memoryId, actor);
-      memoryId = null;
-    } else if (c.action === 'update') {
-      // Words someone else wrote in the meantime are not overwritten.
-      if (found && found.content === c.content && c.before !== null)
-        await this.update(c.memoryId, { content: c.before }, actor);
-    } else if (!found) {
-      const back = await this.create({
-        scope: c.scope,
-        botId: c.botId,
-        userId: c.userId,
-        place: c.place,
-        content: c.content,
-        source: c.noteSource,
-        site: c.site,
-        threadId: c.threadId,
-        sourceUrl: c.sourceUrl,
-      });
-      memoryId = back.id;
-    }
-    await this.propose({
-      action: c.action,
-      memoryId,
-      scope: c.scope,
-      botId: c.botId,
-      place: c.place,
-      site: c.site,
-      content: c.content,
-      before: c.before,
-      proposedBy: c.proposedBy,
-      origin: { kind: 'stopped', name: bot?.name ?? '' },
-      userId: c.person,
-      threadId: c.threadId,
-      sourceUrl: c.sourceUrl,
-    });
   }
 
   /**

@@ -2062,7 +2062,7 @@ export const en: Catalog<MessageKey> = {
     'Disconnect WhatsApp? The device leaves Linked devices and its keys are deleted.',
   'memory.pending': 'Waiting for approval',
   'memory.pendingHint':
-    "Memory changes bots asked for in work nobody watched (routines, another bot's request). None is made until you accept it, so a webhook call or a page a bot read cannot write to memory behind your back.",
+    "Changes to a bot's notes asked by someone who may not change that bot. A note reaches everyone who uses the bot, so it waits until someone who may change the bot accepts it.",
   'memory.change.write': 'New note',
   'memory.change.update': 'Correction',
   'memory.change.forget': 'Deletion',

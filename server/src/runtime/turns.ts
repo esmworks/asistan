@@ -1575,9 +1575,6 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
-    // What the turn changed in memory straight away is kept only if it completed; otherwise it
-    // goes back and waits for the person (see `settleTurn`).
-    await this.services.memory.settleTurn(turn.id, outcome.ok);
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

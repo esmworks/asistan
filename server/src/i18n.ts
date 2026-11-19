@@ -1097,10 +1097,6 @@ const tr = {
   'tool.scopeRoom': 'bu yer',
   'tool.memorySaved': 'Kaydedildi ({id}).',
   'tool.memoryUpdated': 'Güncellendi.',
-  'tool.memoryProposed':
-    'Bu konuşmayı kimse izlemediği için hafıza değişikliği hemen yapılmadı; kullanıcının onayına bırakıldı (Ayarlar → Hafıza → Onay bekleyenler). Kabul edilene kadar hafızanda yok; aynı değişikliği yeniden isteme.',
-  'tool.memoryProposedOutside':
-    'Bu çalıştırma dışarıdan gelen bir metin okuduğu için hafıza değişikliği hemen yapılmadı; kullanıcının onayına bırakıldı (Ayarlar → Hafıza → Onay bekleyenler). Kabul edilene kadar hafızanda yok; aynı değişikliği yeniden isteme.',
   'tool.memoryAlreadySaved': 'Bu not zaten kayıtlı ({id}); yenisi açılmadı.',
   'tool.memoryRedacted':
     'Nottaki şifre ya da anahtar gibi gizli değerler silindi: hafızaya gizli değer yazılmaz. Giriş bilgileri için kişiden kasaya kaydetmesini iste.',
@@ -1159,12 +1155,6 @@ const tr = {
   'tool.changeDenied': 'Kullanıcı bu değişikliği onaylamadı; değişiklik yapılmadı.',
   'tool.skillOnSummary': '{manager}, {target} botuna “{skill}” becerisini açmak istiyor',
   'tool.skillOffSummary': '{manager}, {target} botunda “{skill}” becerisini kapatmak istiyor',
-  'tool.memoryCardWrite': '{bot}, bütün botların ortak hafızasına yazmak istiyor: “{content}”',
-  'tool.memoryCardWriteRoom':
-    '{bot}, bu kanalda ya da odada konuşan herkesin göreceği yer notlarına yazmak istiyor: “{content}”',
-  'tool.memoryCardUpdate': '{bot} bir notu değiştirmek istiyor: “{before}” → “{content}”',
-  'tool.memoryCardForget': '{bot} bir notu silmek istiyor: “{content}”',
-  'tool.memoryDeclined': 'Kullanıcı bu hafıza değişikliğini onaylamadı; değişiklik yapılmadı.',
   'tool.updated': '{name} güncellendi.',
   'tool.managerArchive': 'Yönetici botlar arşivlenemez.',
   'tool.archived': '{name} arşivlendi.',
@@ -2487,10 +2477,6 @@ const en: Catalog<ServerKey> = {
   'tool.scopeRoom': 'this place',
   'tool.memorySaved': 'Saved ({id}).',
   'tool.memoryUpdated': 'Updated.',
-  'tool.memoryProposed':
-    "Nobody watches this conversation, so the memory change was not made yet; it waits for the user's approval (Settings → Memory → Waiting for approval). Until it is accepted it is not in your memory; do not ask for the same change again.",
-  'tool.memoryProposedOutside':
-    "This run read text from outside, so the memory change was not made yet; it waits for the user's approval (Settings → Memory → Waiting for approval). Until it is accepted it is not in your memory; do not ask for the same change again.",
   'tool.memoryAlreadySaved': 'This note is already saved ({id}); no new one was made.',
   'tool.memoryRedacted':
     'Secret values such as passwords or keys were removed from the note: memory never holds secrets. For sign-in details, ask the person to save them in the vault.',
@@ -2551,12 +2537,6 @@ const en: Catalog<ServerKey> = {
   'tool.changeDenied': 'The user did not approve this change; nothing was changed.',
   'tool.skillOnSummary': '{manager} wants to turn on the skill “{skill}” for {target}',
   'tool.skillOffSummary': '{manager} wants to turn off the skill “{skill}” for {target}',
-  'tool.memoryCardWrite': '{bot} wants to write to the memory every bot shares: “{content}”',
-  'tool.memoryCardWriteRoom':
-    '{bot} wants to write a note about this place, which everyone talking in this channel or room will see: “{content}”',
-  'tool.memoryCardUpdate': '{bot} wants to change a note: “{before}” → “{content}”',
-  'tool.memoryCardForget': '{bot} wants to delete a note: “{content}”',
-  'tool.memoryDeclined': 'The user did not approve this memory change; nothing was changed.',
   'tool.updated': '{name} updated.',
   'tool.managerArchive': 'Manager bots cannot be archived.',
   'tool.archived': '{name} archived.',

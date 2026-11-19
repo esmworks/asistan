@@ -2059,7 +2059,7 @@ export const tr = {
     'WhatsApp bağlantısı kesilsin mi? Cihaz Bağlı cihazlar listesinden çıkar ve anahtarları silinir.',
   'memory.pending': 'Onay bekleyenler',
   'memory.pendingHint':
-    'Kimsenin izlemediği işlerde (rutinler, başka bir botun isteği) botların istediği hafıza değişiklikleri. Bir webhook ya da okunan bir sayfa hafızaya sizden habersiz bir şey yazamasın diye, siz kabul edene kadar hiçbiri yapılmaz.',
+    'Bu botu değiştirme yetkisi olmayan birinin istediği bot notu değişiklikleri. Not o botu kullanan herkese ulaştığı için, botu değiştirebilen biri kabul edene kadar yapılmaz.',
   'memory.change.write': 'Yeni not',
   'memory.change.update': 'Düzeltme',
   'memory.change.forget': 'Silme',

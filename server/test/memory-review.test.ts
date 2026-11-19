@@ -126,7 +126,7 @@ describe('hafıza gözden geçirmesi: konuşmadan kalıcı bilgi çıkarma', () 
     expect(t.engine.completions).toHaveLength(1);
   });
 
-  it('dışarıdan gelen metindeki talimat not olmaz; olsa olsa bekleyenlere düşer ve şifre silinir', async () => {
+  it('dışarıdan gelen metin modele işaretli gider; not hemen yazılır ama şifre silinir', async () => {
     const bot = await t.bot({ name: 'Gözcü' });
     const th = await main(bot.id);
     await sayMany(th, 4);
@@ -147,16 +147,16 @@ describe('hafıza gözden geçirmesi: konuşmadan kalıcı bilgi çıkarma', () 
     await say(th, 'bir tur daha');
     const asked = t.engine.completions.at(-1)!.user;
     expect(asked).toContain('outside="true"');
-    expect(await notes()).toEqual([]);
-    const waiting = await changes();
-    expect(waiting.length).toBeGreaterThan(0);
-    for (const c of waiting) {
-      expect(c.origin).toEqual({ kind: 'review', name: 'Gözcü' });
-      expect(c.content).not.toContain('hunter2xyz');
+    const saved = await notes();
+    expect(saved.length).toBeGreaterThan(0);
+    for (const m of saved) {
+      expect(m.source).toBe(`bot:${bot.id}`);
+      expect(m.content).not.toContain('hunter2xyz');
     }
+    expect(await changes()).toEqual([]);
   });
 
-  it('bir turu dışarıdan metin okuduysa botun kendi notu da bekler', async () => {
+  it('bir turu dışarıdan metin okumuş olsa da botun notu hemen yazılır', async () => {
     const bot = await t.bot();
     const th = await main(bot.id);
     await sayMany(th, 9);
@@ -165,11 +165,24 @@ describe('hafıza gözden geçirmesi: konuşmadan kalıcı bilgi çıkarma', () 
     t.engine.completer = () => ops({ op: 'write', scope: 'bot', content: 'Sevdiği renk mavi' });
     await say(th, 'onuncu');
     expect(t.engine.completions).toHaveLength(1);
-    expect(await notes()).toEqual([]);
-    expect((await changes()).map((c) => c.content)).toEqual(['Sevdiği renk mavi']);
+    expect((await notes()).map((m) => m.content)).toEqual(['Sevdiği renk mavi']);
+    expect(await changes()).toEqual([]);
   });
 
-  it('user notu, sabit ve elle yazılmış nota değişiklik bekler; botun kendi notu doğrudan değişir', async () => {
+  it('hesabı olmayan birinin konuştuğu bölümden botun notu yazılmaz; bekleyen de doğmaz', async () => {
+    const bot = await t.bot();
+    const th = await main(bot.id);
+    await sayMany(th, 9);
+    const [first] = await db().select().from(schema.turns).orderBy(schema.turns.createdAt).limit(1);
+    await db().update(schema.turns).set({ guest: true }).where(eq(schema.turns.id, first!.id));
+    t.engine.completer = () => ops({ op: 'write', scope: 'bot', content: 'Sevdiği renk mavi' });
+    await say(th, 'onuncu');
+    expect(t.engine.completions).toHaveLength(1);
+    expect(await notes()).toEqual([]);
+    expect(await changes()).toEqual([]);
+  });
+
+  it('botun kendi notu ve user notu doğrudan değişir; kişinin yazdığı ya da sabitlediği nota dokunulmaz, bekleyen de doğmaz', async () => {
     const bot = await t.bot({ name: 'Gözcü' });
     const th = await main(bot.id);
     const own = await t.services.memory.create({
@@ -202,19 +215,14 @@ describe('hafıza gözden geçirmesi: konuşmadan kalıcı bilgi çıkarma', () 
     expect(all.find((m) => m.id === own.id)!.content).toBe('Çay içer');
     expect(all.find((m) => m.id === byHand.id)!.content).toBe('Kedisi Pamuk');
     expect(all.find((m) => m.id === pinned.id)).toBeDefined();
-    expect(all.some((m) => m.scope === 'user')).toBe(false);
-    const waiting = await changes();
-    expect(waiting.map((c) => `${c.action}:${c.scope}`).sort()).toEqual([
-      'forget:bot',
-      'update:bot',
-      'write:user',
-    ]);
+    expect(all.filter((m) => m.scope === 'user').map((m) => m.content)).toEqual(['Türkçe konuşur']);
+    expect(await changes()).toEqual([]);
     // The model was told which notes are the person's own.
     expect(t.engine.completions[0]!.user).toContain(`[${byHand.id}] (bot) [kişinin yazdığı]`);
     expect(t.engine.completions[0]!.user).toContain('[sabit]');
   });
 
-  it('ekip konuşmasında user notu yazılmaz ya da önerilmez; yer notu ve bot notu yalnızca beklemeye girer', async () => {
+  it('ekip konuşmasında user notu yazılmaz; yer notu ve bot notu hemen yazılır', async () => {
     const bot = await t.bot();
     const team = await t.services.threads.create(bot.id, { kind: 'team', userId: null, title: '#genel' });
     await db().insert(schema.slackThreads).values({ threadId: team.id, channel: 'CG', threadTs: '1.1' });
@@ -235,12 +243,15 @@ describe('hafıza gözden geçirmesi: konuşmadan kalıcı bilgi çıkarma', () 
     // The person's own notes are not even shown in a team conversation.
     expect(t.engine.completions[0]!.user).not.toContain('Kişisel sır notu');
     expect(t.engine.completions[0]!.system).not.toContain('- "user":');
+    const all = await notes();
+    expect(all.filter((m) => m.scope === 'user').map((m) => m.content)).toEqual(['Kişisel sır notu']);
     expect(
-      (await notes()).filter((m) => m.scope !== 'user' || m.content === 'Kişisel sır notu'),
-    ).toHaveLength(1);
-    const waiting = await changes();
-    expect(waiting.some((c) => c.scope === 'user')).toBe(false);
-    expect(waiting.map((c) => `${c.scope}:${c.place ?? ''}`).sort()).toEqual(['bot:', 'room:slack:CG']);
+      all
+        .filter((m) => m.scope !== 'user')
+        .map((m) => `${m.scope}:${m.place ?? ''}`)
+        .sort(),
+    ).toEqual(['bot:', 'room:slack:CG']);
+    expect(await changes()).toEqual([]);
   });
 
   it('turu, mesajı, durum olayını ya da sohbet uygulaması çıktısını doğurmaz', async () => {
