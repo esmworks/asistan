@@ -212,9 +212,30 @@ Masaüstü uygulamasında ayrıca kurulum gerekmez: bilgisayarda kurulu Chrome, 
 ve botlar onu kendi ayrı profilleriyle kullanır. Durum Ayarlar → Bağlantı → "Botların tarayıcısı"
 satırında görünür.
 
+## Web araması
+
+Claude botları web'de kendi aracıyla arar. API anahtarıyla çalışan botlar (OpenAI, Gemini, OpenRouter gibi)
+için bir SearXNG kurulumu verilirse onlar da arar; verilmezse yalnızca sayfa okuyabilir, aramayı tarayıcıyla
+yapar. Adres `docker/.env` içindeki `WEB_SEARCH_URL` ile verilir:
+
+```bash
+WEB_SEARCH_URL=http://searxng:8080
+```
+
+- SearXNG'nin JSON çıktısı açık olmalı: `settings.yml` içinde `search.formats` listesine `json` eklenir.
+  Kapalıysa bot "arama hizmeti JSON vermiyor" der.
+- `yumakbot` kapsayıcısı SearXNG'ye bir Docker ağı üzerinden ulaşmalı; adres o ağdaki kapsayıcı adıdır. Bu
+  ağ panelin bütün uygulamaları bağlayan ortak ağı (Dokploy'da `dokploy-network`) olmamalı: sunucu o ağa
+  girince güvenlik duvarının dışında kalır (bkz. "Dokploy ve benzeri paneller"). Yalnızca SearXNG'nin
+  bulunduğu ayrı bir ağ kullanın. Adres sunucunun kendi ayarı olduğu için özel ağda olabilir; botların
+  okuduğu sayfalar ise yalnızca internetteki herkese açık adreslerden okunur.
+- Arama ve sayfa okuma yalnızca interneti açık botlarda vardır ve Claude botlarının aynı adımlarıyla aynı
+  izin kurallarına bağlıdır.
+
 ## Bash yalıtımı
 
-Claude botlarının Bash komutları kapsayıcının içinde ayrıca bir yalıtımda (bubblewrap) çalışır. Bu ikinci
+Botların Bash komutları (Claude botlarının ve API anahtarıyla çalışan botların) kapsayıcının içinde ayrıca
+bir yalıtımda (bubblewrap) çalışır. Bu ikinci
 kat gereklidir: bütün botlar aynı `/data` klasörünü paylaşır ve orada Claude girişi, erişim anahtarı ve
 öteki botların dosyaları durur. Yalıtımın içindeki komut yalnızca kendi botunun klasörlerini görür; kendi
 süreç ad alanında çalıştığı için sunucunun ve kapsayıcının süreçlerini (ve ortam değişkenlerini) de görmez.

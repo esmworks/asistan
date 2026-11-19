@@ -5,6 +5,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ## Unreleased
 
+### Added
+
+- Bots on API keys run shell commands in the same OS sandbox as Claude bots: kept to the bot's folders, with an
+  environment of their own, the internet only when the bot has it on, and public addresses only. A bot with a
+  desktop keeps running its commands there.
+- Bots on API keys read web pages (main text, headings and links) and, when the server's environment names a
+  SearXNG with `WEB_SEARCH_URL`, search the web. Both ask under the same names as a Claude bot's steps, so the
+  same "always allow" and "always ask" rules and the same cards apply.
+
 ### Fixed
 
 - A bot run on API keys at the "review" level has its steps reviewed by its own model. The reviewer used to be Claude

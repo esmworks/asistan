@@ -14,6 +14,8 @@ await build({
   // These load files relative to their own package (CLI binary, wasm), so they stay in node_modules.
   external: [
     '@anthropic-ai/claude-agent-sdk',
+    // API-key bots' shell runs its command-line program, which loads helpers from its own package.
+    '@anthropic-ai/sandbox-runtime',
     '@electric-sql/pglite',
     '@electric-sql/pglite/*',
     'playwright-core',

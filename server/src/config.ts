@@ -11,6 +11,8 @@ export interface Config {
    * search (`AI_EMBEDDINGS_*`), speech to text (`STT_*`) and text to speech (`TTS_*`).
    */
   aiEndpoints: Partial<Record<'embeddings' | 'stt' | 'tts', EnvAiEndpoint>>;
+  /** A SearXNG address (`WEB_SEARCH_URL`) bots on API keys search the web with; null, no search. */
+  webSearchUrl: string | null;
   /** Root for workspaces, the access key file and the embedded database. */
   dataDir: string;
   /** `postgres://...` for a real server; unset means embedded PGlite in `dataDir/db` (or memory in tests). */
@@ -204,8 +206,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     channelsEnabled: true,
     modelCatalogUrl: modelCatalogUrl(env.YUMAKBOT_MODEL_CATALOG_URL),
     aiEndpoints: aiEndpointsFrom(env),
+    webSearchUrl: webSearchUrl(env.WEB_SEARCH_URL),
     ...overrides,
   };
+}
+
+/** The SearXNG address bots on API keys search the web with; http(s) only, else none. */
+function webSearchUrl(raw: string | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  try {
+    const url = new URL(v);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href.replace(/\/+$/, '') : null;
+  } catch {
+    return null;
+  }
 }
 
 /** models.dev unless the environment names another address; `off` turns the catalog off. */

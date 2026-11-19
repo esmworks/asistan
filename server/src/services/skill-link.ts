@@ -98,6 +98,19 @@ export interface PublicFetchOptions {
    * default: a skill link names the file itself.
    */
   redirects?: number;
+  /** What the request says it is; some sites turn away a bare client. */
+  userAgent?: string;
+  /** What the request asks for (`accept`); anything by default. */
+  accept?: string;
+}
+
+/** What an https address served: the body, its stated type, and the address it came from. */
+export interface PublicResponse {
+  body: Buffer;
+  /** The `content-type` header, as sent; empty when there was none. */
+  contentType: string;
+  /** The address after redirects. */
+  url: URL;
 }
 
 /** The text an https address serves, refusing private addresses, redirects and files over `max`. */
@@ -111,6 +124,15 @@ export async function fetchPublicText(
 
 /** What an https address serves, refusing private addresses and bodies over `max`. */
 export async function fetchPublicBytes(url: URL, max: number, o: PublicFetchOptions = {}): Promise<Buffer> {
+  return (await fetchPublic(url, max, o)).body;
+}
+
+/** What an https address serves, with its type, refusing private addresses and bodies over `max`. */
+export async function fetchPublic(
+  url: URL,
+  max: number,
+  o: PublicFetchOptions = {},
+): Promise<PublicResponse> {
   if (url.protocol !== 'https:') throw new HttpError(400, 'error.skillLinkHttps');
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (!host || host === 'localhost' || host.endsWith('.localhost') || (isIP(host) && privateAddress(host))) {
@@ -121,7 +143,11 @@ export async function fetchPublicBytes(url: URL, max: number, o: PublicFetchOpti
   const res = await new Promise<IncomingMessage>((resolve, reject) => {
     const req = httpsGet(
       url,
-      { lookup: publicLookup(o.resolve), signal, headers: { accept: '*/*', 'user-agent': 'node' } },
+      {
+        lookup: publicLookup(o.resolve),
+        signal,
+        headers: { accept: o.accept ?? '*/*', 'user-agent': o.userAgent ?? 'node' },
+      },
       resolve,
     );
     req.on('error', (err) =>
@@ -134,7 +160,7 @@ export async function fetchPublicBytes(url: URL, max: number, o: PublicFetchOpti
     // Followed only when asked, and the next address goes through every check again.
     const next = res.headers.location;
     if (!o.redirects || !next) throw unreachable();
-    return fetchPublicBytes(new URL(next, url), max, { ...o, redirects: o.redirects - 1 });
+    return fetchPublic(new URL(next, url), max, { ...o, redirects: o.redirects - 1 });
   }
   if (status < 200 || status >= 300) {
     res.destroy();
@@ -145,7 +171,8 @@ export async function fetchPublicBytes(url: URL, max: number, o: PublicFetchOpti
     throw new HttpError(413, 'error.skillLinkTooLarge');
   }
   try {
-    return await readCapped(res, max);
+    const body = await readCapped(res, max);
+    return { body, contentType: String(res.headers['content-type'] ?? ''), url };
   } catch (err) {
     if (err instanceof BodyTooLarge) throw new HttpError(413, 'error.skillLinkTooLarge');
     throw unreachable();

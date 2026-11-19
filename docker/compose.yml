@@ -39,6 +39,8 @@ services:
       YUMAKBOT_SECURE_COOKIES: ${YUMAKBOT_SECURE_COOKIES:-0}
       YUMAKBOT_PUBLIC_URL: ${YUMAKBOT_PUBLIC_URL:-}
       YUMAKBOT_PROXY_SECRET: ${YUMAKBOT_PROXY_SECRET:-}
+      # A SearXNG the bots on API keys search the web with; see "Web araması" in docker/README.md.
+      WEB_SEARCH_URL: ${WEB_SEARCH_URL:-}
     # Only on the host's loopback; put a TLS reverse proxy in front for remote use.
     ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
     volumes:

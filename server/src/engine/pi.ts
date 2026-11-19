@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { homedir, tmpdir } from 'node:os';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Agent, type AgentMessage, type AgentTool, type StreamFn } from '@earendil-works/pi-agent-core';
@@ -35,6 +36,9 @@ import {
 } from './pi-context';
 import { fileTools, PathError, type FileTool } from './pi-files';
 import { parseVerdict, reviewPrompt } from './review';
+import { webTools, type WebToolOptions } from './pi-web';
+import { shellRun, type ShellRun } from './pi-shell';
+import { asOutsideData } from '../runtime/outside';
 import {
   providerTrouble,
   replyOf,
@@ -73,6 +77,20 @@ export interface PiEngineOptions {
   takesTools?: (provider: string, id: string) => Promise<boolean>;
   streamFn?: StreamFn;
   complete?: typeof completeSimple;
+  /** A SearXNG address the server's environment names (`WEB_SEARCH_URL`); none, no web search. */
+  webSearchUrl?: string | null;
+  /** Tests swap reading a page and the search service for stand-ins. */
+  web?: Pick<WebToolOptions, 'fetchPage' | 'fetchOptions' | 'searchFetch'>;
+  /** Whether shell commands can be sandboxed here (see `probeShellSandbox`); no, no shell. */
+  shellReady?: () => boolean;
+  /** Folders commands may not read besides home: the server's data, the Claude login. */
+  hidden?: string[];
+  /** The home folder commands may not read; the server's own by default. */
+  home?: string;
+  /** Where turns keep their shell's settings, home and temporary files; a temporary folder by default. */
+  shellDir?: string;
+  /** Tests run a stand-in for the sandbox's program. */
+  shellCli?: string;
 }
 
 const SESSION_ID = /^[0-9a-f-]{36}$/;
@@ -239,7 +257,10 @@ const fail = (
 
 export { providerTrouble };
 
-/** API-key models through pi-agent-core. No shell: file tools are limited to the bot's folders. */
+/**
+ * API-key models through pi-agent-core. File tools are limited to the bot's folders; shell commands
+ * run in the OS sandbox and web reads go under Claude's tool names, so the same rules and cards apply.
+ */
 export class PiEngine implements Engine {
   readonly kind = 'pi';
   constructor(private opts: PiEngineOptions) {}
@@ -457,6 +478,16 @@ export class PiEngine implements Engine {
   }
 
   async run(req: TurnRequest): Promise<TurnOutcome> {
+    // The turn's shell, when it gets one: its way out and settings go when the turn ends.
+    const shell: { run: ShellRun | null } = { run: null };
+    try {
+      return await this.turn(req, shell);
+    } finally {
+      shell.run?.close();
+    }
+  }
+
+  private async turn(req: TurnRequest, shell: { run: ShellRun | null }): Promise<TurnOutcome> {
     const t = translator(req.locale);
     const target = splitModel(req.model);
     if (!target) return fail('engine', t('engine.modelFormat', { model: req.model }), '', req.sessionId);
@@ -477,11 +508,31 @@ export class PiEngine implements Engine {
 
     // A local model built without tool use refuses any request that lists tools: it only talks.
     const toolless = (await this.opts.takesTools?.(target.provider, target.id)) === false;
+    // With the internet on, the bot reads pages and searches the web as a Claude bot does, under the
+    // same names (WebFetch, WebSearch), so the same rules and cards apply.
+    const web = req.sandbox.internet
+      ? webTools(t, {
+          searchUrl: this.opts.webSearchUrl,
+          mark: (source, text) => asOutsideData(source, text, t),
+          ...this.opts.web,
+        })
+      : [];
+    // Commands run in this server's OS sandbox, as a Claude bot's do. A bot with a desktop runs
+    // them there (run_command) instead, and where the sandbox cannot start there is no shell.
+    if (!toolless && req.shell === 'sandbox' && (this.opts.shellReady?.() ?? false))
+      shell.run = shellRun(req.sandbox, t, {
+        hidden: [this.opts.home ?? homedir(), ...(this.opts.hidden ?? [])],
+        onReach: (host) => req.onReach?.(host),
+        cli: this.opts.shellCli,
+        dir: this.opts.shellDir ?? join(tmpdir(), 'yumakbot-shell'),
+      });
     const files = toolless
       ? []
-      : fileTools(req.sandbox, t, { seesImages: model.input.includes('image') }).filter(
-          (f) => req.pickTool?.(f.permissionName) ?? true,
-        );
+      : [
+          ...fileTools(req.sandbox, t, { seesImages: model.input.includes('image') }),
+          ...(shell.run ? [shell.run.tool] : []),
+          ...web,
+        ].filter((f) => req.pickTool?.(f.permissionName) ?? true);
     const byName = new Map<string, { perm: string; file?: FileTool; app?: AppTool }>();
     const tools: AgentTool[] = [];
     // Set once the tool list is known; read when a tool's result comes back.
@@ -683,6 +734,7 @@ export class PiEngine implements Engine {
         let cardInput = input;
         if (entry.file) {
           try {
+            await entry.file.check?.(input);
             cardInput = entry.file.cardInput(input, entry.file.target(input));
           } catch (err) {
             return { block: true, reason: (err as Error).message };

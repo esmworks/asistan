@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyCookie from '@fastify/cookie';
@@ -200,12 +200,21 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     credential: () => services.claudeAuth.credential(),
   });
   // Created before the services it reads keys from; only called once a turn runs.
+  // API-key bots' commands keep their turn's settings, home and temporary files here, inside the data
+  // folder no command reads; what a stopped server left behind goes at start.
+  const shellDir = join(config.dataDir, 'shell');
+  rmSync(shellDir, { recursive: true, force: true });
   const pi = new PiEngine({
     sessionsDir: join(config.dataDir, 'pi-sessions'),
     apiKey: (provider) => services.keys.credential(provider),
     auth: (provider) => services.keys.auth(provider),
     customModel: (provider, id) => services.keys.customModel(provider, id),
     takesTools: (provider, id) => services.keys.takesTools(provider, id),
+    webSearchUrl: config.webSearchUrl,
+    hidden: [config.dataDir, process.env.CLAUDE_CONFIG_DIR].filter((d): d is string => !!d),
+    // Read once a turn runs, after the startup check below has answered.
+    shellReady: () => shellSandbox.status === 'ok',
+    shellDir,
   });
   const engineFor = (bot: Bot): Engine => opts.engine ?? fake ?? (bot.engine === 'pi' ? pi : claude);
   const services: Services = new Services(ctx, engineFor, opts.clock, () => opts.engine ?? fake ?? claude);

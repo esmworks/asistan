@@ -23,6 +23,11 @@ export interface FileTool {
   run(args: Record<string, unknown>, signal: AbortSignal): Promise<ToolResult>;
   /** Resolved target path, checked before the permission step. */
   target(args: Record<string, unknown>): string;
+  /**
+   * A check that needs to wait (a name lookup), before the permission step: a call that cannot
+   * succeed throws a PathError and opens no card.
+   */
+  check?(args: Record<string, unknown>): Promise<void>;
 }
 
 const MAX_READ = 256 * 1024;
