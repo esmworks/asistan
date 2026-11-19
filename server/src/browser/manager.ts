@@ -15,12 +15,15 @@ import {
   type Download,
   type Page,
 } from 'playwright-core';
-// The same Playwright with patches that keep it from enabling the DevTools Runtime domain on every
-// page. Pages can tell when that domain is on, and bot guards such as Cloudflare's check refuse a
-// browser while it is: on a bot's desktop the person passed the check by hand in a browser the bot
-// was not connected to, and failed it in the same browser while it was. Used only for the desktop's
-// browser, which sites see as a person's; the server's own headless browser keeps the original.
-import { chromium as desktopChromium } from 'rebrowser-playwright-core';
+// The same Playwright version with patches for a browser sites see as a person's: it never enables
+// the DevTools Runtime domain on a page, and the server's scripts (page.evaluate and the like) run in
+// an isolated world the page cannot see. Pages can tell when that domain is on, and bot guards such
+// as Cloudflare's check refuse a browser while it is: on a bot's desktop the person passed the check
+// by hand in a browser the bot was not connected to, and failed it in the same browser while it was.
+// A script in the page's own world can be watched by the page, which then sees the server look for
+// its challenge. Used only for the desktop's browser; the server's own headless browser keeps the
+// original.
+import { chromium as desktopChromium } from 'patchright-core';
 import { privateAddress } from '../services/skill-link';
 
 /** The size of every bot's browser window, in CSS pixels. */

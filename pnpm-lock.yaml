@@ -336,6 +336,9 @@ importers:
       fastify:
         specifier: 5.12.8
         version: 5.12.8
+      patchright-core:
+        specifier: 1.64.3
+        version: 1.64.3
       playwright-core:
         specifier: 1.64.1
         version: 1.64.1
@@ -348,9 +351,6 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
-      rebrowser-playwright-core:
-        specifier: 1.64.102
-        version: 1.64.102
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@26.6.6)
@@ -6505,6 +6505,11 @@ packages:
   partial-json@0.1.7:
     resolution: {integrity: sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA==}
 
+  patchright-core@1.64.3:
+    resolution: {integrity: sha512-AikBjQ6CcsEtk7pJGlZ7ITxIInVd0a8HWPtuGjx2Y0Ogb88sj1wqICiYFz4du6fbaLQStLNEnWCmYm5uODsEzQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   path-data-parser@0.1.0:
     resolution: {integrity: sha512-NOnmBpt5Y2RWbuv0LMzsayp3lVylAHLPUTut412ZA3l+C4uw4ZVkQbjShYCQ8TCpUMdPapr4YjUqLYD6v68j+w==}
 
@@ -6898,11 +6903,6 @@ packages:
 
   real-require@1.0.0:
     resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
-
-  rebrowser-playwright-core@1.64.102:
-    resolution: {integrity: sha512-42inXK9HxzoSIaJJIuC7P4n2BMptrg55Ce1vLub3WcBbOgdcm0I6Xjzq/FylL/1sb1J9hBEX+08EMJtc8viZ9Q==}
-    engines: {node: '>=20'}
-    hasBin: true
 
   regenerate-unicode-properties@10.3.0:
     resolution: {integrity: sha512-9ns8odR8e9q3otKeHj3DE80jZYKg6zVeZKE+zQmRKXFoVUcuiTGeO6iusDhPRoIQQPVPRvH+SfBhrTud4eczuw==}
@@ -15222,6 +15222,8 @@ snapshots:
 
   partial-json@0.1.7: {}
 
+  patchright-core@1.64.3: {}
+
   path-data-parser@0.1.0: {}
 
   path-exists@4.0.0: {}
@@ -15726,8 +15728,6 @@ snapshots:
   real-require@0.2.0: {}
 
   real-require@1.0.0: {}
-
-  rebrowser-playwright-core@1.64.102: {}
 
   regenerate-unicode-properties@10.3.0:
     dependencies:
