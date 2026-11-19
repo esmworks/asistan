@@ -20,6 +20,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
   not, and these sites cut the page's requests after the first one.
 - The bots' desktop browser speaks the bot's language: menus in Turkish for a Turkish bot, and pages asked for in its
   language instead of always in English. The "unsupported command-line flag" bar no longer covers every page.
+- The bots' desktop browser draws WebGL again, in software, as the desktop has no graphics card. Pages got no WebGL
+  at all, and a browser without it is one bot guards such as Cloudflare's check rarely let through.
+- The bots' desktop browser is Google Chrome instead of Debian's Chromium. Sites behind bot guards see the browser's
+  brand and trust the one most people use. Chrome opens the bots' existing profiles; a profile Chrome has opened may
+  not open in the older Chromium again.
 
 ## 0.6.0 — 2026-11-19
 

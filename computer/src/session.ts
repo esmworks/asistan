@@ -15,10 +15,12 @@ import { clearForeignProfileLock, isOpenableUrl, Jobs, pngSize, TailBuffer, xdot
 
 const CTL = process.env.YUMAKBOT_CTL ?? '/run/ctl';
 const HOME = process.env.HOME ?? '/tmp';
-const CHROMIUM = process.env.YUMAKBOT_CHROMIUM ?? 'chromium';
+// Google Chrome in the computer image (see computer/Dockerfile); any Chromium-based browser works.
+const CHROMIUM = process.env.YUMAKBOT_CHROMIUM ?? 'google-chrome-stable';
 const MAX_OUTPUT = 100_000;
 const MAX_BODY = 1024 * 1024;
 
+// The profile keeps the folder of the Chromium the image had before Chrome, so bots keep their sign-ins.
 const PROFILE = join(HOME, '.config', 'chromium');
 /**
  * The bot's language for the browser's menus and the pages it asks for. Left to itself Chromium
@@ -38,10 +40,14 @@ const chromiumArgs = [
   // The DevTools pipe makes Chromium report navigator.webdriver = true, which bot guards (Akamai
   // and the like) read as a program driving the browser and answer by cutting the site's requests.
   '--disable-blink-features=AutomationControlled',
-  // Chromium sends the experimental TLS Trust Anchor IDs extension (0xca34), which Chrome itself
-  // does not; the extra extension makes the handshake unlike any Chrome a site knows, and the same
-  // bot guards refuse it.
+  // Chromium builds send the experimental TLS Trust Anchor IDs extension (0xca34), which Google
+  // Chrome does not; the extra extension makes the handshake unlike any Chrome a site knows, and the
+  // same bot guards refuse it. The flag keeps it off whichever browser YUMAKBOT_CHROMIUM names.
   '--disable-features=TLSTrustAnchorIDs',
+  // The desktop has no GPU, and Chromium no longer falls back to drawing WebGL in software on its
+  // own: without this flag pages get no WebGL at all. Maps need it, and bot guards such as
+  // Cloudflare's check read a browser without WebGL as a program.
+  '--enable-unsafe-swiftshader',
   // The controller's proxy: the way out through the person's own computer when it is connected.
   // WebRTC would otherwise send UDP around it and show sites this machine's address.
   ...(process.env.YUMAKBOT_PROXY

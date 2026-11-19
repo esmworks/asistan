@@ -460,9 +460,10 @@ dışarı çıkışı yoktur.
 - **Masaüstünü yalnızca interneti açık botlar kullanır.** Bot ayarlarında "İnternet erişimi" kapalı olan
   bota masaüstü verilmez; komutları sunucunun yalıtımında, internete çıkmadan çalışır. Masaüstündeki
   her komut yine botun izin ayarlarına göre sorulur.
-- Oturumun içindeki Chromium'un kendi yalıtımı açıktır; bunun için `seccomp.json` ayrıca `chroot` çağrısına
-  izin verir (Docker'ın varsayılanı bunu yalnızca `CAP_SYS_CHROOT` ile verir). Kapsayıcının `/proc`
-  maskeleri `systempaths=unconfined` ile Bash yalıtımındaki gibi kaldırılır.
+- Oturumun içindeki tarayıcı Google Chrome'dur (Google'ın kendi paket deposundan). Kendi yalıtımı
+  açıktır; bunun için `seccomp.json` ayrıca `chroot` çağrısına izin verir (Docker'ın varsayılanı bunu
+  yalnızca `CAP_SYS_CHROOT` ile verir). Kapsayıcının `/proc` maskeleri `systempaths=unconfined` ile Bash
+  yalıtımındaki gibi kaldırılır.
 - Masaüstü oturumları kapsayıcı yeniden başlayınca kapanır; botların ana klasörleri ve dosyaları
   `data` biriminde kalır.
 - **GitHub, git rölesi üzerinden.** Masaüstlerinde git, pnpm ve yarn (corepack) kuruludur. Oturumdaki git
