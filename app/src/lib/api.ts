@@ -27,6 +27,7 @@ import type {
   RoomUpdate,
   BotImportPlan,
   BotImportResult,
+  GrokTemplateCard,
   Approval,
   Bot,
   BotSummary,
@@ -697,6 +698,8 @@ export const api = {
   previewBotImport: (file: File) => http.post<BotImportPlan>('/api/import/bots?preview=1', file),
   steerMessage: (id: string) => http.post<Message>(`/api/messages/${id}/steer`),
   importBots: (file: File) => http.post<BotImportResult>('/api/import/bots', file),
+  /** What a Grok Bot share link's page shows about the bot. */
+  readGrokLink: (url: string) => http.post<GrokTemplateCard>('/api/import/grok-link', { url }),
   /** Whether the server can turn speech into text (an OpenAI or Groq key is saved). */
   transcribeStatus: () => http.get<{ available: boolean }>('/api/transcribe'),
   /** A recording from the message box, written out by the provider whose key the server has. */

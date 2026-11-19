@@ -236,8 +236,7 @@ export class BotImportService {
         });
         for (const k of bot.skills) {
           // A new skill whose text hides something is brought in but left off until the person reads it.
-          const fresh = newSkills.get(k.name);
-          if (fresh && skillWarnings(`${fresh.description}\n${fresh.body}`).length) continue;
+          if (k.held) continue;
           await tx
             .insert(schema.botSkills)
             .values({ botId: id, skillId: skillIds.get(k.name)! })
@@ -367,7 +366,15 @@ export class BotImportService {
         if (skills.some((s) => s.name === k.data.name)) continue;
         const existing = here.has(k.data.name);
         if (!existing && !newSkills.has(k.data.name)) newSkills.set(k.data.name, k.data);
-        skills.push({ name: k.data.name, description: k.data.description, existing });
+        // Two bots naming one skill share the first copy, so that is the one shown and checked.
+        const made = newSkills.get(k.data.name);
+        skills.push({
+          name: k.data.name,
+          description: made?.description ?? k.data.description,
+          body: made?.body ?? '',
+          existing,
+          held: !!made && skillWarnings(`${made.description}\n${made.body}`).length > 0,
+        });
       }
       avatars.push(avatar);
       planned.push({

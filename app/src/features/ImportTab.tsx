@@ -1,6 +1,6 @@
-import { describeSchedule, type BotImportPlan } from '@yumakbot/shared';
+import { describeSchedule, grokTemplateId, grokTemplatePage, type BotImportPlan } from '@yumakbot/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArchiveRestore, Copy, Download, FileUp, Loader2 } from 'lucide-react';
+import { ArchiveRestore, Copy, Download, ExternalLink, FileUp, Link2, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -61,15 +61,17 @@ export function ImportTab() {
     },
     staleTime: Infinity,
   });
-  const copyInstructions = async () => {
+  /** `scope`, when given, names the one bot to move and goes after the instructions. */
+  const copyInstructions = async (scope?: string) => {
     const text = instructions.data ?? (await instructions.refetch()).data;
-    if (text && (await copyText(text))) toast.success(t('import.copied'));
+    if (text && (await copyText(scope ? `${text}\n\n${scope}\n` : text))) toast.success(t('import.copied'));
     else toast.error(t('import.copyFailed'));
   };
 
   return (
     <>
       <p className="mb-4 text-sm text-muted-foreground">{t('import.hint')}</p>
+      <GrokLinkCard onCopy={(scope) => void copyInstructions(scope)} />
       <Card title={t('import.step1')}>
         <Row label={t('import.instructions')} hint={t('import.instructionsHint')}>
           <Button
@@ -176,6 +178,17 @@ export function ImportTab() {
                             <span className="font-medium">{k.name}</span>
                             {' · '}
                             {k.existing ? t('import.skillExists') : k.description}
+                            {k.held && <div className="text-amber-600">{t('import.skillHeld')}</div>}
+                            {k.body && (
+                              <details className="mt-1">
+                                <summary className="cursor-pointer text-muted-foreground">
+                                  {t('import.skillBody')}
+                                </summary>
+                                <pre className="mt-1 max-h-64 overflow-y-auto rounded-xl bg-muted p-3 font-sans text-xs whitespace-pre-wrap">
+                                  {k.body}
+                                </pre>
+                              </details>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -239,6 +252,102 @@ export function ImportTab() {
       <ExportCard />
       <BackupCard />
     </>
+  );
+}
+
+/**
+ * A Grok Bot share link. Its page shows only the bot's name, who shared it and what it does; the
+ * instructions, memory, skills and routines reach the Grok Bot app alone. So the bot is added
+ * there first, then Grok Bot writes the import file for that one bot, which is loaded below.
+ */
+function GrokLinkCard({ onCopy }: { onCopy: (scope: string) => void }) {
+  const t = useT();
+  const [link, setLink] = useState('');
+  const read = useMutation({
+    mutationFn: api.readGrokLink,
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const valid = grokTemplateId(link) !== null;
+  // Only the answer for the link now in the field: one asked for an earlier link, or arriving
+  // after the field changed, would name a different bot in the copied instructions.
+  const card = read.data && read.variables === link.trim() ? read.data : null;
+  const page = card && grokTemplatePage(card.id);
+  /**
+   * The bot's name as the person's words to Grok Bot carry it. The sharer chose it, so the marks
+   * that could close the quotes around it or start a new line are taken out.
+   */
+  const label = card?.name
+    ?.replace(/[\p{C}"'`\u2018\u2019\u201C\u201D\u201E\u00AB\u00BB]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (
+    <Card title={t('import.link.title')}>
+      <p className="px-4 pt-3 text-xs text-muted-foreground">{t('import.link.hint')}</p>
+      <form
+        className="flex flex-wrap items-center gap-2 px-4 py-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid) read.mutate(link.trim());
+        }}
+      >
+        <Input
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder={t('import.link.placeholder')}
+          aria-label={t('import.link.title')}
+          className="min-w-0 flex-1 rounded-xl"
+        />
+        <Button type="submit" size="sm" className="rounded-full" disabled={!valid || read.isPending}>
+          {read.isPending ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
+          {t('import.link.read')}
+        </Button>
+      </form>
+      {link.trim() && !valid && (
+        <p className="px-4 pb-3 text-xs text-destructive">{t('import.link.invalid')}</p>
+      )}
+      {card && page && (
+        <>
+          <div className="px-4 py-3">
+            <div className="text-sm font-medium">{card.name ?? t('import.link.unnamed')}</div>
+            {card.sharer && (
+              <div className="text-xs text-muted-foreground">
+                {t('import.link.by', { name: card.sharer })}
+              </div>
+            )}
+            {card.description && (
+              <p className="mt-2 text-xs whitespace-pre-wrap text-muted-foreground">{card.description}</p>
+            )}
+            {!card.name && <p className="mt-2 text-xs text-muted-foreground">{t('import.link.unread')}</p>}
+          </div>
+          <Row label={t('import.link.add')} hint={t('import.link.addHint')}>
+            <Button variant="outline" size="sm" className="rounded-full" asChild>
+              <a href={page} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" />
+                {t('import.link.open')}
+              </a>
+            </Button>
+          </Row>
+          <Row label={t('import.link.export')} hint={t('import.link.exportHint')}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              onClick={() =>
+                onCopy(
+                  label
+                    ? t('import.link.scope', { name: label, page })
+                    : t('import.link.scopeUnnamed', { page }),
+                )
+              }
+            >
+              <Copy className="size-4" />
+              {t('import.copy')}
+            </Button>
+          </Row>
+          <Row label={t('import.link.load')} hint={t('import.link.loadHint')} />
+        </>
+      )}
+    </Card>
   );
 }
 

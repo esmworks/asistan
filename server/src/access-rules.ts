@@ -108,6 +108,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/backup/restore': 'owner',
   'GET /api/export/bots': 'admin',
   'POST /api/import/bots': 'admin',
+  'POST /api/import/grok-link': 'admin',
   'POST /api/mcp': 'owner',
   'GET /api/mcp': 'owner',
   'DELETE /api/mcp': 'owner',

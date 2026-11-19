@@ -118,6 +118,7 @@ import type { Services } from './services';
 import { clientMetadata, clientMetadataUrlFor, OAUTH_CLIENT_PATH } from './connections/client';
 import { OAUTH_CALLBACK_PATH, oauthRedirectUrl } from './services/connections';
 import { fetchSkillFile, privateHost } from './services/skill-link';
+import { readGrokLink } from './services/grok-link';
 import { isPersonal, serverLocale, Settings } from './services/settings';
 import { EMOJI } from './tools';
 import { attachedFiles, cancelStagedUpload, saveStagedUpload, stagingDir } from './uploads';
@@ -1872,6 +1873,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const raw = await readJson(req.body, MAX_BOT_IMPORT_BYTES);
     return preview ? s.botImport.preview(raw) : s.botImport.commit(raw);
   });
+
+  // What a Grok Bot share link shows: the bot's name, who shared it and its description. Read
+  // here, since the page cannot read another site; the rest of the bot comes in the import file.
+  app.post('/api/import/grok-link', async (req) =>
+    readGrokLink(z.object({ url: z.string().min(1).max(2000) }).parse(req.body).url),
+  );
 
   // A whole backup, sealed with a password: written on the server, then downloaded once.
   app.post('/api/backup', async (req) => {

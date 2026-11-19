@@ -81,7 +81,7 @@ const BotImportBot = z.object({
   avatar: z.unknown().optional(),
   routines: z.array(z.unknown()).max(BOT_IMPORT_LIMITS.routinesPerBot).default([]),
   memories: z.array(z.unknown()).max(BOT_IMPORT_LIMITS.memoriesPerBot).default([]),
-  /** Written by this app's own export; files from other apps leave it out. */
+  /** Older files and other apps may leave it out. */
   skills: z.array(z.unknown()).max(BOT_IMPORT_LIMITS.skillsPerBot).default([]),
 });
 
@@ -141,8 +141,12 @@ export interface BotImportPlan {
       enabledInSource: boolean;
     }[];
     memories: string[];
-    /** `existing`: a skill of that name is already here; the bot gets that one, unchanged. */
-    skills: { name: string; description: string; existing: boolean }[];
+    /**
+     * `existing`: a skill of that name is already here; the bot gets that one, unchanged, and
+     * `body` is empty. `held`: the text hides something, so the skill is brought in but left off
+     * for this bot until the person reads it.
+     */
+    skills: { name: string; description: string; body: string; existing: boolean; held: boolean }[];
   }[];
   groups: { name: string; members: string[] }[];
   notImported: { bot: string | null; what: string; reason: string }[];
@@ -152,4 +156,48 @@ export interface BotImportPlan {
 export interface BotImportResult {
   plan: BotImportPlan;
   botIds: string[];
+}
+
+/** The id in a Grok Bot share link: letters, digits, `_` and `-`. */
+const GROK_TEMPLATE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * The template id a Grok Bot share link names, or null. Takes the web page
+ * (`https://x.ai/bot/<id>`) and the address the page hands to the app
+ * (`grokbot://app/v1/bot-template?id=<id>`); anything else is refused so the server only ever
+ * reads the one page it builds from the id.
+ */
+export function grokTemplateId(input: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  let id: string | null = null;
+  if (url.protocol === 'https:' && (url.hostname === 'x.ai' || url.hostname === 'www.x.ai')) {
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length === 2 && parts[0] === 'bot') id = parts[1]!;
+  } else if (url.protocol === 'grokbot:') {
+    // `grokbot://app/v1/bot-template`: the host is `app`, the rest is the path.
+    if (url.hostname === 'app' && url.pathname === '/v1/bot-template') id = url.searchParams.get('id');
+  }
+  return id && GROK_TEMPLATE_ID.test(id) ? id : null;
+}
+
+/** The public page of a Grok Bot share link, built from its id. */
+export const grokTemplatePage = (id: string) => `https://x.ai/bot/${id}`;
+
+/**
+ * What a Grok Bot share page shows to anyone: the bot's name, who shared it, its description and
+ * look. Its instructions, memory, skills and routines are only handed to the Grok Bot app, so the
+ * import still goes through the file that app writes; this card names the bot to export.
+ */
+export interface GrokTemplateCard {
+  /** The template; its share page, to add the bot in Grok Bot from, is `grokTemplatePage(id)`. */
+  id: string;
+  /** Null when the page could not be read; the steps still work with the link alone. */
+  name: string | null;
+  sharer: string | null;
+  description: string | null;
 }

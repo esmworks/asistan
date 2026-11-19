@@ -18,6 +18,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   took the task on looks at where it stands and tells the person, in the conversation where they talk; a person's
   task is brought up by the first bot of the room the person may change. Each reminder is a one-time routine among
   the bot's routines, and reminders that already ran are cleared away as new ones are set.
+- Settings → Import and backup reads a Grok Bot share link (`x.ai/bot/…`): it shows the bot's name, who shared it
+  and its description, opens the page to add the bot in Grok Bot and copies export instructions for that one bot.
+  The share page carries no more than that, so the bot itself still arrives in the import file.
+- The Grok Bot export instructions carry each bot's skills with their full text, its shape, and its integrations as
+  notes to set up again. The import preview shows each new skill's text and says which ones stay off because their
+  text hides something.
 - Bots on API keys run shell commands in the same OS sandbox as Claude bots: kept to the bot's folders, with an
   environment of their own, the internet only when the bot has it on, and public addresses only. A bot with a
   desktop keeps running its commands there.

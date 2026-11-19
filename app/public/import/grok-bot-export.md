@@ -1,6 +1,6 @@
 ---
 name: move-to-yumakbot
-description: Packs the user's Grok Bot agents (instructions, picture, timed tasks, remembered facts, team chats) into a single yumakbot-bots.json file for the Yumak Bot app. Use when the user wants their agents in Yumak Bot.
+description: Packs the user's Grok Bot agents (instructions, picture, timed tasks, remembered facts, skills, team chats) into a single yumakbot-bots.json file for the Yumak Bot app. Use when the user wants their agents in Yumak Bot.
 ---
 
 # Move agents to Yumak Bot
@@ -33,7 +33,14 @@ strictly; a file that does not match the shape below is rejected as a whole.
           "enabled": true
         }
       ],
-      "memories": ["The user has a rail pass valid until March 2027."]
+      "memories": ["The user has a rail pass valid until March 2027."],
+      "skills": [
+        {
+          "name": "rail-booking",
+          "description": "Books train tickets. Use when the user asks for a train between two cities.",
+          "body": "# Rail booking\n\n1. Ask for the date and the two cities. …"
+        }
+      ]
     },
     {
       "ref": "bookkeeper",
@@ -42,12 +49,14 @@ strictly; a file that does not match the shape below is rejected as a whole.
       "instructions": "You keep the user's books. …",
       "avatar": null,
       "routines": [],
-      "memories": []
+      "memories": [],
+      "skills": []
     }
   ],
   "groups": [{ "name": "Household", "members": ["trip-planner", "bookkeeper"] }],
   "notImported": [
-    { "bot": "bookkeeper", "what": "Task: file receipts from email", "reason": "starts on an email" }
+    { "bot": "bookkeeper", "what": "Task: file receipts from email", "reason": "starts on an email" },
+    { "bot": "trip-planner", "what": "Integration: Google Calendar", "reason": "connected account" }
   ]
 }
 ```
@@ -60,10 +69,14 @@ strictly; a file that does not match the shape below is rejected as a whole.
 - `description`: what the agent is for, in one line of up to 500 characters.
 - `instructions`: its system prompt, up to 20,000 characters. When it is longer, condense it,
   keeping every rule, and list what you cut under `notImported`.
-- `avatar`: `null`, or the agent's picture as a base64 data URL of type `image/png`,
-  `image/jpeg` or `image/webp`, no larger than 290 KB. SVG is not accepted.
+- `avatar`: `null`, the agent's picture as a base64 data URL of type `image/png`,
+  `image/jpeg` or `image/webp` no larger than 290 KB (SVG is not accepted), or, for an agent
+  drawn as a coloured shape rather than a picture, the nearest Yumak Bot shape: `shape:drop`
+  for a teardrop or drop, `shape:blob`, `shape:pebble`, `shape:squircle`, `shape:capsule` or
+  `shape:square`. The colour is not carried.
 - `routines`: up to 32 timed tasks (see below).
 - `memories`: the facts the agent has saved in its memory, at most 50 (see below).
+- `skills`: the agent's skills, at most 32 (see below).
 
 ### `routines`
 
@@ -101,6 +114,33 @@ from the agent's conversations or summarise its chats, and never paste conversat
 agent with no saved memory gets `[]`; that is the expected case for most agents, not a gap to
 fill. Yumak Bot saves these as the agent's memory as soon as the user confirms the import.
 
+### `skills`
+
+Every skill the agent has, copied whole, so it works the same in Yumak Bot:
+
+- `name`: the skill's name as lowercase words joined by single hyphens, up to 64 characters
+  (`Routine healthcheck` becomes `routine-healthcheck`).
+- `description`: when to use the skill, up to 1,024 characters.
+- `body`: the skill's full text, exactly as it is in Grok Bot, up to 50,000 characters. Do not
+  summarise or rewrite it. When it is longer, keep the first 50,000 characters and say so under
+  `notImported`. Files that come with a skill (scripts, templates) are not carried: name each one
+  under `notImported`.
+
+Two agents that share a skill list it with the same `name`; Yumak Bot creates it once.
+
+When you cannot read a skill's full text, leave the skill out and name it under `notImported`
+with the reason. Never write a body from its description or from memory: a rebuilt skill would
+behave differently from the original.
+
+### Integrations
+
+Connected services, plugins and tool servers (an MCP server, a plugin such as a package of
+commands, a connected account) are not carried, since they need the user to sign in again in
+Yumak Bot. List each one under `notImported` as `Integration: <its name>`, with what it does as
+the `reason`, so the user can set it up there. When a plugin or tool server comes from a public
+address (such as a GitHub repository), put that address in the `reason` too: Yumak Bot installs
+plugins from such an address.
+
 ### `groups` (up to 50)
 
 Team chats in which several agents work together: a `name` (up to 60 characters) and the `ref` of
@@ -108,15 +148,18 @@ each member. In Yumak Bot an agent belongs to at most one group.
 
 ### `notImported` (up to 200)
 
-Everything the user had that the file cannot carry, such as skills, files, connected accounts or
-event-triggered tasks: `bot` (the agent's `ref`, or `null`), `what` (up to 200 characters) and
+Everything the user had that the file cannot carry, such as files, integrations, connected
+accounts or event-triggered tasks: `bot` (the agent's `ref`, or `null`), `what` (up to 200 characters) and
 `reason`.
 
 ## How to do it
 
-1. Gather the user's agents and team chats and show them as a list. Ask which to include (all, or
-   a selection) and wait for the reply. Skip any agent whose only job is to run this export.
-2. For each chosen agent, collect the fields above, copying its saved memories as they are.
+1. If the user named the agents to move (for example one added from a shared link), take exactly
+   those and do not ask. Otherwise gather the user's agents and team chats and show them as a
+   list. Ask which to include (all, or a selection) and wait for the reply. Skip any agent whose
+   only job is to run this export.
+2. For each chosen agent, collect the fields above: its instructions, its saved memories and its
+   skills copied as they are, its timed tasks, and its integrations for `notImported`.
 3. Keep credentials out of the file. API keys, passwords, tokens, cookies and signed URLs never
    go in, not even inside instructions or prompts; put a note such as `[needs the user's API key]`
    in their place.
@@ -124,6 +167,7 @@ event-triggered tasks: `bot` (the agent's `ref`, or `null`), `what` (up to 200 c
    - it parses as JSON, with `format` `yumakbot-bot-import` and `version` `1`;
    - every `ref` is unique, and every group member is one of them;
    - every schedule is one of the six shapes, none of them guessed;
+   - every skill's `body` is its full text, not a summary;
    - no credentials appear anywhere;
    - everything left behind is listed in `notImported`.
 5. Tell the user where the file is, how many agents and groups it contains and what is in
