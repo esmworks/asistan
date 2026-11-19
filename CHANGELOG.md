@@ -13,6 +13,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Bots on API keys read web pages (main text, headings and links) and, when the server's environment names a
   SearXNG with `WEB_SEARCH_URL`, search the web. Both ask under the same names as a Claude bot's steps, so the
   same "always allow" and "always ask" rules and the same cards apply.
+- Opening a page whose address imitates a site the person uses (look-alike letters such as "faceb00k", one letter
+  off, or the name inside another domain such as "facebook.com.giris.io") asks at every level, without the review,
+  and the card warns which site it looks like. Such a card offers no "always allow". The sites measured against are
+  often copied ones (mail, social media, stores, payments, banks, e-Devlet), the sites the person keeps a sign-in
+  for, and the domains they wrote.
 
 ### Fixed
 

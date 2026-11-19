@@ -46,6 +46,7 @@ import {
   outsideRead,
   outsideSource,
   reachesOut,
+  resembledSite,
 } from './outside';
 import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
@@ -1057,6 +1058,21 @@ export class TurnManager {
       // the card says what started the run. In the person's own request they count as always.
       // Someone with no account here asked: the rules the person set do not count for them.
       const locked = (!!outside() && !(await askedBy())) || turn.guest;
+      // A page address that imitates a site the person uses (a copy made to take a sign-in or a
+      // payment) is theirs to open, at every level and without the review; the card says which
+      // site it looks like and offers no "always allow".
+      const copied =
+        ask.toolName === BROWSER_OPEN || ask.toolName === 'WebFetch'
+          ? resembledSite(
+              ask.input.url,
+              await (ownWords ??= ownerWords(this.ctx, turn)),
+              (await this.services.vault.list(person)).map((l) => l.site),
+            )
+          : null;
+      if (copied) {
+        free = new Set(free);
+        free.delete(ask.toolName);
+      }
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes.
       if (
@@ -1094,7 +1110,7 @@ export class TurnManager {
       ) {
         return { behavior: 'allow', let: { how: 'level' } };
       }
-      const verdict = decide({
+      const decided = decide({
         mode,
         toolName: ask.toolName,
         input: ask.input,
@@ -1102,6 +1118,7 @@ export class TurnManager {
         readOnlyTools: free,
         outside: locked,
       });
+      const verdict = copied && decided === 'allow' ? 'ask' : decided;
       if (verdict === 'allow') {
         // A read goes without a line in the bot's list of what it changed.
         if (free.has(ask.toolName) || READ_ONLY_TOOLS.has(ask.toolName)) return { behavior: 'allow' };
@@ -1134,6 +1151,7 @@ export class TurnManager {
         (mode === 'ask' || mode === 'review') &&
         !locked &&
         !gated &&
+        !copied &&
         (ask.toolName === BROWSER_OPEN || ask.toolName === 'WebFetch') &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
         (await publicHost(urlHost(ask.input.url))) &&
@@ -1153,6 +1171,7 @@ export class TurnManager {
         (gated && !!appTool && !appTool.server && appTool.name.startsWith('browser_'));
       if (
         mode === 'review' &&
+        !copied &&
         (!gated || sends) &&
         (!sends || (present && (await askedBy()) === 'message')) &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
@@ -1191,7 +1210,8 @@ export class TurnManager {
         }).want,
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
-        outside: locked,
+        // A copy of a site gets no "always allow", nor an answer from another card's rule.
+        outside: locked || !!copied,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -1204,6 +1224,7 @@ export class TurnManager {
               // The card says what started the run, and offers no "always allow".
               ...(locked && outside() ? { outside: outside() } : {}),
               ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
+              ...(copied ? { resembles: copied.charAt(0).toUpperCase() + copied.slice(1) } : {}),
             },
             turnId: turn.id,
           });

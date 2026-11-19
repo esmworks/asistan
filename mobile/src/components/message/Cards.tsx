@@ -81,6 +81,7 @@ export function ApprovalCard({
   askRule,
   outside,
   reviewReason,
+  resembles,
   onAnswerLate,
 }: {
   approvalId: string;
@@ -94,6 +95,8 @@ export function ApprovalCard({
   outside?: OutsideTrigger;
   /** Why the automatic review left this step to the person. */
   reviewReason?: string;
+  /** The site the page address imitates: the card warns, and offers no "always allow". */
+  resembles?: string;
   /** Answers a question that went unanswered, as a reply quoting it. */
   onAnswerLate?: () => void;
 }) {
@@ -142,6 +145,11 @@ export function ApprovalCard({
         <View style={styles.headText}>
           <Text style={[styles.body, styles.medium, { color: c.foreground }]}>{action.want}</Text>
           <Text style={[styles.body, { color: c.mutedForeground }]}>{t('approval.question')}</Text>
+          {resembles ? (
+            <Text style={[styles.small, styles.medium, { color: c.destructive }]}>
+              {t('approval.resembles', { site: resembles })}
+            </Text>
+          ) : null}
           {heldBy ? (
             <Text style={[styles.small, { color: c.mutedForeground }]}>
               {t('approval.heldBy', { rule: heldBy })}
@@ -175,7 +183,7 @@ export function ApprovalCard({
         />
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside ? (
+        {!heldBy && !askRule && !outside && !resembles ? (
           <PillButton
             label={t('approval.allowAlways')}
             disabled={decide.isPending}

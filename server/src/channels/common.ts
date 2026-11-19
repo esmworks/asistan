@@ -46,7 +46,12 @@ export function cardView(
     // A run outside text started takes no "always allow": the step was the text's choice.
     const outside = outsideTrigger(props.outside);
     const why = outside ? `\n_${t(`channel.outside.${outside}`)}_` : '';
-    const always = !props.askRule && !props.heldBy && !outside;
+    // A page address that imitates a site the person uses: warned first, and never "always allow".
+    const copy =
+      typeof props.resembles === 'string' && props.resembles
+        ? `\n⚠️ **${t('channel.resembles', { site: props.resembles })}**`
+        : '';
+    const always = !props.askRule && !props.heldBy && !outside && !copy;
     // What the app shows under "What?": the command, file or address, so the step is not
     // allowed from the chat app without seeing it.
     const detail = describeAction(a.toolName, a.input ?? {}, {
@@ -58,7 +63,7 @@ export function cardView(
       ? `\n\`\`\`\n${truncate(masked(detail), DETAIL_MAX).replace(/```/g, "'''")}\n\`\`\``
       : '';
     return {
-      text: `🔐 ${a.summary}${shown}${why}${reason}`,
+      text: `🔐 ${a.summary}${copy}${shown}${why}${reason}`,
       buttons: [
         { label: t('channel.allow'), data: `a:${a.id}:y` },
         ...(always ? [{ label: t('channel.always'), data: `a:${a.id}:r` }] : []),

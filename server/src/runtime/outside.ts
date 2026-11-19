@@ -1,5 +1,6 @@
 import type { OutsideTrigger } from '@yumakbot/shared';
-import { getDomain, getDomainWithoutSuffix } from 'tldts';
+import { domainToUnicode } from 'node:url';
+import { getDomain, getDomainWithoutSuffix, getPublicSuffix } from 'tldts';
 import { toolPermName, type AppTool, type ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import { runsInlineCode } from './safety';
@@ -105,6 +106,157 @@ export function namesSite(url: unknown, words: readonly string[]): boolean {
   if (name.length < 4) return false;
   const escaped = fold(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}`, 'u').test(said);
+}
+
+/** Digits and letter pairs a copy of a site's name puts in place of letters. */
+const STAND_INS: [RegExp, string][] = [
+  // Letters of other alphabets drawn like Latin ones.
+  [/ı/g, 'i'],
+  [/і/g, 'i'],
+  [/а/g, 'a'],
+  [/е/g, 'e'],
+  [/о/g, 'o'],
+  [/р/g, 'p'],
+  [/с/g, 'c'],
+  [/х/g, 'x'],
+  [/у/g, 'y'],
+  [/ԁ/g, 'd'],
+  [/ѕ/g, 's'],
+  [/ο/g, 'o'],
+  [/α/g, 'a'],
+  [/0/g, 'o'],
+  [/1/g, 'l'],
+  [/3/g, 'e'],
+  [/4/g, 'a'],
+  [/5/g, 's'],
+  [/7/g, 't'],
+  [/rn/g, 'm'],
+  [/vv/g, 'w'],
+];
+const unmask = (s: string) => STAND_INS.reduce((x, [from, to]) => x.replace(from, to), s);
+
+/** Whether `a` becomes `b` by changing, adding or dropping one letter. */
+function oneEditApart(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  const [x, y] = [a.slice(i + 1), b.slice(i + 1)];
+  return x === y || a.slice(i) === y || x === b.slice(i);
+}
+
+/**
+ * Sites copies are made of to take a sign-in or a payment: mail, social media, stores, payments
+ * and the banks and state services people here use. Their own domains on any suffix are the site.
+ */
+const OFTEN_COPIED = [
+  'facebook',
+  'instagram',
+  'whatsapp',
+  'telegram',
+  'linkedin',
+  'twitter',
+  'tiktok',
+  'youtube',
+  'google',
+  'gmail',
+  'apple',
+  'icloud',
+  'microsoft',
+  'outlook',
+  'yahoo',
+  'paypal',
+  'stripe',
+  'amazon',
+  'netflix',
+  'spotify',
+  'dropbox',
+  'github',
+  'binance',
+  'coinbase',
+  'trendyol',
+  'hepsiburada',
+  'sahibinden',
+  'getir',
+  'yemeksepeti',
+  'edevlet',
+  'garanti',
+  'garantibbva',
+  'akbank',
+  'ziraat',
+  'isbank',
+  'yapikredi',
+  'halkbank',
+  'vakifbank',
+  'qnb',
+  'enpara',
+  'denizbank',
+  'teb',
+  'kuveytturk',
+  'papara',
+  'ininal',
+  'iyzico',
+  'ptt',
+];
+
+/** A domain written in the person's words, such as "leafdesk.com" or "www.ornek.com.tr". */
+const WRITTEN_DOMAIN = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi;
+
+/** The names of `hosts` (domains or addresses), as compared: folded, four letters or more. */
+function namesOf(hosts: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (const host of hosts) {
+    const name = getDomainWithoutSuffix(host.toLowerCase());
+    if (name && name.length >= 4) names.add(fold(name));
+  }
+  return names;
+}
+
+/**
+ * The known site a page address imitates without being it: its name written with look-alike
+ * letters ("faceb00k", a punycode "İnstagram"), one letter off ("facebok"), or set inside another
+ * domain ("facebook.com.giris.io", "facebook-login.net"). Known sites are the often copied ones,
+ * those the person keeps a sign-in for (`known`) and the domains they wrote. Null when the address
+ * is that site (on any suffix: google.com.tr is Google), or resembles none. The card says so, since a copy of a
+ * site the person uses is where a sign-in or a payment would be taken.
+ */
+export function resembledSite(
+  url: unknown,
+  words: readonly string[],
+  known: readonly string[] = [],
+): string | null {
+  if (typeof url !== 'string') return null;
+  let host: string;
+  try {
+    const u = new URL(/^[a-z][\w+.-]*:/i.test(url) ? url : `https://${url}`);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    host = u.hostname;
+  } catch {
+    return null;
+  }
+  const own = getDomainWithoutSuffix(host);
+  const suffix = getPublicSuffix(host);
+  if (!own || !suffix) return null;
+  // The labels before the public suffix, each also split at its hyphens, read as letters.
+  const labels = fold(domainToUnicode(host.slice(0, -suffix.length - 1)) || host)
+    .split('.')
+    .filter((l) => l && l !== 'www');
+  const parts = new Set(labels.flatMap((l) => [l, ...l.split('-')]).map(unmask));
+  const imitated = (names: ReadonlySet<string>) => {
+    // The site itself, under its own name.
+    if (names.has(fold(own))) return null;
+    for (const name of names) {
+      const plain = unmask(name);
+      for (const part of parts) {
+        if (part === plain || (plain.length >= 6 && oneEditApart(part, plain))) return name;
+      }
+    }
+    return undefined;
+  };
+  // The often copied sites and those with a sign-in first: a copy's address the person pasted
+  // themselves (from a message they were sent) is still a copy of them.
+  const first = imitated(new Set([...OFTEN_COPIED, ...namesOf(known)]));
+  if (first !== undefined) return first;
+  return imitated(namesOf(words.flatMap((w) => w.match(WRITTEN_DOMAIN) ?? []))) ?? null;
 }
 
 /** Words in an input's name that make it a place to send to: a page, a host, a hook. */

@@ -311,6 +311,8 @@ export const en: Catalog<MessageKey> = {
   'pin.remove': 'Unpin',
   'approval.reviewReason': 'The automatic review left this to you: {reason}',
   'approval.heldBy': 'The bot may go ahead by itself, but your rule “{rule}” asks first.',
+  'approval.resembles':
+    'Careful: this address is not {site}, but may be another site made to look like it. Copies are made to take sign-ins and payments.',
   'approval.askRule':
     'Your rule “{rule}” asks every time; while it stands, "Always allow" would change nothing.',
   'approval.outside.email':

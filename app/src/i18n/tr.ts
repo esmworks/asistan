@@ -307,6 +307,8 @@ export const tr = {
   'pin.remove': 'Sabitlemeyi kaldır',
   'approval.reviewReason': 'Otomatik inceleme sana bıraktı: {reason}',
   'approval.heldBy': 'Bot kendi başına ilerleyebilir, ama “{rule}” kuralınız önce sormasını istiyor.',
+  'approval.resembles':
+    'Dikkat: bu adres {site} değil, ona benzeyen başka bir site olabilir. Kopya siteler giriş bilgilerini ve ödemeleri çalmak için yapılır.',
   'approval.askRule':
     '“{rule}” kuralınız bunu her seferinde soruyor; o kural durdukça "Hep izin ver" işe yaramaz.',
   'approval.outside.email':

@@ -202,6 +202,7 @@ export function MessageItem({
           bots={bots}
           heldBy={typeof m.props.heldBy === 'string' ? m.props.heldBy : undefined}
           reviewReason={typeof m.props.reviewReason === 'string' ? m.props.reviewReason : undefined}
+          resembles={typeof m.props.resembles === 'string' ? m.props.resembles : undefined}
           askRule={typeof m.props.askRule === 'string' ? m.props.askRule : undefined}
           outside={outsideTrigger(m.props.outside)}
           onAnswerLate={onReply ? () => onReply(m) : undefined}
@@ -1251,6 +1252,7 @@ function ApprovalCard({
   outside,
   onAnswerLate,
   reviewReason,
+  resembles,
 }: {
   approvalId: string;
   fallback: string;
@@ -1265,6 +1267,8 @@ function ApprovalCard({
   onAnswerLate?(): void;
   /** Why the automatic review left this step to the person. */
   reviewReason?: string;
+  /** The site the page address imitates: the card warns, and offers no "always allow". */
+  resembles?: string;
 }) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
@@ -1310,8 +1314,13 @@ function ApprovalCard({
     }
   }
   if (a.kind === 'login' && a.status === 'pending') return <LoginCard a={a} />;
-  const notes = (heldBy || reviewReason || askRule || outside) && (
+  const notes = (heldBy || reviewReason || askRule || outside || resembles) && (
     <>
+      {resembles && (
+        <div className="text-sm font-medium text-destructive">
+          {t('approval.resembles', { site: resembles })}
+        </div>
+      )}
       {heldBy && (
         <div className="text-xs text-muted-foreground">{t('approval.heldBy', { rule: heldBy })}</div>
       )}
@@ -1336,7 +1345,7 @@ function ApprovalCard({
         service={service}
         connectionId={connection?.id}
         notes={notes}
-        offerAlways={!heldBy && !askRule && !outside}
+        offerAlways={!heldBy && !askRule && !outside && !resembles}
         busy={decide.isPending}
         onDecide={(d) => decide.mutate(d)}
       />
@@ -1366,7 +1375,7 @@ function ApprovalCard({
         </Button>
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && (
+        {!heldBy && !askRule && !outside && !resembles && (
           <Button
             size="sm"
             variant="secondary"
