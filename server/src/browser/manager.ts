@@ -15,6 +15,12 @@ import {
   type Download,
   type Page,
 } from 'playwright-core';
+// The same Playwright with patches that keep it from enabling the DevTools Runtime domain on every
+// page. Pages can tell when that domain is on, and bot guards such as Cloudflare's check refuse a
+// browser while it is: on a bot's desktop the person passed the check by hand in a browser the bot
+// was not connected to, and failed it in the same browser while it was. Used only for the desktop's
+// browser, which sites see as a person's; the server's own headless browser keeps the original.
+import { chromium as desktopChromium } from 'rebrowser-playwright-core';
 import { privateAddress } from '../services/skill-link';
 
 /** The size of every bot's browser window, in CSS pixels. */
@@ -910,7 +916,10 @@ export class BrowserManager {
     let remote: Browser | null = null;
     if (this.opts.connect) {
       try {
-        remote = await chromium.connectOverCDP(await this.opts.connect(botId), { timeout: 30_000 });
+        // Same API and version as playwright-core; only its overloaded types do not match by name.
+        remote = (await desktopChromium.connectOverCDP(await this.opts.connect(botId), {
+          timeout: 30_000,
+        })) as unknown as Browser;
       } catch (err) {
         throw new BrowserError('launch', (err as Error).message.split('\n')[0]);
       }
@@ -1042,7 +1051,9 @@ export class BrowserManager {
       logs: new WeakMap(),
     };
     await this.guardNetwork(live, context);
-    await this.wallPasskeys(live, context);
+    // The wall leaves a binding on every page's window, one more mark of a program for bot guards.
+    // A desktop shows the passkey window on its own screen, where the bot or the person closes it.
+    if (!remote) await this.wallPasskeys(live, context);
     for (const p of context.pages()) this.track(live, p);
     context.on('page', (p) => {
       // On the person's desktop the browser is theirs too: their own tabs are never closed.

@@ -25,6 +25,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - The bots' desktop browser is Google Chrome instead of Debian's Chromium. Sites behind bot guards see the browser's
   brand and trust the one most people use. Chrome opens the bots' existing profiles; a profile Chrome has opened may
   not open in the older Chromium again.
+- Bot guards such as Cloudflare's check let the bots' desktop browser through while a bot drives it. The server drove
+  it with a Playwright that turns on a DevTools domain pages can detect; the desktop's browser is now driven by
+  `rebrowser-playwright-core`, the same Playwright without that mark. Without that domain the desktop pages' console
+  messages no longer reach the bot. The passkey wall, which left a binding on every page, is no longer put into the
+  desktop's browser; a passkey window shows on the desktop's screen instead.
 
 ## 0.6.0 — 2026-11-19
 

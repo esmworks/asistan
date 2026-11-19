@@ -348,6 +348,9 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
+      rebrowser-playwright-core:
+        specifier: 1.64.102
+        version: 1.64.102
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@26.6.6)
@@ -6895,6 +6898,11 @@ packages:
 
   real-require@1.0.0:
     resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
+
+  rebrowser-playwright-core@1.64.102:
+    resolution: {integrity: sha512-42inXK9HxzoSIaJJIuC7P4n2BMptrg55Ce1vLub3WcBbOgdcm0I6Xjzq/FylL/1sb1J9hBEX+08EMJtc8viZ9Q==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   regenerate-unicode-properties@10.3.0:
     resolution: {integrity: sha512-9ns8odR8e9q3otKeHj3DE80jZYKg6zVeZKE+zQmRKXFoVUcuiTGeO6iusDhPRoIQQPVPRvH+SfBhrTud4eczuw==}
@@ -15718,6 +15726,8 @@ snapshots:
   real-require@0.2.0: {}
 
   real-require@1.0.0: {}
+
+  rebrowser-playwright-core@1.64.102: {}
 
   regenerate-unicode-properties@10.3.0:
     dependencies:
