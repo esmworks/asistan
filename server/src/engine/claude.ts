@@ -16,7 +16,6 @@ import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
 import { failureStreak } from './failures';
 import { fitResult } from './fit-image';
 import { gatePrompt, parseGate } from './gate';
-import { parseVerdict, reviewPrompt } from './review';
 import { startSandboxProxy } from './sandbox-proxy';
 import {
   APP_SERVER,
@@ -32,8 +31,6 @@ import {
   type GateRequest,
   type GateVerdict,
   type ModelStep,
-  type ReviewRequest,
-  type ReviewVerdict,
   type Sandbox,
   type SubagentState,
   subagentAnswer,
@@ -899,23 +896,6 @@ export class ClaudeEngine implements Engine {
       q.close?.();
     }
     return { text, costUsd };
-  }
-
-  /**
-   * The `review` mode: the cheapest model, without tools, looks at one permission request.
-   * A failure, a timeout or an unclear answer is "ask".
-   */
-  async review(req: ReviewRequest): Promise<ReviewVerdict> {
-    const { system, user } = reviewPrompt(req);
-    let text: string;
-    try {
-      ({ text } = await this.quick(system, user, req.signal));
-    } catch (err) {
-      // A reviewer that cannot answer hands every request to the person; say so in the log.
-      if (!req.signal.aborted) console.warn(`Review failed, asking instead: ${(err as Error).message}`);
-      return { decision: 'ask', reason: '', quote: '' };
-    }
-    return req.signal.aborted ? { decision: 'ask', reason: '', quote: '' } : parseVerdict(text);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   describeAction,
   INTL_LOCALE,
@@ -9,7 +9,6 @@ import {
   type Bot,
   type BotActionHow,
   type Effort,
-  type Locale,
   outsideIn,
   type OutsideTrigger,
 } from '@yumakbot/shared';
@@ -38,23 +37,14 @@ import {
 import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
-import {
-  browses,
-  markedOutside,
-  namesSite,
-  outsideFreeTools,
-  outsideRead,
-  outsideSource,
-  reachesOut,
-  resembledSite,
-} from './outside';
-import { ownerAnswers, ownerProposal, ownerWords, quoteFound, requestedBy } from './owner-words';
+import { markedOutside, outsideRead, outsideSource, resembledSite } from './outside';
+import { ownerWords, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
 import { sandboxFor, workspacePaths } from '../workspace';
 import { placeOf } from '../services/memory';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
-import { catastrophic, readsOnlyWithin } from './safety';
+import { catastrophic, readsOnlyLine } from './safety';
 import { ownBoxStep } from './own-box';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
@@ -784,9 +774,8 @@ export class TurnManager {
       : [];
     // Outside text the turn reads (a mail, a webhook's body or post, a watched page, an app's new
     // answer, a report written from one): its run's, what the prompt hands over below, and what
-    // the session it goes on in has read. The session keeps the mark. With nobody watching, the bot
-    // reaches no web page without a card, and changes nothing without one either, unless the work
-    // goes back to the person's own message and its level lets the review pass it on those words.
+    // the session it goes on in has read. The session keeps the mark, and the text reaches the bot
+    // marked as data; the bot's level stays its own.
     // A turn another bot's run handed over (a request, an answer, a room member naming it) comes
     // with what that run had read; so does a person's message carrying someone else's words.
     let reads: OutsideTrigger | null = routineRun?.trigger ?? turn.outside ?? null;
@@ -1025,9 +1014,9 @@ export class TurnManager {
       ) {
         return { behavior: 'deny', message: t('turn.safetyFloor') };
       }
-      // Outside text is in the run: only reads and talking to the person are free; the rest goes by
-      // the level `modeFor` gives it.
-      let free = outside() ? outsideFreeTools(tools) : readOnlyTools;
+      // Reads and talking to the person are free at every level, after outside text too: that text
+      // reaches the bot marked as data, and the steps that matter ask at every level.
+      let free = readOnlyTools;
       const appTool = tools.find((t) => toolPermName(t) === ask.toolName);
       const gated = !!appTool?.gated && (await appTool.gated(ask.input));
       if (gated) {
@@ -1047,24 +1036,20 @@ export class TurnManager {
       // Read for every call: "Hep izin ver" on an earlier card of this turn must count here, and so
       // must an approval level the person changed while the bot works.
       const rules = await approvals.rules(bot.id);
-      const mode = modeFor(
-        cappedMode(
-          await bots.get(bot.id).then(
-            (b) => b.permissionMode,
-            () => bot.permissionMode,
-          ),
-          turn.modeCap,
-        ),
-        !!outside(),
-        !!outside() && !!(await askedBy()),
+      const level = await bots.get(bot.id).then(
+        (b) => b.permissionMode,
+        () => bot.permissionMode,
       );
-      // Outside text in work nobody asked for: the person's "always allow" rules do not count, and
-      // the card says what started the run. In the person's own request they count as always.
+      const mode = modeFor(cappedMode(level, turn.modeCap));
       // Someone with no account here asked: the rules the person set do not count for them.
-      const locked = (!!outside() && !(await askedBy())) || turn.guest;
+      const locked = turn.guest;
+      // A stricter bot started this turn and holds it to its own level: "always allow" would raise
+      // this bot's level, not the turn's, so the card does not offer it, and another card's answer
+      // does not pass this one.
+      const capped = mode !== modeFor(level);
       // A page address that imitates a site the person uses (a copy made to take a sign-in or a
-      // payment) is theirs to open, at every level and without the review; the card says which
-      // site it looks like and offers no "always allow".
+      // payment) is theirs to open, at every level; the card says which site it looks like and
+      // offers no "always allow".
       const copied =
         ask.toolName === BROWSER_OPEN || ask.toolName === 'WebFetch'
           ? resembledSite(
@@ -1078,16 +1063,22 @@ export class TurnManager {
         free.delete(ask.toolName);
       }
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
-      // must not wait on one to read its own notes.
+      // must not wait on one to read its own notes. On its desktop too, which sees these folders
+      // at the same paths and runs commands in the same conversation folder. The bot's folder
+      // counts without its other conversations, which may be other people's, and without the
+      // desktop's home, where its programs keep sign-ins.
+      const botRoot = dirname(dirname(paths.threadDir));
       if (
         ask.toolName === 'Bash' &&
-        shell === 'sandbox' &&
         typeof ask.input.command === 'string' &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
-        readsOnlyWithin(
+        readsOnlyLine(
           ask.input.command,
           sandbox.cwd,
-          [sandbox.cwd, paths.botFiles, paths.groupFiles].filter((d): d is string => !!d),
+          [sandbox.cwd, paths.threadDir, paths.botFiles, paths.groupFiles, botRoot].filter(
+            (d): d is string => !!d,
+          ),
+          [join(botRoot, 'threads'), join(botRoot, 'home')],
         )
       ) {
         return { behavior: 'allow' };
@@ -1095,14 +1086,12 @@ export class TurnManager {
       // On a server of its own, not the person's computer, the bot's machine is its own: building,
       // testing, installing packages, local git work and writing in its own folders change nothing
       // of theirs and need no card. Pushing, sending, a connected app, anything that reaches another
-      // host and the group's shared folder still go by the level. Not once the run has read text
-      // someone else wrote, which may be steering it (a package to add, a script to run), nor for
-      // a step the person turned down just now.
+      // host and the group's shared folder still go by the level. Not for a step the person turned
+      // down just now.
       if (
         !this.ctx.config.onUserComputer &&
-        (mode === 'ask' || mode === 'review') &&
+        mode === 'ask' &&
         !locked &&
-        !outside() &&
         !askRuleMatches(rules, ask.toolName, ask.input) &&
         ownBoxStep(
           ask.toolName,
@@ -1120,7 +1109,7 @@ export class TurnManager {
         input: ask.input,
         rules,
         readOnlyTools: free,
-        outside: locked,
+        guest: locked,
       });
       const verdict = copied && decided === 'allow' ? 'ask' : decided;
       if (verdict === 'allow') {
@@ -1147,59 +1136,11 @@ export class TurnManager {
       ) {
         return { behavior: 'deny', message: t('turn.refusedLately') };
       }
-      // Opening a page on a site the person's own words name ("check the Facebook group") is what
-      // they asked for, after outside text too: a card or a review for it only buried the cards
-      // that matter. Opening sends nothing but the address; what the bot then does on the page
-      // (a click that sends, a form) still goes by the level.
-      if (
-        (mode === 'ask' || mode === 'review') &&
-        !locked &&
-        !gated &&
-        !copied &&
-        (ask.toolName === BROWSER_OPEN || ask.toolName === 'WebFetch') &&
-        !askRuleMatches(rules, ask.toolName, ask.input) &&
-        (await publicHost(urlHost(ask.input.url))) &&
-        namesSite(ask.input.url, await (ownWords ??= ownerWords(this.ctx, turn)))
-      ) {
-        return { behavior: 'allow' };
-      }
-      // Review mode: a small model may let a clearly safe request through. Never for what an
-      // "always ask" rule covers, what only the person may approve, or a step that sends, unless
-      // the person is there and wrote the message the turn answers: their "ok, do it" to what the
-      // bot proposed should not need a card as well.
-      // Why the reviewer left it to the person, when it said; the card shows it.
-      let reviewReason = '';
-      // A step that sends: the bot says so, or the browser sees a form posted or a "Send" button.
-      const sends =
-        ask.input.sends === true ||
-        (gated && !!appTool && !appTool.server && appTool.name.startsWith('browser_'));
-      if (
-        mode === 'review' &&
-        !copied &&
-        (!gated || sends) &&
-        (!sends || (present && (await askedBy()) === 'message')) &&
-        !askRuleMatches(rules, ask.toolName, ask.input) &&
-        // After outside text, a step that can send to another host is the person's to allow;
-        // looking something up on the web goes to the review.
-        !(outside() && reachesOut(ask.toolName, ask.input, appTool) && !browses(ask.toolName, appTool))
-      ) {
-        const review = await this.reviewed({
-          bot,
-          thread,
-          turn,
-          ask,
-          locale,
-          outside: !!outside(),
-          signal: controller.signal,
-        });
-        if (review.allowed) return { behavior: 'allow', let: { how: 'review' } };
-        reviewReason = review.reason;
-      }
       // The card names an "always ask" rule that covers this call, in every mode: "always allow"
       // cannot outdo it, so the card does not offer that. A bot allowed to go ahead by itself
       // stops only for such a rule.
       const askRule = askRuleFor(rules, ask.toolName, ask.input)?.pattern;
-      const held = askRule ? (mode === 'auto' || mode === 'review' ? { heldBy: askRule } : { askRule }) : {};
+      const held = askRule ? (mode === 'auto' ? { heldBy: askRule } : { askRule }) : {};
       const result = await approvals.ask({
         threadId: thread.id,
         botId: bot.id,
@@ -1215,7 +1156,7 @@ export class TurnManager {
         signal: controller.signal,
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
         // A copy of a site gets no "always allow", nor an answer from another card's rule.
-        outside: locked || !!copied,
+        outside: locked || capped || !!copied,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -1225,9 +1166,7 @@ export class TurnManager {
             props: {
               approvalId: a.id,
               ...held,
-              // The card says what started the run, and offers no "always allow".
-              ...(locked && outside() ? { outside: outside() } : {}),
-              ...(reviewReason ? { reviewReason: truncate(reviewReason, 300) } : {}),
+              ...(locked || capped ? { noAlways: true } : {}),
               ...(copied ? { resembles: copied.charAt(0).toUpperCase() + copied.slice(1) } : {}),
             },
             turnId: turn.id,
@@ -1629,58 +1568,6 @@ export class TurnManager {
     if (!outcome.ok && !outcome.text && streamed) outcome.text = streamed;
     if (spent) outcome = { ...outcome, costUsd: (outcome.costUsd ?? 0) + spent };
     await this.finish(turn, outcome, { acted });
-  }
-
-  /** True when the reviewer let the request through; the conversation shows that it did and why. */
-  private async reviewed(o: {
-    bot: Bot;
-    thread: { id: string };
-    turn: TurnRow;
-    ask: { toolName: string; input: Record<string, unknown> };
-    locale: Locale;
-    /** The run has read outside text: the reviewer is told, and holds to a stricter line. */
-    outside: boolean;
-    signal: AbortSignal;
-  }): Promise<{ allowed: boolean; reason: string }> {
-    const no = { allowed: false, reason: '' };
-    // The bot's own engine reviews, with the bot's model or a cheaper one of the same account.
-    const engine = this.engineFor(o.bot);
-    if (!engine.review) return no;
-    const t = translator(o.locale);
-    // Only the person's own words can let an action run, never what the turn read or was handed.
-    const words = await ownerWords(this.ctx, o.turn);
-    // What they chose on the bot's question cards is theirs too; the question is the bot's.
-    const answers = await ownerAnswers(this.ctx, o.turn);
-    if (!words.length && !answers.length) return { allowed: false, reason: t('review.noWords') };
-    // What the bot proposed just before the person's latest message: what their "ok" agrees to.
-    const proposal = await ownerProposal(this.ctx, o.turn);
-    let verdict;
-    try {
-      verdict = await engine.review({
-        toolName: o.ask.toolName,
-        input: o.ask.input,
-        bot: { name: o.bot.name, description: o.bot.description },
-        model: o.bot.model,
-        words,
-        answers,
-        ...(proposal ? { proposal } : {}),
-        outside: o.outside,
-        locale: o.locale,
-        signal: o.signal,
-      });
-    } catch (err) {
-      console.warn(`Review failed, asking instead: ${(err as Error).message}`);
-      return no;
-    }
-    if (o.signal.aborted) return no;
-    if (verdict.decision !== 'allow') return { allowed: false, reason: verdict.reason };
-    // The reviewer must point at what the person said; a quote that is not there does not count.
-    // Only the person's own text can be quoted: their messages and answers, never a card's question.
-    const own = [...words, ...answers.map((a) => a.answer)];
-    if (!quoteFound(verdict.quote, own)) return { allowed: false, reason: t('review.noQuote') };
-    // The step goes on without a line in the chat: the bot's own reply says what it did, and the
-    // step is kept among what the bot was let do.
-    return { allowed: true, reason: verdict.reason };
   }
 
   /** `acted`: a step that changes something (not a read) was let through during the turn. */

@@ -1744,19 +1744,21 @@ export class WhatsAppChannel {
     }
     try {
       if (kind === 'a') {
-        await this.services.approvals.answer(approvalId, {
-          decision: value === 'n' ? 'deny' : 'allow',
-          remember: value === 'r',
-        });
+        // Answered as the person who linked WhatsApp, so "always allow" is theirs to give.
+        await this.services.approvals.answer(
+          approvalId,
+          { decision: value === 'n' ? 'deny' : 'allow', remember: value === 'r' },
+          row?.userId ?? null,
+        );
       } else {
         const { items } = questionItems(approval);
         const option = items.length === 1 ? items[0]!.options[Number(value)] : undefined;
         if (!option) return false;
-        await this.services.approvals.answer(approvalId, {
-          decision: 'allow',
-          answer: option,
-          remember: false,
-        });
+        await this.services.approvals.answer(
+          approvalId,
+          { decision: 'allow', answer: option, remember: false },
+          row?.userId ?? null,
+        );
       }
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) return false;

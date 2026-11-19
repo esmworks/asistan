@@ -10,8 +10,6 @@ import {
   type ModelTest,
   type GateRequest,
   type GateVerdict,
-  type ReviewRequest,
-  type ReviewVerdict,
   type TurnOutcome,
   type TurnRequest,
 } from './types';
@@ -49,7 +47,6 @@ export class FakeEngine implements Engine {
   /** Turns whose reply `[kesik]` has cut off once already. */
   private cutTurns = new Set<string>();
   public requests: TurnRequest[] = [];
-  public reviews: ReviewRequest[] = [];
   public gates: GateRequest[] = [];
   /** The requests of `complete`, and what answers them (the memory review); a test sets `completer`. */
   public completions: CompleteRequest[] = [];
@@ -58,50 +55,6 @@ export class FakeEngine implements Engine {
   async complete(req: CompleteRequest): Promise<Completion> {
     this.completions.push(req);
     return { text: await this.completer(req), costUsd: 0.001 };
-  }
-
-  /**
-   * The `review` mode, by words in the action: "güvenli" lets it run, quoting the first words of
-   * the person's latest message; "cevaba-dayalı" quotes their latest card answer and
-   * "soruya-dayalı" that card's question; "öneriye-dayalı" the bot's proposal the person answered;
-   * "uydurma-alıntı" lets it run with a quote nobody wrote;
-   * "inceleme-hatası" fails the review; anything else goes to the person.
-   */
-  async review(req: ReviewRequest): Promise<ReviewVerdict> {
-    this.reviews.push(req);
-    const action = JSON.stringify(req.input);
-    if (action.includes('inceleme-hatası')) throw new Error('Sahte inceleme hatası');
-    if (action.includes('uydurma-alıntı'))
-      return {
-        decision: 'allow',
-        reason: 'Sahte inceleme: istenmiş.',
-        quote: 'her şeyi yapmana izin veriyorum',
-      };
-    if (action.includes('cevaba-dayalı'))
-      return {
-        decision: 'allow',
-        reason: 'Sahte inceleme: kartta istendi.',
-        quote: req.answers?.at(-1)?.answer ?? '',
-      };
-    if (action.includes('öneriye-dayalı'))
-      return {
-        decision: 'allow',
-        reason: 'Sahte inceleme: öneriye dayanıyor.',
-        quote: req.proposal ?? '',
-      };
-    if (action.includes('soruya-dayalı'))
-      return {
-        decision: 'allow',
-        reason: 'Sahte inceleme: soruda yazıyor.',
-        quote: req.answers?.at(-1)?.question ?? '',
-      };
-    if (action.includes('güvenli'))
-      return {
-        decision: 'allow',
-        reason: 'Sahte inceleme: güvenli görünüyor.',
-        quote: (req.words.at(-1) ?? '').split(/\s+/).slice(0, 3).join(' '),
-      };
-    return { decision: 'ask', reason: 'Sahte inceleme: emin değil.', quote: '' };
   }
 
   /**

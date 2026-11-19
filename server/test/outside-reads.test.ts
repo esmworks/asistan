@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import type { AppTool } from '../src/engine/types';
 import { translator } from '../src/i18n';
-import { outsideFreeTools, outsideRead, takesAddress } from '../src/runtime/outside';
+import { outsideRead, takesAddress } from '../src/runtime/outside';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 /** A page on the public internet, by address, so no name has to be looked up. */
@@ -141,12 +141,22 @@ describe('çalıştırmanın yolda okuduğu dış metin', () => {
     expect(card.botId).toBe(bora.id);
     const [boraTurn] = await t.db.db.select().from(schema.turns).where(eq(schema.turns.botId, bora.id));
     expect(boraTurn).toMatchObject({ source: 'bot', modeCap: 'ask' });
-    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    // "Always allow" would raise Bora, already free, not the turn Ada holds: the card offers none,
+    // and pressing it anyway counts for this time.
+    const shown = (await t.services.threads.messages(card.threadId, { limit: 20 })).find(
+      (m) => m.props.approvalId === card.id,
+    );
+    expect(shown?.props.noAlways).toBe(true);
+    const answered = await t.api<Approval>('POST', `/api/approvals/${card.id}`, {
+      decision: 'allow',
+      remember: true,
+    });
+    expect(answered.body.remembered).toBe(false);
     await t.services.turns.idle();
   });
 });
 
-describe('bağlı uygulamanın kendine "salt okunur" demesi', () => {
+describe('bağlı uygulamanın araçları', () => {
   const t = translator('tr');
   const tool = (o: Partial<AppTool>): AppTool => ({
     name: 'fetch',
@@ -159,52 +169,6 @@ describe('bağlı uygulamanın kendine "salt okunur" demesi', () => {
     ...o,
   });
 
-  it('dış metin okumuş çalıştırmada uygulamanın okuma dediği araç kartsız, adres alan araç hariç', () => {
-    const schema = (properties: Record<string, unknown>) => ({ type: 'object', properties });
-    const free = outsideFreeTools([
-      tool({ name: 'fetch', readOnlyClaimed: true, jsonSchema: schema({ url: { type: 'string' } }) }),
-      tool({ name: 'hook', readOnlyClaimed: true, jsonSchema: schema({ callbackUrl: { type: 'string' } }) }),
-      tool({
-        name: 'open',
-        readOnlyClaimed: true,
-        jsonSchema: schema({ target: { type: 'object', properties: { page_link: { type: 'string' } } } }),
-      }),
-      tool({
-        name: 'go',
-        readOnlyClaimed: true,
-        jsonSchema: schema({ to: { type: 'string', format: 'uri' } }),
-      }),
-      tool({
-        name: 'get_values',
-        readOnlyClaimed: true,
-        jsonSchema: schema({ spreadsheetId: { type: 'string' }, range: { type: 'string' } }),
-      }),
-      tool({
-        name: 'searchOrders',
-        readOnlyClaimed: true,
-        jsonSchema: schema({ query: { type: 'string' } }),
-      }),
-      tool({ name: 'pinned', readOnlyClaimed: true, jsonSchema: schema({ url: { type: 'string' } }) }),
-      tool({ name: 'search' }),
-      tool({ name: 'update_values', readOnly: false, jsonSchema: schema({ range: { type: 'string' } }) }),
-      tool({ name: 'notes', server: undefined, internal: true }),
-    ]);
-    for (const name of ['fetch', 'hook', 'open', 'go', 'pinned'])
-      expect(free.has(`mcp__web__${name}`)).toBe(false);
-    for (const name of ['get_values', 'searchOrders', 'search'])
-      expect(free.has(`mcp__web__${name}`)).toBe(true);
-    expect(free.has('mcp__web__update_values')).toBe(false);
-    expect(free.has('mcp__yumakbot__notes')).toBe(true);
-    expect(t('outside.forward')).toBe('iletilmiş bir mesaj');
-  });
-
-  it('kişinin okuma dediği araç adres alsa da kartsız', () => {
-    const free = outsideFreeTools([
-      tool({ name: 'fetch', jsonSchema: { type: 'object', properties: { url: { type: 'string' } } } }),
-    ]);
-    expect(free.has('mcp__web__fetch')).toBe(true);
-  });
-
   it('adres sayılmayan girdi adları', () => {
     const props = (...keys: string[]) => ({
       type: 'object',
@@ -212,6 +176,7 @@ describe('bağlı uygulamanın kendine "salt okunur" demesi', () => {
     });
     expect(takesAddress(props('spreadsheetId', 'range', 'during', 'curlyBraces', 'orderNo'))).toBe(false);
     expect(takesAddress(props('hostName'))).toBe(true);
+    expect(t('outside.forward')).toBe('iletilmiş bir mesaj');
     expect(takesAddress(props('webhook_id'))).toBe(true);
     expect(takesAddress(undefined)).toBe(false);
   });

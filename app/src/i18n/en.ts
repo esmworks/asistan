@@ -773,7 +773,7 @@ export const en: Catalog<MessageKey> = {
   'approval.allowOnce': 'Allow this time',
   'approval.allowAlways': 'Always allow',
   'approval.allowAlwaysHint':
-    'From now on this bot takes this step without asking: the same command, the same folder or the same site. Other bots still ask.',
+    'From now on this bot works without asking (Full access), and its waiting cards are allowed too. Your "Always ask" rules still ask.',
   'approval.deny': "Don't allow",
   'approval.never': 'Never allow',
   'email.kind.send': 'Email',
@@ -832,8 +832,7 @@ export const en: Catalog<MessageKey> = {
 
   'mode.readonly': 'Read-only',
   'mode.ask': 'Ask first',
-  'mode.review': 'Auto review',
-  'mode.auto': "Don't ask",
+  'mode.auto': 'Full access',
 
   'signin.hint': 'The details are typed straight into the site; the bot never sees the password.',
   'signin.username': 'Username or email',
@@ -1037,9 +1036,9 @@ export const en: Catalog<MessageKey> = {
     other: 'You allowed this {count} times lately and never refused it.',
   },
   'suggest.allow': 'Always allow',
-  'suggest.review':
-    'You allowed {allowed} of the last {total} cards. Let a reviewer pass the clearly safe ones and ask you about the rest?',
-  'suggest.reviewOn': 'Turn on auto review',
+  'suggest.full':
+    'You allowed {allowed} of the last {total} cards. Let this bot work without asking from now on?',
+  'suggest.fullOn': 'Switch to full access',
   'suggest.notNow': 'Not now',
   'bot.instructionsUrl': 'Instructions document',
   'bot.instructionsUrlHint':
@@ -1211,9 +1210,8 @@ export const en: Catalog<MessageKey> = {
   'bot.permissionMode': 'Permission mode',
   'bot.modeHint.readonly': 'Only reads; cannot write files or run commands.',
   'bot.modeHint.ask': 'Asks you before writing or running commands.',
-  'bot.modeHint.review':
-    'A small model looks at each request first: clearly safe ones run without asking, the rest come to you. "Always ask" rules still ask.',
-  'bot.modeHint.auto': 'Works inside its folder without asking; "Always ask" rules still ask.',
+  'bot.modeHint.auto':
+    'Works without asking. Your "Always ask" rules, copies of sites, filling a saved card and sign-ins still ask.',
   'bot.projectDir': 'Project folder (optional)',
   'bot.projectDirPlaceholder': '/Users/…/project',
   'bot.projectDirHint': 'The bot works in this folder; if empty, it uses its own.',

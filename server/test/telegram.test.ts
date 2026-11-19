@@ -305,7 +305,7 @@ describe('Telegram', () => {
     const buttons = (
       card.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }
     ).inline_keyboard.flat();
-    expect(buttons.map((b) => b.text)).toEqual(['İzin ver', 'Hep izin ver', 'Reddet']);
+    expect(buttons.map((b) => b.text)).toEqual(['İzin ver', 'Hep izin ver (tam yetki)', 'Reddet']);
     const [pending] = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
     expect(buttons[0]!.callback_data).toBe(`a:${pending!.id}:y`);
     // A stranger's press does nothing.

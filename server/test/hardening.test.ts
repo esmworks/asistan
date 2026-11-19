@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { forwardedFrom } from '../src/channels/telegram';
 import { contentOf } from '../src/channels/whatsapp';
 import { startSandboxProxy, type SandboxProxy } from '../src/engine/sandbox-proxy';
-import { quoteFound } from '../src/runtime/owner-words';
 import { catastrophic } from '../src/runtime/safety';
 import { allowRuleMatches, cappedMode, rememberedPattern, ruleMatches } from '../src/services/approvals';
 import { submits } from '../src/tools/computer';
@@ -47,19 +46,6 @@ describe('"hep izin ver"in kapsamı', () => {
     expect(cappedMode('auto', 'ask')).toBe('ask');
     expect(cappedMode('readonly', 'auto')).toBe('readonly');
     expect(cappedMode('review', null)).toBe('review');
-  });
-});
-
-describe('incelemecinin alıntısı', () => {
-  it('birkaç tam sözcük ya da kişinin bütün mesajı olmalı', () => {
-    const words = ['Lütfen dosyaları listele, sonra raporu gönder.'];
-    expect(quoteFound('dosyaları listele', words)).toBe(true);
-    expect(quoteFound('RAPORU   gönder', words)).toBe(true);
-    expect(quoteFound('lütfen', words)).toBe(false);
-    expect(quoteFound('sya', words)).toBe(false);
-    expect(quoteFound('ları listele, son', words)).toBe(false);
-    expect(quoteFound('evet', ['Evet!'])).toBe(true);
-    expect(quoteFound('ev', ['Evet!'])).toBe(false);
   });
 });
 

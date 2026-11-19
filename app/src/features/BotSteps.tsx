@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 /**
  * Ways to ask less, read from the person's own answers on this bot's cards: a step they always
  * allowed can become an "always allow" rule, and a bot whose cards they nearly always allowed can
- * let the reviewer pass the clearly safe ones. Each is one click, or turned down for good.
+ * let it go ahead by itself. Each is one click, or turned down for good.
  */
 export function BotSuggestions({ bot }: { bot: Bot }) {
   const t = useT();
@@ -25,8 +25,8 @@ export function BotSuggestions({ bot }: { bot: Bot }) {
     },
     onError,
   });
-  const review = useMutation({
-    mutationFn: () => api.updateBot(bot.id, { permissionMode: 'review' }),
+  const full = useMutation({
+    mutationFn: () => api.updateBot(bot.id, { permissionMode: 'auto' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bots'] });
       refresh();
@@ -38,7 +38,7 @@ export function BotSuggestions({ bot }: { bot: Bot }) {
     onSuccess: refresh,
     onError,
   });
-  const busy = allow.isPending || review.isPending || dismiss.isPending;
+  const busy = allow.isPending || full.isPending || dismiss.isPending;
   // An older server has no suggestions to give.
   if (!data || (!data.rules.length && !data.mode)) return null;
   const row = (key: string, text: string, action: React.ReactNode, why?: string) => (
@@ -69,9 +69,9 @@ export function BotSuggestions({ bot }: { bot: Bot }) {
         {data.mode &&
           row(
             'mode',
-            t('suggest.review', { allowed: data.mode.allowed, total: data.mode.allowed + data.mode.denied }),
-            <Button size="sm" className="rounded-full" disabled={busy} onClick={() => review.mutate()}>
-              {t('suggest.reviewOn')}
+            t('suggest.full', { allowed: data.mode.allowed, total: data.mode.allowed + data.mode.denied }),
+            <Button size="sm" className="rounded-full" disabled={busy} onClick={() => full.mutate()}>
+              {t('suggest.fullOn')}
             </Button>,
           )}
         {data.rules.map((r) =>

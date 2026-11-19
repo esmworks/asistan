@@ -135,7 +135,7 @@ describe('PATCH şemaları', () => {
   it('gönderilmeyen alanlara varsayılan yazmaz', () => {
     expect(BotUpdate.parse({ name: 'x' })).toEqual({ name: 'x' });
     expect(RoutineUpdate.parse({ enabled: false })).toEqual({ enabled: false });
-    expect(BotCreate.parse({ name: 'x' }).permissionMode).toBe('review');
+    expect(BotCreate.parse({ name: 'x' }).permissionMode).toBe('auto');
   });
 
   it('tek seferlik zamanı saat diliminde bir kez verir; çalıştıktan sonra boş döner', () => {

@@ -2,6 +2,8 @@ import {
   AVATAR_SHAPES,
   EFFORTS,
   PERMISSION_MODES,
+  shownMode,
+  type ShownMode,
   selectorLines,
   ToolSelection,
   type Bot,
@@ -40,7 +42,6 @@ const DEFAULT_EFFORT = '*';
 const MODE_LABEL: Record<(typeof PERMISSION_MODES)[number], MessageKey> = {
   readonly: 'mode.readonly',
   ask: 'mode.ask',
-  review: 'mode.review',
   auto: 'mode.auto',
 };
 
@@ -52,7 +53,7 @@ interface Form {
   newGroup: string;
   color: string;
   avatar: string;
-  permissionMode: Bot['permissionMode'];
+  permissionMode: ShownMode;
   isManager: boolean;
   memory: boolean;
   effort: Effort | '';
@@ -76,7 +77,7 @@ function initial(bot: Bot | undefined, start: { engine: 'claude' | 'pi'; model: 
     newGroup: '',
     color: bot?.color ?? COLORS[0]!,
     avatar: bot?.avatar ?? 'shape:blob',
-    permissionMode: bot?.permissionMode ?? 'review',
+    permissionMode: bot ? shownMode(bot.permissionMode) : 'auto',
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
     effort: (bot?.effort as Effort | '' | undefined) ?? '',

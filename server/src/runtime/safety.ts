@@ -141,7 +141,12 @@ const READERS = new Set(['cat', 'head', 'tail', 'grep', 'rg', 'ls', 'wc', 'nl', 
  * variables), and every path, links followed, inside one of the folders. Such a read of the bot's
  * own instructions, skills or conversation files needs no card at any approval level.
  */
-export function readsOnlyWithin(command: string, cwd: string, dirs: string[]): boolean {
+export function readsOnlyWithin(
+  command: string,
+  cwd: string,
+  dirs: string[],
+  except: string[] = [],
+): boolean {
   if (!/^[\w\s./,:=@%+*-]+$/.test(command) || command.includes('..')) return false;
   const [program, ...args] = command.trim().split(/\s+/);
   if (!program || !READERS.has(program)) return false;
@@ -153,8 +158,60 @@ export function readsOnlyWithin(command: string, cwd: string, dirs: string[]): b
     (a) => !a.startsWith('-') && (a.includes('/') || a.includes('.') || existsSync(resolve(cwd, a))),
   );
   const inside = dirs.map((d) => realPath(d));
+  const off = except.map((d) => realPath(d));
+  const within = (at: string, d: string) => at === d || at.startsWith(d + sep);
   return paths.every((p) => {
-    const at = realPath(resolve(cwd, p.replace(/\*.*$/, '') || '.'));
-    return inside.some((d) => at === d || at.startsWith(d + sep));
+    // A pattern reaches whatever its folder holds: `th*` in the bot's folder matches `threads`.
+    const star = p.indexOf('*');
+    const base = star < 0 ? p : p.slice(0, p.lastIndexOf('/', star) + 1);
+    const at = realPath(resolve(cwd, base || '.'));
+    if (!inside.some((d) => within(at, d))) return false;
+    // A folder left out (other conversations, the desktop's home) is never read through a folder
+    // above it (`grep -r`, `ls -R`), and inside it counts only where one of `dirs` holds the path:
+    // the conversation's own folder among the others.
+    return off.every(
+      (o) =>
+        !within(o, at) && (!within(at, o) || inside.some((d) => within(d, o) && d !== o && within(at, d))),
+    );
   });
+}
+
+/** What a read-only line may send away its errors and output to: nowhere. */
+const DISCARDED = /\s*(?:2>\/dev\/null|>\/dev\/null|2>&1)(?=\s|$|[;|&])/g;
+
+/**
+ * Whether a whole shell line only reads files inside `dirs`, as `readsOnlyWithin` reads one
+ * command: commands chained with `;`, `&&`, `||` or new lines, each a reading program whose output
+ * may go through more readers (`ls … | grep …`), errors or output thrown away (`2>/dev/null`), and
+ * plain variables set on the line itself (`B=/data/…; ls $B`), put in place before each command is
+ * judged. Anything else (a substitution, a redirect into a file, a variable from elsewhere, a
+ * program that is not a reader) makes the line not a plain read.
+ */
+export function readsOnlyLine(command: string, cwd: string, dirs: string[], except: string[] = []): boolean {
+  const line = command.replace(/\\\n/g, ' ').replace(DISCARDED, '');
+  // Substitutions, redirects and background jobs; `&&` is a chain.
+  if (/[`<>(){}\\'"!#~]/.test(line.replace(/\$\{(\w+)\}/g, '$$$1')) || /(^|[^&])&(?!&)/.test(line))
+    return false;
+  const vars = new Map<string, string>();
+  const statements = line.split(/&&|\|\||;|\n/).map((x) => x.trim());
+  if (!statements.some(Boolean)) return false;
+  for (const statement of statements) {
+    if (!statement) continue;
+    const expanded = statement.replace(
+      /\$\{(\w+)\}|\$(\w+)/g,
+      (_, a: string | undefined, b: string | undefined) => {
+        const v = vars.get((a ?? b)!);
+        return v === undefined ? '\u0000' : v;
+      },
+    );
+    if (expanded.includes('\u0000') || expanded.includes('$')) return false;
+    const set = /^([A-Za-z_]\w*)=(\S*)$/.exec(expanded);
+    if (set) {
+      if (!/^[\w./,:=@%+-]*$/.test(set[2]!)) return false;
+      vars.set(set[1]!, set[2]!);
+      continue;
+    }
+    if (!expanded.split('|').every((stage) => readsOnlyWithin(stage.trim(), cwd, dirs, except))) return false;
+  }
+  return true;
 }

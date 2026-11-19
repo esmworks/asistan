@@ -96,7 +96,8 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
     now,
     api,
     async bot(input = {}) {
-      const r = await api<Bot>('POST', '/api/bots', { name: `Bot ${++n}`, ...input });
+      // Bots work by themselves by default; a test bot asks, so a test sees the cards it is about.
+      const r = await api<Bot>('POST', '/api/bots', { name: `Bot ${++n}`, permissionMode: 'ask', ...input });
       if (r.status !== 200) throw new Error(JSON.stringify(r.body));
       return r.body;
     },

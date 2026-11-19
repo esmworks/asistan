@@ -207,7 +207,7 @@ describe('WhatsApp', () => {
     const { wa } = await setUp();
     wa.message(PERSON, { conversation: '[izin:Write {"file_path":"a.txt"}]' });
     const card = await waitFor(async () => wa.texts().find((x) => x.includes('1. İzin ver')));
-    expect(card).toContain('2. Hep izin ver');
+    expect(card).toContain('2. Hep izin ver (tam yetki)');
     expect(card).toContain('3. Reddet');
     const [pending] = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
     wa.message(PERSON, { conversation: '3' });
@@ -220,7 +220,7 @@ describe('WhatsApp', () => {
     const { wa } = await setUp();
     wa.message(PERSON, { conversation: '[izin:Write {"file_path":"a.txt"}]' });
     const card = await waitFor(async () => wa.texts().find((x) => x.includes('1. İzin ver')));
-    expect(card).toContain('2. Hep izin ver (hep izin vermek için “2 hep” yaz)');
+    expect(card).toContain('2. Hep izin ver (tam yetki) (hep izin vermek için “2 hep” yaz)');
     const [pending] = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
     wa.message(PERSON, { conversation: '2' });
     await waitFor(async () => wa.texts().find((x) => x.includes('Yalnız bir sayı')));

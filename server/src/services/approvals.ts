@@ -331,8 +331,8 @@ export function allowRuleFor(rules: PermissionRule[], toolName: string, input: R
   return allowRulesFor(rules, toolName, input)?.[0] ?? null;
 }
 
-/** From the strictest level to the freest. */
-export const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 3 };
+/** From the strictest level to the freest. The retired "review" counts as full access (see `modeFor`). */
+export const STRICTNESS: Record<PermissionMode, number> = { readonly: 0, ask: 1, review: 2, auto: 2 };
 
 /** The bot's level, held to `cap` when a stricter bot started the turn. */
 /** An input written the same way whatever order its keys came in, to compare two steps. */
@@ -351,27 +351,24 @@ export function cappedMode(mode: PermissionMode, cap: PermissionMode | null | un
 }
 
 /**
- * The level a step is decided at. When the work goes back to the person's own message
- * (`personAsked`), the bot keeps its own level even after reading text someone else wrote: that
- * text is marked as data in the prompt, and the review, which reads only the person's words, is
- * told it was read. A card for every step of the person's own request, in every bot it was handed
- * to, buried the cards that matter. When nobody asked for the work (a mail, a webhook, a watched
- * page started it), nothing it read may change anything by itself: every change asks.
+ * The level a step is decided at: the bot's own. Reading text someone else wrote does not lower it;
+ * that text reaches the bot marked as data, and the steps that matter ask at every level ("always
+ * ask" rules, a copy of a site, a saved card, a sign-in). The retired "review" level, a model judging
+ * each step, counts as going ahead by itself: it handed the person more cards than it saved.
  */
-export function modeFor(mode: PermissionMode, outside: boolean, personAsked = false): PermissionMode {
-  if (!outside || mode === 'readonly' || personAsked) return mode;
-  return 'ask';
+export function modeFor(mode: PermissionMode): PermissionMode {
+  return mode === 'review' ? 'auto' : mode;
 }
 
 export function decide(opts: {
-  /** The level the step is decided at: in an `outside` run, as `modeFor` lowers it. */
+  /** The level the step is decided at, as `modeFor` gives it. */
   mode: PermissionMode;
   toolName: string;
   input: Record<string, unknown>;
   rules: PermissionRule[];
   readOnlyTools: Set<string>;
-  /** A run outside text started that nobody asked for: "always allow" rules, given for the person's own work, do not count. */
-  outside?: boolean;
+  /** Someone with no account here asked: "always allow" rules, given for the person's own work, do not count. */
+  guest?: boolean;
 }): Verdict {
   const { mode, toolName, input, rules } = opts;
   const isRead = READ_ONLY_TOOLS.has(toolName) || opts.readOnlyTools.has(toolName);
@@ -379,7 +376,7 @@ export function decide(opts: {
   if (mode === 'readonly') return isRead ? 'allow' : 'deny';
   if (askRuleMatches(rules, toolName, input)) return 'ask';
   if (mode === 'auto' || isRead) return 'allow';
-  if (opts.outside) return 'ask';
+  if (opts.guest) return 'ask';
   if (allowRuleFor(rules, toolName, input)) return 'allow';
   return 'ask';
 }
@@ -388,9 +385,9 @@ export function decide(opts: {
 export const SUGGEST_DAYS = 30;
 /** How many times the person must have allowed a step, and never refused it, before it is suggested. */
 export const SUGGEST_RULE_MIN = 5;
-/** How many answered cards a bot in `ask` needs before the reviewer is suggested. */
+/** How many answered cards a bot in `ask` needs before going ahead by itself is suggested. */
 export const SUGGEST_MODE_MIN = 20;
-/** The most refusals, as a share of those cards, that still suggest the reviewer. */
+/** The most refusals, as a share of those cards, that still suggest going ahead by itself. */
 export const SUGGEST_MODE_DENIED = 0.05;
 /** The most "always allow" suggestions shown at once. */
 const SUGGEST_RULES_MAX = 5;
@@ -406,10 +403,10 @@ export interface AnsweredCard {
 /**
  * Ways to ask less, from the person's own answers on a bot's cards (newest first): each step they
  * allowed every time, at least `SUGGEST_RULE_MIN` times, as the "always allow" rule a card would
- * write; and for a bot in `ask`, the reviewer, when they allowed nearly every card it could pass.
- * A step an "always ask" rule covers, or one that sends something, is never the reviewer's to pass,
- * so it does not count toward the reviewer; a step whose tool has an amount limit is never offered
- * a plain rule, which would outrank the limit.
+ * write; and for a bot in `ask`, going ahead by itself, when they allowed nearly every card it
+ * would spare. A step an "always ask" rule covers still asks at full access, so it does not count
+ * toward it; a step whose tool has an amount limit is never offered a plain rule, which would
+ * outrank the limit.
  */
 export function permissionSuggestions(o: {
   mode: PermissionMode;
@@ -419,8 +416,8 @@ export function permissionSuggestions(o: {
   /** What the rule would let the bot do, in words; the latest card's own words without it. */
   describe?: (c: AnsweredCard, pattern: string) => string;
 }): PermissionSuggestions {
-  // A bot that never asks, or may only read, has no cards a rule or the reviewer would spare.
-  if (o.mode !== 'ask' && o.mode !== 'review') return { rules: [], mode: null };
+  // A bot that never asks, or may only read, has no cards a rule or full access would spare.
+  if (modeFor(o.mode) !== 'ask') return { rules: [], mode: null };
   const steps = new Map<string, { latest: AnsweredCard; allowed: number; denied: number }>();
   for (const c of o.cards) {
     // A chained command counts toward a rule for each command in it.
@@ -451,12 +448,10 @@ export function permissionSuggestions(o: {
     }));
   let mode: PermissionSuggestions['mode'] = null;
   if (o.mode === 'ask' && !o.dismissed.has('mode')) {
-    const passable = o.cards.filter(
-      (c) => c.input.sends !== true && !askRuleMatches(o.rules, c.toolName, c.input),
-    );
+    const passable = o.cards.filter((c) => !askRuleMatches(o.rules, c.toolName, c.input));
     const denied = passable.filter((c) => c.status === 'denied').length;
     if (passable.length >= SUGGEST_MODE_MIN && denied <= passable.length * SUGGEST_MODE_DENIED) {
-      mode = { to: 'review', allowed: passable.length - denied, denied };
+      mode = { to: 'auto', allowed: passable.length - denied, denied };
     }
   }
   return { rules, mode };
@@ -607,6 +602,15 @@ export class ApprovalService {
         .limit(1);
       if (turn?.userId === by) return true;
     }
+    return this.mayChangeBot(row.botId, by);
+  }
+
+  /**
+   * Whether `by` may change the bot, its level among the rest: its owner, an admin, or someone it
+   * is shared with to change. A caller with no person (the app itself) may.
+   */
+  private async mayChangeBot(botId: string, by: string | null): Promise<boolean> {
+    if (!by) return true;
     const [user] = await this.ctx.db
       .select({ role: schema.users.role, disabledAt: schema.users.disabledAt })
       .from(schema.users)
@@ -615,7 +619,7 @@ export class ApprovalService {
     const [bot] = await this.ctx.db
       .select({ ownerUserId: schema.bots.ownerUserId, access: schema.bots.access })
       .from(schema.bots)
-      .where(eq(schema.bots.id, row.botId))
+      .where(eq(schema.bots.id, botId))
       .limit(1);
     return !!user && !user.disabledAt && !!bot && botLevel({ userId: by, role: user.role }, bot) === 'edit';
   }
@@ -699,23 +703,18 @@ export class ApprovalService {
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
     if (!(await this.mayAnswer(stored, by))) throw new HttpError(403, 'error.cardNotYours');
     const status = d.decision === 'allow' ? 'allowed' : 'denied';
-    // An "always ask" rule wins over any allow rule, so "always allow" under one would save a rule
-    // that never applies and say the bot no longer asks. It counts as "this time" instead. So it
-    // does on a card from a run outside text started: the step it allowed was the text's choice.
-    // The rules are kept for the bot that asked, and only as wide as the step (see
-    // `rememberedSteps`); a step that cannot be written that narrowly counts for this time. A
-    // command of a chained line that a rule already covers gets no second one.
     const botRules = await this.rules(stored.botId);
-    const steps = (current.kind === 'tool' ? rememberedSteps(current.toolName, current.input) : null)?.filter(
-      (s) => !allowRulesFor(botRules, current.toolName, s.input),
-    );
+    // "Always allow" lets the bot go ahead by itself from now on, at full access, not only for
+    // this step: a rule per command kept the person answering cards for the next one. Not from a
+    // card that offers no such button (an "always ask" rule, a copy of a site), nor from someone
+    // who may only talk with the bot, whose answer counts for this time.
     const remembered =
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
-      !!steps?.length &&
       !stored.outside &&
-      !askRuleMatches(botRules, current.toolName, current.input);
+      !askRuleMatches(botRules, current.toolName, current.input) &&
+      (await this.mayChangeBot(stored.botId, by));
     let answer = d.answers ? JSON.stringify(d.answers) : (d.answer ?? null);
     /** What the waiting bot gets, when it differs from what the card keeps. */
     let given: string | null | undefined;
@@ -754,11 +753,7 @@ export class ApprovalService {
       .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
-    const note = (await serverTranslator(this.ctx))('approval.ruleNote');
-    const added: PermissionRule[] = [];
-    for (const step of remembered ? (steps ?? []) : []) {
-      added.push(await this.addRule({ list: 'allow', pattern: step.pattern, note, botId: stored.botId }));
-    }
+    if (remembered) await this.goFullAccess(stored.botId, by);
     // "Never allow": the step is refused from now on, in every mode, without a card. As narrow as
     // the step, and for the bot that asked: one refused command does not take the whole tool from
     // every bot.
@@ -777,18 +772,49 @@ export class ApprovalService {
     }
     this.waiters.get(id)?.resolve({ status, answer: given ?? answer, ...(login && { login }) });
     this.waiters.delete(id);
-    if (added.length) await this.allowWaiting(stored.botId, id, added);
+    if (remembered) await this.allowAllWaiting(stored.botId, id, by);
     this.ctx.bus.refresh({ scope: 'approvals' });
     return toApproval(row);
   }
 
   /**
-   * After "always allow", the same bot's other cards still waiting that the new rules cover, with
-   * the bot's other rules for the rest of a chained command, are answered too, the way they would
-   * have been. A card an "always ask" rule covers keeps waiting.
+   * "Always allow": the bot goes ahead by itself from now on. A read-only bot stays read-only, and
+   * one already at full access is left as it is. The change is kept in the bot's history, as one
+   * the person made in its settings would be.
    */
-  private async allowWaiting(botId: string, except: string, added: PermissionRule[]) {
-    const fresh = new Set(added.map((r) => r.id));
+  private async goFullAccess(botId: string, by: string | null) {
+    const changed = await this.ctx.db.transaction(async (tx) => {
+      const [before] = await tx
+        .select({ permissionMode: schema.bots.permissionMode })
+        .from(schema.bots)
+        .where(eq(schema.bots.id, botId))
+        .limit(1);
+      if (!before || before.permissionMode === 'readonly' || before.permissionMode === 'auto') return false;
+      await tx
+        .update(schema.bots)
+        .set({ permissionMode: 'auto', updatedAt: new Date() })
+        .where(eq(schema.bots.id, botId));
+      await tx.insert(schema.auditLog).values({
+        id: newId(),
+        actor: by ? `user:${by}` : 'card',
+        action: 'update',
+        targetType: 'bot',
+        targetId: botId,
+        before: { permissionMode: before.permissionMode },
+        after: { permissionMode: 'auto' },
+      });
+      return true;
+    });
+    if (changed) this.ctx.bus.refresh({ scope: 'bots' });
+  }
+
+  /**
+   * After "always allow", the same bot's other cards still waiting are answered too, as the bot
+   * would now go ahead with them by itself: the person's answer, given once for all of them. Not
+   * one an "always ask" rule covers, nor one that offers no "always allow" (a copy of a site, a
+   * guest's request, a turn a stricter bot holds to its level).
+   */
+  private async allowAllWaiting(botId: string, except: string, by: string | null) {
     const rules = await this.rules(botId);
     const rows = await this.ctx.db
       .select()
@@ -801,13 +827,11 @@ export class ApprovalService {
         ),
       );
     for (const r of rows) {
-      // A card from a run outside text started waits for its own answer.
       if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
-      if (!allowRulesFor(rules, r.toolName, r.input)?.some((rule) => fresh.has(rule.id))) continue;
       if (askRuleMatches(rules, r.toolName, r.input)) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
-        .set({ status: 'allowed', decidedBy: 'rule', decidedAt: new Date() })
+        .set({ status: 'allowed', decidedBy: 'person', decidedByUserId: by, decidedAt: new Date() })
         .where(and(eq(schema.approvals.id, r.id), eq(schema.approvals.status, 'pending')))
         .returning();
       if (!done) continue;

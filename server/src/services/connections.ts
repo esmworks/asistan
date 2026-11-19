@@ -1081,8 +1081,6 @@ export class ConnectionService {
       input: {},
       jsonSchema: modelSchema(tool.inputSchema),
       readOnly: kind === 'read',
-      // Only the app's own word makes it a read until the person says so.
-      ...(kind === 'read' && tool.kind !== 'read' && { readOnlyClaimed: true }),
       internal: false,
       handler: async (args) => {
         // Read again: the connection may have changed or gone since the turn began.

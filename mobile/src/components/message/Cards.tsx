@@ -80,6 +80,7 @@ export function ApprovalCard({
   heldBy,
   askRule,
   outside,
+  noAlways,
   reviewReason,
   resembles,
   onAnswerLate,
@@ -93,6 +94,8 @@ export function ApprovalCard({
   askRule?: string;
   /** What outside text started the run: every change asks, and "always allow" is not offered. */
   outside?: OutsideTrigger;
+  /** The card offers no "always allow": a guest's request, or a turn a stricter bot holds to its level. */
+  noAlways?: boolean;
   /** Why the automatic review left this step to the person. */
   reviewReason?: string;
   /** The site the page address imitates: the card warns, and offers no "always allow". */
@@ -183,7 +186,7 @@ export function ApprovalCard({
         />
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && !resembles ? (
+        {!heldBy && !askRule && !outside && !resembles && !noAlways ? (
           <PillButton
             label={t('approval.allowAlways')}
             disabled={decide.isPending}

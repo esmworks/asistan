@@ -116,8 +116,7 @@ export const sealedJson = customType<{ data: unknown; driverData: string }>({
 });
 
 /**
- * Keys of a message's props that carry what was said: a quoted reply, the person's words a review
- * quoted, a plan, quick replies, file names, a page. They are sealed one by one; the other keys
+ * Keys of a message's props that carry what was said: a quoted reply, a quote, a plan, quick replies, file names, a page. They are sealed one by one; the other keys
  * are flags queries filter on (queued, steering, retryAt) and stay as they are.
  */
 export const CONTENT_PROPS = ['replyTo', 'quote', 'plan', 'quickReplies', 'files', 'page'];

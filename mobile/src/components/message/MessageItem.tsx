@@ -139,6 +139,7 @@ function MessageBody({
           resembles={typeof m.props.resembles === 'string' ? m.props.resembles : undefined}
           askRule={typeof m.props.askRule === 'string' ? m.props.askRule : undefined}
           outside={outsideTrigger(m.props.outside)}
+          noAlways={m.props.noAlways === true}
           onAnswerLate={onReply ? () => onReply(m) : undefined}
         />
       );

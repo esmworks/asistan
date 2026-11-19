@@ -16,17 +16,16 @@ export const EngineKind = z.enum(['claude', 'pi']);
 export type EngineKind = z.infer<typeof EngineKind>;
 
 /**
- * How freely a bot acts. `review`: like `ask`, but a small model first looks at each request and
- * lets the clearly safe ones run; the rest still come to the person as cards.
+ * How freely a bot acts: `readonly` only reads, `ask` asks before each change, `auto` goes ahead by
+ * itself. `review` is kept for bots saved with it and counts as `auto`.
  */
 export const PermissionMode = z.enum(['ask', 'review', 'auto', 'readonly']);
 /**
  * Outside text a run reads: what started a routine run (a mail, a webhook's body, a watched page
  * or an app's new answer, WhatsApp messages a routine reads), or what the run read on its way: a
  * page, an API's or a connected app's answer (`web`), a message the person forwarded from someone else (`forward`), or text kept here
- * that came from outside before (`stored`). Unattended, such a run reaches no other host without a
- * card, and changes nothing without one unless the work goes back to the person's own message and
- * the review passes it on their words; a card from one says what it read.
+ * that came from outside before (`stored`). The text reaches the bot marked as data; it does not
+ * change the bot's level.
  */
 export const OUTSIDE_TRIGGERS = [
   'watch',
@@ -47,8 +46,13 @@ export const outsideTrigger = (value: unknown): OutsideTrigger | undefined =>
  */
 export const outsideIn = (props: Record<string, unknown>): OutsideTrigger | undefined =>
   outsideTrigger(props.outside) ?? (props.posted ? 'webhook' : undefined);
-/** From the strictest to the freest, as the app lists them. */
-export const PERMISSION_MODES = ['readonly', 'ask', 'review', 'auto'] as const;
+/**
+ * The levels a person picks from, from the strictest to the freest: read only, ask first, full access. "review" (a model judging each
+ * step) is retired; a bot still saved with it works and shows as full access (`shownMode`).
+ */
+export const PERMISSION_MODES = ['readonly', 'ask', 'auto'] as const;
+export type ShownMode = (typeof PERMISSION_MODES)[number];
+export const shownMode = (mode: PermissionMode): ShownMode => (mode === 'review' ? 'auto' : mode);
 export type PermissionMode = z.infer<typeof PermissionMode>;
 
 export const Group = z.object({
@@ -162,7 +166,7 @@ export const BotCreate = z.object({
     .regex(/^#[0-9a-f]{6}$/i)
     .default(BRAND_COLOR),
   avatar: Avatar.default('shape:blob'),
-  permissionMode: PermissionMode.default('review'),
+  permissionMode: PermissionMode.default('auto'),
   internet: z.boolean().default(true),
   projectDir: z.string().max(1000).nullable().default(null),
   memory: z.boolean().default(true),
@@ -399,7 +403,7 @@ export const Approval = z.object({
   options: z.array(z.string()),
   status: ApprovalStatus,
   answer: z.string().nullable(),
-  /** Allowed with "Hep izin ver": a rule now lets the tool run without asking. */
+  /** Allowed with "Hep izin ver": the bot now goes ahead by itself (full access). */
   remembered: z.boolean(),
   createdAt: z.string(),
   decidedAt: z.string().nullable(),
@@ -439,7 +443,7 @@ export const PermissionSuggestions = z.object({
       allowed: z.number().int(),
     }),
   ),
-  mode: z.object({ to: z.literal('review'), allowed: z.number().int(), denied: z.number().int() }).nullable(),
+  mode: z.object({ to: z.literal('auto'), allowed: z.number().int(), denied: z.number().int() }).nullable(),
 });
 export type PermissionSuggestions = z.infer<typeof PermissionSuggestions>;
 /** Turns down a suggestion: a rule's pattern, or `mode` for the level. */

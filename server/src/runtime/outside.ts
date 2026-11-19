@@ -1,51 +1,9 @@
 import type { OutsideTrigger } from '@yumakbot/shared';
 import { domainToUnicode } from 'node:url';
-import { getDomain, getDomainWithoutSuffix, getPublicSuffix } from 'tldts';
-import { toolPermName, type AppTool, type ToolResult } from '../engine/types';
+import { getDomainWithoutSuffix, getPublicSuffix } from 'tldts';
+import type { AppTool, ToolResult } from '../engine/types';
 import type { T } from '../i18n';
 import { runsInlineCode } from './safety';
-
-/**
- * The app's own tools a run started by outside text may use without a card, besides reads: they
- * talk to the person, show the turn's progress or end the routine's run, and leave nothing behind
- * that the text could have chosen. Every other tool, including one added later, asks first.
- */
-export const OUTSIDE_FREE_TOOLS: ReadonlySet<string> = new Set(
-  [
-    'ask_user',
-    'react',
-    'quick_replies',
-    'plan_update',
-    'send_file',
-    'show_page',
-    'routine_failed',
-    'routine_stop',
-    'command_status',
-    // A WhatsApp draft only puts a card in front of the person; nothing is sent without their yes.
-    'whatsapp_send',
-    'whatsapp_status',
-  ].map((name) => toolPermName({ name })),
-);
-
-/**
- * What a run started by outside text uses without a card: reads that stay on this server or with
- * the person's connected apps, and the tools above. The app's own tools that change something,
- * and reaching the web, where a page address could carry what the bot read away, ask first. A
- * connected app's tool the app itself calls read-only goes without a card too: a card for every
- * sheet, order or row a bot looks up buries the cards that matter. Only one that takes an address
- * waits for the person to mark it a read, since an app may call its own fetch tool read-only and
- * the address it is given could carry the text away. What is accepted: an app's read-only search
- * that sends its query to an outside service runs without a card, and the query could carry some
- * of what the bot read; the person can mark such a tool "changes" to make it ask again.
- */
-export function outsideFreeTools(tools: readonly AppTool[]): Set<string> {
-  const free = new Set(OUTSIDE_FREE_TOOLS);
-  for (const tool of tools) {
-    if (tool.readOnly && !(tool.readOnlyClaimed && takesAddress(tool.jsonSchema)))
-      free.add(toolPermName(tool));
-  }
-  return free;
-}
 
 /** Programs that talk to another host, or an address written into a command. */
 const NETWORK_COMMAND =
@@ -54,9 +12,7 @@ const NETWORK_COMMAND =
 /**
  * Whether a step can reach another host: a web search or page, the browser, an API call, an app
  * tool that takes an address, or a command naming a network program or an address, or handing an
- * interpreter code inline. A script the bot runs by name is not caught here; the review judges it. In a run that
- * read outside text, such a step is the way out for what the text asks (sending the person's data
- * to the writer's host), so it is never the reviewer's to pass; the person decides.
+ * interpreter code inline. A script the bot runs by name is not caught here.
  */
 export function reachesOut(toolName: string, input: Record<string, unknown>, tool?: AppTool): boolean {
   if (toolName === 'WebSearch' || toolName === 'WebFetch') return true;
@@ -70,46 +26,8 @@ export function reachesOut(toolName: string, input: Record<string, unknown>, too
   return takesAddress(tool.jsonSchema);
 }
 
-/**
- * Whether a step only looks something up on the web: a search, a page, the bot's browser. After
- * outside text it still goes to the review, which is told the text was read and holds anything
- * that sends data out; a card for every page a routine whose job is browsing opens buried the
- * cards that matter. A command or an API call, which can send anything anywhere, stays with the
- * person.
- */
-export function browses(toolName: string, tool?: AppTool): boolean {
-  if (toolName === 'WebSearch' || toolName === 'WebFetch') return true;
-  return !!tool && !tool.server && tool.name.startsWith('browser_');
-}
-
 /** Text compared without case or accents, so "Facebook'ta" and "İnstagram" match a site's name. */
 const fold = (s: string) => s.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '');
-
-/**
- * Whether the person's own words name the site of a page address: its domain ("facebook.com"),
- * or its name at the start of a word ("Facebook'taki grup"). A name shorter than four letters
- * counts only as the whole domain, since "x" or "ok" turn up in any sentence. Opening a page
- * there is what they asked for, whatever text the run has read since.
- */
-export function namesSite(url: unknown, words: readonly string[]): boolean {
-  if (typeof url !== 'string') return false;
-  let host: string;
-  try {
-    const u = new URL(/^[a-z][\w+.-]*:/i.test(url) ? url : `https://${url}`);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    host = u.hostname;
-  } catch {
-    return false;
-  }
-  const domain = getDomain(host);
-  const name = getDomainWithoutSuffix(host);
-  if (!domain || !name) return false;
-  const said = fold(words.join('\n'));
-  if (said.includes(fold(domain))) return true;
-  if (name.length < 4) return false;
-  const escaped = fold(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}`, 'u').test(said);
-}
 
 /** Digits and letter pairs a copy of a site's name puts in place of letters. */
 const STAND_INS: [RegExp, string][] = [

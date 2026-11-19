@@ -51,7 +51,8 @@ export function cardView(
       typeof props.resembles === 'string' && props.resembles
         ? `\n⚠️ **${t('channel.resembles', { site: props.resembles })}**`
         : '';
-    const always = !props.askRule && !props.heldBy && !outside && !copy;
+    // Nor a card that offers none: a guest's request, or a turn a stricter bot holds to its level.
+    const always = !props.askRule && !props.heldBy && !outside && !copy && props.noAlways !== true;
     // What the app shows under "What?": the command, file or address, so the step is not
     // allowed from the chat app without seeing it.
     const detail = describeAction(a.toolName, a.input ?? {}, {

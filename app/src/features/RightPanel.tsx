@@ -1,6 +1,8 @@
 import {
   describeSchedule,
   PERMISSION_MODES,
+  shownMode,
+  type ShownMode,
   type Bot,
   type BotUpdate,
   type PermissionMode,
@@ -71,10 +73,9 @@ function savePanelTab(tab: string) {
   }
 }
 
-export const MODE_LABEL: Record<PermissionMode, MessageKey> = {
+export const MODE_LABEL: Record<ShownMode, MessageKey> = {
   readonly: 'mode.readonly',
   ask: 'mode.ask',
-  review: 'mode.review',
   auto: 'mode.auto',
 };
 
@@ -479,7 +480,7 @@ function BotFacts({ bot }: { bot: Bot }) {
       <h4 className="mb-2 text-sm font-semibold">{t('panel.bot')}</h4>
       <Row icon={<Shield />} label={t('panel.permissions')}>
         <Select
-          value={bot.permissionMode}
+          value={shownMode(bot.permissionMode)}
           onValueChange={(v) => update.mutate({ permissionMode: v as PermissionMode })}
         >
           <SelectTrigger size="sm" className="h-8 rounded-full border-0 bg-secondary">

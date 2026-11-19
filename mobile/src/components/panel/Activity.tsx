@@ -1,4 +1,11 @@
-import type { Bot, BotUpdate, PermissionMode, Routine } from '@yumakbot/shared';
+import {
+  PERMISSION_MODES,
+  shownMode,
+  type Bot,
+  type BotUpdate,
+  type Routine,
+  type ShownMode,
+} from '@yumakbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
@@ -18,11 +25,9 @@ import { describeSchedule } from './schedule';
 
 const fmt = formatters(locale, t);
 
-const PERMISSION_MODES: PermissionMode[] = ['readonly', 'ask', 'review', 'auto'];
-const MODE_LABEL: Record<PermissionMode, MessageKey> = {
+const MODE_LABEL: Record<ShownMode, MessageKey> = {
   readonly: 'mode.readonly',
   ask: 'mode.ask',
-  review: 'mode.review',
   auto: 'mode.auto',
 };
 
@@ -233,7 +238,7 @@ function BotFacts({ bot }: { bot: Bot }) {
   const group = groups.find((g) => g.id === bot.groupId);
   const modeItems: SheetItem[] = PERMISSION_MODES.map((m) => ({
     label: t(MODE_LABEL[m]),
-    selected: m === bot.permissionMode,
+    selected: m === shownMode(bot.permissionMode),
     onPress: () => update.mutate({ permissionMode: m }),
   }));
   const noGroup = bot.isManager ? t('panel.manager') : t('panel.none');
@@ -250,7 +255,11 @@ function BotFacts({ bot }: { bot: Bot }) {
     <View>
       <SectionHead title={t('panel.bot')} />
       <Fact icon="shield" label={t('panel.permissions')}>
-        <Choice value={t(MODE_LABEL[bot.permissionMode])} busy={busyMode} onPress={() => setSheet('mode')} />
+        <Choice
+          value={t(MODE_LABEL[shownMode(bot.permissionMode)])}
+          busy={busyMode}
+          onPress={() => setSheet('mode')}
+        />
       </Fact>
       {/* An older server has no switch to show. */}
       {typeof bot.internet === 'boolean' ? (

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Approval, PermissionRule, Routine, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, PermissionRule, Routine, Thread } from '@yumakbot/shared';
+import { and, eq } from 'drizzle-orm';
+import { schema } from '../src/db';
 import { OWNER_ID } from '../src/users';
 import { testServer, waitFor, type TestServer } from './helpers';
 import { allowRulesFor, askRuleFor, blockRuleFor, decide, rememberedSteps } from '../src/services/approvals';
@@ -146,7 +148,7 @@ describe('"always ask" and block rules inside a chain', () => {
   it('wins over the allow rules that cover the other commands', () => {
     const rules = [rule('allow', 'Bash(git:*)'), rule('ask', 'Bash(git push*)')];
     const verdict = decide({
-      mode: 'review',
+      mode: 'ask',
       toolName: 'Bash',
       input: bash('git status && git push'),
       rules,
@@ -156,7 +158,7 @@ describe('"always ask" and block rules inside a chain', () => {
   });
 });
 
-describe('"always allow" on a card for a chained command', () => {
+describe('"always allow" on a card', () => {
   let t: TestServer;
   beforeEach(async () => {
     t = await testServer();
@@ -166,7 +168,7 @@ describe('"always allow" on a card for a chained command', () => {
   const ask = (command: string) => `[izin:Bash ${JSON.stringify({ command })}]`;
   const pending = () => t.api<Approval[]>('GET', '/api/approvals?status=pending').then((r) => r.body);
 
-  it('keeps a rule per command, so the same step in another folder no longer asks', async () => {
+  it('lets the bot work by itself, so the same step in another folder no longer asks', async () => {
     const bot = await t.bot({ name: 'Bug Hunter' });
     const first = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
     const second = await t.services.threads.create(bot.id, { title: 'Tomorrow', userId: OWNER_ID });
@@ -182,11 +184,62 @@ describe('"always allow" on a card for a chained command', () => {
       remember: true,
     });
     expect(answered.body.remembered).toBe(true);
+    expect((await t.api<Bot>('GET', `/api/bots/${bot.id}`)).body.permissionMode).toBe('auto');
+    // The bot's history says who raised its level, from what.
+    const [change] = await t.db.db
+      .select()
+      .from(schema.auditLog)
+      .where(and(eq(schema.auditLog.targetType, 'bot'), eq(schema.auditLog.targetId, bot.id)));
+    expect(change).toMatchObject({
+      actor: `user:${OWNER_ID}`,
+      action: 'update',
+      before: { permissionMode: 'ask' },
+      after: { permissionMode: 'auto' },
+    });
+    // No narrow rule is kept: the bot no longer asks for any step but the hard gates.
     const rules = (await t.api<PermissionRule[]>('GET', '/api/rules')).body.filter((r) => r.list === 'allow');
-    expect(rules).toMatchObject([{ pattern: 'Bash(git log:*)', botId: bot.id }]);
-    // The other card, waiting for the same step elsewhere, goes through by the new rule.
+    expect(rules).toHaveLength(0);
+    // The other card, waiting for the same step elsewhere, goes through as well.
     await waitFor(async () => ((await pending()).length === 0 ? true : undefined));
     await t.services.turns.idle();
+  });
+
+  it('leaves a question, sign-in or saved-card card waiting, and such a card never gives full access', async () => {
+    const bot = await t.bot({ name: 'Bug Hunter' });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const other = await t.services.threads.create(bot.id, { title: 'Alışveriş', userId: OWNER_ID });
+    const question = (kind: 'question' | 'login', toolName: string) =>
+      t.services.approvals.ask({
+        threadId: other.id,
+        botId: bot.id,
+        turnId: null,
+        kind,
+        toolName,
+        input: { site: 'ornek.test' },
+        summary: toolName,
+        options: kind === 'question' ? ['Bir kez', 'Reddet'] : [],
+      });
+    const login = question('login', 'browser_login');
+    const card = question('question', 'ask_user');
+    await t.send(thread.id, '[izin:Write {"file_path":"rapor.txt"}]');
+    const tool = await waitFor(async () => (await pending()).find((a) => a.kind === 'tool'));
+    await t.api('POST', `/api/approvals/${tool.id}`, { decision: 'allow', remember: true });
+    await t.services.turns.idle();
+    const left = await pending();
+    expect(left.map((a) => a.kind).sort()).toEqual(['login', 'question']);
+    // "Always allow" sent with the answer to a question card (a saved card's "use it" is one)
+    // answers it once; the level stays.
+    await t.api('PATCH', `/api/bots/${bot.id}`, { permissionMode: 'ask' });
+    const asked = left.find((a) => a.kind === 'question')!;
+    await t.api('POST', `/api/approvals/${asked.id}`, {
+      decision: 'allow',
+      remember: true,
+      answer: 'Bir kez',
+    });
+    expect((await t.api<Bot>('GET', `/api/bots/${bot.id}`)).body.permissionMode).toBe('ask');
+    await t.api('POST', `/api/approvals/${left.find((a) => a.kind === 'login')!.id}`, { decision: 'deny' });
+    expect(await pending()).toHaveLength(0);
+    await Promise.all([login, card]);
   });
 });
 
@@ -196,7 +249,7 @@ describe('a scheduled routine with nobody there', () => {
 
   const routineWith = async (command: string) => {
     t = await testServer({ unattendedApprovalMs: 5_000 });
-    const bot = await t.bot({ name: 'Bug Hunter', permissionMode: 'review' });
+    const bot = await t.bot({ name: 'Bug Hunter', permissionMode: 'ask' });
     const routine = (
       await t.api<Routine>('POST', '/api/routines', {
         botId: bot.id,
@@ -216,7 +269,6 @@ describe('a scheduled routine with nobody there', () => {
     const run = (await t.services.routines.runNow(routine.id)) as { threadId: string };
     await t.services.turns.idle();
     expect(await pending()).toHaveLength(0);
-    expect(t.engine.reviews).toHaveLength(0);
     expect((await t.messages(run.threadId)).at(-1)!.text).toContain('Bash: izin verildi');
   });
 

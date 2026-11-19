@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { catastrophic, readsOnlyWithin } from '../src/runtime/safety';
+import { catastrophic, readsOnlyLine, readsOnlyWithin } from '../src/runtime/safety';
+import { workspacePaths } from '../src/workspace';
 import { testServer, type TestServer } from './helpers';
 
 describe('güvenlik tabanı', () => {
@@ -107,5 +108,75 @@ describe('botun kendi klasörlerini okuması', () => {
       'python3 notlar.md',
     ])
       expect(readsOnlyWithin(cmd, cwd, own), cmd).toBe(false);
+  });
+});
+
+describe('a read-only line in the bot folder', () => {
+  // The bot folder as it lies on the data volume: its conversations, its files, the desktop home.
+  const bot = mkdtempSync(join(tmpdir(), 'yumakbot-line-'));
+  const threads = join(bot, 'threads');
+  const cwd = join(threads, 'bu');
+  const other = join(threads, 'baska');
+  const files = join(bot, 'files');
+  const home = join(bot, 'home');
+  for (const d of [cwd, other, files, home, join(bot, 'durum'), join(cwd, 'tool-results')])
+    mkdirSync(d, { recursive: true });
+  const dirs = [cwd, files, bot];
+  const except = [threads, home];
+  const reads = (cmd: string) => readsOnlyLine(cmd, cwd, dirs, except);
+
+  it('takes chained readers, pipes into readers, thrown-away errors and variables set on the line', () => {
+    for (const cmd of [
+      `B=${cwd}; P=${bot}; ls -la $P/durum | grep 11-19; ls $B $B/tool-results; ls $B/tmp_bakiye_1119 2>/dev/null`,
+      `ls ${files} && cat ${files}/notlar.md`,
+      'ls -la\nwc -l notlar.md',
+      `D=${bot}/durum; ls \${D}`,
+      `ls ${bot}/durum 2>&1 | head -n 5`,
+      `cat ${cwd}/*.md`,
+      'grep -r token .',
+    ])
+      expect(reads(cmd), cmd).toBe(true);
+  });
+
+  it('refuses other conversations, the desktop home, outside paths and anything that is not a read', () => {
+    for (const cmd of [
+      `ls ${other}`,
+      `P=${bot}; cat $P/threads/baska/notlar.md`,
+      `cat ${home}/.config/chromium/Cookies`,
+      'X=/etc; cat $X/passwd',
+      'cat $HOME/.ssh/id_rsa',
+      `ls ${files} > ${files}/liste.txt`,
+      `ls ${files}; rm -rf ${files}`,
+      `ls $(echo ${files})`,
+      `ls ${files} | sh`,
+      `ls ${files} &`,
+      'FOO=bar ls',
+      `B="${cwd}"; ls $B`,
+      // A folder above them, or a pattern in one, reaches the conversations and the home too.
+      `grep -r token ${bot}`,
+      `rg token ${bot}`,
+      `ls -R ${bot}`,
+      `cat ${bot}/th*/baska/notlar.md`,
+      `cat ${bot}/ho*/.config/chromium/Cookies`,
+      `ls ${threads}`,
+      '',
+    ])
+      expect(reads(cmd), cmd).toBe(false);
+  });
+});
+
+describe('a read-only line in a turn', () => {
+  let t: TestServer;
+  afterEach(() => t.dispose());
+
+  it('goes without a card for a bot that asks, as one plain read does', async () => {
+    t = await testServer();
+    const bot = await t.bot({ permissionMode: 'ask' });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const { threadDir, botFiles } = workspacePaths(t.dataDir, bot.id, thread.id, null);
+    const line = `B=${threadDir}; F=${botFiles}; ls -la $F | grep md; ls $B 2>/dev/null`;
+    await t.send(thread.id, `[izin:Bash ${JSON.stringify({ command: line })}]`);
+    await t.services.turns.idle();
+    expect((await t.api<unknown[]>('GET', '/api/approvals')).body).toHaveLength(0);
   });
 });

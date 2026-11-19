@@ -506,15 +506,21 @@ export class TelegramChannels {
     try {
       if (choice.kind === 'a') {
         const allow = choice.value !== 'n';
-        await this.services.approvals.answer(card.id, {
-          decision: allow ? 'allow' : 'deny',
-          remember: choice.value === 'r',
-        });
+        // Answered as the person who linked the chat, so "always allow" is theirs to give.
+        await this.services.approvals.answer(
+          card.id,
+          { decision: allow ? 'allow' : 'deny', remember: choice.value === 'r' },
+          row.userId,
+        );
         result = t(allow ? 'channel.allowed' : 'channel.denied');
       } else {
         const option = card.kind === 'question' ? this.option(card, Number(choice.value)) : null;
         if (option === null) return answer(t('channel.cardClosed'));
-        await this.services.approvals.answer(card.id, { decision: 'allow', answer: option, remember: false });
+        await this.services.approvals.answer(
+          card.id,
+          { decision: 'allow', answer: option, remember: false },
+          row.userId,
+        );
         result = option;
       }
     } catch (err) {

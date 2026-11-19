@@ -35,12 +35,6 @@ export interface AppTool {
   input: z.ZodRawShape;
   /** Tools that only read state may run without asking. */
   readOnly: boolean;
-  /**
-   * `readOnly` rests only on what a connected app says of its own tool, not on the person's
-   * choice. Where outside text could be steering the bot, such a tool is not taken at its word
-   * when it takes an address (see `outsideFreeTools`).
-   */
-  readOnlyClaimed?: boolean;
   /** Only touches YumakBot's own data (memory, bot messages); never asks in `ask` mode. */
   internal: boolean;
   /** Per-call override: some inputs of an internal tool still need a card. */
@@ -359,46 +353,6 @@ export interface AccountStatus {
   detail: string | null;
 }
 
-/** One permission request a small model looks at before a card opens (the `review` mode). */
-export interface ReviewRequest {
-  toolName: string;
-  input: Record<string, unknown>;
-  bot: { name: string; description: string };
-  /**
-   * The bot's own model. An engine run on API keys reviews with it, since a key may reach only
-   * the model the person chose; Claude picks its cheapest model instead.
-   */
-  model?: string;
-  /**
-   * The person's own words that could cover the action: their latest messages, or the routine's
-   * saved instructions (see `ownerWords`). Never a payload, a page or another bot's message.
-   */
-  words: string[];
-  /**
-   * The person's answers on the bot's question cards behind the same work (see `ownerAnswers`):
-   * the question is the bot's text, the answer the person's own.
-   */
-  answers?: { question: string; answer: string }[];
-  /**
-   * The bot's last reply, which the person's latest message answers (see `ownerProposal`): it
-   * says what a short "ok, do it" agrees to, but is the bot's text, never the person's words.
-   */
-  proposal?: string;
-  /** The run has read text someone else wrote (a page, an API's answer, a mail). */
-  outside?: boolean;
-  /** Language of the reason the person reads. */
-  locale: Locale;
-  signal: AbortSignal;
-}
-
-/** `allow`: clearly safe, runs without a card. `ask`: the person decides. Never a denial. */
-export interface ReviewVerdict {
-  decision: 'allow' | 'ask';
-  reason: string;
-  /** For `allow`: the person's words, as written, that ask for the action. */
-  quote: string;
-}
-
 /**
  * One routine run a small model looks at before the bot starts on it (the routine pre-check): a
  * watched page or app check that changed, what a webhook call carried, a mail, or new messages in a
@@ -457,8 +411,6 @@ export interface Engine {
   models?(): Promise<ClaudeModel[]>;
   /** One short request to a `provider/model` with its stored key, before a bot uses it. */
   testModel?(model: string, locale: Locale): Promise<ModelTest>;
-  /** Looks at one permission request with a small model (the `review` mode). */
-  review?(req: ReviewRequest): Promise<ReviewVerdict>;
   /** Looks at one routine run with a small model before the bot starts on it. */
   gate?(req: GateRequest): Promise<GateVerdict>;
   /** One answer without tools or a session; throws when the model cannot answer. */

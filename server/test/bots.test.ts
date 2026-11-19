@@ -314,10 +314,12 @@ describe('yönetici bot', () => {
     const yazar = bots.find((b) => b.name === 'Yazar')!;
     expect(yazar.groupId).not.toBeNull();
     expect(yazar.isManager).toBe(false);
-    // The new bot starts on the review, like one the person creates, and off the internet.
-    expect(yazar.permissionMode).toBe('review');
+    // The new bot works by itself, like one the person creates, and starts off the internet.
+    expect(yazar.permissionMode).toBe('auto');
     expect(yazar.internet).toBe(false);
 
+    // The person sets it to ask; the manager giving it full access again takes their approval.
+    await t.api('PATCH', `/api/bots/${yazar.id}`, { permissionMode: 'ask' });
     await t.send(tm.id, '[araç:bot_update {"bot":"Yazar","permission_mode":"auto"}]');
     const loosen = await waitFor(
       async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
@@ -325,7 +327,7 @@ describe('yönetici bot', () => {
     expect(loosen.toolName).toBe('bot_update');
     await t.api('POST', `/api/approvals/${loosen.id}`, { decision: 'allow', answer: 'Reddet' });
     await t.services.turns.idle();
-    expect((await t.api<Bot>('GET', `/api/bots/${yazar.id}`)).body.permissionMode).toBe('review');
+    expect((await t.api<Bot>('GET', `/api/bots/${yazar.id}`)).body.permissionMode).toBe('ask');
 
     // Turning the internet on loosens too: the person approves it.
     await t.send(tm.id, '[araç:bot_update {"bot":"Yazar","internet":true}]');

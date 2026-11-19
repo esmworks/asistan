@@ -205,6 +205,7 @@ export function MessageItem({
           resembles={typeof m.props.resembles === 'string' ? m.props.resembles : undefined}
           askRule={typeof m.props.askRule === 'string' ? m.props.askRule : undefined}
           outside={outsideTrigger(m.props.outside)}
+          noAlways={m.props.noAlways === true}
           onAnswerLate={onReply ? () => onReply(m) : undefined}
         />
       );
@@ -1180,6 +1181,7 @@ function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
       heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
       askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
       outside={outsideTrigger(x.props.outside)}
+      noAlways={x.props.noAlways === true}
     />
   );
   // Once read, the exchange counts itself: markers written before it was cut to one request
@@ -1250,6 +1252,7 @@ function ApprovalCard({
   heldBy,
   askRule,
   outside,
+  noAlways,
   onAnswerLate,
   reviewReason,
   resembles,
@@ -1263,6 +1266,8 @@ function ApprovalCard({
   askRule?: string;
   /** What outside text started the run: every change asks, and "always allow" is not offered. */
   outside?: OutsideTrigger;
+  /** The card offers no "always allow": a guest's request, or a turn a stricter bot holds to its level. */
+  noAlways?: boolean;
   /** Answers a question that went unanswered, as a reply quoting it. */
   onAnswerLate?(): void;
   /** Why the automatic review left this step to the person. */
@@ -1375,7 +1380,7 @@ function ApprovalCard({
         </Button>
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && !resembles && (
+        {!heldBy && !askRule && !outside && !resembles && !noAlways && (
           <Button
             size="sm"
             variant="secondary"

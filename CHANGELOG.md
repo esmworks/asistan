@@ -14,7 +14,7 @@ version is 0.x, a minor release may change the data format or the API; the serve
   SearXNG with `WEB_SEARCH_URL`, search the web. Both ask under the same names as a Claude bot's steps, so the
   same "always allow" and "always ask" rules and the same cards apply.
 - Opening a page whose address imitates a site the person uses (look-alike letters such as "faceb00k", one letter
-  off, or the name inside another domain such as "facebook.com.giris.io") asks at every level, without the review,
+  off, or the name inside another domain such as "facebook.com.giris.io") asks at every level, full access too,
   and the card warns which site it looks like. Such a card offers no "always allow". The sites measured against are
   often copied ones (mail, social media, stores, payments, banks, e-Devlet), the sites the person keeps a sign-in
   for, and the domains they wrote.
@@ -26,18 +26,28 @@ version is 0.x, a minor release may change the data format or the API; the serve
   WhatsApp can have a routine read it. A bot can also set a routine to follow a group by its name or read people's
   chats when asked in a conversation; it asks the person on a card first, at every level.
 
+### Changed
+
+- Bots work by themselves by default ("Full access"). A new bot, one a manager creates and one imported without a
+  level start there; the person can still pick "Ask" or "Read only". Only these still stop for the person, at every
+  level: their "always ask" rules, a page that imitates a site they use, filling a saved card, a sign-in, and the
+  commands no level lets through.
+- The "review" level, a small model judging each step, is retired. A bot still saved with it works at full access and
+  shows as such. It handed the person more cards than it spared them, and every step waited on a model call.
+- Text the bot read from someone else (a page, a mail, a webhook, another bot) no longer lowers its level. That text
+  still reaches the bot marked as outside data, and the steps above still ask.
+- "Always allow" on a card puts the bot on full access and lets through the cards it is waiting on, instead of
+  keeping a narrow rule for that one step. The suggestion for a bot whose cards the person nearly always allows now
+  offers full access.
+
 ### Fixed
 
-- A bot run on API keys at the "review" level has its steps reviewed by its own model. The reviewer used to be Claude
-  alone, so on a server with only API keys and no Claude sign-in every reviewed step opened a card.
 - The routine pre-check runs on the bot's own account, as its run does. It used to be Claude alone, so a routine of
   a bot on API keys ran unchecked on a server with no Claude sign-in.
-- Opening a page on a site the person's own words name (a routine's instructions, their message) goes without a card
-  or a review, also after the run has read outside text. A conversation that once read a page stayed marked, so a
-  social media bot's routine asked again for the very site it was set up to check. What the bot does on the page
-  still asks as before.
-- The reviewer no longer hands a step to the person because it cannot see that an earlier step the instructions call
-  for was done; it sees one step only, and keeping to the order is the bot's job.
+- A command that only reads the bot's own folders goes without a card on its desktop too, and as a whole line:
+  readers chained with `;` or `&&`, piped into readers, with errors thrown away and folders named in variables set on
+  the line (`B=…; ls $B | grep …`). Such a line opened a card. The bot's
+  other conversations and its desktop's home still ask.
 - The desktop app connects again as the bots' way out to the web after the server restarts. A restart used to end
   the connection the way a takeover by another computer does, and the app stayed away until it was opened again.
 

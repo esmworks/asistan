@@ -762,7 +762,7 @@ export const tr = {
   'approval.allowOnce': 'Bu seferlik izin ver',
   'approval.allowAlways': 'Hep izin ver',
   'approval.allowAlwaysHint':
-    'Bundan sonra bu bot bu adımı sormadan atar: aynı komut, aynı klasör ya da aynı site. Diğer botlar yine sorar.',
+    'Bu bot bundan sonra sormadan çalışır (Tam yetki) ve bekleyen kartları da onaylanır. "Her zaman sor" kuralların yine sorar.',
   'approval.deny': 'İzin verme',
   'approval.never': 'Hiç izin verme',
   'email.kind.send': 'E-posta',
@@ -822,8 +822,7 @@ export const tr = {
   // Permission modes
   'mode.readonly': 'Salt okunur',
   'mode.ask': 'Sorarak',
-  'mode.review': 'Otomatik inceleme',
-  'mode.auto': 'Sormadan',
+  'mode.auto': 'Tam yetki',
 
   // Right panel
   'signin.hint': 'Bilgiler doğrudan siteye yazılır; bot şifreyi görmez.',
@@ -1027,9 +1026,9 @@ export const tr = {
     other: 'Son zamanlarda buna {count} kez izin verdin, hiç reddetmedin.',
   },
   'suggest.allow': 'Hep izin ver',
-  'suggest.review':
-    'Son {total} kartın {allowed} tanesine izin verdin. Açıkça güvenli olanları bir inceleyici geçirsin, gerisini sana sorsun mu?',
-  'suggest.reviewOn': 'Otomatik incelemeyi aç',
+  'suggest.full':
+    'Son {total} kartın {allowed} tanesine izin verdin. Bu bot bundan sonra sormadan çalışsın mı?',
+  'suggest.fullOn': 'Tam yetkiye geç',
   'suggest.notNow': 'Şimdi değil',
   'bot.instructionsUrl': 'Talimat belgesi',
   'bot.instructionsUrlHint':
@@ -1204,9 +1203,8 @@ export const tr = {
   'bot.permissionMode': 'İzin kipi',
   'bot.modeHint.readonly': 'Yalnızca okur; dosya yazamaz, komut çalıştıramaz.',
   'bot.modeHint.ask': 'Yazma ve komutlardan önce size sorar.',
-  'bot.modeHint.review':
-    'Her isteği önce küçük bir model inceler: açıkça güvenli olanlar sormadan çalışır, gerisini size sorar. "Her zaman sor" kuralları yine sorar.',
-  'bot.modeHint.auto': 'Klasörü içinde sormadan çalışır; "Her zaman sor" kuralları yine sorar.',
+  'bot.modeHint.auto':
+    'Sormadan çalışır. "Her zaman sor" kuralların, kopya siteler, kayıtlı kart doldurma ve girişler yine sorar.',
   'bot.projectDir': 'Proje klasörü (isteğe bağlı)',
   'bot.projectDirPlaceholder': '/Users/…/proje',
   'bot.projectDirHint': 'Bot bu klasörde çalışır; boşsa kendi klasörünü kullanır.',

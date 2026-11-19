@@ -78,6 +78,7 @@ export function Marker({ m, bots }: { m: Message; bots: Map<string, Bot> }) {
                     heldBy={typeof x.props.heldBy === 'string' ? x.props.heldBy : undefined}
                     askRule={typeof x.props.askRule === 'string' ? x.props.askRule : undefined}
                     outside={outsideTrigger(x.props.outside)}
+                    noAlways={x.props.noAlways === true}
                   />
                 );
               }

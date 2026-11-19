@@ -3,7 +3,7 @@ import {
   type Approval,
   type BotSummary,
   type Message,
-  type PermissionRule,
+  type Bot,
   type Thread,
 } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -216,11 +216,14 @@ describe('sohbet', () => {
     // Answering twice is refused.
     expect((await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' })).status).toBe(409);
 
-    // The remembered rule now allows Write without a card.
+    // "Always allow" put the bot on full access: Write goes without a card now.
+    expect((await t.api<Bot>('GET', `/api/bots/${bot.id}`)).body.permissionMode).toBe('auto');
     await t.send(thread.id, '[izin:Write {"file_path":"b.txt"}]');
     await t.services.turns.idle();
     expect((await t.messages(thread.id)).at(-1)!.text).toContain('Write: izin verildi');
 
+    // Back on "ask", a step it has not been allowed asks again.
+    await t.api('PATCH', `/api/bots/${bot.id}`, { permissionMode: 'ask' });
     await t.send(thread.id, '[izin:Bash {"command":"rm -rf x"}]');
     const card2 = await waitFor(
       async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
@@ -263,7 +266,7 @@ describe('sohbet', () => {
     expect(rules.filter((r) => r.list === 'allow')).toHaveLength(0);
   });
 
-  it('"Hep izin ver" yalnızca aynı botun, kuralın kapsadığı bekleyen kartlarını kapatır', async () => {
+  it('"Hep izin ver" yalnızca aynı botun bekleyen kartlarını kapatır', async () => {
     const a = await t.bot({ name: 'Bir' });
     const b = await t.bot({ name: 'İki' });
     const own = await main(a.id);
@@ -281,15 +284,15 @@ describe('sohbet', () => {
       remember: true,
     });
     expect(answered.body.remembered).toBe(true);
-    // The same bot's card goes through; another bot's keeps waiting: the rule is for the bot
+    // The same bot's card goes through; another bot's keeps waiting: full access is for the bot
     // that asked.
     const left = await waitFor(async () => {
       const r = (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
       return r.length === 1 ? r : undefined;
     });
     expect(left.map((x) => x.input.file_path)).toEqual(['b']);
-    const rules = (await t.api<PermissionRule[]>('GET', '/api/rules')).body.filter((r) => r.list === 'allow');
-    expect(rules).toMatchObject([{ pattern: 'Write', botId: a.id }]);
+    expect((await t.api<Bot>('GET', `/api/bots/${a.id}`)).body.permissionMode).toBe('auto');
+    expect((await t.api<Bot>('GET', `/api/bots/${b.id}`)).body.permissionMode).toBe('ask');
     for (const c of left) await t.api('POST', `/api/approvals/${c.id}`, { decision: 'deny' });
     await t.services.turns.idle();
   });

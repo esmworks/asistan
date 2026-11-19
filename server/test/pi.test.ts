@@ -513,38 +513,6 @@ describe('Pi motoru', () => {
     expect(noKey).toMatchObject({ ok: false, detail: expect.stringContaining('deneme') });
   });
 
-  it('izin isteğini botun kendi modeliyle inceler; cevap veremezse karta bırakır', async () => {
-    const asks: string[] = [];
-    const e = new PiEngine({
-      sessionsDir: join(dir, 'sessions'),
-      apiKey: async (p) => keys[p] ?? null,
-      resolveModel: (p, id) => (p === 'deneme' ? faux.getModel(id) : undefined),
-      complete: (async (model, context) => {
-        asks.push(`${model.id}: ${context.systemPrompt?.slice(0, 29)}`);
-        return fauxAssistantMessage('{"decision":"allow","reason":"Kişi istedi.","quote":"raporu yaz"}');
-      }) as typeof completeSimple,
-    });
-    const request = {
-      toolName: 'Write',
-      input: { file_path: '/tmp/rapor.md' },
-      bot: { name: 'Bot', description: '' },
-      words: ['raporu yaz'],
-      locale: 'tr' as const,
-      signal: new AbortController().signal,
-    };
-    expect(await e.review({ ...request, model: 'deneme/m1' })).toEqual({
-      decision: 'allow',
-      reason: 'Kişi istedi.',
-      quote: 'raporu yaz',
-    });
-    expect(asks).toEqual(['m1: You review one action that an']);
-    // No model, or no key for it: the person decides.
-    expect((await e.review(request)).decision).toBe('ask');
-    delete keys.deneme;
-    expect((await e.review({ ...request, model: 'deneme/m1' })).decision).toBe('ask');
-    expect(asks).toHaveLength(1);
-  });
-
   it('rutin ön kontrolünü botun kendi modeliyle yapar; cevap veremezse hata verir', async () => {
     const asks: string[] = [];
     const e = new PiEngine({

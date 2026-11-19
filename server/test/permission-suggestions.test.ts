@@ -51,7 +51,8 @@ describe('ways to ask less', () => {
     expect(suggest(cards, { dismissed: new Set(['mcp__mail__send']) }).rules).toEqual([]);
     expect(suggest(cards, { mode: 'auto' }).rules).toEqual([]);
     expect(suggest(cards, { mode: 'readonly' }).rules).toEqual([]);
-    expect(suggest(cards, { mode: 'review' }).rules).toHaveLength(1);
+    // The retired review level goes ahead by itself and asks for nothing a rule would spare.
+    expect(suggest(cards, { mode: 'review' }).rules).toEqual([]);
   });
 
   it('offers no plain rule for a tool the person gave an amount limit', () => {
@@ -60,22 +61,22 @@ describe('ways to ask less', () => {
     expect(suggest(cards, { rules: [limited] }).rules).toEqual([]);
   });
 
-  it('suggests the reviewer to a bot in "ask" whose cards the person nearly always allowed', () => {
+  it('suggests full access to a bot in "ask" whose cards the person nearly always allowed', () => {
     const many = (denied: number) => [
       ...times(SUGGEST_MODE_MIN - denied, card('allowed', 'mcp__docs__write')),
       ...times(denied, card('denied', 'mcp__docs__write')),
     ];
-    expect(suggest(many(0)).mode).toEqual({ to: 'review', allowed: SUGGEST_MODE_MIN, denied: 0 });
-    expect(suggest(many(1)).mode).toEqual({ to: 'review', allowed: SUGGEST_MODE_MIN - 1, denied: 1 });
+    expect(suggest(many(0)).mode).toEqual({ to: 'auto', allowed: SUGGEST_MODE_MIN, denied: 0 });
+    expect(suggest(many(1)).mode).toEqual({ to: 'auto', allowed: SUGGEST_MODE_MIN - 1, denied: 1 });
     expect(suggest(many(2)).mode).toBeNull();
     expect(suggest(times(SUGGEST_MODE_MIN - 1, card('allowed'))).mode).toBeNull();
     expect(suggest(many(0), { mode: 'review' }).mode).toBeNull();
     expect(suggest(many(0), { dismissed: new Set(['mode']) }).mode).toBeNull();
   });
 
-  it('counts toward the reviewer only cards it could pass', () => {
+  it('counts toward full access only cards it would spare', () => {
     const sending = times(SUGGEST_MODE_MIN, card('allowed', 'mcp__mail__send', { sends: true }));
-    expect(suggest(sending).mode).toBeNull();
+    expect(suggest(sending).mode).toEqual({ to: 'auto', allowed: SUGGEST_MODE_MIN, denied: 0 });
     const held = times(SUGGEST_MODE_MIN, card('allowed'));
     expect(suggest(held, { rules: [rule({ list: 'ask', pattern: 'mcp__mail__*' })] }).mode).toBeNull();
   });

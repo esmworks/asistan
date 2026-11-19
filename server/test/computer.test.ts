@@ -241,17 +241,18 @@ describe('botun bilgisayarı', () => {
   it('komutu Bash kartıyla sorar ve konuşmanın klasöründe çalıştırır', async () => {
     const bot = await t.bot();
     const thread = await main(bot.id);
-    await t.send(thread.id, '[araç:run_command {"command":"ls -la"}]');
+    // A plain read of its own folder needs no card; reaching another host asks.
+    await t.send(thread.id, '[araç:run_command {"command":"curl -s https://ornek.test"}]');
     const card = await waitFor(
       async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
     );
     expect(card.toolName).toBe('Bash');
-    expect(card.input).toEqual({ command: 'ls -la' });
+    expect(card.input).toEqual({ command: 'curl -s https://ornek.test' });
     await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow' });
     await t.services.turns.idle();
     const reply = (await t.messages(thread.id)).at(-1)!.text;
     expect(reply).toContain('Çıkış kodu: 0');
-    expect(reply).toContain('çalıştı: ls -la');
+    expect(reply).toContain('çalıştı: curl -s https://ornek.test');
     const exec = fake.calls.find((c) => c.op === 'exec')!;
     expect(exec.body.cwd).toBe(join(t.dataDir, 'workspaces', 'bots', bot.id, 'threads', thread.id));
   });

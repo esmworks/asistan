@@ -416,16 +416,12 @@ const tr = {
   'engine.toolsSearch':
     'Bağlı uygulamaların {count} aracı ({apps}) listeye sığmadı. Onlara find_tool ile arayıp use_tool ile ulaşabilirsin.',
   'approval.expired': 'Onay beklenirken tur durduruldu.',
-  'review.noWords':
-    'Bu işi senin yazdığın bir istek başlatmadı (başka bir botun mesajı ya da sahibi olmayan bir iş), bu yüzden otomatik inceleme karar vermedi.',
-  'review.noQuote': 'Otomatik inceleme bu adımı senin söylediğin bir sözle gösteremedi.',
   'approval.timedOut':
     'Kullanıcı başında değildi ve izin isteği zamanında yanıtlanmadı; bu işlem yapılmadı. Onsuz yapabildiğini yap ve sonunda neyin yapılamadığını yaz.',
   'approval.denied': 'Kullanıcı reddetti.',
   'approval.deniedWith': 'Kullanıcı reddetti: {answer}',
   'approval.typedInstead':
     'Kullanıcı bu adımı onaylamadı; kartı cevaplamak yerine sohbete şunu yazdı. Buna göre devam et:\n<<<\n{text}\n>>>',
-  'approval.ruleNote': 'Karttan eklendi',
   'approval.blockNote': 'Karttan engellendi',
 
   // Bot-to-bot jobs
@@ -900,7 +896,7 @@ const tr = {
     '{model} kullanılabilir bir model değil; models_list ile bak (pi için sağlayıcı/model).',
   'tool.noModelKey': '{provider} için API anahtarı kayıtlı değil.',
   'tool.bot_update':
-    'Bir botun adını, açıklamasını, talimatını, grubunu, rengini, motorunu ve modelini, izin kipini ya da internet erişimini değiştir (yönetici). İzni gevşetmek (readonly→ask→review→auto) ve interneti açmak kullanıcı onayı ister.',
+    'Bir botun adını, açıklamasını, talimatını, grubunu, rengini, motorunu ve modelini, izin kipini ya da internet erişimini değiştir (yönetici). İzni gevşetmek (readonly→ask→auto) ve interneti açmak kullanıcı onayı ister.',
   'tool.bot_archive': 'Bir botu arşivle (yönetici). Geri alınabilir.',
   'tool.computer_screenshot':
     'Kendi bilgisayarının (Linux masaüstü: panel, Chromium, terminal, dosya yöneticisi, LibreOffice) ekran görüntüsünü al. Ekran 1280x800; koordinatlar soldan ve üstten piksel.',
@@ -1346,7 +1342,7 @@ const tr = {
   'channel.cmdStop': 'Çalışan işi durdur',
   'channel.cmdNew': 'Konuşmayı baştan başlat',
   'channel.allow': 'İzin ver',
-  'channel.always': 'Hep izin ver',
+  'channel.always': 'Hep izin ver (tam yetki)',
   'channel.deny': 'Reddet',
   'channel.resembles': 'Dikkat: bu adres {site} değil, ona benzeyen başka bir site olabilir.',
   'channel.outside.email': 'Bu çalıştırma bir e-posta okuyor; bu adım için senin sözün gerekiyor.',
@@ -1813,16 +1809,12 @@ const en: Catalog<ServerKey> = {
   'engine.toolsSearch':
     "{count} of the connected apps' tools ({apps}) did not fit in the list. Find them with find_tool and reach them with use_tool.",
   'approval.expired': 'The turn was stopped while waiting for approval.',
-  'review.noWords':
-    "No request you wrote started this work (another bot's message, or work nobody asked for), so the auto review did not decide.",
-  'review.noQuote': 'The auto review could not point to anything you said that asks for this step.',
   'approval.timedOut':
     'The user was not there and the request was not answered in time; this step was not done. Do what you can without it and say at the end what could not be done.',
   'approval.denied': 'The user declined.',
   'approval.deniedWith': 'The user declined: {answer}',
   'approval.typedInstead':
     'The user did not approve this step; instead of answering the card they wrote this in the chat. Go on from it:\n<<<\n{text}\n>>>',
-  'approval.ruleNote': 'Added from a card',
   'approval.blockNote': 'Blocked from a card',
 
   'job.marker': 'Message sent to {to}',
@@ -2291,7 +2283,7 @@ const en: Catalog<ServerKey> = {
   'tool.unknownModel': '{model} is not an available model; check models_list (provider/model for pi).',
   'tool.noModelKey': 'No API key is saved for {provider}.',
   'tool.bot_update':
-    "Change a bot's name, description, instructions, group, color, engine and model, permission mode or internet access (manager). Loosening permissions (readonly→ask→review→auto) and turning the internet on needs the user's approval.",
+    "Change a bot's name, description, instructions, group, color, engine and model, permission mode or internet access (manager). Loosening permissions (readonly→ask→auto) and turning the internet on needs the user's approval.",
   'tool.bot_archive': 'Archive a bot (manager). This can be undone.',
   'tool.computer_screenshot':
     'Take a screenshot of your own computer (a Linux desktop: panel, Chromium, terminal, file manager, LibreOffice). The screen is 1280x800; coordinates are pixels from the left and top.',
@@ -2741,7 +2733,7 @@ const en: Catalog<ServerKey> = {
   'channel.cmdStop': 'Stop the work in progress',
   'channel.cmdNew': 'Start the conversation afresh',
   'channel.allow': 'Allow',
-  'channel.always': 'Always allow',
+  'channel.always': 'Always allow (full access)',
   'channel.deny': 'Deny',
   'channel.resembles': 'Careful: this address is not {site}, but may be another site made to look like it.',
   'channel.outside.email': 'This run reads a mail; this step needs your word.',
