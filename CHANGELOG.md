@@ -3,7 +3,7 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
-## Unreleased
+## 0.6.1 — 2026-11-20
 
 ### Added
 
@@ -12,6 +12,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
   `docker/compose.yml` (`YUMAKBOT_WARP=1` with the installer) and `YUMAKBOT_EGRESS_PROXY` turn it on; the person's own
   computer still comes first when it is connected. Addresses are checked on the server as before, the operator's
   local hosts go straight, and while the proxy cannot be reached the browsers leave from the server again.
+- The iPhone app gets notifications while it is closed. It hands its device token to the server with the phone's
+  notification level, muted bots and language, asks for permission once after sign-in, and opens the conversation of
+  a tapped notification. Settings → General has a Notifications card with the level, the phone's permission, a test
+  notification and a hint when the server has no Apple key. While the app is open, only the conversation on screen
+  stays quiet.
+- Settings → Import and backup reads Grok Bot marketplace links (`x.ai/bot/marketplace/bots/…`) as well as share
+  links, and takes the bot from the page's add button.
 
 ### Fixed
 
@@ -31,6 +38,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   that domain and with its scripts in an isolated world. Without that domain the desktop pages' console messages no
   longer reach the bot. The passkey wall, which left a binding on every page, is no longer put into the
   desktop's browser; a passkey window shows on the desktop's screen instead.
+- A connection whose refresh token the service refuses for good asks for a new sign-in. X refuses a spent token with
+  `invalid_request` rather than `invalid_grant`, so the connection stayed connected while every call failed, and
+  signing in again failed on the kept token. Any OAuth error other than a server error, a pause or a rate limit now
+  signs the connection out, and a sign-in the person starts drops a refused token.
+- Bold text followed by a suffix after a quoted word, such as `**"Yenile"**ye`, shows in bold in the desktop and
+  mobile apps instead of keeping its asterisks.
 
 ## 0.6.0 — 2026-11-19
 
