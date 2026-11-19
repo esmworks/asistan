@@ -14,6 +14,12 @@ import {
   type ElicitResult,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import {
+  OAuthError,
+  ServerError,
+  TemporarilyUnavailableError,
+  TooManyRequestsError,
+} from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { ElicitForm } from './elicit';
 import { MAX_CONNECTION_TOOLS } from '@yumakbot/shared';
 import type { StoredConnectionTool } from '../db/schema';
@@ -307,13 +313,23 @@ export class ConnectionOAuthProvider implements OAuthClientProvider {
 /** Begins an OAuth sign-in: where to send the person, or null when already signed in. */
 export async function startOAuth(target: ClientTarget, redirectUrl: string) {
   const provider = new ConnectionOAuthProvider(target.store, redirectUrl);
-  const result = await inLane(target, () =>
+  const run = () =>
     auth(provider, {
       serverUrl: target.url,
       fetchFn: authFetch(target),
       ...(target.scope ? { scope: target.scope } : {}),
-    }),
-  ).catch((err: unknown) => {
+    });
+  const result = await inLane(target, async () => {
+    try {
+      return await run();
+    } catch (err) {
+      if (!refusedForGood(err) || !provider.tokens()?.refresh_token) throw err;
+      // The kept refresh token was turned down: the person is here to sign in, so the sign-in
+      // starts afresh instead of failing on it.
+      await provider.invalidateCredentials('tokens');
+      return run();
+    }
+  }).catch((err: unknown) => {
     throw classify(err);
   });
   if (result === 'AUTHORIZED') {
@@ -368,6 +384,23 @@ function isRpcAnswer(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The authorization server turned a refresh down for good. Services say so in different words:
+ * the SDK starts over itself on invalid_grant, but passes on the rest, such as the invalid_request
+ * X answers a spent or revoked refresh token with. Only a server error, a pause or a rate limit is
+ * in passing; an answer that names no known error comes as a server error.
+ */
+function refusedForGood(error: unknown): boolean {
+  return (
+    error instanceof OAuthError &&
+    !(
+      error instanceof ServerError ||
+      error instanceof TemporarilyUnavailableError ||
+      error instanceof TooManyRequestsError
+    )
+  );
 }
 
 /** Maps what the SDK or the network threw to a ConnectionClientError. */
@@ -573,6 +606,9 @@ async function renew(target: ClientTarget, refused: string | undefined) {
         fetchFn: authFetch(target),
       });
     } catch (err) {
+      // The tokens stay for now, so the service's words can still be masked; the sign-in the
+      // person starts next leaves them out (see startSignIn).
+      if (refusedForGood(err)) throw new ConnectionClientError('unauthorized', messageOf(err));
       throw classify(err);
     }
   });

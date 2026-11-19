@@ -73,6 +73,13 @@ async function mcpFixture(
     clientGone: false,
     /** A refused refresh says why by quoting the refresh token it was sent. */
     echoRefresh: false,
+    /**
+     * The token endpoint turns refreshes down with invalid_request instead of invalid_grant, as X
+     * does once a refresh token is spent or revoked.
+     */
+    refreshRefused: false,
+    /** The token endpoint answers refreshes with a rate limit (429 too_many_requests). */
+    refreshLimited: false,
     /** The authorization server's metadata is at its OpenID address, with a web page at the usual one. */
     pageAtMetadata: false,
     /** No resource metadata is published, as Microsoft 365's MCP server does not. */
@@ -261,6 +268,15 @@ async function mcpFixture(
               error: 'invalid_request',
               error_description: `refresh token ${form.get('refresh_token')} is malformed`,
             });
+          }
+          if (oauth.refreshRefused) {
+            return json(res, 400, {
+              error: 'invalid_request',
+              error_description: 'Value passed for the token was invalid.',
+            });
+          }
+          if (oauth.refreshLimited) {
+            return json(res, 429, { error: 'too_many_requests', error_description: 'Slow down' });
           }
           if (oauth.refreshDown) {
             res.writeHead(503, { 'content-type': 'text/html' });
@@ -870,6 +886,47 @@ describe('bağlantılar', () => {
     expect(out.error).toBeTruthy();
     const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${id}/signin`);
     expect(new URL(start.body.url!).pathname).toBe('/authorize');
+  });
+
+  it('OAuth: yenileme invalid_request ile reddedilince bağlı görünmez; çağrı ve "Oturum aç" yeni girişe gider', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    const bot = await t.bot();
+    const search = (
+      await t.services.connections.toolsFor(bot.id, OWNER_ID, translator('tr'), new AbortController().signal)
+    ).find((x) => x.name === 'search')!;
+
+    f.oauth.expire();
+    f.oauth.refreshRefused = true;
+    // The bot is told to have the person sign in again, and the card says so.
+    const answer = await search.handler({ query: 'x' });
+    expect(answer).not.toContain('found');
+    const c = (await t.api<Connection>('GET', `/api/connections/${id}`)).body;
+    expect(c.status).toBe('signed-out');
+    expect(c.error).toContain('Value passed for the token was invalid');
+    const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${id}/signin`);
+    expect(new URL(start.body.url!).pathname).toBe('/authorize');
+  });
+
+  it('OAuth: bağlı görünürken reddedilen yenileme token\'ı "Oturum aç"ı hataya düşürmez, yeni giriş açar', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    f.oauth.expire();
+    f.oauth.refreshRefused = true;
+    const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${id}/signin`);
+    expect(start.status).toBe(200);
+    expect(new URL(start.body.url!).pathname).toBe('/authorize');
+  });
+
+  it('OAuth: yenileme bir anlık sınırlanırsa (429) oturum kapanmaz', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    f.oauth.expire();
+    f.oauth.refreshLimited = true;
+    const out = (await t.api<Connection>('POST', `/api/connections/${id}/refresh`)).body;
+    expect(out.status).toBe('error');
+    f.oauth.refreshLimited = false;
+    expect((await t.api<Connection>('POST', `/api/connections/${id}/refresh`)).body.status).toBe('connected');
   });
 
   it('OAuth: 403 anlaşılır bir hata olur; "Oturum aç" eski tokenı yenilemek yerine yeniden giriş açar', async () => {

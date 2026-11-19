@@ -19,6 +19,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
+import { leftoverBold } from '@yumakbot/shared';
 import { useLocale, useT } from '@/i18n';
 import { highlight } from '@/lib/highlight';
 import { MermaidDiagram, textOf } from './Mermaid';
@@ -35,10 +36,50 @@ import { sameServerThread } from '@/lib/threadLink';
  * `\(…\)`, `\[…\]` and ```math blocks. A single `$` is left alone, so prices stay prices. A
  * formula that does not parse shows its source.
  */
+interface MdNode {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
+}
+
+/**
+ * Bold the parser left as asterisks, such as a Turkish suffix after a quoted word
+ * (`**"Yenile"**ye`; see leftoverBold). Asterisks written escaped stay as they are.
+ */
+export function remarkLeftoverBold() {
+  return (tree: MdNode, file: { value?: unknown }) => {
+    const source = typeof file.value === 'string' ? file.value : '';
+    const walk = (node: MdNode) => {
+      if (!node.children) return;
+      node.children = node.children.flatMap((child) => {
+        if (child.type !== 'text') {
+          walk(child);
+          return [child];
+        }
+        const { start, end } = child.position ?? {};
+        const written =
+          start?.offset !== undefined && end?.offset !== undefined
+            ? source.slice(start.offset, end.offset)
+            : '';
+        const pieces = written.includes('\\*') ? null : leftoverBold(child.value ?? '');
+        if (!pieces) return [child];
+        return pieces.map((p) =>
+          p.bold
+            ? { type: 'strong', children: [{ type: 'text', value: p.text }] }
+            : { type: 'text', value: p.text },
+        );
+      });
+    };
+    walk(tree);
+  };
+}
+
 // Only ~~double~~ tildes strike text through: "~5 to ~10 minutes" stays as written.
 const REMARK: MarkdownOptions['remarkPlugins'] = [
   [remarkGfm, { singleTilde: false }],
   [remarkMath, { singleDollarTextMath: false }],
+  remarkLeftoverBold,
 ];
 const REHYPE: MarkdownOptions['rehypePlugins'] = [[rehypeKatex, { throwOnError: false, strict: 'ignore' }]];
 
