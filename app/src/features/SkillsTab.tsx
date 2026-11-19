@@ -1,7 +1,19 @@
-import { parseSkillFile, skillWarnings, type Skill } from '@yumakbot/shared';
+import { parseSkillFile, skillWarnings, textDiff, type Skill, type SkillChange } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileUp, Import, Link2, Pencil, Plus, Puzzle, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import {
+  Check,
+  FileUp,
+  Import,
+  Link2,
+  Pencil,
+  Plus,
+  Puzzle,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
@@ -110,6 +122,7 @@ export function SkillsTab() {
           </Button>
         </form>
       )}
+      <SkillChanges skills={skills} />
       <Card>
         {!isPending && skills.length === 0 && (
           <div className="px-4 py-6 text-sm text-muted-foreground">{t('skills.empty')}</div>
@@ -148,6 +161,11 @@ function SkillRow({ skill, onEdit }: { skill: Skill; onEdit(): void }) {
         <div className="font-mono text-sm">{skill.name}</div>
         <div className="line-clamp-2 text-xs text-muted-foreground">{skill.description}</div>
         <div className="mt-1.5 flex items-center gap-1">
+          {skill.uses > 0 && (
+            <span className="mr-1.5 text-xs text-muted-foreground">
+              {t('skills.uses', { count: skill.uses })}
+            </span>
+          )}
           {holders.length === 0 ? (
             <span className="text-xs text-muted-foreground">{t('skills.noBots')}</span>
           ) : (
@@ -178,6 +196,140 @@ function SkillRow({ skill, onEdit }: { skill: Skill; onEdit(): void }) {
       >
         <Trash2 />
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Better ways bots found for skills this person owns, while working for someone who may not change
+ * them. Each shows what accepting would change in the skill as it is now.
+ */
+function SkillChanges({ skills }: { skills: Skill[] }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const { data: changes = [] } = useQuery({ queryKey: ['skills', 'changes'], queryFn: api.skillChanges });
+  const done = () => void qc.invalidateQueries({ queryKey: ['skills'] });
+  const accept = useMutation({
+    mutationFn: (c: SkillChange) => api.acceptSkillChange(c.id),
+    onSuccess: (skill) => {
+      toast.success(t('skills.changeAccepted', { name: skill.name }));
+      done();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const reject = useMutation({
+    mutationFn: (c: SkillChange) => api.rejectSkillChange(c.id),
+    onSuccess: done,
+    onError: (e) => toast.error((e as Error).message),
+  });
+  if (!changes.length) return null;
+  const busy = accept.isPending || reject.isPending;
+  return (
+    <Card title={t('skills.changes')}>
+      <p className="px-4 py-3 text-xs text-muted-foreground">{t('skills.changesHint')}</p>
+      {changes.map((c) => (
+        <ChangeRow
+          key={c.id}
+          change={c}
+          skill={skills.find((k) => k.id === c.skillId)}
+          busy={busy}
+          onAccept={() => accept.mutate(c)}
+          onReject={() => reject.mutate(c)}
+        />
+      ))}
+    </Card>
+  );
+}
+
+function ChangeRow({
+  change,
+  skill,
+  busy,
+  onAccept,
+  onReject,
+}: {
+  change: SkillChange;
+  skill: Skill | undefined;
+  busy: boolean;
+  onAccept(): void;
+  onReject(): void;
+}) {
+  const t = useT();
+  const { data: bots = [] } = useBots();
+  const bot = bots.find((b) => b.id === change.proposedBy);
+  const description = useMemo(
+    () => textDiff(skill?.description ?? '', change.description),
+    [skill?.description, change.description],
+  );
+  const body = useMemo(() => textDiff(skill?.body ?? '', change.body), [skill?.body, change.body]);
+  const changed = (parts: ReturnType<typeof textDiff>) => parts.some((p) => p.type !== 'same');
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-sm">{change.skillName}</div>
+          {bot && (
+            <div className="text-xs text-muted-foreground">
+              {change.userName
+                ? t('skills.changeBy', { bot: bot.name, person: change.userName })
+                : t('skills.changeByBot', { bot: bot.name })}
+            </div>
+          )}
+          {change.reason && <p className="mt-1 text-sm">{change.reason}</p>}
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-full"
+          disabled={busy}
+          onClick={onAccept}
+          aria-label={t('skills.changeAccept')}
+          title={t('skills.changeAccept')}
+        >
+          <Check className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-full"
+          disabled={busy}
+          onClick={onReject}
+          aria-label={t('skills.changeReject')}
+          title={t('skills.changeReject')}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+      {changed(description) && <Diff label={t('skills.description')} parts={description} />}
+      {changed(body) && <Diff label={t('skills.body')} parts={body} />}
+      {!changed(description) && !changed(body) && (
+        <p className="text-xs text-muted-foreground">{t('skills.changeSame')}</p>
+      )}
+    </div>
+  );
+}
+
+/** A text compared with the skill's own: what goes out struck through, what comes in marked. */
+function Diff({ label, parts }: { label: string; parts: ReturnType<typeof textDiff> }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="scroll-thin max-h-64 overflow-y-auto rounded-xl bg-muted/40 px-2.5 py-2 text-sm break-words whitespace-pre-wrap">
+        {parts.map((p, i) =>
+          p.type === 'same' ? (
+            <span key={i}>{p.text}</span>
+          ) : p.type === 'removed' ? (
+            <del key={i} className="bg-red-500/15 text-red-700 dark:text-red-300">
+              {p.text}
+            </del>
+          ) : (
+            <ins key={i} className="bg-emerald-500/15 text-emerald-700 no-underline dark:text-emerald-300">
+              {p.text}
+            </ins>
+          ),
+        )}
+      </div>
     </div>
   );
 }

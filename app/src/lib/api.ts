@@ -47,6 +47,7 @@ import type {
   CustomEndpointUpdate,
   Routine,
   Skill,
+  SkillChange,
   SkillCreate,
   SkillUpdate,
   RoutineRevision,
@@ -425,6 +426,9 @@ export const api = {
   removeSkill: (id: string) => http.del<{ ok: true }>(`/api/skills/${id}`),
   setSkillBot: (id: string, botId: string, on: boolean) =>
     http.put<Skill>(`/api/skills/${id}/bots/${botId}`, { on }),
+  skillChanges: () => http.get<SkillChange[]>('/api/skill-changes'),
+  acceptSkillChange: (id: string) => http.post<Skill>(`/api/skill-changes/${id}/accept`),
+  rejectSkillChange: (id: string) => http.post<{ ok: true }>(`/api/skill-changes/${id}/reject`),
   enableWebhook: (id: string) => http.post<Routine>(`/api/routines/${id}/webhook`, {}),
   disableWebhook: (id: string) => http.del<Routine>(`/api/routines/${id}/webhook`),
   usage: (days: UsageRange, botId?: string) =>

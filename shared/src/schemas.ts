@@ -1441,6 +1441,8 @@ export const TodayReport = z.object({
   staleMemory: z.number().int().optional(),
   /** Memory changes asked for while nobody watched, waiting for the user's yes. Missing from older servers. */
   pendingMemory: z.number().int().optional(),
+  /** Changes bots found for skills the user owns, waiting for the user's review. Missing from older servers. */
+  pendingSkills: z.number().int().optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
 
@@ -1460,10 +1462,36 @@ export const Skill = z.object({
   body: z.string(),
   /** Bots that have it on. */
   botIds: z.array(Id),
+  /** How many times a bot read it for a task, and when it last did. */
+  uses: z.number().int(),
+  lastUsedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type Skill = z.infer<typeof Skill>;
+
+/**
+ * A change to a skill a bot found while working for someone who may not change the skill; it
+ * waits for the skill's owner to accept it.
+ */
+export const SkillChange = z.object({
+  id: Id,
+  skillId: Id,
+  skillName: z.string(),
+  /** The skill's description and text as they would be once accepted. */
+  description: z.string(),
+  body: z.string(),
+  /** What the bot changed and why, in its own words. */
+  reason: z.string().nullable(),
+  /** The bot that found it, and the person it worked for. */
+  proposedBy: Id,
+  userId: Id.nullable(),
+  /** That person's name, for the one who reviews it. */
+  userName: z.string().nullable(),
+  threadId: Id.nullable(),
+  createdAt: z.string(),
+});
+export type SkillChange = z.infer<typeof SkillChange>;
 
 export const SkillCreate = z.object({
   name: SkillName,

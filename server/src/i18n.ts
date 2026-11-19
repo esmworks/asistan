@@ -800,8 +800,10 @@ const tr = {
   'tool.memorySource': 'kaynak: {url}',
   'tool.skill_read': 'Becerilerinden birinin tam talimatlarını adıyla oku.',
   'tool.skill_save':
-    'Bir işi nasıl yapacağını beceri olarak kaydet ya da sende olan bir beceriyi düzelt: kullanıcı bir yöntemi düzelttiğinde ya da tekrar edecek bir yöntem işe yaradığında. Kullanıcı kartta onaylar.',
+    'Bir işi nasıl yapacağını beceri olarak kaydet ya da sende olan bir beceriyi düzelt: kullanıcı bir yöntemi düzelttiğinde ya da tekrar edecek bir yöntem işe yaradığında. Kullanıcı kartta onaylar. Beceri kullanıcının değiştiremeyeceği biri ise düzeltmen becerinin sahibine öneri olarak gider; reason ile neyi neden değiştirdiğini kısaca yaz, sahibi bunu okuyup karar verir.',
   'tool.skillBadName': 'Beceri adı harf ya da rakam içermeli.',
+  'tool.skillProposed':
+    '"{name}" becerisi başkasının; düzeltmen sahibine öneri olarak gitti ve o kabul edene kadar beceri değişmez. Kullanıcıya bunu söyle.',
   'tool.skillUpdated': '"{name}" becerin güncellendi.',
   'tool.skillCreated': '"{name}" becerisi kaydedildi ve sana açıldı.',
   'tool.skillTaken': '"{name}" adında başka bir beceri var ve sende değil; başka bir ad seç.',
@@ -2211,8 +2213,10 @@ const en: Catalog<ServerKey> = {
   'tool.memorySource': 'source: {url}',
   'tool.skill_read': 'Read the full instructions of one of your skills, by its name.',
   'tool.skill_save':
-    'Save how to do a task as a skill, or fix a skill you have: when the user corrects a method, or a method worth repeating worked. The user approves on a card.',
+    'Save how to do a task as a skill, or fix a skill you have: when the user corrects a method, or a method worth repeating worked. The user approves on a card. When the skill is one the user may not change, your fix goes to its owner as a suggestion; say in reason, briefly, what you changed and why, for the owner to decide on.',
   'tool.skillBadName': 'A skill name needs letters or digits.',
+  'tool.skillProposed':
+    'The skill "{name}" is someone else\'s; your fix went to its owner as a suggestion, and the skill stays as it is until they accept it. Tell the user so.',
   'tool.skillUpdated': 'Your skill "{name}" is updated.',
   'tool.skillCreated': 'The skill "{name}" is saved and turned on for you.',
   'tool.skillTaken': 'Another skill is named "{name}" and you do not have it; pick another name.',

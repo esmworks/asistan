@@ -519,6 +519,13 @@
       "when": 1795110426437,
       "tag": "0073_meeting_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795127663412,
+      "tag": "0074_skill_changes",
+      "breakpoints": true
     }
   ]
 }
