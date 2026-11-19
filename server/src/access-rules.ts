@@ -297,6 +297,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/whatsapp': 'admin',
   'PUT /api/whatsapp': 'admin',
   'POST /api/whatsapp/link': 'admin',
+  // The groups of the linked account; the route itself answers only the person who linked it.
+  'GET /api/whatsapp/groups': 'admin',
   'DELETE /api/whatsapp': 'admin',
   'GET /api/slack': 'admin',
   'PUT /api/slack': 'admin',
