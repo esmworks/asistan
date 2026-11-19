@@ -52,6 +52,8 @@ import {
   RoutineUpdate,
   RoomCreate,
   RoomSend,
+  MeetingAnswer,
+  MeetingSave,
   RoomUpdate,
   SendMessage,
   SkillBot,
@@ -1270,6 +1272,42 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/rooms/:id/stop', async (req) => ({
     stopped: await s.rooms.stop(IdParams.parse(req.params).id),
   }));
+
+  // A room's meetings: asked about when a talk starts, their minutes written once they end, and
+  // approved by the person, who chooses which bots are to know them.
+  const MeetingParams = z.object({ id: z.string().min(1).max(64), meetingId: z.string().min(1).max(64) });
+  const meetingRoom = async (req: FastifyRequest) => {
+    const { id } = IdParams.parse(req.params);
+    if (!(await s.rooms.isRoom(id))) throw notFound('room');
+    return id;
+  };
+  app.get('/api/rooms/:id/meetings', async (req) => s.meetings.list(await meetingRoom(req)));
+  app.post('/api/rooms/:id/meetings', async (req) => s.meetings.begin(await meetingRoom(req)));
+  app.post('/api/rooms/:id/meetings/:meetingId/answer', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    return s.meetings.answer(id, meetingId, MeetingAnswer.parse(req.body));
+  });
+  app.post('/api/rooms/:id/meetings/:meetingId/end', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    return s.meetings.end(id, meetingId);
+  });
+  app.post('/api/rooms/:id/meetings/:meetingId/resume', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    return s.meetings.resume(id, meetingId);
+  });
+  app.post('/api/rooms/:id/meetings/:meetingId/retry', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    return s.meetings.retry(id, meetingId);
+  });
+  app.post('/api/rooms/:id/meetings/:meetingId/save', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    return s.meetings.save(id, meetingId, MeetingSave.parse(req.body), me(req));
+  });
+  app.delete('/api/rooms/:id/meetings/:meetingId', async (req) => {
+    const { id, meetingId } = MeetingParams.parse(req.params);
+    await s.meetings.remove(id, meetingId);
+    return { ok: true };
+  });
 
   // Bot-to-bot exchange behind a marker line: that one request, not the pair's whole history.
   app.get('/api/jobs/:id', async (req) => {

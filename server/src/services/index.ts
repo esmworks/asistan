@@ -30,6 +30,7 @@ import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
+import { MeetingService } from './meetings';
 import { MemoryReviewService } from './memory-review';
 import { PushService } from './push';
 import { RoutineService } from './routines';
@@ -63,6 +64,7 @@ export class Services {
   readonly connections: ConnectionService;
   readonly memory: MemoryService;
   readonly memoryReview: MemoryReviewService;
+  readonly meetings: MeetingService;
   readonly push: PushService;
   readonly settings: SettingsService;
   readonly botImport: BotImportService;
@@ -154,6 +156,8 @@ export class Services {
     this.memoryReview = new MemoryReviewService(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
+    this.meetings = new MeetingService(ctx, this, engineFor, clock);
+    this.turns.onFinished((t) => this.meetings.onTurnFinished(t));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
     this.slack = new SlackChannel(ctx, this, this.vault);

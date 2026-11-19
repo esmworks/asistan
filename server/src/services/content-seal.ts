@@ -85,6 +85,11 @@ const SEALED: Sealed[] = [
     ],
   },
   {
+    table: schema.meetings,
+    id: schema.meetings.id,
+    columns: [['minutes', schema.meetings.minutes, 'json']],
+  },
+  {
     table: schema.routineRuns,
     id: schema.routineRuns.id,
     columns: [['payload', schema.routineRuns.payload, 'text']],

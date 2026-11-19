@@ -7,6 +7,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Rooms keep meeting minutes. When a talk starts after a quiet spell, the room asks on a card whether it is a meeting
+  (yes, no, always in this room, never ask here); a meeting can also be started from the room's menu. It ends from the
+  header or after 30 quiet minutes, and the minutes (summary, decisions, tasks with who took them on and by when, open
+  questions) are written with one answer of a member's model, a long meeting in parts. The person reads, fixes and
+  approves them, and picks which bots are to know: each gets a note in memory with the decisions and the tasks it took
+  on first, so it knows them in every conversation, not only in the room. A note for a bot the person may only talk
+  with waits for the bot's owner. Minutes can be copied or downloaded as Markdown, and are kept encrypted.
 - Bots on API keys run shell commands in the same OS sandbox as Claude bots: kept to the bot's folders, with an
   environment of their own, the internet only when the bot has it on, and public addresses only. A bot with a
   desktop keeps running its commands there.

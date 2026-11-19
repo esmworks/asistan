@@ -20,6 +20,9 @@ import type {
   PushDeviceSet,
   SkillWarning,
   Room,
+  Meeting,
+  MeetingAnswer,
+  MeetingSave,
   RoomCreate,
   RoomUpdate,
   BotImportPlan,
@@ -447,6 +450,19 @@ export const api = {
   sendToRoom: (id: string, clientId: string, text: string, replyTo?: string) =>
     http.post<Message>(`/api/rooms/${id}/messages`, { clientId, text, replyTo }),
   stopRoom: (id: string) => http.post<{ stopped: boolean }>(`/api/rooms/${id}/stop`),
+  meetings: (roomId: string) => http.get<Meeting[]>(`/api/rooms/${roomId}/meetings`),
+  startMeeting: (roomId: string) => http.post<Meeting>(`/api/rooms/${roomId}/meetings`),
+  answerMeeting: (roomId: string, id: string, answer: MeetingAnswer['answer']) =>
+    http.post<Meeting>(`/api/rooms/${roomId}/meetings/${id}/answer`, { answer }),
+  endMeeting: (roomId: string, id: string) => http.post<Meeting>(`/api/rooms/${roomId}/meetings/${id}/end`),
+  resumeMeeting: (roomId: string, id: string) =>
+    http.post<Meeting>(`/api/rooms/${roomId}/meetings/${id}/resume`),
+  retryMeeting: (roomId: string, id: string) =>
+    http.post<Meeting>(`/api/rooms/${roomId}/meetings/${id}/retry`),
+  saveMeeting: (roomId: string, id: string, body: MeetingSave) =>
+    http.post<Meeting>(`/api/rooms/${roomId}/meetings/${id}/save`, body),
+  deleteMeeting: (roomId: string, id: string) =>
+    http.del<{ ok: true }>(`/api/rooms/${roomId}/meetings/${id}`),
   thread: (id: string) => http.get<Thread>(`/api/threads/${id}`),
   deleteThread: (id: string) => http.del<{ ok: true }>(`/api/threads/${id}`),
   resetThread: (id: string) => http.post<{ ok: true }>(`/api/threads/${id}/reset`),

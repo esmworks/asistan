@@ -713,6 +713,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     app.log.warn({ err }, 'marker recount failed');
   });
   services.routines.start();
+  await services.meetings.start();
   // In the background: model lists work from the engine's own until the catalog is in.
   await services.modelCatalog.start();
   if (config.channelsEnabled) {
@@ -747,6 +748,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       services.subscriptions.stop();
       await services.turns.shutdown();
       await services.memoryReview.shutdown();
+      await services.meetings.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);
       clearInterval(sweepTimer);

@@ -97,6 +97,8 @@ export class RoomService {
       members: members.map((m) => m.botId),
       responders: room.responders,
       rounds: room.rounds,
+      minutes: room.minutes,
+      meeting: await this.services.meetings.open(id),
       state: thread.state,
       speakerId: speaking?.botId ?? null,
       preview: thread.preview,
@@ -129,6 +131,7 @@ export class RoomService {
       id,
       responders: input.responders ?? 'everyone',
       rounds: input.rounds ?? 0,
+      minutes: input.minutes ?? 'ask',
     });
     await this.ctx.db
       .insert(schema.roomMembers)
@@ -148,12 +151,13 @@ export class RoomService {
         })
         .where(eq(schema.threads.id, id));
     }
-    if (patch.responders !== undefined || patch.rounds !== undefined) {
+    if (patch.responders !== undefined || patch.rounds !== undefined || patch.minutes !== undefined) {
       await this.ctx.db
         .update(schema.rooms)
         .set({
           ...(patch.responders !== undefined && { responders: patch.responders }),
           ...(patch.rounds !== undefined && { rounds: patch.rounds }),
+          ...(patch.minutes !== undefined && { minutes: patch.minutes }),
         })
         .where(eq(schema.rooms.id, id));
     }
@@ -276,6 +280,10 @@ export class RoomService {
       props: answered ? { replyTo: { id: answered.id, text: truncate(answered.text, 300) } } : {},
     });
     if (!result.created) return result;
+    // A talk after a quiet spell may be a meeting: the room asks, or keeps its minutes, as it is set.
+    await this.services.meetings
+      .onPersonSpoke(roomId, result.message)
+      .catch((err) => console.warn('meetings', err));
     // The person speaking takes the floor: whoever still waits is dropped, and answers what is said
     // now instead, with everything since it last spoke in its prompt.
     await turns.dropQueued(roomId);

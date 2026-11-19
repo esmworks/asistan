@@ -349,6 +349,89 @@ export const MAX_ROOM_ROUNDS = 5;
 export const RoomResponders = z.enum(['everyone', 'mentions']);
 export type RoomResponders = z.infer<typeof RoomResponders>;
 
+/**
+ * Whether a room keeps minutes of its meetings: it asks when a talk starts after a pause, keeps
+ * them for every such talk, or never keeps them (they can still be started by hand).
+ */
+export const RoomMinutes = z.enum(['ask', 'always', 'never']);
+export type RoomMinutes = z.infer<typeof RoomMinutes>;
+
+/**
+ * Where a meeting's minutes are:
+ * - `asked`: the room asked whether this is a meeting and waits for the answer;
+ * - `active`: the meeting goes on and its lines are kept;
+ * - `writing`: it ended and the minutes are being written;
+ * - `draft`: the minutes wait for the person to read, change and approve them;
+ * - `saved`: approved, and the bots chosen were told;
+ * - `declined`: not a meeting, or the question went unanswered;
+ * - `failed`: the minutes could not be written; they can be tried again.
+ */
+export const MeetingStatus = z.enum(['asked', 'active', 'writing', 'draft', 'saved', 'declined', 'failed']);
+export type MeetingStatus = z.infer<typeof MeetingStatus>;
+/** The meetings still under way or waiting for the person. */
+export const OPEN_MEETING: MeetingStatus[] = ['asked', 'active', 'writing', 'draft', 'failed'];
+
+/** Most lines in one list of the minutes. */
+export const MAX_MINUTES_ITEMS = 50;
+const MinutesLine = z.string().trim().min(1).max(1000);
+
+/** Something to be done after the meeting: who takes it (a member bot, or a person by name) and by when. */
+export const MeetingTask = z.object({
+  text: MinutesLine,
+  /** Who took it on, as named in the meeting; empty when no one did. */
+  owner: z.string().trim().max(120).default(''),
+  /** The member bot that took it on; null for a person or no one. */
+  botId: Id.nullable().default(null),
+  /** By when, as `YYYY-MM-DD`; null when no day was set. */
+  due: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .default(null),
+});
+export type MeetingTask = z.infer<typeof MeetingTask>;
+
+export const MeetingMinutes = z.object({
+  title: z.string().trim().max(200),
+  /** What the meeting was about and how it went, in a few sentences. */
+  summary: z.string().trim().max(6000),
+  decisions: z.array(MinutesLine).max(MAX_MINUTES_ITEMS),
+  tasks: z.array(MeetingTask).max(MAX_MINUTES_ITEMS),
+  /** What was left open, for the next meeting. */
+  questions: z.array(MinutesLine).max(MAX_MINUTES_ITEMS),
+});
+export type MeetingMinutes = z.infer<typeof MeetingMinutes>;
+
+/** A bot the minutes went to: its note was saved, or waits for the bot's owner to accept it. */
+export const MeetingRecipient = z.object({ botId: Id, waiting: z.boolean() });
+export type MeetingRecipient = z.infer<typeof MeetingRecipient>;
+
+/** A meeting in a room, and its minutes once written. */
+export const Meeting = z.object({
+  id: Id,
+  roomId: Id,
+  status: MeetingStatus,
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  minutes: MeetingMinutes.nullable(),
+  /** Why the minutes could not be written, for `failed`. */
+  error: z.string().nullable(),
+  sentTo: z.array(MeetingRecipient),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Meeting = z.infer<typeof Meeting>;
+
+export const MeetingAnswer = z.object({ answer: z.enum(['yes', 'no', 'always', 'never']) });
+export type MeetingAnswer = z.infer<typeof MeetingAnswer>;
+
+/** The minutes as the person approved them, and the bots that are to know them. */
+export const MeetingSave = z.object({
+  minutes: MeetingMinutes,
+  botIds: z.array(Id).max(100),
+});
+export type MeetingSave = z.infer<typeof MeetingSave>;
+
 /** A conversation of the person with several bots. Its id is also its thread's id. */
 export const Room = z.object({
   id: Id,
@@ -359,6 +442,10 @@ export const Room = z.object({
   members: z.array(Id),
   responders: RoomResponders,
   rounds: z.number().int(),
+  /** Whether it keeps meeting minutes. Missing from older servers. */
+  minutes: RoomMinutes.optional(),
+  /** The latest meeting still under way or waiting for the person. Missing from older servers. */
+  meeting: z.object({ id: Id, status: MeetingStatus }).nullable().optional(),
   state: TurnState,
   /** The bot speaking now, if any. */
   speakerId: Id.nullable(),
@@ -374,6 +461,7 @@ export const RoomCreate = z.object({
   goal: z.string().trim().max(4000).optional(),
   responders: RoomResponders.optional(),
   rounds: z.number().int().min(0).max(MAX_ROOM_ROUNDS).optional(),
+  minutes: RoomMinutes.optional(),
 });
 export type RoomCreate = z.infer<typeof RoomCreate>;
 

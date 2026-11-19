@@ -100,6 +100,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
     case 'thread':
       // A room's list entry shows its latest line and who speaks.
       inv('rooms');
+      inv('meetings', e.threadId);
       inv('messages', e.threadId);
       inv('thread', e.threadId);
       inv('threads', e.botId);

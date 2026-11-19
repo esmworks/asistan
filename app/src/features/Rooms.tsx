@@ -4,13 +4,16 @@ import {
   type Bot,
   type Message,
   type Room,
+  type RoomMinutes,
   type RoomResponders,
 } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUp,
   ChevronLeft,
+  ClipboardList,
   MoreHorizontal,
+  NotebookPen,
   Pencil,
   Plus,
   Reply,
@@ -53,6 +56,7 @@ import { cn } from '@/lib/utils';
 import { useFitHeight } from '@/lib/fitHeight';
 import { Field } from './RoutineDialog';
 import { AssistantCard, MessageItem, replyExcerpt, Working } from './MessageItem';
+import { MeetingBar, MeetingCard, MinutesDialog, showMinutes, useStartMeeting } from './Meetings';
 
 const heading = 'px-4 pt-3 pb-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase';
 
@@ -299,6 +303,7 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
   const [picked, setPicked] = useState<string[]>(room?.members ?? []);
   const [responders, setResponders] = useState<RoomResponders>(room?.responders ?? 'everyone');
   const [rounds, setRounds] = useState(room?.rounds ?? 0);
+  const [minutes, setMinutes] = useState<RoomMinutes>(room?.minutes ?? 'ask');
   const [tried, setTried] = useState(false);
   const toggle = (id: string) =>
     setPicked((p) =>
@@ -306,7 +311,7 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
     );
   const save = useMutation({
     mutationFn: () => {
-      const input = { title: title.trim(), goal: goal.trim(), botIds: picked, responders, rounds };
+      const input = { title: title.trim(), goal: goal.trim(), botIds: picked, responders, rounds, minutes };
       return room ? api.updateRoom(room.id, input) : api.createRoom(input);
     },
     onSuccess: (saved) => {
@@ -431,6 +436,19 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
           </Select>
         </Field>
       </div>
+      <Field label={t('room.minutes')}>
+        <Select value={minutes} onValueChange={(v) => setMinutes(v as RoomMinutes)}>
+          <SelectTrigger className="w-full rounded-xl">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ask">{t('room.minutesAsk')}</SelectItem>
+            <SelectItem value="always">{t('room.minutesAlways')}</SelectItem>
+            <SelectItem value="never">{t('room.minutesNever')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t('room.minutesHint')}</p>
+      </Field>
       <DialogFooter className="gap-2">
         {room && (
           <Button
@@ -531,6 +549,18 @@ export function RoomView({ room }: { room: Room }) {
               .map(speakerOf)
               .find((s) => s !== null);
             const bot = who && who !== 'user' ? botMap.get(who) : undefined;
+            // The room's own line about a meeting is drawn as the meeting's card.
+            if (m.role === 'system' && m.props.meeting)
+              return (
+                <Fragment key={m.id}>
+                  {needsDivider(rows[i - 1], m) && (
+                    <div className="py-2 text-center text-xs text-muted-foreground">
+                      {dayLabel(m.createdAt)}
+                    </div>
+                  )}
+                  <MeetingCard room={room} m={m} />
+                </Fragment>
+              );
             return (
               <Fragment key={m.clientId ?? m.id}>
                 {needsDivider(rows[i - 1], m) && (
@@ -571,6 +601,7 @@ export function RoomView({ room }: { room: Room }) {
           )}
         </div>
       </div>
+      <MinutesDialog rooms={[room]} />
       <RoomComposer
         room={room}
         members={members}
@@ -629,6 +660,8 @@ function RoomHeader({ room, members }: { room: Room; members: Bot[] }) {
   const openRoomDialog = useUi((s) => s.openRoomDialog);
   const openRoom = useUi((s) => s.openRoom);
   const qc = useQueryClient();
+  const startMeeting = useStartMeeting(room.id);
+  const meetingLive = room.meeting?.status === 'active';
   const remove = useMutation({
     mutationFn: () => api.deleteRoom(room.id),
     onSuccess: () => {
@@ -673,6 +706,14 @@ function RoomHeader({ room, members }: { room: Room; members: Bot[] }) {
               <DropdownMenuItem onClick={() => openRoomDialog({ mode: 'edit', roomId: room.id })}>
                 <Pencil /> {t('room.edit')}
               </DropdownMenuItem>
+              {!meetingLive && (
+                <DropdownMenuItem disabled={startMeeting.isPending} onClick={() => startMeeting.mutate()}>
+                  <NotebookPen /> {t('meeting.start')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => showMinutes(room.id)}>
+                <ClipboardList /> {t('meeting.list')}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => confirm(t('room.deleteConfirm', { name: room.title })) && remove.mutate()}
@@ -682,6 +723,9 @@ function RoomHeader({ room, members }: { room: Room; members: Bot[] }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+      </div>
+      <div className="mt-2 flex justify-center px-3 empty:hidden">
+        <MeetingBar room={room} />
       </div>
     </div>
   );
