@@ -217,7 +217,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     shellDir,
   });
   const engineFor = (bot: Bot): Engine => opts.engine ?? fake ?? (bot.engine === 'pi' ? pi : claude);
-  const services: Services = new Services(ctx, engineFor, opts.clock, () => opts.engine ?? fake ?? claude);
+  const services: Services = new Services(ctx, engineFor, opts.clock);
   // Content sealed at rest opens with a key from the vault key; the switch is the saved setting.
   setContentKey(services.vault.contentKey());
   await services.contentSeal.start();

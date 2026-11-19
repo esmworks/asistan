@@ -177,10 +177,10 @@ export const en: Catalog<MessageKey> = {
   'usage.gate.offHint': "Runs that a watched page or a webhook starts all go to the bot's own model.",
   'usage.gate.shadow': 'Watching only',
   'usage.gate.shadowHint':
-    'Before such a run, a small model says whether there is anything new to work on. Every run still goes ahead; what it said is listed here and beside the run.',
+    "Before such a run, one short request on the bot's own account says whether there is anything new to work on. Every run still goes ahead; what it said is listed here and beside the run.",
   'usage.gate.on': 'Runs with nothing new are skipped',
   'usage.gate.onHint':
-    'A small model looks first; a run it finds nothing new in is skipped with its reason. When it is unsure or fails, the run goes ahead. Reminders always run.',
+    "One short request on the bot's own account looks first; a run it finds nothing new in is skipped with its reason. When it is unsure or fails, the run goes ahead. Reminders always run.",
   'usage.gate.choice.off': 'Off',
   'usage.gate.choice.shadow': 'Watch',
   'usage.gate.choice.on': 'On',

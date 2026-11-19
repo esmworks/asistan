@@ -18,6 +18,8 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 - A bot run on API keys at the "review" level has its steps reviewed by its own model. The reviewer used to be Claude
   alone, so on a server with only API keys and no Claude sign-in every reviewed step opened a card.
+- The routine pre-check runs on the bot's own account, as its run does. It used to be Claude alone, so a routine of
+  a bot on API keys ran unchecked on a server with no Claude sign-in.
 - Opening a page on a site the person's own words name (a routine's instructions, their message) goes without a card
   or a review, also after the run has read outside text. A conversation that once read a page stayed marked, so a
   social media bot's routine asked again for the very site it was set up to check. What the bot does on the page

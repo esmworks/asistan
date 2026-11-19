@@ -410,6 +410,11 @@ export interface GateRequest {
   input: string;
   /** What the routine's previous run reported, when it has one. */
   lastReport: string | null;
+  /**
+   * The bot's model. An engine on API keys checks with it, since a key may reach no other; an
+   * engine on a login may pick a cheaper one of its own.
+   */
+  model?: string;
   /** Language of the reason the person reads. */
   locale: Locale;
   signal: AbortSignal;

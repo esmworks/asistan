@@ -35,6 +35,7 @@ import {
   type Fold,
 } from './pi-context';
 import { fileTools, PathError, type FileTool } from './pi-files';
+import { gatePrompt, parseGate } from './gate';
 import { parseVerdict, reviewPrompt } from './review';
 import { webTools, type WebToolOptions } from './pi-web';
 import { shellRun, type ShellRun } from './pi-shell';
@@ -50,6 +51,8 @@ import {
   type CompleteRequest,
   type Completion,
   type Engine,
+  type GateRequest,
+  type GateVerdict,
   type ModelStep,
   type ModelTest,
   type ReviewRequest,
@@ -452,9 +455,8 @@ export class PiEngine implements Engine {
   }
 
   /**
-   * The `review` mode for a bot run on API keys: its own model, without tools, looks at one
-   * permission request. Without it such a bot's reviewer would be Claude, which a server holding
-   * only API keys cannot reach, and every step would open a card. A failure is "ask".
+   * The `review` mode: the bot's own model, without tools, looks at one permission request. A key
+   * may reach no other model. A failure is "ask".
    */
   async review(req: ReviewRequest): Promise<ReviewVerdict> {
     const ask: ReviewVerdict = { decision: 'ask', reason: '', quote: '' };
@@ -475,6 +477,24 @@ export class PiEngine implements Engine {
       return ask;
     }
     return req.signal.aborted ? ask : parseVerdict(text);
+  }
+
+  /**
+   * The routine pre-check: the bot's own model, without tools, says whether a run has anything to
+   * work on. A failure throws, and the caller lets the run go ahead.
+   */
+  async gate(req: GateRequest): Promise<GateVerdict> {
+    if (!req.model) throw new Error('no model');
+    const { system, user } = gatePrompt(req);
+    const { text, costUsd } = await this.complete({
+      model: req.model,
+      system,
+      user,
+      signal: req.signal,
+      locale: req.locale,
+    });
+    if (req.signal.aborted) throw new Error('aborted');
+    return parseGate(text, costUsd);
   }
 
   async run(req: TurnRequest): Promise<TurnOutcome> {

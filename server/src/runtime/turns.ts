@@ -196,7 +196,6 @@ export class TurnManager {
     private ctx: Ctx,
     private services: Services,
     private engineFor: (bot: Bot) => Engine,
-    private reviewer?: () => Engine,
   ) {}
 
   onFinished(hook: TurnFinishedHook) {
@@ -1619,9 +1618,9 @@ export class TurnManager {
     signal: AbortSignal;
   }): Promise<{ allowed: boolean; reason: string }> {
     const no = { allowed: false, reason: '' };
-    // A bot on API keys reviews with its own model: Claude may not be signed in where only keys are.
-    const engine = o.bot.engine === 'pi' ? this.engineFor(o.bot) : this.reviewer?.();
-    if (!engine?.review) return no;
+    // The bot's own engine reviews, with the bot's model or a cheaper one of the same account.
+    const engine = this.engineFor(o.bot);
+    if (!engine.review) return no;
     const t = translator(o.locale);
     // Only the person's own words can let an action run, never what the turn read or was handed.
     const words = await ownerWords(this.ctx, o.turn);

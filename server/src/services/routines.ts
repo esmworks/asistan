@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/shared';
+import type { Bot, BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/shared';
 import {
   cronTooOften,
   MIN_RUN_GAP_MINUTES,
@@ -114,9 +114,9 @@ export class RoutineService {
   constructor(
     private ctx: Ctx,
     private services: Services,
+    /** The bot's own engine does the pre-check, as it does the run. */
+    private engineFor: (bot: Bot) => Engine,
     private clock: () => Date = () => new Date(),
-    /** The engine whose small model does the pre-check. */
-    private checker?: () => Engine,
   ) {}
 
   start() {
@@ -1002,9 +1002,9 @@ export class RoutineService {
       .set({ lastRunAt: this.clock() })
       .where(eq(schema.routines.id, routine.id));
     const mode = check ? ((await this.services.settings.get('routineGate')) ?? 'off') : 'off';
-    const engine = mode !== 'off' ? this.checker?.() : undefined;
+    const engine = mode !== 'off' ? this.engineFor(bot) : undefined;
     if (check && engine?.gate) {
-      const checked = this.checkThenStart(engine, mode === 'on', routine, run, check, () =>
+      const checked = this.checkThenStart(engine, mode === 'on', routine, run, bot.model, check, () =>
         this.startRun(routine, bot.id, thread.id, run, payload, t),
       ).catch(async (err) => {
         console.error(`Pre-check of routine ${routine.id} failed`, err);
@@ -1201,6 +1201,7 @@ export class RoutineService {
     enforce: boolean,
     routine: Routine,
     run: typeof schema.routineRuns.$inferSelect,
+    model: string,
     check: { trigger: GateRequest['trigger']; input: string },
     start: () => Promise<unknown>,
   ) {
@@ -1213,6 +1214,7 @@ export class RoutineService {
         trigger: check.trigger,
         input: check.input,
         lastReport: report?.text ?? null,
+        model,
         locale: await this.services.settings.locale(),
         signal: this.stopChecks.signal,
       });

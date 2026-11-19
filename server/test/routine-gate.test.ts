@@ -72,6 +72,8 @@ describe('rutin ön kontrolü', () => {
     expect(t.engine.requests.length - before).toBe(2);
     expect(t.engine.gates.map((g) => g.trigger)).toEqual(['webhook', 'webhook']);
     expect(t.engine.gates[0]!.routine.prompt).toBe('Yeni sipariş gelirse özetle');
+    // The bot's own engine checks, with the bot's model: an API key may reach no other.
+    expect(t.engine.gates[0]!.model).toBe((await t.services.bots.get(r.botId)).model);
     const [second, first] = await runs(r.id);
     expect(first).toMatchObject({ status: 'done', gate: { decision: 'skip' } });
     expect(second).toMatchObject({ status: 'done', gate: { decision: 'run' } });

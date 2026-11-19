@@ -182,10 +182,10 @@ export const tr = {
     "İzlenen sayfanın ya da bir webhook'un başlattığı çalışmaların hepsi botun kendi modeline gider.",
   'usage.gate.shadow': 'Yalnızca izliyor',
   'usage.gate.shadowHint':
-    'Böyle bir çalışmadan önce küçük bir model yapılacak yeni bir şey olup olmadığını söyler. Çalışmaların hepsi yine yapılır; söyledikleri burada ve çalışmanın yanında görünür.',
+    'Böyle bir çalışmadan önce botun kendi hesabıyla yapılan kısa bir istek, yapılacak yeni bir şey olup olmadığını söyler. Çalışmaların hepsi yine yapılır; söyledikleri burada ve çalışmanın yanında görünür.',
   'usage.gate.on': 'Yeni bir şey olmayan çalışmalar atlanır',
   'usage.gate.onHint':
-    'Önce küçük bir model bakar; yeni bir şey görmediği çalışma gerekçesiyle atlanır. Emin olmadığında ya da hata verdiğinde çalışma yapılır. Hatırlatmalar her zaman çalışır.',
+    'Önce botun kendi hesabıyla kısa bir istek bakar; yeni bir şey görmediği çalışma gerekçesiyle atlanır. Emin olmadığında ya da hata verdiğinde çalışma yapılır. Hatırlatmalar her zaman çalışır.',
   'usage.gate.choice.off': 'Kapalı',
   'usage.gate.choice.shadow': 'İzle',
   'usage.gate.choice.on': 'Açık',

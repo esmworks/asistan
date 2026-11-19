@@ -545,6 +545,37 @@ describe('Pi motoru', () => {
     expect(asks).toHaveLength(1);
   });
 
+  it('rutin ön kontrolünü botun kendi modeliyle yapar; cevap veremezse hata verir', async () => {
+    const asks: string[] = [];
+    const e = new PiEngine({
+      sessionsDir: join(dir, 'sessions'),
+      apiKey: async (p) => keys[p] ?? null,
+      resolveModel: (p, id) => (p === 'deneme' ? faux.getModel(id) : undefined),
+      complete: (async (model, context) => {
+        asks.push(`${model.id}: ${context.systemPrompt?.slice(0, 32)}`);
+        return fauxAssistantMessage('{"decision":"skip","reason":"Yeni bir şey yok."}');
+      }) as typeof completeSimple,
+    });
+    const request = {
+      routine: { name: 'Siparişler', prompt: 'Yeni sipariş gelirse özetle' },
+      trigger: 'webhook' as const,
+      input: '{"note":"önemsiz"}',
+      lastReport: null,
+      locale: 'tr' as const,
+      signal: new AbortController().signal,
+    };
+    expect(await e.gate({ ...request, model: 'deneme/m1' })).toMatchObject({
+      decision: 'skip',
+      reason: 'Yeni bir şey yok.',
+    });
+    expect(asks).toEqual(['m1: An assistant bot is about to run']);
+    // No model, or no key for it: the check fails and the routine runs.
+    await expect(e.gate(request)).rejects.toThrow();
+    delete keys.deneme;
+    await expect(e.gate({ ...request, model: 'deneme/m1' })).rejects.toThrow();
+    expect(asks).toHaveLength(1);
+  });
+
   it('modeli denerken bir oturum kimliği verir; OpenCode onsuz isteği geri çevirir', async () => {
     const seen: (string | undefined)[] = [];
     const e = new PiEngine({
