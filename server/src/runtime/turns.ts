@@ -1242,7 +1242,14 @@ export class TurnManager {
         await this.services.rehearsals.note(turn.rehearsalId, {
           kind: plain ? 'ran' : 'would',
           tool: ask.toolName.split('__').at(-1) ?? ask.toolName,
-          summary: said.want,
+          // As the card shows it: what the bot wants to do, and under it what it is sent.
+          summary: plain
+            ? said.detail
+              ? `${said.step}: ${said.detail}`
+              : said.step
+            : said.detail
+              ? `${said.want}\n${said.detail}`
+              : said.want,
         });
         return plain ? { behavior: 'allow' } : { behavior: 'deny', message: t('turn.rehearsalSkipped') };
       }

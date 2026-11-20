@@ -6,7 +6,7 @@ import type { Ctx } from '../context';
 import { schema } from '../db';
 import { isSilentReply, type TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
-import { HttpError, newId, notFound, truncate } from '../util';
+import { errorText, HttpError, newId, notFound, truncate } from '../util';
 import { routinePrompt } from './routines';
 import type { Services } from '.';
 
@@ -112,10 +112,12 @@ export class RehearsalService {
       if (!run.input) throw new HttpError(400, 'error.rehearsalNoInput');
       replay = { id: run.id, trigger: run.trigger, input: run.input };
     }
-    // The report the run before would have been handed, when the routine carries it.
-    const report = routine.carryReport
-      ? await this.services.routines.lastReport(routine.id, replay?.id, team)
-      : null;
+    // The report the run before would have been handed, when the routine carries it. It was
+    // written from its person's world, so it goes only to a rehearsal that works for them.
+    const report =
+      routine.carryReport && person === owner
+        ? await this.services.routines.lastReport(routine.id, replay?.id, team)
+        : null;
 
     const thread = await this.services.threads.rehearsalThread(bot.id, routine.name, person);
     const [row] = await this.ctx.db
@@ -130,27 +132,37 @@ export class RehearsalService {
         prompt,
       })
       .returning();
-    await this.services.threads.addMessage({
-      threadId: thread.id,
-      role: 'user',
-      author: `routine:${routine.id}`,
-      text: replay ? `${prompt}\n\n${t('routine.payloadShown', { payload: replay.input })}` : prompt,
-      props: { routineName: routine.name, rehearsal: row!.id },
-    });
-    const turn = await this.services.turns.enqueue({
-      threadId: thread.id,
-      botId: bot.id,
-      source: 'routine',
-      prompt: routinePrompt(t, routine.name, prompt, replay?.input, report),
-      rehearsalId: row!.id,
-      userId: person,
-      // What the run was started by is read as outside text again, as it was then.
-      outside: replay?.trigger ? (replay.trigger as NonNullable<TurnRow['outside']>) : null,
-    });
-    await this.ctx.db
-      .update(schema.routineRehearsals)
-      .set({ turnId: turn.id })
-      .where(eq(schema.routineRehearsals.id, row!.id));
+    try {
+      await this.services.threads.addMessage({
+        threadId: thread.id,
+        role: 'user',
+        author: `routine:${routine.id}`,
+        text: replay ? `${prompt}\n\n${t('routine.payloadShown', { payload: replay.input })}` : prompt,
+        props: { routineName: routine.name, rehearsal: row!.id },
+      });
+      const turn = await this.services.turns.enqueue({
+        threadId: thread.id,
+        botId: bot.id,
+        source: 'routine',
+        prompt: routinePrompt(t, routine.name, prompt, replay?.input, report),
+        rehearsalId: row!.id,
+        userId: person,
+        // What the run was started by is read as outside text again, as it was then.
+        outside: replay?.trigger ? (replay.trigger as NonNullable<TurnRow['outside']>) : null,
+      });
+      await this.ctx.db
+        .update(schema.routineRehearsals)
+        .set({ turnId: turn.id })
+        .where(eq(schema.routineRehearsals.id, row!.id));
+    } catch (err) {
+      // No turn will end it: left running, it would hold off every later rehearsal of the routine.
+      await this.ctx.db
+        .update(schema.routineRehearsals)
+        .set({ status: 'error', error: errorText(err, t), finishedAt: this.clock() })
+        .where(eq(schema.routineRehearsals.id, row!.id))
+        .catch(() => {});
+      throw err;
+    }
     this.ctx.bus.refresh({ scope: 'routines' });
     return (await this.view(row!.id))!;
   }

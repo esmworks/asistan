@@ -214,7 +214,7 @@ function Steps({
           {steps.map((s, i) => (
             <li key={`${s.at}-${i}`} className="flex gap-2">
               {numbered && <span className="shrink-0 text-muted-foreground tabular-nums">{i + 1}.</span>}
-              <span className="min-w-0 break-words">{s.summary}</span>
+              <span className="min-w-0 break-words whitespace-pre-wrap">{s.summary}</span>
             </li>
           ))}
         </ol>

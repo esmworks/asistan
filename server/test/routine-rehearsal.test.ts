@@ -84,6 +84,7 @@ describe('rehearsing a routine', () => {
     ]);
     // The step is worded as the card words it, and the bot was told it was not done.
     expect(r.steps.find((s) => s.tool === 'memory_write')!.summary).toContain('hafıza');
+    expect(r.steps.find((s) => s.tool === 'memory_write')!.summary).toContain('yeni not');
     expect(r.report).toContain('prova');
     // Nothing was done.
     expect(await t.db.db.select().from(schema.memories)).toHaveLength(0);
@@ -261,8 +262,12 @@ describe('rehearsing a routine', () => {
         name: 'Sabah',
         prompt: 'Saved.',
         schedule: { type: 'daily', time: '08:00' },
+        carryReport: true,
       })
     ).body;
+    // A run whose report the next one carries on.
+    await ayse.api('POST', `/api/routines/${routine.id}/run`, {});
+    await t.services.turns.idle();
     // Not shared: it is not even theirs to see.
     expect((await mert.api('POST', `/api/routines/${routine.id}/rehearse`, {})).status).toBe(404);
     // Someone who may only talk with the bot cannot.
