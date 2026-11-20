@@ -50,7 +50,13 @@ function WhatsAppCard() {
   const { data: bots } = useBots();
   if (!status || !bots) return null;
   // The form starts again from what is saved whenever that changes (saved, or disconnected).
-  return <WhatsAppForm key={`${status.mode}:${status.phone}:${status.botId}`} status={status} bots={bots} />;
+  return (
+    <WhatsAppForm
+      key={`${status.mode}:${status.phone}:${status.botId}:${status.chats}`}
+      status={status}
+      bots={bots}
+    />
+  );
 }
 
 function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] }) {
@@ -61,9 +67,10 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const [phone, setPhone] = useState(status.phone ?? '');
   const [botId, setBotId] = useState(status.botId ?? live.find((b) => b.isManager)?.id ?? live[0]?.id ?? '');
   const [notices, setNotices] = useState(status.notices);
+  const [chats, setChats] = useState(status.chats);
   const put = (s: WhatsAppStatus) => qc.setQueryData(['whatsapp'], s);
   const save = useMutation({
-    mutationFn: () => api.setWhatsapp({ mode, phone, botId: botId || null, notices }),
+    mutationFn: () => api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats }),
     onSuccess: (s) => {
       put(s);
       toast.success(t('whatsapp.saved'));
@@ -73,7 +80,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const link = useMutation({
     mutationFn: async () => {
       // What is in the form is what the new link is for.
-      await api.setWhatsapp({ mode, phone, botId: botId || null, notices });
+      await api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats });
       return api.linkWhatsapp();
     },
     onSuccess: put,
@@ -155,6 +162,13 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
             <span className="block text-xs text-muted-foreground">{t('whatsapp.noticesHint')}</span>
           </span>
           <Switch checked={notices} onCheckedChange={setNotices} />
+        </label>
+        <label className="flex items-center justify-between gap-4">
+          <span>
+            <span className="block text-sm">{t('whatsapp.chats')}</span>
+            <span className="block text-xs text-muted-foreground">{t('whatsapp.chatsHint')}</span>
+          </span>
+          <Switch checked={chats} onCheckedChange={setChats} />
         </label>
 
         {state === 'linking' && (

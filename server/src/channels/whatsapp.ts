@@ -60,6 +60,8 @@ type Settings = {
   mode?: WhatsAppSet['mode'];
   phone?: string;
   notices?: boolean;
+  /** Whether the bots may read every chat and draft messages in a conversation. */
+  chats?: boolean;
   threadId?: string;
   /** When the newest message read here was written, in seconds: older ones handed again are not new. */
   seenAt?: number;
@@ -137,7 +139,10 @@ export interface WaConnectOptions {
   version?: WaVersion;
   /** The content of a message this device sent, for WhatsApp's resend requests. */
   getMessage(key: { id?: string | null }): Promise<Record<string, unknown> | undefined>;
-  /** Chats whose messages are dropped before they are read: every group a routine does not follow. */
+  /**
+   * Chats whose messages are dropped before they are read: every group a routine does not follow,
+   * unless the bots may read every chat.
+   */
   ignore(jid: string): boolean;
 }
 
@@ -174,6 +179,8 @@ export interface WaSocket {
     content: Record<string, unknown>,
     options?: { messageId?: string; statusJidList?: string[]; broadcast?: boolean },
   ): Promise<{ key?: { id?: string | null }; message?: Record<string, unknown> | null } | undefined>;
+  /** Which numbers are on WhatsApp, checked before a message to someone new is drafted. */
+  onWhatsApp?: (...jids: string[]) => Promise<{ jid: string; exists: boolean }[] | undefined>;
   /** The groups the account is in, by address; only read for the list a routine picks from. */
   groupFetchAllParticipating?: () => Promise<Record<string, { id: string; subject?: string | null }>>;
   /** Asks the phone to upload media again, for files whose link on WhatsApp's servers expired. */
@@ -230,7 +237,8 @@ async function baileys(): Promise<WaLibrary> {
         shouldSyncHistoryMessage: () => false,
         markOnlineOnConnect: false,
         getMessage: async (key) => options.getMessage(key) as never,
-        // Status updates and channels are never read, nor a group no routine follows.
+        // Status updates and channels are never read, nor a group no routine follows unless the
+        // bots may read every chat.
         shouldIgnoreJid: (jid: string) =>
           jid === 'status@broadcast' ||
           jid.endsWith('@newsletter') ||
@@ -359,10 +367,10 @@ export function contentOf(m: WaMessage): {
  * the account that will carry the messages. With their own number they write to the bots in
  * "Message yourself"; with a separate number they write to it from their own. Messages go to one
  * bot at a time, and `/bot <name>` changes which. Nobody else's chats are read unless a routine of
- * the person who linked WhatsApp reads them: people's chats with the account when one has that
- * switch on, and the groups one follows. Their messages are kept 30 days and start that routine as
- * outside text; a reply goes only once the person approves its draft, and nothing is ever written
- * to a group.
+ * the person who linked WhatsApp reads them (people's chats with the account when one has that
+ * switch on, and the groups one follows), or the person let the bots read every chat. Their
+ * messages are kept 30 days; only the chats routines read start a routine, as outside text. A
+ * message goes only once the person approves its draft, and nothing is ever written to a group.
  */
 export class WhatsAppChannel {
   /** How Baileys is reached; tests replace it. */
@@ -412,10 +420,12 @@ export class WhatsAppChannel {
   linkMs = LINK_MS;
   private version: { value: WaVersion; at: number } | null = null;
   private requestTimes: number[] = [];
-  /** Groups an enabled routine follows; every other group is dropped unread. */
+  /** Groups an enabled routine follows; every other group is dropped unread unless the bots read every chat. */
   private followed = new Set<string>();
   /** Whether a routine reads what people write to the account in chats of their own. */
   private people = false;
+  /** Whether the bots may read every chat: then every chat is kept, though only routines' chats start runs. */
+  private allChats = false;
   private groupNames = new Map<string, string>();
   private groupNamesAt = 0;
   /** Chats whose new messages wait for the chat to go quiet. */
@@ -509,6 +519,7 @@ export class WhatsAppChannel {
       phone: s.phone ?? null,
       botId: row?.botId ?? null,
       notices: s.notices !== false,
+      chats: s.chats === true,
       linked: (row?.account as { number?: string } | undefined)?.number ?? null,
       qr: this.state === 'linking' && this.qr ? await qrImage(this.qr) : null,
       error: row?.error ?? null,
@@ -519,11 +530,13 @@ export class WhatsAppChannel {
   async configure(input: WhatsAppSet, userId: string): Promise<WhatsAppStatus> {
     if (input.botId) await this.services.bots.get(input.botId);
     const row = await this.row();
+    const now = (row?.settings ?? {}) as Settings;
     const settings: Settings = {
-      ...((row?.settings ?? {}) as Settings),
+      ...now,
       mode: input.mode,
       phone: input.phone,
       notices: input.notices,
+      chats: input.chats ?? now.chats === true,
     };
     if (row) {
       await this.ctx.db
@@ -535,6 +548,7 @@ export class WhatsAppChannel {
         .insert(schema.channels)
         .values({ id: newId(), kind: 'whatsapp', botId: input.botId, settings, userId });
     }
+    this.allChats = settings.chats === true;
     this.changed();
     return this.status();
   }
@@ -693,7 +707,7 @@ export class WhatsAppChannel {
     const socket = lib.connect(auth, {
       ...(version && { version }),
       getMessage: async (key) => this.sentMessage(key.id),
-      ignore: (jid) => jid.endsWith('@g.us') && !this.followed.has(jid),
+      ignore: (jid) => jid.endsWith('@g.us') && !this.allChats && !this.followed.has(jid),
     });
     this.socket = socket;
     socket.ev.on('creds.update', (update) => {
@@ -926,13 +940,14 @@ export class WhatsAppChannel {
     // A followed group's messages never reach the person's chat with the bots, its commands or its cards.
     const remote = m.key.remoteJid;
     if (remote?.endsWith('@g.us')) {
-      if (this.followed.has(remote)) await this.chatMessage(socket, m, remote, 'group');
+      if (this.allChats || this.followed.has(remote)) await this.chatMessage(socket, m, remote, 'group');
       return;
     }
     const jid = await this.from(socket, m, settings, row.id);
     if (!jid) {
-      // Someone else's chat with the account: read only when a routine reads people's chats.
-      if (!this.people) return;
+      // Someone else's chat with the account: read when a routine reads people's chats, or the
+      // bots may read every chat.
+      if (!this.people && !this.allChats) return;
       const chat = await this.personChat(socket, m, settings);
       if (chat) await this.chatMessage(socket, m, chat, 'person');
       return;
@@ -965,6 +980,7 @@ export class WhatsAppChannel {
     const reads = await this.services.routines.whatsappReads();
     this.followed = reads.groups;
     this.people = reads.people;
+    this.allChats = ((await this.row())?.settings as Settings | undefined)?.chats === true;
     // A chat no longer read keeps what was stored, but no batch goes out for it.
     for (const [jid, wait] of this.waits) {
       if (jid.endsWith('@g.us') ? this.followed.has(jid) : this.people) continue;
@@ -976,6 +992,33 @@ export class WhatsAppChannel {
   /** Whose WhatsApp is linked: who set it up; null when it is not set up. */
   async ownerId(): Promise<string | null> {
     return (await this.row())?.userId ?? null;
+  }
+
+  /** Whether the bots may read every chat and draft messages in a conversation. */
+  async chatsOpen(): Promise<boolean> {
+    return ((await this.row())?.settings as Settings | undefined)?.chats === true;
+  }
+
+  /** Lets the bots read every chat, or only the ones routines read, as the person answered. */
+  async openChats(on: boolean): Promise<void> {
+    const row = await this.row();
+    if (!row) throw new HttpError(409, 'error.whatsappNotSetUp');
+    await this.saveSettings(row, { chats: on });
+    this.allChats = on;
+    this.changed();
+  }
+
+  /**
+   * The chat address of a number when it is on WhatsApp; null when it is not, undefined when that
+   * cannot be found out now (not connected).
+   */
+  async numberChat(phone: string): Promise<string | null | undefined> {
+    const socket = this.socket;
+    if (this.state !== 'connected' || !socket?.onWhatsApp) return undefined;
+    const jid = `${phone}@s.whatsapp.net`;
+    const found = await socket.onWhatsApp(jid).catch(() => undefined);
+    if (!found) return undefined;
+    return found.some((f) => f.exists) ? jid : null;
   }
 
   /** The groups the linked account is in, for a routine to pick the one it follows. */
@@ -1084,6 +1127,18 @@ export class WhatsAppChannel {
       .returning({ seq: schema.whatsappMessages.seq });
     // Handed again, or sent from here: already kept.
     if (!stored) return;
+    // A chat no routine reads is kept for the bots to look at, not handed over: its place moves on
+    // at once, so a routine that starts reading it later gets what comes next, not 30 days of it.
+    if (!(kind === 'group' ? this.followed.has(chat) : this.people)) {
+      if (media && !hidden) {
+        await this.ctx.db
+          .update(schema.whatsappMessages)
+          .set({ file: { failed: 'whatsapp.fileNotKept' } })
+          .where(eq(schema.whatsappMessages.seq, stored.seq));
+      }
+      await this.moveOn(chat, stored.seq, {}, null);
+      return;
+    }
     if (hidden) return;
     if (media) {
       const name = receivedName(media.kind, id, media.mime, media.name);
@@ -1315,10 +1370,12 @@ export class WhatsAppChannel {
   /** The chats kept here that `reads` covers, newest first, with their last message's time. */
   async chats(limit: number, reads: ChatReads) {
     const groups = [...reads.groups];
-    const covered = or(
-      reads.people ? eq(schema.whatsappChats.kind, 'person') : undefined,
-      groups.length ? inArray(schema.whatsappChats.jid, groups) : undefined,
-    );
+    const covered = reads.all
+      ? sql`true`
+      : or(
+          reads.people ? eq(schema.whatsappChats.kind, 'person') : undefined,
+          groups.length ? inArray(schema.whatsappChats.jid, groups) : undefined,
+        );
     if (!covered) return [];
     return this.ctx.db
       .select({
@@ -1474,10 +1531,18 @@ export class WhatsAppChannel {
   private async sendDraft(draft: typeof schema.whatsappDrafts.$inferSelect, t: T) {
     const chat = draft.chat!;
     const socket = this.socket;
+    if (!socket) throw new Error('not connected');
     const known = await this.knownChat(chat);
-    if (!socket || !known) throw new Error('chat not found');
     // Groups are only read, whatever a draft says.
-    if (known.kind !== 'person') throw new Error('WhatsApp groups are never written to');
+    if (known && known.kind !== 'person') throw new Error('WhatsApp groups are never written to');
+    if (!known) {
+      // Someone who never wrote: a number the bot checked was on WhatsApp before drafting.
+      if (!/^\d{7,15}@s\.whatsapp\.net$/.test(chat)) throw new Error('chat not found');
+      await this.ctx.db
+        .insert(schema.whatsappChats)
+        .values({ jid: chat, kind: 'person', name: '', lastAt: new Date() })
+        .onConflictDoNothing();
+    }
     const file = await this.draftFile(draft);
     const content = file ? { ...file, ...(draft.text && { caption: draft.text }) } : { text: draft.text };
     const messageId = waMessageId();
@@ -2137,9 +2202,12 @@ const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 100);
 export interface ChatReads {
   groups: Set<string>;
   people: boolean;
+  /** Every chat kept here: the bots may read them all. */
+  all?: boolean;
 }
 
 function covers(reads: ChatReads, chat: { jid: string; kind: 'person' | 'group' }): boolean {
+  if (reads.all) return true;
   return chat.kind === 'group' ? reads.groups.has(chat.jid) : reads.people;
 }
 

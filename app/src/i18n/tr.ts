@@ -2150,6 +2150,9 @@ export const tr = {
   'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
+  'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
+  'whatsapp.chatsHint':
+    'İstediğinizde botlarınız bu hesabın kişi ve grup sohbetlerini okur, mesaj taslağı hazırlar; mesaj ancak siz onaylayınca gider. Mesajlar açıldığı andan itibaren 30 gün şifreli saklanır.',
   'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',
   'whatsapp.qrWaiting': 'QR kodu hazırlanıyor…',
   'whatsapp.scan':
