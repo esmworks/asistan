@@ -1226,7 +1226,9 @@ export class WhatsAppChannel {
           eq(schema.whatsappDrafts.chat, chat),
           eq(schema.whatsappDrafts.kind, 'message'),
           eq(schema.whatsappDrafts.status, 'sent'),
-          gte(at, new Date(Date.now() - REPLY_WINDOW_MS)),
+          // Compared with an expression, not a column, so the time goes in as text: on PostgreSQL
+          // drizzle hands a Date there to the driver unconverted and the query fails.
+          gte(at, sql`${new Date(Date.now() - REPLY_WINDOW_MS).toISOString()}::timestamptz`),
           contacts.length ? notInArray(schema.whatsappDrafts.threadId, contacts) : undefined,
         ),
       )
@@ -1863,7 +1865,7 @@ export class WhatsAppChannel {
           ne(schema.approvals.status, 'pending'),
           gt(
             sql`coalesce(${schema.approvals.decidedAt}, ${schema.approvals.createdAt})`,
-            new Date(Date.now() - ROUTE_ANSWER_MS),
+            sql`${new Date(Date.now() - ROUTE_ANSWER_MS).toISOString()}::timestamptz`,
           ),
         ),
       );
