@@ -275,6 +275,13 @@ export function MessageItem({
       }
       if (typeof m.props.suggestApp === 'string')
         return <AppSuggestion catalogId={m.props.suggestApp} reason={m.text} botId={botId} />;
+      // What taking a turn back put back and left: several lines, kept as lines.
+      if (m.props.kind === 'turnUndo')
+        return (
+          <div className="max-w-(--bubble-width) rounded-2xl border bg-card/50 px-4 py-3 text-sm whitespace-pre-line [overflow-wrap:anywhere]">
+            {m.text}
+          </div>
+        );
       return (
         <div className="flex items-center justify-center gap-2 py-1 text-center text-sm text-muted-foreground">
           {m.text}

@@ -704,6 +704,19 @@ export class MemoryService {
               ),
             ),
           );
+        // The turn journal keeps notes' earlier words too, so a forgotten note goes from it as well.
+        await tx
+          .update(schema.turnChanges)
+          .set({ before: null, label: '' })
+          .where(
+            and(
+              eq(schema.turnChanges.kind, 'memory'),
+              inArray(
+                schema.turnChanges.targetId,
+                gone.map((m) => m.id),
+              ),
+            ),
+          );
         await tx.insert(schema.auditLog).values(
           gone.map((m) => ({
             id: newId(),

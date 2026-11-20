@@ -356,7 +356,12 @@ export class TurnChangeService {
           return 'failed' as const;
         });
       }
-      await this.ctx.db.update(schema.turnChanges).set({ outcome }).where(eq(schema.turnChanges.id, row.id));
+      // What it held is no longer needed: a turn is taken back once, so the old words and file
+      // contents go now rather than after 30 days.
+      await this.ctx.db
+        .update(schema.turnChanges)
+        .set({ outcome, before: null })
+        .where(eq(schema.turnChanges.id, row.id));
       items.push({ ...(await this.item(row, userId)), outcome });
     }
     const outside = await this.outside(turnId);

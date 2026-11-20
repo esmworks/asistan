@@ -943,7 +943,7 @@ export class ToolFactory {
           });
           return t('tool.routineDeleted', { name: found.routine.name });
         },
-        // Deleting cannot be undone: the person approves it on a card first.
+        // The person approves the deletion on a card first; the turn can be taken back from the app.
       ),
       ...(turn.routineRunId
         ? [

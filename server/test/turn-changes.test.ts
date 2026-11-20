@@ -5,6 +5,7 @@ import { desc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import { FILE_KEEP_MAX, CHANGE_KEEP_DAYS } from '../src/services/turn-changes';
+import { OWNER_ID } from '../src/users';
 import { workspacePaths } from '../src/workspace';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -312,5 +313,74 @@ describe('taking back what one turn changed', () => {
     expect(await t.services.changes.count([turn])).toBe(1);
     await t.services.changes.prune(new Date(Date.now() + (CHANGE_KEEP_DAYS + 1) * day));
     expect(await t.services.changes.count([turn])).toBe(0);
+  });
+  it('keeps no more than 20 MB of earlier files for one turn', async () => {
+    const { thread, dir } = await setup();
+    mkdirSync(dir, { recursive: true });
+    const names = Array.from({ length: 11 }, (_, n) => join(dir, `big${n}.txt`));
+    for (const file of names) writeFileSync(file, `needle${'x'.repeat(FILE_KEEP_MAX - 100)}`);
+    await say(thread.id, names.map((f) => edit(f, 'needle', 'thread')).join(' '));
+    const view = await preview(await lastTurn(thread.id));
+    expect(view.items).toHaveLength(11);
+    expect(view.items.filter((i) => i.reason === 'tooBig')).toHaveLength(1);
+  });
+
+  it('keeps a changed note too large to keep out of the journal text', async () => {
+    const { bot, thread } = await setup();
+    const turn = await t.services.ctx.db
+      .insert(schema.turns)
+      .values({
+        id: 'turn-big',
+        threadId: thread.id,
+        botId: bot.id,
+        source: 'user',
+        status: 'done',
+        prompt: 'x',
+      })
+      .returning();
+    await t.services.changes.record(
+      { turnId: turn[0]!.id, threadId: thread.id, botId: bot.id, userId: thread.userId! },
+      {
+        kind: 'memory',
+        op: 'delete',
+        targetId: 'n1',
+        label: 'big',
+        before: { content: 'x'.repeat(FILE_KEEP_MAX + 1) },
+      },
+    );
+    const [row] = await t.services.ctx.db.select().from(schema.turnChanges);
+    expect(row).toMatchObject({ reason: 'tooBig', before: null, bytes: 0 });
+  });
+
+  it('shows a turn only to the person whose turn it was, and leaves bot-level changes to the bot’s owner', async () => {
+    const bot = await t.bot({ name: 'Shared', permissionMode: 'auto' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
+    const ayse = await t.person('ayse');
+    const hers = (await ayse.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    await ayse.api('POST', `/api/threads/${hers.id}/messages`, { clientId: 'c-ayse-1234', text: 'hi' });
+    await t.services.turns.idle();
+    const turn = await lastTurn(hers.id);
+    await t.services.changes.record(
+      { turnId: turn, threadId: hers.id, botId: bot.id, userId: 'ayse' },
+      {
+        kind: 'routine',
+        op: 'create',
+        targetId: 'r1',
+        label: 'Daily',
+        scopeBotId: bot.id,
+        after: { sig: 'x' },
+      },
+    );
+    // The owner of the server is not the person whose turn it was.
+    await expect(t.services.changes.preview(turn, OWNER_ID)).rejects.toMatchObject({ status: 404 });
+    await expect(
+      t.services.changes.undo(turn, OWNER_ID, await t.services.settings.translator()),
+    ).rejects.toMatchObject({
+      status: 404,
+    });
+    const view = (await ayse.api<TurnChanges>('GET', `/api/turns/${turn}/changes`)).body;
+    expect(view.items).toEqual([expect.objectContaining({ kind: 'routine', needsOwner: true })]);
+    const res = await ayse.api<TurnChanges>('POST', `/api/turns/${turn}/undo`);
+    expect(res.body.items[0]!.outcome).toBe('needsOwner');
   });
 });
