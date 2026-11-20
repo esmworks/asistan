@@ -2173,19 +2173,18 @@ export const tr = {
   'whatsapp.door': 'Karşılama botu',
   'whatsapp.doorNone': 'Yok: hiçbir bota verilmemiş sohbetlere kimse cevap vermez',
   'whatsapp.doorHint':
-    'Hiçbir bota verilmemiş bir sohbetten yazan herkese bu bot cevap verir. Aracı, dosyası, interneti ve sizin verilerinize erişimi yoktur; tek yapabildiği, sohbetin hangi bota verilmesi gerektiğini size kartla önermektir.',
-  'whatsapp.doorSafety.title': 'Karşılama botunu güvenli kurmak için',
-  'whatsapp.doorSafety.own':
-    'Bu iş için ayrı bir bot oluşturun; başka işlerde kullandığınız bir botu seçmeyin.',
-  'whatsapp.doorSafety.level': 'İzin düzeyini en düşüğe ("Salt okunur") alın ve internetini kapatın.',
-  'whatsapp.doorSafety.links': 'Ona bağlantı, beceri, proje klasörü ya da e-posta adresi eklemeyin.',
-  'whatsapp.doorSafety.instructions':
-    'Talimatlarına yalnızca herkesin bilebileceği bilgileri yazın (çalışma saatleri, adres, genel hizmetler). Müşteri, fiyat, şifre ya da şirket içi bilgi yazmayın: yazan herkes bunları sorabilir.',
-  'whatsapp.doorSafety.memory': 'Hafızasını kapatın ya da içine kişisel ve gizli bilgi koymayın.',
-  'whatsapp.doorSafety.mode':
-    'Cevap modunu, botun doğru cevap verdiğini bir süre görene kadar "Taslak" bırakın.',
-  'whatsapp.doorSafety.enforced':
-    'Sistemin kendisi sağlar: karşılama botu hiçbir araç kullanamaz, notlarınızı, profilinizi ve bağlantılarınızı görmez, yalnızca yazan kişinin sohbetine cevap verir ve bu sohbetlerden hafızasına bir şey yazılmaz. Yukarıdakiler ise sizin elinizde.',
+    'Hiçbir bota verilmemiş bir sohbetten yazan herkese bu bot cevap verir. Araç kullanamaz; notlarınızı, profilinizi ve bağlantılarınızı görmez. Tek yapabildiği, sohbetin hangi bota verilmesi gerektiğini size kartla önermektir.',
+  'whatsapp.doorRisk':
+    'Botun talimatlarındaki ve hafızasındaki her şeyi yazan herkes sorabilir; bu yüzden başka işte kullandığınız bir botu seçmeyin.',
+  'whatsapp.doorBot.create': 'Güvenli karşılama botu oluştur',
+  'whatsapp.doorBot.created':
+    'Karşılama botu oluşturuldu. Talimatlarına yalnızca herkesin bilebileceği bilgileri yazın.',
+  'whatsapp.doorBot.loose':
+    'Bu bot tam kilitli değil: salt okunur değil, interneti ya da hafızası açık ya da proje klasörü var. Karşılama için ayrı bir bot önerilir.',
+  'whatsapp.doorBot.name': 'Karşılama',
+  'whatsapp.doorBot.description': 'WhatsApp’ta henüz bir bota verilmemiş kişilere ilk cevabı verir.',
+  'whatsapp.doorBot.instructions':
+    'WhatsApp’ta yazanları karşılarsın. Kısa, nazik ve yazanın dilinde cevap ver.\n\nHerkesin bilebileceği bilgiler (doldurun; müşteri, fiyat, şifre ya da şirket içi bilgi yazmayın):\n- Firma:\n- Çalışma saatleri:\n- Adres:\n- Verilen hizmetler:\n- İletişim:\n\nBu bilgilerde olmayan bir şey sorulursa uydurma; ilgili kişinin en kısa sürede dönüş yapacağını söyle.',
   'whatsapp.reply': 'Cevap',
   'whatsapp.reply.off': 'Kapalı',
   'whatsapp.reply.draft': 'Taslak',

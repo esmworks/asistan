@@ -16,7 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
-import { useBots } from '@/lib/queries';
+import { newBotEngine } from '@/lib/new-bot';
+import { useBots, useSettings } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Card } from './SettingsDialog';
 import { EmailCard } from './EmailCard';
@@ -56,14 +58,12 @@ export function ChannelsTab() {
 /** A value for "no bot" in a select, which cannot hold an empty one. */
 const NONE = '-';
 
-const DOOR_SAFETY = [
-  'whatsapp.doorSafety.own',
-  'whatsapp.doorSafety.level',
-  'whatsapp.doorSafety.links',
-  'whatsapp.doorSafety.instructions',
-  'whatsapp.doorSafety.memory',
-  'whatsapp.doorSafety.mode',
-] as const satisfies readonly MessageKey[];
+/**
+ * Whether a bot is set up the way the front door should be: it reads only, has no internet,
+ * memory or project folder. The door keeps its tools off by itself; what the bot's instructions
+ * and memory hold, anyone who writes can ask about.
+ */
+const lockedDown = (b: Bot) => b.permissionMode === 'readonly' && !b.internet && !b.memory && !b.projectDir;
 
 /** How a bot answers a chat: not at all, on a card, or at once. */
 function ReplyModeSelect({
@@ -149,6 +149,37 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const setRoute = (i: number, change: Partial<WhatsAppRoute>) =>
     setRoutes((all) => all.map((r, j) => (j === i ? { ...r, ...change } : r)));
   const groupName = (chat: string) => groups?.find((g) => g.id === chat)?.name;
+  const { data: settings } = useSettings();
+  const openSettings = useUi((s) => s.openSettings);
+  const openBotDialog = useUi((s) => s.openBotDialog);
+  const doorBot = door ? live.find((b) => b.id === door.botId) : undefined;
+  // A bot made for the front door alone, locked down; the door is saved with it, and its
+  // instructions open next, to be filled with what anyone may know.
+  const makeDoor = useMutation({
+    mutationFn: async () => {
+      const bot = await api.createBot({
+        name: t('whatsapp.doorBot.name'),
+        description: t('whatsapp.doorBot.description'),
+        instructions: t('whatsapp.doorBot.instructions'),
+        permissionMode: 'readonly',
+        internet: false,
+        memory: false,
+        projectDir: null,
+        ...(settings ? newBotEngine(settings) : {}),
+      });
+      const made = { botId: bot.id, mode: 'draft' as const };
+      setDoor(made);
+      return { bot, status: await api.setWhatsapp({ ...form(), door: made }) };
+    },
+    onSuccess: ({ bot, status: s }) => {
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+      put(s);
+      toast.success(t('whatsapp.doorBot.created'));
+      openSettings(null);
+      openBotDialog({ mode: 'edit', botId: bot.id });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   const put = (s: WhatsAppStatus) => qc.setQueryData(['whatsapp'], s);
   const save = useMutation({
     mutationFn: () => api.setWhatsapp(form()),
@@ -280,16 +311,22 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
             </Select>
             {door && <ReplyModeSelect value={door.mode} onChange={(m) => setDoor({ ...door, mode: m })} />}
           </div>
+          {!doorBot && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-xl"
+              disabled={makeDoor.isPending}
+              onClick={() => makeDoor.mutate()}
+            >
+              {t('whatsapp.doorBot.create')}
+            </Button>
+          )}
+          {doorBot && !lockedDown(doorBot) && (
+            <p className="text-xs text-destructive">{t('whatsapp.doorBot.loose')}</p>
+          )}
           <span className="block text-xs text-muted-foreground">{t('whatsapp.doorHint')}</span>
-          <div className="space-y-1.5 rounded-2xl bg-secondary/60 p-4 text-xs text-muted-foreground">
-            <p className="text-sm font-medium text-foreground">{t('whatsapp.doorSafety.title')}</p>
-            <ul className="list-disc space-y-1 pl-4">
-              {DOOR_SAFETY.map((k) => (
-                <li key={k}>{t(k)}</li>
-              ))}
-            </ul>
-            <p>{t('whatsapp.doorSafety.enforced')}</p>
-          </div>
+          <span className="block text-xs text-muted-foreground">{t('whatsapp.doorRisk')}</span>
         </div>
 
         <div className="space-y-2">

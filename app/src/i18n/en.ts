@@ -2176,18 +2176,18 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.door': 'Front-door bot',
   'whatsapp.doorNone': 'None: nobody answers chats not given to a bot',
   'whatsapp.doorHint':
-    'This bot answers everyone writing from a chat that is not given to a bot. It has no tools, files, internet or access to your data; all it can do is suggest to you, on a card, which bot the chat should go to.',
-  'whatsapp.doorSafety.title': 'To set the front-door bot up safely',
-  'whatsapp.doorSafety.own': 'Create a separate bot for this; do not pick a bot you use for other work.',
-  'whatsapp.doorSafety.level':
-    'Set its permission level to the lowest ("Read-only") and turn its internet off.',
-  'whatsapp.doorSafety.links': 'Do not give it apps, skills, a project folder or a mail address.',
-  'whatsapp.doorSafety.instructions':
-    'Put only what anyone may know in its instructions (opening hours, address, general services). No customers, prices, passwords or internal information: anyone who writes can ask for them.',
-  'whatsapp.doorSafety.memory': 'Turn its memory off, or keep anything personal or confidential out of it.',
-  'whatsapp.doorSafety.mode': 'Keep its answers on "Draft" until you have seen it answer well for a while.',
-  'whatsapp.doorSafety.enforced':
-    'The system itself makes sure the front-door bot uses no tools, does not see your notes, profile or apps, answers only the chat of whoever wrote, and that nothing from these chats goes into its memory. The points above are in your hands.',
+    'This bot answers everyone writing from a chat not given to a bot. It uses no tools and does not see your notes, profile or apps. All it can do is suggest to you, on a card, which bot the chat should go to.',
+  'whatsapp.doorRisk':
+    'Anyone who writes can ask about whatever the bot’s instructions and memory hold, so do not pick a bot you use for other work.',
+  'whatsapp.doorBot.create': 'Create a safe front-door bot',
+  'whatsapp.doorBot.created': 'Front-door bot created. Put only what anyone may know in its instructions.',
+  'whatsapp.doorBot.loose':
+    'This bot is not locked down: it is not read-only, its internet or memory is on, or it has a project folder. A separate bot is advised for the front door.',
+  'whatsapp.doorBot.name': 'Front door',
+  'whatsapp.doorBot.description':
+    'Gives the first answer on WhatsApp to people whose chat is not given to a bot.',
+  'whatsapp.doorBot.instructions':
+    'You greet people who write on WhatsApp. Answer briefly and kindly, in the language they write in.\n\nWhat anyone may know (fill in; no customers, prices, passwords or internal information):\n- Company:\n- Opening hours:\n- Address:\n- Services:\n- Contact:\n\nIf asked something not in these facts, do not make it up; say the right person will get back to them soon.',
   'whatsapp.reply': 'Answers',
   'whatsapp.reply.off': 'Off',
   'whatsapp.reply.draft': 'Draft',
