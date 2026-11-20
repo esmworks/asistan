@@ -533,6 +533,13 @@
       "when": 1795182385096,
       "tag": "0075_whatsapp_saved_names_and_sent_at",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795187108984,
+      "tag": "0076_whatsapp_awaiting_and_saved_names",
+      "breakpoints": true
     }
   ]
 }

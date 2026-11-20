@@ -800,6 +800,7 @@ export const tr = {
   'message.readAloud': 'Sesli oku',
   'message.stopReading': 'Okumayı durdur',
   'message.signIn': 'Oturum aç',
+  'message.enterKey': 'Anahtar gir',
   'message.delete': 'Sil',
   'message.confirmDelete': 'Bu mesaj sohbetten silinsin mi? Botun daha önce okuduğu kısmı botta kalır.',
   'message.openLinkTitle': 'Bu bağlantı açılsın mı?',

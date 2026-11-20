@@ -61,6 +61,20 @@ describe('a routine run that hands work to another bot', () => {
     expect((await runs(r.id)).map((x) => x.status)).toEqual(['done']);
   });
 
+  it('ends the run when its bot is archived while the request is open', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    await t.bot({ name: 'Ayşe' });
+    const r = await make(a.id, '[araç:bot_send {"bot":"Ayşe","message":"[bekle:300] rapor hazır mı"}]');
+    await t.api('POST', `/api/routines/${r.id}/run`);
+    await waitFor(async () => (await t.services.turns.isRunning((await runs(r.id))[0]!.threadId!)) === false);
+    expect((await runs(r.id))[0]!.status).toBe('running');
+    await t.services.bots.archive(a.id);
+    await t.services.turns.idle();
+    const [run] = await runs(r.id);
+    expect(run!.status).toBe('error');
+    expect(run!.reason).toBeTruthy();
+  });
+
   it('a silent answer after the delegation is not reported', async () => {
     const a = await t.bot({ name: 'Ali' });
     await t.bot({ name: 'Ayşe' });

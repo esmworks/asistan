@@ -1412,6 +1412,69 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect(lines.find((l) => l.text === 'Selam')!.writer).toBe(`Mehmet Usta (+${NEW})`);
   });
 
+  /** The server starts again on the same records, with the chat quiet time tests use. */
+  const startAgain = async (wa: ReturnType<typeof fakeLibrary>) => {
+    wa.socket().emit('creds.update', { me: { id: `${PERSON}:3@s.whatsapp.net` } });
+    const before = wa.connects();
+    await t.services.whatsapp.stop();
+    const again = new WhatsAppChannel(t.services.ctx, t.services, t.services.vault);
+    again.library = async () => wa.lib;
+    again.paceMs = 0;
+    again.chatQuietMs = 30;
+    await again.start();
+    await waitFor(async () => wa.connects() === before + 1);
+    wa.linked(PERSON);
+    return again;
+  };
+
+  it('yazan bota giden cevap, sohbet sessizleşmeden sunucu yeniden başlarsa yine bir kez gider', async () => {
+    const { wa, asistan } = await setUp();
+    const thread = await writeTo(wa, asistan.id);
+    // The chat never goes quiet before the stop.
+    t.services.whatsapp.chatQuietMs = 60_000;
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Yarın uğrarım' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).some((m) => m.awaiting));
+    const again = await startAgain(wa);
+    try {
+      const [said] = await waitFor(async () => {
+        const found = await answers(thread.id);
+        return found.length ? found : undefined;
+      });
+      expect(said!.text).toContain('Yarın uğrarım');
+      await waitFor(async () =>
+        (await t.db.db.select().from(schema.whatsappMessages)).every((m) => !m.awaiting),
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await answers(thread.id)).toHaveLength(1);
+    } finally {
+      await again.stop();
+    }
+  });
+
+  it('rehberdeki ad, sohbeti yeniden başlatmadan sonra başlayan kişide de görünür', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    const NEW = '905007778899';
+    wa.socket().emit('messaging-history.set', {
+      contacts: [{ id: `${NEW}@s.whatsapp.net`, name: 'Mehmet Usta', notify: 'mmt' }],
+    });
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappSavedNames)).length === 1);
+    const again = await startAgain(wa);
+    try {
+      wa.chat(`${NEW}@s.whatsapp.net`, { conversation: 'Selam' }, {}, 'mmt');
+      const [row] = await waitFor(async () => {
+        const rows = await t.db.db.select().from(schema.whatsappChats);
+        return rows.length ? rows : undefined;
+      });
+      expect(row!.savedName).toBe('Mehmet Usta');
+      // The phone book of an account that is unlinked is not kept.
+      await again.disconnect();
+      expect(await t.db.db.select().from(schema.whatsappSavedNames)).toHaveLength(0);
+    } finally {
+      await again.stop();
+    }
+  });
+
   /** Sets the front door and the chats given to bots, the rest as `setUp` left it. */
   const answerers = (botId: string, extra: Record<string, unknown>) =>
     t.api<WhatsAppStatus>('PUT', '/api/whatsapp', { mode: linkedMode, phone: PERSON, botId, ...extra });

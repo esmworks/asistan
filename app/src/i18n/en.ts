@@ -815,6 +815,7 @@ export const en: Catalog<MessageKey> = {
   'message.readAloud': 'Read aloud',
   'message.stopReading': 'Stop reading',
   'message.signIn': 'Sign in',
+  'message.enterKey': 'Enter key',
   'message.delete': 'Delete',
   'message.confirmDelete':
     'Delete this message from the conversation? What the bot already read of it stays with the bot.',

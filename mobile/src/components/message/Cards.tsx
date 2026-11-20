@@ -579,7 +579,7 @@ export function SignInCard({
         <Connected />
       ) : (
         <PillButton
-          label={t('message.signIn')}
+          label={t(conn.auth === 'token' ? 'message.enterKey' : 'message.signIn')}
           variant="primary"
           onPress={() => nav.apps({ botId, connectionId })}
         />

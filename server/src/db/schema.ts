@@ -1099,6 +1099,17 @@ export const whatsappChats = pgTable('whatsapp_chats', {
 });
 
 /**
+ * Names the person saved for contacts in their phone book, by chat address. WhatsApp tells them
+ * once, when the device is linked, and later only when one changes, so they are kept for chats that
+ * start long after.
+ */
+export const whatsappSavedNames = pgTable('whatsapp_saved_names', {
+  jid: text('jid').primaryKey(),
+  name: sealedText('name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Messages of the chats routines read, kept 30 days so a bot answering one sees what was said
  * before. Codes, passwords and sign-in links are never written here.
  */
@@ -1117,6 +1128,11 @@ export const whatsappMessages = pgTable(
     text: sealedText('text').notNull().default(''),
     /** A file that came with it, saved under this name in each following bot's folder. */
     file: jsonb('file').$type<{ name: string; size: number } | { failed: string }>(),
+    /**
+     * Waits for the chat to go quiet before it reaches the bot that wrote to the person, or the bot
+     * the chat is given to; kept here so a restart in between does not lose it.
+     */
+    awaiting: boolean('awaiting').notNull().default(false),
     at: timestamp('at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

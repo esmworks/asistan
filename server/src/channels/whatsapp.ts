@@ -544,6 +544,7 @@ export class WhatsAppChannel {
     {
       kind: 'person' | 'group';
       lines: string[];
+      seqs: number[];
       firstSeq: number;
       firstId: string;
       startedAt: number;
@@ -559,6 +560,8 @@ export class WhatsAppChannel {
       botId: string;
       threadId: string;
       lines: string[];
+      /** The stored messages it holds, marked `awaiting` until they are handed over. */
+      seqs: number[];
       firstId: string;
       startedAt: number;
       timer: NodeJS.Timeout | null;
@@ -603,6 +606,7 @@ export class WhatsAppChannel {
     );
     this.pruneTimer.unref();
     await this.resumeChats();
+    await this.resumeAwaiting().catch((err: unknown) => console.warn('whatsapp resume', err));
     // A link that was never finished leaves its keys behind; the device in use is untouched.
     await this.dropNs();
     const row = await this.row();
@@ -775,6 +779,7 @@ export class WhatsAppChannel {
     }
     await this.flushCreds();
     await this.wipeKeys();
+    await this.forgetSavedNames();
     this.ns = '';
     await this.ctx.db.delete(schema.channels).where(eq(schema.channels.kind, 'whatsapp'));
     this.state = 'off';
@@ -923,6 +928,7 @@ export class WhatsAppChannel {
       // Removed from Linked Devices on the phone: its keys are useless now.
       if (linking) return this.abandonLink('loggedOut', false);
       await this.wipeKeys();
+      await this.forgetSavedNames();
       return this.fail('loggedOut');
     }
     if (code !== undefined && codes) {
@@ -1160,6 +1166,13 @@ export class WhatsAppChannel {
         if (this.savedNames.get(chat) === name) continue;
         this.savedNames.set(chat, name);
         await this.ctx.db
+          .insert(schema.whatsappSavedNames)
+          .values({ jid: chat, name })
+          .onConflictDoUpdate({
+            target: schema.whatsappSavedNames.jid,
+            set: { name, updatedAt: new Date() },
+          });
+        await this.ctx.db
           .update(schema.whatsappChats)
           .set({ savedName: name })
           .where(and(eq(schema.whatsappChats.jid, chat), eq(schema.whatsappChats.kind, 'person')));
@@ -1171,6 +1184,15 @@ export class WhatsAppChannel {
   private async savedNameOf(chat: string): Promise<string> {
     const known = this.savedNames.get(chat);
     if (known) return known;
+    const [saved] = await this.ctx.db
+      .select({ name: schema.whatsappSavedNames.name })
+      .from(schema.whatsappSavedNames)
+      .where(eq(schema.whatsappSavedNames.jid, chat))
+      .limit(1);
+    if (saved) {
+      this.savedNames.set(chat, saved.name);
+      return saved.name;
+    }
     const [row] = await this.ctx.db
       .select({ savedName: schema.whatsappChats.savedName })
       .from(schema.whatsappChats)
@@ -1208,11 +1230,12 @@ export class WhatsAppChannel {
   }
 
   /** Holds an answer for the bot that wrote to the chat; it goes out when the chat is quiet. */
-  private async queueReply(chat: string, line: string, t: T): Promise<boolean> {
+  private async queueReply(chat: string, line: string, seq: number, t: T): Promise<boolean> {
     const owner = await this.replyOwner(chat);
     if (!owner) return false;
     // A routine of that bot reading people's chats already hands it the answer in its own way.
     if ((await this.services.routines.chatReaders(chat, 'person')).includes(owner.botId)) return true;
+    await this.markAwaiting([seq], true);
     const wait = this.replies.get(chat);
     if (wait && wait.botId !== owner.botId) {
       // Another bot wrote since: what waits goes to the one it was for, then this one starts.
@@ -1221,11 +1244,14 @@ export class WhatsAppChannel {
     const open = this.replies.get(chat) ?? {
       ...owner,
       lines: [],
-      firstId: newId().slice(0, 12),
+      seqs: [],
+      // From the stored message, so the same batch handed again after a restart is one message.
+      firstId: `s${seq}`,
       startedAt: Date.now(),
       timer: null,
     };
     open.lines.push(line);
+    open.seqs.push(seq);
     if (open.timer) clearTimeout(open.timer);
     const left = Math.max(0, Math.min(this.chatQuietMs, open.startedAt + this.chatMaxWaitMs - Date.now()));
     open.timer = setTimeout(() => {
@@ -1243,6 +1269,18 @@ export class WhatsAppChannel {
     if (!wait) return;
     this.replies.delete(chat);
     if (wait.timer) clearTimeout(wait.timer);
+    try {
+      await this.giveReply(chat, wait, t);
+    } finally {
+      await this.markAwaiting(wait.seqs, false);
+    }
+  }
+
+  private async giveReply(
+    chat: string,
+    wait: { botId: string; threadId: string; lines: string[]; firstId: string },
+    t: T,
+  ) {
     const row = await this.row();
     const [known] = await this.ctx.db
       .select({ name: schema.whatsappChats.name, savedName: schema.whatsappChats.savedName })
@@ -1368,18 +1406,27 @@ export class WhatsAppChannel {
   }
 
   /** Holds a message for the chat's own bot, or the front door; it goes when the chat is quiet. */
-  private queueContact(chat: string, kind: 'person' | 'group', line: string, seq: number) {
+  private async queueContact(
+    chat: string,
+    kind: 'person' | 'group',
+    line: string,
+    seq: number,
+  ): Promise<boolean> {
     const target = this.contactTarget(chat, kind);
-    if (!target || target.mode === 'off') return;
+    if (!target || target.mode === 'off') return false;
+    await this.markAwaiting([seq], true);
     const open = this.contactWaits.get(chat) ?? {
       kind,
       lines: [],
+      seqs: [],
       firstSeq: seq,
-      firstId: newId().slice(0, 12),
+      // From the stored message, so the same batch handed again after a restart is one message.
+      firstId: `s${seq}`,
       startedAt: Date.now(),
       timer: null,
     };
     open.lines.push(line);
+    open.seqs.push(seq);
     if (open.timer) clearTimeout(open.timer);
     const left = Math.max(0, Math.min(this.chatQuietMs, open.startedAt + this.chatMaxWaitMs - Date.now()));
     open.timer = setTimeout(() => {
@@ -1388,6 +1435,7 @@ export class WhatsAppChannel {
         .catch((err: unknown) => console.warn('whatsapp contact', err));
     }, left);
     this.contactWaits.set(chat, open);
+    return true;
   }
 
   /**
@@ -1401,6 +1449,17 @@ export class WhatsAppChannel {
     if (!wait) return;
     this.contactWaits.delete(chat);
     if (wait.timer) clearTimeout(wait.timer);
+    try {
+      await this.giveContact(chat, wait);
+    } finally {
+      await this.markAwaiting(wait.seqs, false);
+    }
+  }
+
+  private async giveContact(
+    chat: string,
+    wait: { kind: 'person' | 'group'; lines: string[]; firstSeq: number; firstId: string },
+  ) {
     const target = this.contactTarget(chat, wait.kind);
     const owner = await this.ownerId();
     if (!target || target.mode === 'off' || !owner) return;
@@ -2021,7 +2080,7 @@ export class WhatsAppChannel {
     const name =
       kind === 'group' ? await this.groupName(socket, chat) : !m.key.fromMe ? oneLine(m.pushName ?? '') : '';
     const at = new Date(stamp * 1000);
-    const saved = kind === 'person' ? (this.savedNames.get(chat) ?? '') : '';
+    const saved = kind === 'person' ? await this.savedNameOf(chat) : '';
     await this.ctx.db
       .insert(schema.whatsappChats)
       .values({ jid: chat, kind, name, savedName: saved, lastAt: at })
@@ -2054,13 +2113,13 @@ export class WhatsAppChannel {
       const line = media ? `${said}\n  ${t('whatsapp.fileNotKept')}` : said;
       // The bot that wrote to the person lately has their answer; else the bot the chat is given
       // to, or the front door. In a group, only a message to the account.
-      const taken = kind === 'person' && (await this.queueReply(chat, line, t));
+      const taken = kind === 'person' && (await this.queueReply(chat, line, stored.seq, t));
       if (
         !taken &&
         (kind === 'person' ||
           (this.routes.has(chat) && mentionsAccount(m, [socket.user?.id ?? '', socket.user?.lid ?? ''])))
       )
-        this.queueContact(chat, kind, line, stored.seq);
+        await this.queueContact(chat, kind, line, stored.seq);
     }
     // A chat no routine reads is kept for the bots to look at, not handed over: its place moves on
     // at once, so a routine that starts reading it later gets what comes next, not 30 days of it.
@@ -2238,6 +2297,41 @@ export class WhatsAppChannel {
         }),
       })
       .where(eq(schema.whatsappChats.jid, chat));
+  }
+
+  /** Marks stored messages as waiting for a bot, or no longer waiting. */
+  private async markAwaiting(seqs: number[], awaiting: boolean) {
+    if (!seqs.length) return;
+    await this.ctx.db
+      .update(schema.whatsappMessages)
+      .set({ awaiting })
+      .where(inArray(schema.whatsappMessages.seq, seqs));
+  }
+
+  /**
+   * Messages that were waiting for a quiet chat when the server stopped: they wait again, for the
+   * bot that answers them now (the one that wrote may have dropped out of the window meanwhile).
+   */
+  private async resumeAwaiting() {
+    const rows = await this.ctx.db
+      .select({ message: schema.whatsappMessages, kind: schema.whatsappChats.kind })
+      .from(schema.whatsappMessages)
+      .innerJoin(schema.whatsappChats, eq(schema.whatsappChats.jid, schema.whatsappMessages.chat))
+      .where(eq(schema.whatsappMessages.awaiting, true))
+      .orderBy(asc(schema.whatsappMessages.seq));
+    if (!rows.length) return;
+    // Whatever takes them marks them again; one a routine reads in its own way stays unmarked.
+    await this.markAwaiting(
+      rows.map((r) => r.message.seq),
+      false,
+    );
+    const t = await this.services.settings.translator();
+    for (const { message: r, kind } of rows) {
+      const said = `[${r.at.toISOString()}] ${r.writer}: ${r.text}`;
+      const line = r.file ? `${said}\n  ${t('whatsapp.fileNotKept')}` : said;
+      if (!(kind === 'person' && (await this.queueReply(r.chat, line, r.seq, t))))
+        await this.queueContact(r.chat, kind, line, r.seq);
+    }
   }
 
   /** Chats with messages not yet handed over, from before a restart: their batches go out again. */
@@ -3101,6 +3195,12 @@ export class WhatsAppChannel {
         }
       });
     });
+  }
+
+  /** The phone book of an account that is no longer linked is not kept. */
+  private async forgetSavedNames() {
+    this.savedNames.clear();
+    await this.ctx.db.delete(schema.whatsappSavedNames);
   }
 
   /** The keys of a device that is gone; keys of no device stay. */
