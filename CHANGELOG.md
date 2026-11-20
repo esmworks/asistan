@@ -7,6 +7,15 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A turn can be taken back. A bot's step can be wrong, and the person had to find and undo each change by hand, so
+  every turn now keeps, for 30 days, what its file tools wrote or edited, the table rows, tickets, routines, skills
+  and bot settings it changed, and the notes it wrote, changed or forgot, each with how it was before. A bot's reply
+  gets "Undo this turn" for the person whose turn it was (admins cannot take someone else's turn back): a list shows
+  what will be put back, newest first, and apart from it what cannot be, the steps that went outside (mail, chat
+  apps, the browser, programs, requests) and files too large to keep (2 MB each, 20 MB a turn). Anything changed
+  again after the turn, by a later turn or by hand, is left as it is and reported, a routine, skill, bot setting or
+  bot note is put back only by someone who may change the bot, and a turn can be taken back once, when it is no longer
+  running. The result is posted in the conversation.
 - Routines are suggested for what a person keeps asking by hand. People ask a bot for the same thing again and again
   ("this week's sales summary" every Monday) without thinking of a routine, so once a day, for each person who has
   not turned it off, their own messages to bots of the last 45 days are grouped by meaning (when an embedding service

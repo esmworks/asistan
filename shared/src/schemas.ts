@@ -1563,6 +1563,54 @@ export const Pledge = z.object({
 });
 export type Pledge = z.infer<typeof Pledge>;
 
+/** What a turn changed that can be put back, by the kind of thing it was. */
+export const TURN_CHANGE_KINDS = [
+  'file',
+  'table_row',
+  'ticket',
+  'routine',
+  'skill',
+  'bot',
+  'memory',
+] as const;
+export type TurnChangeKind = (typeof TURN_CHANGE_KINDS)[number];
+
+/** What became of a change when its turn was taken back. */
+export const TurnChangeOutcome = z.enum(['restored', 'later', 'needsOwner', 'notUndoable', 'failed']);
+export type TurnChangeOutcome = z.infer<typeof TurnChangeOutcome>;
+
+/** One change a turn made, as the person sees it before and after taking the turn back. */
+export const TurnChangeItem = z.object({
+  id: Id,
+  kind: z.enum(TURN_CHANGE_KINDS),
+  op: z.enum(['create', 'update', 'delete']),
+  /** A file name, a table and row, a routine's name. */
+  label: z.string(),
+  /** Why it cannot be put back, when it cannot (too large to keep). */
+  reason: z.enum(['tooBig']).nullable(),
+  /** The person may not change what it belongs to; its owner has to put it back. */
+  needsOwner: z.boolean(),
+  /** After the turn was taken back: what became of it; null before. */
+  outcome: TurnChangeOutcome.nullable(),
+});
+export type TurnChangeItem = z.infer<typeof TurnChangeItem>;
+
+/** A step of the turn that reached outside and so cannot be taken back. */
+export const TurnOutsideStep = z.object({ summary: z.string(), at: z.string() });
+export type TurnOutsideStep = z.infer<typeof TurnOutsideStep>;
+
+/** What taking a turn back would put back, and what no one can. */
+export const TurnChanges = z.object({
+  turnId: Id,
+  /** The turn is still working: it cannot be taken back yet. */
+  running: z.boolean(),
+  /** The turn was already taken back. */
+  undone: z.boolean(),
+  items: z.array(TurnChangeItem),
+  outside: z.array(TurnOutsideStep),
+});
+export type TurnChanges = z.infer<typeof TurnChanges>;
+
 /**
  * A routine proposed because the person keeps asking a bot for the same thing by hand. Only the
  * person it was written from sees it.

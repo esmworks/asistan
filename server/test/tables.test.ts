@@ -164,6 +164,7 @@ describe('botun tabloları', () => {
         services: {} as Services,
         botId: 'b',
         t: ((k: string) => k) as never,
+        note: async () => undefined,
         hasTables,
       }).map((x) => x.name);
     expect(names(false)).toEqual(['table_define', 'table_add']);

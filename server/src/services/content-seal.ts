@@ -144,6 +144,16 @@ const SEALED: Sealed[] = [
     id: schema.canaryAlarms.id,
     columns: [['sources', schema.canaryAlarms.sources, 'json']],
   },
+  {
+    // What a turn changed, with the words and file contents as they were before.
+    table: schema.turnChanges,
+    id: schema.turnChanges.id,
+    columns: [
+      ['label', schema.turnChanges.label, 'text'],
+      ['before', schema.turnChanges.before, 'json'],
+      ['after', schema.turnChanges.after, 'json'],
+    ],
+  },
 ];
 
 export interface SealStatus {

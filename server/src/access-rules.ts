@@ -169,6 +169,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/routine-suggestions/:id/accept': 'self',
   'POST /api/routine-suggestions/:id/dismiss': 'self',
   'GET /api/turns/:id/result': read('turn'),
+  'GET /api/turns/:id/changes': read('turn'),
+  'POST /api/turns/:id/undo': read('turn'),
   // How much work stopping the whole server would stop: for those who look after it.
   'GET /api/turns/running': 'admin',
 
@@ -215,6 +217,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PATCH /api/threads/:id': manage(),
   'DELETE /api/threads/:id': manage(),
   'GET /api/threads/:id/messages': read(),
+  'GET /api/threads/:id/turn-changes': read(),
   'POST /api/threads/:id/messages': write(),
   'PATCH /api/messages/:id': manage('message'),
   'POST /api/messages/:id/steer': write('message'),

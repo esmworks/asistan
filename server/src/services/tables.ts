@@ -222,6 +222,46 @@ export class TableService {
     return toRow(row!);
   }
 
+  /** One row, or null when there is none. */
+  async rowById(tableId: string, rowId: string): Promise<TableRow | null> {
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.botTableRows)
+      .where(and(eq(schema.botTableRows.id, rowId), eq(schema.botTableRows.tableId, tableId)))
+      .limit(1);
+    return row ? toRow(row) : null;
+  }
+
+  /**
+   * A row's cells set back exactly as they were, with the time they were last changed; for taking
+   * a turn back, which must leave the row looking as it did before that turn.
+   */
+  async putRowBack(tableId: string, rowId: string, values: Record<string, CellValue>, updatedAt: string) {
+    const table = await this.get(tableId);
+    await this.ctx.db
+      .update(schema.botTableRows)
+      .set({ values, updatedAt: new Date(updatedAt) })
+      .where(and(eq(schema.botTableRows.id, rowId), eq(schema.botTableRows.tableId, tableId)));
+    await this.touch(table);
+  }
+
+  /** A deleted row written again under its own id and dates. */
+  async reinsertRow(
+    tableId: string,
+    row: { id: string; values: Record<string, CellValue>; createdAt: string; updatedAt: string },
+  ) {
+    const table = await this.get(tableId);
+    if (table.rowCount >= MAX_ROWS) throw new HttpError(400, 'error.tableRows');
+    await this.ctx.db.insert(schema.botTableRows).values({
+      id: row.id,
+      tableId,
+      values: row.values,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    });
+    await this.touch(table);
+  }
+
   async deleteRows(tableId: string, ids: string[]): Promise<number> {
     const table = await this.get(tableId);
     if (!ids.length) return 0;

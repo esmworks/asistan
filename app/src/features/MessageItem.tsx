@@ -43,6 +43,7 @@ import {
   SmilePlus,
   Square,
   Trash2,
+  Undo2,
   Volume2,
   X,
   RotateCcw,
@@ -64,6 +65,7 @@ import { create } from 'zustand';
 import { BotAvatar } from '@/components/BotAvatar';
 import { MessageFiles } from './Attachments';
 import { PromiseLine } from './Promises';
+import { UndoTurnDialog } from './UndoTurn';
 import { Markdown } from '@/components/Markdown';
 import { copyText } from '@/lib/clipboard';
 import { Button } from '@/components/ui/button';
@@ -75,7 +77,14 @@ import { useLocale, useT, type T } from '@/i18n';
 import { api } from '@/lib/api';
 import { newClientId } from '@/lib/format';
 import type { BotActivity } from '@/lib/botActivity';
-import { useApprovals, useConnections, useJob, useMainThread, usePeople } from '@/lib/queries';
+import {
+  useApprovals,
+  useConnections,
+  useJob,
+  useMainThread,
+  usePeople,
+  useTurnChanges,
+} from '@/lib/queries';
 import { personNameOf } from './PeopleTab';
 import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
@@ -562,6 +571,9 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  // Only turns that changed something, and only for the person whose turn it was.
+  const { data: undoable } = useTurnChanges(m.threadId);
   const row = useRef<HTMLDivElement>(null);
   const reaction = typeof m.props.userReaction === 'string' ? m.props.userReaction : null;
   const locale = useLocale((s) => s.locale);
@@ -720,7 +732,15 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
         <ActionButton label={t('message.pin')} onClick={() => void pin()}>
           <Pin />
         </ActionButton>
+        {m.turnId && undoable?.[m.turnId] ? (
+          <ActionButton label={t('message.undoTurn')} onClick={() => setUndoing(true)}>
+            <Undo2 />
+          </ActionButton>
+        ) : null}
       </div>
+      {undoing && m.turnId && (
+        <UndoTurnDialog turnId={m.turnId} threadId={m.threadId} open onOpenChange={setUndoing} />
+      )}
     </div>
   );
 }

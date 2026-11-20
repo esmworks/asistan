@@ -45,7 +45,8 @@ export type NotFoundKind =
   | 'person'
   | 'meeting'
   | 'promise'
-  | 'routineSuggestion';
+  | 'routineSuggestion'
+  | 'turn';
 export const notFound = (what: NotFoundKind) => new HttpError(404, `error.notFound.${what}`);
 
 /** An error's text in the given language: translated when it is ours, as thrown otherwise. */

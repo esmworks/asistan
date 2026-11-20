@@ -755,6 +755,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   // How many turns run now, so the desktop app can ask before quitting stops them.
   app.get('/api/turns/running', async () => ({ count: s.turns.runningCount() }));
+  // What a turn changed in its bot's own world, and putting it back: only the person whose turn it
+  // was, admins included; the handler keeps each person to their own.
+  app.get('/api/threads/:id/turn-changes', async (req) =>
+    s.changes.pending(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.get('/api/turns/:id/changes', async (req) =>
+    s.changes.preview(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.post('/api/turns/:id/undo', async (req) =>
+    s.changes.undo(IdParams.parse(req.params).id, me(req).userId, await s.settings.translator()),
+  );
   app.get('/api/turns/:id/result', async (req, reply) => {
     const q = z.object({ wait: z.coerce.number().int().min(0).max(600).default(0) }).parse(req.query);
     const result = await s.botApi.result(IdParams.parse(req.params).id, q.wait * 1000);

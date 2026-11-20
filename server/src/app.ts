@@ -325,10 +325,11 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   computerCheck?.unref();
 
   // Attachments whose message was never sent (the page was closed with them on it).
-  // Old lines of the bots' lists of what they changed go with it.
+  // Old lines of the bots' lists of what they changed, and of what turns changed, go with it.
   const sweep = () => {
     void sweepUploads(config.dataDir).catch((err) => console.warn(`Upload sweep failed: ${String(err)}`));
     void services.actions.prune().catch((err) => console.warn(`Action list sweep failed: ${String(err)}`));
+    void services.changes.prune().catch((err) => console.warn(`Turn change sweep failed: ${String(err)}`));
     // Documents bots' instructions are kept in are looked at once a day.
     void services.instructionDocs
       .checkDue()

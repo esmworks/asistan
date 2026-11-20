@@ -102,6 +102,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('rooms');
       inv('meetings', e.threadId);
       inv('messages', e.threadId);
+      inv('turn-changes', e.threadId);
       inv('thread', e.threadId);
       inv('threads', e.botId);
       inv('summaries');

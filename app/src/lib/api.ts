@@ -1,6 +1,7 @@
 import type {
   BotAction,
   Pledge,
+  TurnChanges,
   RoutineSuggestion,
   RoutineSuggestionAccept,
   PermissionSuggestions,
@@ -717,6 +718,11 @@ export const api = {
     http.post<Routine>(`/api/routine-suggestions/${id}/accept`, input),
   dismissRoutineSuggestion: (id: string) =>
     http.post<{ ok: true }>(`/api/routine-suggestions/${id}/dismiss`, {}),
+  /** The turns of a conversation with something to put back, with how many changes each made. */
+  turnChangesPending: (threadId: string) =>
+    http.get<Record<string, number>>(`/api/threads/${threadId}/turn-changes`),
+  turnChanges: (turnId: string) => http.get<TurnChanges>(`/api/turns/${turnId}/changes`),
+  undoTurn: (turnId: string) => http.post<TurnChanges>(`/api/turns/${turnId}/undo`, {}),
   promises: () => http.get<Pledge[]>('/api/promises'),
   promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
   promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),

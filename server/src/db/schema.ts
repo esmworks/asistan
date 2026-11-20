@@ -1617,3 +1617,55 @@ export const routineSuggestionChecks = pgTable(
   },
   (t) => [index('routine_suggestion_checks_created_idx').on(t.createdAt)],
 );
+
+/**
+ * What one turn changed in the bot's own world, with the state before each change, so the person
+ * can take the whole turn back. A line is written only once the step went through. Kept for 30
+ * days. It belongs to the person whose turn it was, admins included. Each line holds words and
+ * file contents from conversations, so those are sealed with the rest.
+ */
+export const turnChanges = pgTable(
+  'turn_changes',
+  {
+    id: text('id').primaryKey(),
+    turnId: text('turn_id').notNull(),
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** Whose turn it was: only they may take it back. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', {
+      enum: ['file', 'table_row', 'ticket', 'routine', 'skill', 'bot', 'memory'],
+    }).notNull(),
+    op: text('op', { enum: ['create', 'update', 'delete'] }).notNull(),
+    /** The file's path, or the id of the row, ticket, routine, skill, bot or note. */
+    targetId: text('target_id').notNull(),
+    /** What the person sees in the list: a file name, a table and row, a routine's name. */
+    label: sealedText('label').notNull().default(''),
+    /** The bot the target belongs to, when it is another than the turn's (a manager's change). */
+    scopeBotId: text('scope_bot_id'),
+    /** The state before the change; null when the target did not exist. */
+    before: sealedJson('before'),
+    /** What the target looked like right after the turn, to tell a later change from this one. */
+    after: sealedJson('after'),
+    /** Size of what was kept, for the cap on one turn. */
+    bytes: integer('bytes').notNull().default(0),
+    /** Why the change cannot be put back, when it cannot (it was too large to keep). */
+    reason: text('reason', { enum: ['tooBig'] }),
+    createdAt: created(),
+    /** When the turn was taken back, and what became of this line then. */
+    undoneAt: ts('undone_at'),
+    outcome: text('outcome', {
+      enum: ['restored', 'later', 'needsOwner', 'notUndoable', 'failed'],
+    }),
+  },
+  (t) => [
+    index('turn_changes_turn_idx').on(t.turnId, t.createdAt),
+    index('turn_changes_created_idx').on(t.createdAt),
+  ],
+);

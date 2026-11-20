@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import {
   resultImages,
   resultText,
@@ -19,6 +21,8 @@ import {
  * Directives in the prompt drive it:
  *   [izin:Tool {json}]   ask permission for Tool with the given input
  *   [araç:name {json}]   call an app tool and include its result
+ *   [dosya:Write {json}] a file tool as an engine runs it: looked at, asked, then done (`Write` with
+ *                        `file_path` and `content`, or `Edit` with `file_path`, `old_string`, `new_string`)
  *   [bekle:ms]           wait (stops early on interrupt)
  *   [uzun-araç:ms]       a shell command that runs this long (stops early on interrupt)
  *   [hata]               fail with an engine error
@@ -215,7 +219,7 @@ export class FakeEngine implements Engine {
     const spent = cost ? Number(cost[1]) : 0;
     const parts: string[] = [];
     const directive =
-      /\[(izin|araç|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra|kesik|kesik-hep|çöktü|çöktü-hep)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
+      /\[(izin|araç|dosya|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra|kesik|kesik-hep|çöktü|çöktü-hep)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
     for (const m of req.prompt.matchAll(directive)) {
       const [, kind, name, json] = m;
       if (req.signal.aborted) break;
@@ -301,6 +305,24 @@ export class FakeEngine implements Engine {
         parts.push(
           answer.behavior === 'allow' ? `${name}: izin verildi` : `${name}: reddedildi (${answer.message})`,
         );
+      } else if (kind === 'dosya') {
+        const refused = await req.screen?.({ toolName: name ?? 'Write', input });
+        const answer = refused
+          ? ({ behavior: 'deny', message: refused } as const)
+          : await req.canUseTool({ toolName: name ?? 'Write', input });
+        if (answer.behavior === 'deny') {
+          parts.push(`${name}: reddedildi (${answer.message})`);
+          continue;
+        }
+        const path = String(input.file_path);
+        if (name === 'Edit') {
+          const text = await readFile(path, 'utf8');
+          await writeFile(path, text.replace(String(input.old_string), String(input.new_string)));
+        } else {
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, String(input.content));
+        }
+        parts.push(`${name}: yazıldı`);
       } else if (kind === 'araç') {
         const tool = req.tools.find((t) => t.name === name);
         if (!tool) {

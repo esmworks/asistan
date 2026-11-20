@@ -5,6 +5,7 @@ import { TurnManager } from '../runtime/turns';
 import { ToolFactory } from '../tools';
 import { AccessService } from './access';
 import { ActionService } from './actions';
+import { TurnChangeService } from './turn-changes';
 import { ApprovalService } from './approvals';
 import { InstructionDocService } from './instruction-docs';
 import { BotImportService } from './bot-import';
@@ -59,6 +60,7 @@ export class Services {
   readonly rooms: RoomService;
   readonly approvals: ApprovalService;
   readonly actions: ActionService;
+  readonly changes: TurnChangeService;
   readonly instructionDocs: InstructionDocService;
   readonly vault: VaultService;
   readonly passwordManagers: PasswordManagerService;
@@ -122,6 +124,7 @@ export class Services {
     this.connections = new ConnectionService(ctx, this.vault);
     this.approvals = new ApprovalService(ctx, this.vault);
     this.actions = new ActionService(ctx);
+    this.changes = new TurnChangeService(ctx, this);
     this.memory = new MemoryService(ctx);
     this.push = new PushService(ctx, this.vault);
     this.settings = new SettingsService(ctx);

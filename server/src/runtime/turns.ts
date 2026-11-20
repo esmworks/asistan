@@ -1007,6 +1007,13 @@ export class TurnManager {
         );
       return tripping;
     };
+    // The files this turn's file tools change, looked at just before each step and once more when the
+    // turn ends, so the person can take the turn back.
+    const files = await this.services.changes.watch(
+      { turnId: turn.id, threadId: thread.id, botId: bot.id, userId: person },
+      sandbox.cwd,
+      sandbox.writable,
+    );
     /** The reason to refuse a step when it trips a wire (or one already did); null to go on. */
     const screen = async (ask: { toolName: string; input: Record<string, unknown> }) => {
       if (tripped) return t('turn.canaryRefused');
@@ -1017,7 +1024,11 @@ export class TurnManager {
         input: ask.input,
         tool: allTools.find((x) => toolPermName(x) === ask.toolName),
       });
-      if (!hit) return null;
+      if (!hit) {
+        // Not refused: a file tool may change a file next, so it is looked at as it is now.
+        await files.before(ask.toolName, ask.input).catch(() => undefined);
+        return null;
+      }
       await trip(hit, ask.toolName);
       return t('turn.canaryRefused');
     };
@@ -1701,6 +1712,10 @@ export class TurnManager {
       }
     } finally {
       watchdog.stop();
+      // Whatever the file tools changed is written down, also when the turn failed or was stopped.
+      await files
+        .finish()
+        .catch((err: unknown) => console.warn(`Could not journal a turn's files: ${String(err)}`));
     }
     if (watchdog.stalled && !outcome.ok && outcome.kind === 'interrupted') {
       outcome = { ...outcome, kind: 'stalled', message: stallText(watchdog.stalled, t) };
