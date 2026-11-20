@@ -90,7 +90,7 @@ import { pickSkill, skillQuery } from '@/lib/skillTag';
 import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@/lib/slash';
 import { editAsTyped } from '@/lib/undoableEdit';
 import { useHoldReload } from '@/lib/update';
-import { isOffline, useOutbox } from '@/lib/outbox';
+import { holdsFor, isOffline, retryOutbox, useOutbox } from '@/lib/outbox';
 import { ComputerButton } from './Computer';
 import { EmojiButton } from '@/components/EmojiPicker';
 import { PlanMeter } from './PlanMeter';
@@ -747,10 +747,6 @@ function Conversation({
   const liveState = useUi((s) => s.states[threadId]);
   const state = liveState ?? thread?.state ?? 'idle';
   const [pending, setPending] = useState<Message[]>([]);
-  const pendingRef = useRef(pending);
-  useEffect(() => {
-    pendingRef.current = pending;
-  }, [pending]);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const loadOlder = useMutation({
@@ -819,25 +815,25 @@ function Conversation({
   const sendText = (text: string) => {
     const clientId = newClientId();
     stick.current = true;
-    setPending((p) => [
-      ...p,
-      {
-        id: clientId,
-        threadId,
-        role: 'user',
-        author: 'user',
-        text,
-        props: {},
-        clientId,
-        turnId: null,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    const m: Message = {
+      id: clientId,
+      threadId,
+      role: 'user',
+      author: 'user',
+      text,
+      props: {},
+      clientId,
+      turnId: null,
+      createdAt: new Date().toISOString(),
+    };
+    // Behind messages still waiting here, so the conversation keeps the order they were written in.
+    if (holdsFor(threadId)) return hold(m, [], undefined);
+    setPending((p) => [...p, m]);
     api
       .send(threadId, clientId, text)
       .then(() => qc.invalidateQueries({ queryKey: ['messages', threadId] }))
       .catch((e: Error) => {
-        if (isOffline(e)) return hold(clientId, [], undefined);
+        if (isOffline(e)) return hold(m, [], undefined);
         setPending((p) => p.filter((x) => x.clientId !== clientId));
         toast.error(e.message);
       });
@@ -847,18 +843,18 @@ function Conversation({
   const allHeld = useOutbox((s) => s.items);
   const held = useMemo(() => allHeld.filter((h) => h.threadId === threadId), [allHeld, threadId]);
   useHoldReload(allHeld.length > 0);
-  const hold = (clientId: string, files: string[], replyTo: string | undefined) => {
-    const m = pendingRef.current.find((x) => x.clientId === clientId);
-    setPending((p) => p.filter((x) => x.clientId !== clientId));
-    if (!m) return;
+  const hold = (m: Message, files: string[], replyTo: string | undefined) => {
+    stick.current = true;
+    setPending((p) => p.filter((x) => x.clientId !== m.clientId));
     useOutbox.getState().hold({
       threadId,
-      clientId,
+      clientId: m.clientId!,
       text: m.text,
       files,
       replyTo,
       message: { ...m, props: { ...m.props, heldOffline: true } },
     });
+    retryOutbox();
   };
   const [replyTo, setReplyTo] = useState<Message | null>(null);
 
@@ -1242,7 +1238,7 @@ function Composer({
   onPending(m: Message): void;
   onFailed(clientId: string): void;
   /** The server could not be reached: the message waits for the connection instead of failing. */
-  onHeld(clientId: string, files: string[], replyTo: string | undefined): void;
+  onHeld(m: Message, files: string[], replyTo: string | undefined): void;
 }) {
   const t = useT();
   const [text, setText] = useState(() => readDraft(threadId));
@@ -1405,7 +1401,14 @@ function Composer({
     [],
   );
   const send = useMutation({
-    mutationFn: (m: { clientId: string; text: string; files: StagedFile[]; replyTo: Message | null }) =>
+    mutationFn: (m: {
+      clientId: string;
+      text: string;
+      files: StagedFile[];
+      replyTo: Message | null;
+      /** As the conversation shows it while it is on its way. */
+      shown: Message;
+    }) =>
       api.send(
         threadId,
         m.clientId,
@@ -1417,7 +1420,7 @@ function Composer({
     onError: (e, m) => {
       if (isOffline(e))
         return onHeld(
-          m.clientId,
+          m.shown,
           m.files.map((f) => f.name),
           m.replyTo?.id,
         );
@@ -1466,7 +1469,7 @@ function Composer({
     }
     const files = attachments.take();
     const clientId = newClientId();
-    onPending({
+    const shown: Message = {
       id: clientId,
       threadId,
       role: 'user',
@@ -1480,10 +1483,20 @@ function Composer({
       clientId,
       turnId: null,
       createdAt: new Date().toISOString(),
-    });
+    };
     setText('');
     onReplyChange(null);
-    send.mutate({ clientId, text: value, files, replyTo });
+    // Behind messages still waiting here, so the conversation keeps the order they were written in.
+    if (holdsFor(threadId)) {
+      onHeld(
+        shown,
+        files.map((f) => f.name),
+        replyTo?.id,
+      );
+      return;
+    }
+    onPending(shown);
+    send.mutate({ clientId, text: value, files, replyTo, shown });
   };
 
   return (

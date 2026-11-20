@@ -7,7 +7,7 @@ const toastError = vi.fn();
 vi.mock('sonner', () => ({ toast: { error: toastError } }));
 
 const { ApiError } = await import('./api');
-const { flushOutbox, isOffline, useOutbox } = await import('./outbox');
+const { flushOutbox, holdsFor, isOffline, useOutbox } = await import('./outbox');
 
 const held = (clientId: string) => ({
   threadId: 't1',
@@ -27,6 +27,17 @@ describe('outbox', () => {
   it('tells a refused send from one that never reached the server', () => {
     expect(isOffline(new TypeError('Failed to fetch'))).toBe(true);
     expect(isOffline(new ApiError(400, 'no'))).toBe(false);
+    // A proxy's error page while the server restarts is no answer; the server's own 502 is one.
+    expect(isOffline(new ApiError(502, 'Request failed (502)', false))).toBe(true);
+    expect(isOffline(new ApiError(503, 'Request failed (503)', false))).toBe(true);
+    expect(isOffline(new ApiError(502, 'Telegram unreachable'))).toBe(false);
+  });
+
+  it('tells whether a conversation has messages waiting, so a new one goes behind them', () => {
+    expect(holdsFor('t1')).toBe(false);
+    useOutbox.getState().hold(held('a'));
+    expect(holdsFor('t1')).toBe(true);
+    expect(holdsFor('t2')).toBe(false);
   });
 
   it('sends what was held in order, marked as written offline, with the same client id', async () => {

@@ -131,6 +131,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** The answer came from this server with its reason; false for a proxy's error page. */
+    public fromServer = true,
   ) {
     super(message);
   }
@@ -168,9 +170,10 @@ async function request<T>(
   }
   if (!res.ok) {
     if (res.status === 401 && path !== '/api/access' && path !== '/api/login') onUnauthorized();
+    const reason = (data as { error?: unknown } | null)?.error;
     const message =
-      (data as { error?: string } | null)?.error ?? getT()('error.requestFailed', { status: res.status });
-    throw new ApiError(res.status, message);
+      typeof reason === 'string' ? reason : getT()('error.requestFailed', { status: res.status });
+    throw new ApiError(res.status, message, typeof reason === 'string');
   }
   return data as T;
 }

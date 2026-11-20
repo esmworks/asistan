@@ -33,11 +33,27 @@ export const useOutbox = create<Outbox>((set) => ({
   drop: (clientId) => set((s) => ({ items: s.items.filter((x) => x.clientId !== clientId) })),
 }));
 
+/** What a proxy in front of the server answers while the server is away (a restart, a redeploy). */
+const AWAY = [502, 503, 504];
+
 /** A send that failed because the server could not be reached, not because it said no. */
 export const isOffline = (err: unknown): boolean =>
-  !(err instanceof ApiError) || (typeof navigator !== 'undefined' && navigator.onLine === false);
+  !(err instanceof ApiError) ||
+  (AWAY.includes(err.status) && !err.fromServer) ||
+  (typeof navigator !== 'undefined' && navigator.onLine === false);
 
 let flushing = false;
+/** Set while the app watches the connection: tries the held messages again now. */
+let wake: (() => void) | null = null;
+
+/** Tries the held messages again now, when the app is watching the connection. */
+export function retryOutbox(): void {
+  wake?.();
+}
+
+/** Whether a conversation has messages waiting: a new one there goes behind them, not before. */
+export const holdsFor = (threadId: string): boolean =>
+  useOutbox.getState().items.some((i) => i.threadId === threadId);
 
 /**
  * Tries the held messages again, oldest first; stops at the first that still cannot reach the
@@ -76,11 +92,13 @@ export function watchOutbox(qc: QueryClient): { flush(): void; stop(): void } {
   };
   window.addEventListener('online', flush);
   const timer = setInterval(flush, RETRY_MS);
+  wake = flush;
   return {
     flush,
     stop: () => {
       window.removeEventListener('online', flush);
       clearInterval(timer);
+      if (wake === flush) wake = null;
     },
   };
 }

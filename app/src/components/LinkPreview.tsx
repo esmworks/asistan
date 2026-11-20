@@ -10,7 +10,7 @@ import {
   GitPullRequestDraft,
 } from 'lucide-react';
 import { HoverCard } from 'radix-ui';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,18 @@ import { cn } from '@/lib/utils';
 /** A pull request or issue on GitHub, whose state is shown next to its link. */
 const GITHUB_ITEM = /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/\d+(?:[/?#]|$)/i;
 const KEEP_MS = 10 * 60_000;
+/** A link still being written out in a streamed reply changes; its state is asked once it stays. */
+const SETTLE_MS = 1_000;
+
+/** Whether `value` has stayed the same for `ms`. */
+function useSettled(value: string, ms: number): boolean {
+  const [settled, setSettled] = useState<string | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled === value;
+}
 
 const usePreviewOf = (href: string, enabled: boolean) =>
   useQuery({
@@ -32,12 +44,14 @@ const usePreviewOf = (href: string, enabled: boolean) =>
 /**
  * A web link in a message. Held under the pointer it shows what the page is (its title,
  * description and site, as the server read them; no picture from the page is loaded here), and
- * a GitHub pull request or issue carries its state beside it.
+ * a GitHub pull request or issue carries its state beside it. A link carrying a key or a long
+ * code gets no preview (the server refuses to read it).
  */
 export function WebLink({ href, children }: { href: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const github = GITHUB_ITEM.test(href);
-  const { data } = usePreviewOf(href, open || github);
+  const settled = useSettled(href, SETTLE_MS);
+  const { data } = usePreviewOf(href, open || (github && settled));
   const preview = data?.preview ?? null;
   return (
     <HoverCard.Root open={open && !!preview} onOpenChange={setOpen} openDelay={500} closeDelay={100}>

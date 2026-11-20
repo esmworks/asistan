@@ -1,4 +1,5 @@
-import type { LinkPreview } from '@yumakbot/shared';
+import { hasSecretShape, type LinkPreview } from '@yumakbot/shared';
+import { scrubCanary } from './canary';
 import { fetchPublic } from './skill-link';
 
 /** Enough of a page to hold its head, where the title and description are. */
@@ -17,11 +18,34 @@ const GITHUB = /^\/([\w.-]+)\/([\w.-]+)\/(pull|issues)\/(\d+)(?:[/?#]|$)/;
 
 type Fetch = typeof fetchPublic;
 
+/** A path longer than this, or a part of it shaped like a code, is not something to read. */
+const PATH_MAX = 300;
+const CODE_PART = /^[A-Za-z0-9+/=_]{32,}$/;
+
+/**
+ * Whether a link may be read for a preview. A link in a bot's reply was written by the bot, and
+ * reading it on a hover would send whatever it carries to its site without a click; so one that
+ * holds something shaped like a key, a bot's private token or a long code is not read.
+ */
+export function previewable(url: URL): boolean {
+  let text = url.href;
+  try {
+    text = decodeURIComponent(text);
+  } catch {
+    // Read as written.
+  }
+  if (hasSecretShape(text) || scrubCanary(text) !== text) return false;
+  if (url.pathname.length > PATH_MAX) return false;
+  return !url.pathname.split('/').some((part) => CODE_PART.test(part) && /\d/.test(part));
+}
+
 /**
  * What a web link in a conversation shows on a hover: the page's title, description and site
  * for any page, and for a GitHub pull request or issue its state and author. The server reads
- * the page, never the person's browser, and no picture from it is shown, so the site learns
- * neither who reads the message nor when. Private addresses are refused like every other read.
+ * the page when the link is first held under the pointer, so the site sees the server's address
+ * (on the desktop app, the person's own connection) and that moment; the page's query string is
+ * left out of that read, and no picture from the page is loaded in the app. Private addresses
+ * are refused like every other read.
  */
 export class LinkPreviews {
   private kept = new Map<string, { at: number; preview: LinkPreview | null }>();
@@ -43,6 +67,10 @@ export class LinkPreviews {
     // Asked over https only: the read is the server's, and it does not go out in the clear.
     url.protocol = 'https:';
     url.hash = '';
+    if (!previewable(url)) return null;
+    // Only GitHub's own addresses keep theirs; for any other page, what is in the query (a search,
+    // a session, something the bot put there) is not sent on.
+    if (url.hostname !== 'github.com') url.search = '';
     const key = url.href;
     const hit = this.kept.get(key);
     if (hit && this.clock() - hit.at < KEEP_MS) return hit.preview;

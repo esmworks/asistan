@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LinkPreviews, githubPreview, pagePreview } from '../src/services/link-preview';
+import { LinkPreviews, githubPreview, pagePreview, previewable } from '../src/services/link-preview';
 import type { PublicFetchOptions, PublicResponse } from '../src/services/skill-link';
 import { testServer, type TestServer } from './helpers';
 
@@ -80,6 +80,22 @@ describe('link previews', () => {
     now += 11 * 60_000;
     await previews.get('https://example.com/post');
     expect(asked).toHaveLength(3);
+  });
+
+  it('does not read a link that carries a key, a token or a long code, and leaves out the query', async () => {
+    const u = (s: string) => new URL(s);
+    expect(previewable(u('https://example.com/blog/how-to-bake-bread-2026'))).toBe(true);
+    expect(previewable(u('https://evil.example/x?k=sk-ant-api03-' + 'a'.repeat(90)))).toBe(false);
+    expect(previewable(u('https://evil.example/c/cnry-0123456789abcdef01234567'))).toBe(false);
+    expect(previewable(u('https://evil.example/c/aGVsbG8gd29ybGQgdGhpcyBpcyBhIHNlY3JldA1'))).toBe(false);
+    expect(previewable(u('https://evil.example/' + 'a/'.repeat(200)))).toBe(false);
+
+    const { fetch, asked } = fakeFetch({ 'https://example.com/search': page('<title>Arama</title>') });
+    const previews = new LinkPreviews(fetch);
+    expect(await previews.get('https://example.com/search?q=gizli+not&session=abc')).toMatchObject({
+      title: 'Arama',
+    });
+    expect(asked.map((a) => a.url)).toEqual(['https://example.com/search']);
   });
 
   it('gives nothing for what is not a web page, cannot be reached or is not a link', async () => {
