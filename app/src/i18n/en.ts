@@ -434,6 +434,7 @@ export const en: Catalog<MessageKey> = {
   'undo.ownerNote': 'you may not change this bot; its owner has to put it back',
   'undo.cannotTitle': 'Cannot be undone',
   'undo.tooBig': 'too large to keep its earlier state',
+  'undo.deleted': 'deleted words are not kept',
   'undo.confirm': 'Undo this turn',
   'undo.done': '{done} of {total} changes put back',
   'undo.will.create': 'made by this turn: will be removed',

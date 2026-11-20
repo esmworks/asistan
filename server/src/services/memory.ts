@@ -672,6 +672,20 @@ export class MemoryService {
    */
   async removePlace(place: string): Promise<void> {
     await this.ctx.db.transaction(async (tx) => {
+      const notes = await tx
+        .select({ id: schema.memories.id })
+        .from(schema.memories)
+        .where(and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)));
+      if (notes.length)
+        await tx.delete(schema.turnChanges).where(
+          and(
+            eq(schema.turnChanges.kind, 'memory'),
+            inArray(
+              schema.turnChanges.targetId,
+              notes.map((n) => n.id),
+            ),
+          ),
+        );
       await tx
         .delete(schema.memories)
         .where(and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)));

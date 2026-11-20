@@ -1586,8 +1586,8 @@ export const TurnChangeItem = z.object({
   op: z.enum(['create', 'update', 'delete']),
   /** A file name, a table and row, a routine's name. */
   label: z.string(),
-  /** Why it cannot be put back, when it cannot (too large to keep). */
-  reason: z.enum(['tooBig']).nullable(),
+  /** Why it cannot be put back, when it cannot (too large to keep, or deleted words that are not kept). */
+  reason: z.enum(['tooBig', 'deleted']).nullable(),
   /** The person may not change what it belongs to; its owner has to put it back. */
   needsOwner: z.boolean(),
   /** After the turn was taken back: what became of it; null before. */

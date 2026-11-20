@@ -1655,8 +1655,8 @@ export const turnChanges = pgTable(
     after: sealedJson('after'),
     /** Size of what was kept, for the cap on one turn. */
     bytes: integer('bytes').notNull().default(0),
-    /** Why the change cannot be put back, when it cannot (it was too large to keep). */
-    reason: text('reason', { enum: ['tooBig'] }),
+    /** Why the change cannot be put back, when it cannot: too large to keep, or words deleted on purpose. */
+    reason: text('reason', { enum: ['tooBig', 'deleted'] }),
     createdAt: created(),
     /** When the turn was taken back, and what became of this line then. */
     undoneAt: ts('undone_at'),

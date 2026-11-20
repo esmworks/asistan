@@ -71,7 +71,7 @@ export interface ChangeNote {
   before?: Json | null;
   after?: Json | null;
   /** The earlier state could not be kept. */
-  reason?: 'tooBig';
+  reason?: 'tooBig' | 'deleted';
 }
 
 const sha = (v: string | Buffer) => createHash('sha1').update(v).digest('hex');
@@ -384,7 +384,14 @@ export class TurnChangeService {
       part(t('undo.restored'), by('restored')),
       part(t('undo.later'), by('later')),
       part(t('undo.needsOwner'), by('needsOwner')),
-      part(t('undo.notUndoable'), by('notUndoable')),
+      part(
+        t('undo.notUndoable'),
+        items.filter((i) => i.outcome === 'notUndoable' && i.reason !== 'deleted').map(line),
+      ),
+      part(
+        t('undo.deleted'),
+        items.filter((i) => i.reason === 'deleted').map((i) => `- ${t(`undo.kind.${i.kind}`)}`),
+      ),
       part(t('undo.failed'), by('failed')),
       part(
         t('undo.outside'),
@@ -530,24 +537,6 @@ export class TurnChangeService {
   ): Promise<TurnChangeOutcome> {
     const s = this.services;
     const current = await s.memory.get(row.targetId).catch(() => null);
-    if (row.op === 'delete') {
-      if (current || !before) return 'later';
-      const note = before as {
-        scope: 'bot' | 'user' | 'room';
-        botId: string | null;
-        userId: string | null;
-        place: string | null;
-        content: string;
-        site: string | null;
-        source: string;
-        sourceUrl: string | null;
-        validUntil: string | null;
-      };
-      if (note.scope === 'user' && note.userId !== userId) return 'needsOwner';
-      if (await s.memory.findSame(note)) return 'later';
-      await s.memory.create({ ...note, actor: 'user', threadId: row.threadId });
-      return 'restored';
-    }
     if (!current || sig(noteShape(current)) !== after?.sig) return 'later';
     if (current.scope === 'user' && current.userId !== userId) return 'needsOwner';
     if (row.op === 'create') await s.memory.remove(row.targetId, 'user');

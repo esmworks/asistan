@@ -104,7 +104,12 @@ export function UndoTurnDialog({
           {(kept.length > 0 || outside.length > 0) && (
             <Group title={t('undo.cannotTitle')}>
               {kept.map((i) => (
-                <Line key={i.id} item={i} t={t} note={t('undo.tooBig')} />
+                <Line
+                  key={i.id}
+                  item={i}
+                  t={t}
+                  note={t(i.reason === 'deleted' ? 'undo.deleted' : 'undo.tooBig')}
+                />
               ))}
               {outside.map((o) => (
                 <li key={`${o.at}${o.summary}`} className="text-sm break-words">

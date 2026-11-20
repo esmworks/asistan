@@ -418,6 +418,7 @@ export const tr = {
   'undo.ownerNote': 'bu botu değiştirme yetkin yok; sahibinin geri alması gerekir',
   'undo.cannotTitle': 'Geri alınamayanlar',
   'undo.tooBig': 'eski hali saklanamayacak kadar büyük',
+  'undo.deleted': 'silinen sözler saklanmaz',
   'undo.confirm': 'Bu turu geri al',
   'undo.done': '{total} değişikliğin {done} tanesi geri konuldu',
   'undo.will.create': 'bu turda yapıldı: silinecek',

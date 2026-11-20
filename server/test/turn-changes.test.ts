@@ -205,7 +205,6 @@ describe('taking back what one turn changed', () => {
   it('puts a memory note back: written, changed and forgotten', async () => {
     const { thread } = await setup();
     await say(thread.id, '[araç:memory_write {"content":"Likes tea"}]');
-    const written = await lastTurn(thread.id);
     const [note] = await t.services.memory.list();
     expect(note!.content).toBe('Likes tea');
 
@@ -215,16 +214,34 @@ describe('taking back what one turn changed', () => {
     expect((await undo(changed)).body.items[0]!.outcome).toBe('restored');
     expect((await t.services.memory.get(note!.id)).content).toBe('Likes tea');
 
+    // Forgotten on purpose: no words are kept, so the step is listed as not undoable.
     await say(thread.id, `[araç:memory_forget ${JSON.stringify({ id: note!.id })}]`);
     const forgot = await lastTurn(thread.id);
     expect(await t.services.memory.list()).toHaveLength(0);
-    expect((await undo(forgot)).body.items[0]!.outcome).toBe('restored');
-    const [back] = await t.services.memory.list();
-    expect(back).toMatchObject({ content: 'Likes tea', scope: 'bot' });
+    const view = await preview(forgot);
+    expect(view.items).toEqual([expect.objectContaining({ kind: 'memory', reason: 'deleted', label: '' })]);
+    const [line] = await t.services.ctx.db
+      .select()
+      .from(schema.turnChanges)
+      .where(eq(schema.turnChanges.turnId, forgot));
+    expect(JSON.stringify(line)).not.toContain('Likes tea');
+    expect((await undo(forgot)).body.items[0]!.outcome).toBe('notUndoable');
+    expect(await t.services.memory.list()).toHaveLength(0);
+    // The earlier lines of the forgotten note lost their words too.
+    const rows = await t.services.ctx.db.select().from(schema.turnChanges);
+    expect(JSON.stringify(rows)).not.toMatch(/Likes (tea|coffee)/);
+  });
 
-    // The note was written again by a restore: the first turn's line no longer matches it by id.
-    const res = await undo(written);
-    expect(res.body.items[0]!.outcome).toBe('later');
+  it('clears a note’s earlier words from the journal when the person deletes it in the app', async () => {
+    const { thread } = await setup();
+    await say(thread.id, '[araç:memory_write {"content":"Likes tea"}]');
+    const [note] = await t.services.memory.list();
+    await say(thread.id, `[araç:memory_update ${JSON.stringify({ id: note!.id, content: 'Likes coffee' })}]`);
+    const before = await t.services.ctx.db.select().from(schema.turnChanges);
+    expect(JSON.stringify(before)).toContain('Likes tea');
+    expect((await t.api('DELETE', `/api/memory/${note!.id}`)).status).toBe(200);
+    const rows = await t.services.ctx.db.select().from(schema.turnChanges);
+    expect(JSON.stringify(rows)).not.toMatch(/Likes (tea|coffee)/);
   });
 
   it('lists the steps that went outside as not undoable', async () => {

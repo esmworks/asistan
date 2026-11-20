@@ -9,10 +9,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 - A turn can be taken back. A bot's step can be wrong, and the person had to find and undo each change by hand, so
   every turn now keeps, for 30 days, what its file tools wrote or edited, the table rows, tickets, routines, skills
-  and bot settings it changed, and the notes it wrote, changed or forgot, each with how it was before. A bot's reply
+  and bot settings it changed, and the notes it wrote or changed, each with how it was before (the words of a note it forgot are never kept). A bot's reply
   gets "Undo this turn" for the person whose turn it was (admins cannot take someone else's turn back): a list shows
   what will be put back, newest first, and apart from it what cannot be, the steps that went outside (mail, chat
-  apps, the browser, programs, requests) and files too large to keep (2 MB each, 20 MB a turn). Anything changed
+  apps, the browser, programs, requests), forgotten notes and files too large to keep (2 MB each, 20 MB a turn). Anything changed
   again after the turn, by a later turn or by hand, is left as it is and reported, a routine, skill, bot setting or
   bot note is put back only by someone who may change the bot, and a turn can be taken back once, when it is no longer
   running. The result is posted in the conversation.

@@ -1320,19 +1320,10 @@ export class ToolFactory {
             kind: 'memory',
             op: 'delete',
             targetId: id,
-            label: truncate(m.content, 80),
+            label: '',
             scopeBotId: m.scope === 'bot' ? m.botId : null,
-            before: {
-              scope: m.scope,
-              botId: m.botId,
-              userId: m.userId ?? null,
-              place: m.place ?? null,
-              content: m.content,
-              site: m.site,
-              source: m.source,
-              sourceUrl: m.sourceUrl ?? null,
-              validUntil: m.validUntil ?? null,
-            },
+            // The words were deleted on purpose: none of them is kept, so it cannot be put back.
+            reason: 'deleted',
           });
           // The words that went are in the answer, so the step shows what was forgotten. A manager
           // deleting another bot's note is told what that bot loses.
