@@ -1039,6 +1039,43 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect(prompt).toContain('120.000 TL');
   });
 
+  it('bot daha yazarken onaylanan kartın notu botun cevabının altına düşer; arada yazılan mesaj onu okur', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Fiyat?' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 1);
+    const thread = (await t.api<Thread>('GET', `/api/bots/${asistan.id}/main-thread`)).body;
+    await t.send(
+      thread.id,
+      `[araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"120.000 TL"}] [bekle:1500]`,
+    );
+    const card = await waitFor(async () =>
+      (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+        (a) => a.toolName === 'whatsapp_send',
+      ),
+    );
+    // Answered while the bot is still writing, with a message of the person's waiting behind it.
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: 'Gönder' });
+    await waitFor(async () => wa.sent.some((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`));
+    await t.send(thread.id, 'Gitti mi?');
+    await t.services.turns.idle();
+
+    const said = (await t.messages(thread.id)).filter((m) => m.role === 'assistant').map((m) => m.text);
+    // The reply the bot wrote before the card was answered, then the note on the answer.
+    const reply = said.findIndex((x) => x.includes('Taslak kişiye kartla sunuldu'));
+    const note = said.findIndex((x) => x.includes('kişisine WhatsApp mesajı gönderildi'));
+    expect(reply).toBeGreaterThanOrEqual(0);
+    expect(note).toBeGreaterThan(reply);
+    const asked = t.engine.requests.at(-1)!.prompt;
+    expect(asked).toContain('Gitti mi?');
+    expect(asked).toContain('kişisine WhatsApp mesajı gönderildi');
+
+    // Read once: the message after that does not get it again.
+    await t.send(thread.id, 'Tamam');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.prompt).not.toContain('kişisine WhatsApp mesajı gönderildi');
+  });
+
   it('onaysız gönderim açıkken tam erişimdeki bot kişinin işinde hemen gönderir; sınırda karta döner', async () => {
     const { wa } = await setUp();
     const pasa = await t.bot({ name: 'Paşa', permissionMode: 'auto' });

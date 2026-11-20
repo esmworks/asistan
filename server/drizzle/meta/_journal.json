@@ -544,57 +544,22 @@
     {
       "idx": 77,
       "version": "7",
-      "when": 1795194481283,
-      "tag": "0077_memory_valid_until",
+      "when": 1795192163475,
+      "tag": "0077_pause_limits_replay_codes_titles",
       "breakpoints": true
     },
     {
       "idx": 78,
       "version": "7",
-      "when": 1795195062182,
-      "tag": "0078_canary_alarms_and_trap_keys",
+      "when": 1795198524280,
+      "tag": "0078_routine_steps",
       "breakpoints": true
     },
     {
       "idx": 79,
       "version": "7",
-      "when": 1795196137154,
-      "tag": "0079_two_person_approval",
-      "breakpoints": true
-    },
-    {
-      "idx": 80,
-      "version": "7",
-      "when": 1795196852512,
-      "tag": "0080_promises",
-      "breakpoints": true
-    },
-    {
-      "idx": 81,
-      "version": "7",
-      "when": 1795197742781,
-      "tag": "0081_routine_suggestions",
-      "breakpoints": true
-    },
-    {
-      "idx": 82,
-      "version": "7",
-      "when": 1795198757297,
-      "tag": "0082_turn_changes",
-      "breakpoints": true
-    },
-    {
-      "idx": 83,
-      "version": "7",
-      "when": 1795200601622,
-      "tag": "0083_routine_rehearsals",
-      "breakpoints": true
-    },
-    {
-      "idx": 84,
-      "version": "7",
-      "when": 1795201362869,
-      "tag": "0084_rehearsal_pruned_at",
+      "when": 1795201683627,
+      "tag": "0079_memory_expiry_trip_wires_two_person_promises_undo_rehearsals",
       "breakpoints": true
     }
   ]

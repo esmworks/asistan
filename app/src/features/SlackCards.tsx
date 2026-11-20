@@ -102,6 +102,11 @@ function SlackForm({ status, bots }: { status: SlackStatus; bots: Bot[] }) {
         {status.error && (
           <p className="text-sm text-destructive">{t('slack.error', { error: status.error })}</p>
         )}
+        {status.optionalMissing.length > 0 && (
+          <p className="text-sm text-amber-600 dark:text-amber-400">
+            {t('slack.optionalMissing', { scopes: status.optionalMissing.join(', ') })}
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">{t('slack.about')}</p>
 
         {!status.connected && (

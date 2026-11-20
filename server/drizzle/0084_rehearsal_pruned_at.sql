@@ -1,1 +1,0 @@
-ALTER TABLE "routine_rehearsals" ADD COLUMN "pruned_at" timestamp with time zone;

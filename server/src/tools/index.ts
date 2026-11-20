@@ -8,6 +8,9 @@ import {
   Schedule,
   parseAnswers,
   PERMISSION_MODES,
+  ROUTINE_VAR_MAX,
+  ROUTINE_VAR_NAME,
+  ROUTINE_VARS_MAX,
   type RoutineCheck,
   type RoutineUpdate,
   searchCatalog,
@@ -35,9 +38,10 @@ import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
 import { errorText, HttpError, newId, notFound, truncate } from '../util';
+import { replayHandOver, replaySteps } from '../browser/replay';
 import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
-import { pageImageTool, sendFileTool, showPageTool } from './files';
+import { handFiles, pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
@@ -158,6 +162,11 @@ const GUEST_OFF = new Set<string>([
   'skill_save',
   'browser_card',
   'promise_track',
+  // Signing in with the vault's password, its two-step code or a code mailed to the bot runs
+  // without a card: someone with no account here would get into the person's accounts by asking.
+  'browser_login',
+  'browser_code',
+  'browser_email_code',
 ]);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
@@ -265,6 +274,8 @@ export type ToolName =
   | 'conversations_search'
   | 'message_read'
   | 'skill_read'
+  | 'skill_replay'
+  | 'browser_email_code'
   | 'my_activity'
   | 'skill_save'
   | 'routine_create'
@@ -272,6 +283,7 @@ export type ToolName =
   | 'routine_delete'
   | 'promise_track'
   | 'routine_failed'
+  | 'routine_set'
   | 'routine_stop'
   | 'app_suggest'
   | 'quick_replies'
@@ -286,6 +298,7 @@ export type ToolName =
   | 'bot_status'
   | 'bot_requests'
   | 'bot_stop'
+  | 'reply_files'
   | 'bot_conversations_read'
   | 'bot_create'
   | 'models_list'
@@ -359,6 +372,8 @@ export class ToolFactory {
     skills?: Skill[];
     /** The bot's mail address; with one, it gets its inbox. */
     email?: string | null;
+    /** Whether a person let the bot type sign-in codes from that mailbox into the site that sent them. */
+    emailCodes?: boolean;
     /** OpenAPI documents the bot may call operations of. */
     apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
@@ -756,6 +771,9 @@ export class ToolFactory {
               botId: bot.id,
               name: a.name.trim(),
               prompt: a.prompt.trim(),
+              // Steps after the instruction are set in the routine's window, where the person sees them.
+              steps: [],
+              slackReaction: '',
               schedule: a.schedule,
               timezone: settings.timezone,
               enabled: true,
@@ -962,6 +980,26 @@ export class ToolFactory {
               async ({ reason }) => {
                 await s.routines.markFailed(turn.routineRunId!, reason);
                 return t('tool.routineMarkedFailed');
+              },
+              'internal',
+            ),
+            def(
+              'routine_set',
+              {
+                name: z.string().regex(ROUTINE_VAR_NAME),
+                // One line: a wait step's filter is read line by line, so a value may not add one.
+                value: z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(ROUTINE_VAR_MAX)
+                  .refine((v) => !/[\r\n]/.test(v)),
+              },
+              async ({ name, value }) => {
+                const saved = await s.routines.setVar(turn.routineRunId!, name, value);
+                if (saved === 'gone') return t('tool.routineGone');
+                if (saved === 'full') return t('tool.routineValuesFull', { max: ROUTINE_VARS_MAX });
+                return t('tool.routineValueSaved', { name });
               },
               'internal',
             ),
@@ -1342,10 +1380,11 @@ export class ToolFactory {
           const shared = await reachable('chat');
           const peers = all.filter((b) => s.bots.canMessage(bot, b) && shared.has(b.id));
           if (!peers.length) return t('tool.noPeers');
+          const paused = await s.bots.pausedIds();
           return peers
             .map(
               (b) =>
-                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${b.description ? `: ${b.description}` : ''}`,
+                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${paused.has(b.id) ? t('bot.pausedTag') : ''}${b.description ? `: ${b.description}` : ''}`,
             )
             .join('\n');
         },
@@ -1395,10 +1434,18 @@ export class ToolFactory {
           message: z.string().min(1).max(20_000),
           expect_reply: z.boolean().default(true),
           approval_id: z.string().optional(),
+          files: z.array(z.string().max(2000)).max(10).optional(),
         },
-        async ({ bot: ref, message, expect_reply, approval_id }) => {
+        async ({ bot: ref, message, expect_reply, approval_id, files }) => {
           const to = await reachBot(ref, 'chat');
+          // A paused bot takes no work; the asking bot hears so and can tell its person.
+          if (await s.bots.isPaused(to)) return t('tool.botPaused', { name: to.name });
+          const dataDir = this.ctx.config.dataDir;
           const job = await s.jobs.send({
+            ...(files?.length && {
+              attach: (toThreadId: string) =>
+                handFiles({ dataDir, from: bot, fromThreadId: thread.id, to, toThreadId, paths: files, t }),
+            }),
             from: bot,
             fromThreadId: thread.id,
             fromTurnId: turn.id,
@@ -1433,6 +1480,20 @@ export class ToolFactory {
         },
         'read',
       ),
+      // Answering another bot's request: files go back with the answer, to the bot that asked.
+      ...(turn.jobId && thread.kind === 'bot'
+        ? [
+            def(
+              'reply_files',
+              { paths: z.array(z.string().max(2000)).min(1).max(10) },
+              async ({ paths }) => {
+                const names = await s.jobs.replyFiles(turn.jobId!, bot, thread.id, paths, t);
+                return t('tool.replyFilesAdded', { names: names.join(', ') });
+              },
+              'internal',
+            ),
+          ]
+        : []),
       def(
         'bot_requests',
         {},
@@ -1764,8 +1825,45 @@ export class ToolFactory {
               ? (await s.memory.forSite(bot.id, host, own, await place())).map((m) => m.content)
               : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
+          ...(opts.email &&
+            opts.emailCodes && {
+              mailCode: {
+                address: opts.email,
+                wait: (site: string, waitMs: number) => s.email.waitForCode(bot.id, site, waitMs, signal),
+                used: (id: string) => s.email.codeUsed(bot.id, id),
+              },
+            }),
         }),
       );
+      const taught = skills.filter((k) => k.steps?.length);
+      if (taught.length) {
+        tools.push(
+          def(
+            'skill_replay',
+            { name: z.string().min(1).max(100), from: z.number().int().min(1).max(200).optional() },
+            async ({ name, from }) => {
+              const skill = taught.find((k) => k.name === name.trim().toLowerCase());
+              if (!skill) return t('tool.noTaught', { name, names: taught.map((k) => k.name).join(', ') });
+              await s.skills.markUsed(skill.id);
+              const steps = skill.steps!.slice((from ?? 1) - 1);
+              // The replay names step kinds by key, as the lesson's own text does.
+              const loose = t as unknown as Parameters<typeof replaySteps>[3];
+              const result = await replaySteps(this.ctx.browser, bot.id, steps, loose);
+              // Counted on the whole lesson, so the step numbers match the skill's own.
+              const skipped = (from ?? 1) - 1;
+              const whole = {
+                ...result,
+                done: result.done + skipped,
+                total: result.total + skipped,
+                ...(result.failedAt && {
+                  failedAt: { ...result.failedAt, step: result.failedAt.step + skipped },
+                }),
+              };
+              return replayHandOver(whole, skill.steps!, loose);
+            },
+          ),
+        );
+      }
     }
     if (this.ctx.computer && bot.internet) {
       // Commands run in the thread's own work folder, which the desktop sees at the same path.
@@ -1925,6 +2023,9 @@ export class ToolFactory {
               effort: '',
               toolSelection: ALL_TOOLS,
               instructionsUrl: null,
+              // A bot's spending limits are the person's to set, never another bot's.
+              dailyLimitUsd: 0,
+              monthlyLimitUsd: 0,
             },
             // The bot is the person's the manager made it for.
             person,

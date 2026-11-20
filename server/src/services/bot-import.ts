@@ -19,6 +19,7 @@ import { asc, inArray, isNull, max } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId } from '../util';
+import { snapshotSteps } from './routine-steps';
 import type { SettingsService } from './settings';
 
 const NAME_MAX = 60;
@@ -148,13 +149,17 @@ export class BotImportService {
           routines: routines
             .filter((r) => r.botId === b.id)
             .slice(0, BOT_IMPORT_LIMITS.routinesPerBot)
-            .map((r) => ({
-              name: r.name,
-              prompt: r.prompt,
-              schedule: r.schedule,
-              timezone: r.timezone,
-              enabled: r.enabled,
-            })),
+            .map((r) => {
+              const steps = snapshotSteps(r.steps) ?? [];
+              return {
+                name: r.name,
+                prompt: r.prompt,
+                ...(steps.length && { steps }),
+                schedule: r.schedule,
+                timezone: r.timezone,
+                enabled: r.enabled,
+              };
+            }),
           memories: memories
             .filter((m) => m.botId === b.id && m.scope === 'bot' && !m.site)
             .slice(0, BOT_IMPORT_LIMITS.memoriesPerBot)
@@ -248,6 +253,7 @@ export class BotImportService {
             botId: id,
             name: r.name,
             prompt: r.prompt,
+            steps: r.steps,
             schedule: r.schedule,
             timezone: r.timezone,
             enabled: false,
@@ -338,6 +344,7 @@ export class BotImportService {
         routines.push({
           name: r.data.name,
           prompt: r.data.prompt,
+          steps: r.data.steps,
           schedule: r.data.schedule,
           timezone: r.data.timezone,
           enabledInSource: r.data.enabled,

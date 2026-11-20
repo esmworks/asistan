@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess, Schedule } from '@yumakbot/shared';
+import type { BotAccess, Schedule, TaughtStep } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -28,6 +28,8 @@ export const groups = pgTable('groups', {
   name: text('name').notNull(),
   /** Order of the groups in the sidebar. */
   position: integer('position').notNull().default(0),
+  /** Set while every bot of the group is paused: none of them starts work until it is cleared. */
+  pausedAt: ts('paused_at'),
   createdAt: created(),
 });
 
@@ -75,6 +77,15 @@ export const bots = pgTable('bots', {
   /** Why the document could not be read the last time; null when it was. */
   instructionsError: text('instructions_error'),
   archivedAt: ts('archived_at'),
+  /**
+   * Set while the bot is paused: it starts no work (a person's message waits, a routine is
+   * skipped, another bot's request is refused) until it is cleared.
+   */
+  pausedAt: ts('paused_at'),
+  /** The most this bot may spend in a day of the server's time zone, in US dollars; 0 for no limit. */
+  dailyLimitUsd: doublePrecision('daily_limit_usd').notNull().default(0),
+  /** The most this bot may spend in a calendar month, in US dollars; 0 for no limit. */
+  monthlyLimitUsd: doublePrecision('monthly_limit_usd').notNull().default(0),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
   /** The person who made the bot, or was handed it; they may always change and share it. */
@@ -94,6 +105,11 @@ export const threads = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     title: sealedText('title').notNull().default(''),
+    /**
+     * The title was made from the opening words of the first message, not chosen by the person: once
+     * the first answer is in, a model may write a better one.
+     */
+    titleAuto: boolean('title_auto').notNull().default(false),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the
@@ -113,6 +129,8 @@ export const threads = pgTable(
     engineSessionId: text('engine_session_id'),
     /** What the engine session had cost by its last run; the next run's cost is what it adds. */
     engineSessionCostUsd: doublePrecision('engine_session_cost_usd'),
+    /** How full the engine session's context was after its last run, in tokens; null when unknown. */
+    engineSessionTokens: integer('engine_session_tokens'),
     /**
      * Outside text the engine session has read (a mail, a webhook's body or post, a watched page,
      * or a report written from one); null when it has read none. A turn nobody watches that goes
@@ -265,7 +283,9 @@ export const turns = pgTable(
       .references(() => bots.id, { onDelete: 'cascade' }),
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
     // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
-    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
+    // `upkeep`: the server's own work on a conversation (folding it while idle), kept for its cost;
+    // it is written once done and never queued.
+    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket', 'upkeep'] }).notNull(),
     /** The person the turn works for: who wrote, or whose request a bot passed on; null when nobody asked. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status', {
@@ -484,6 +504,8 @@ export const routines = pgTable('routines', {
     .references(() => bots.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   prompt: text('prompt').notNull(),
+  /** What it does after its instruction, in order (`RoutineStep`); empty for one instruction. */
+  steps: jsonb('steps').notNull().default([]),
   schedule: jsonb('schedule').notNull(),
   timezone: text('timezone').notNull(),
   enabled: boolean('enabled').notNull().default(true),
@@ -521,6 +543,8 @@ export const routines = pgTable('routines', {
    * what goes to a channel is written from what the team shares, never from one person's own data.
    */
   slackChannel: text('slack_channel'),
+  /** The Slack reaction that runs the routine on the message its person reacts to; empty for none. */
+  slackReaction: text('slack_reaction').notNull().default(''),
   /** Also runs once each time the server starts (the computer was turned on, the app opened). */
   onStartup: boolean('on_startup').notNull().default(false),
   /** A page checked before each scheduled run; the bot runs only when its text changed. */
@@ -558,8 +582,10 @@ export const routineRuns = pgTable(
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
     // `queued`: outside text that arrived while another run was going, kept until that one ends.
+    // `paused`: a step waits for the person (or, later, for something to happen); no turn is
+    // going, so it does not hold up the routine's other runs.
     status: text('status', {
-      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued'],
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued', 'paused'],
     }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
@@ -590,6 +616,18 @@ export const routineRuns = pgTable(
      * answer); null for a scheduled or manual run. Such a run may change nothing without a card.
      */
     trigger: text('trigger', { enum: OUTSIDE_TRIGGERS }),
+    /**
+     * The routine's steps after its instruction as they were when the run started, so a routine
+     * changed meanwhile does not change a run under way; null for a routine with none.
+     */
+    stepsSnapshot: jsonb('steps_snapshot'),
+    /** The model the step under way names; null for the routine's own. */
+    stepModel: text('step_model'),
+    /**
+     * Values a bot step saved for a later step to wait on (an issue's number, a mail's subject), by
+     * name; a wait step's filter names them as `{{name}}`.
+     */
+    vars: jsonb('vars').$type<Record<string, string>>().notNull().default({}),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },
@@ -599,6 +637,44 @@ export const routineRuns = pgTable(
       .on(t.routineId)
       .where(sql`${t.status} in ('running', 'waiting')`),
   ],
+);
+
+/**
+ * Each step of a run of a routine with steps, its own instruction at position 0. A step done again
+ * (tried again after it failed) keeps its row.
+ */
+export const routineStepRuns = pgTable(
+  'routine_step_runs',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => routineRuns.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    kind: text('kind').notNull(),
+    status: text('status', {
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting'],
+    }).notNull(),
+    /** What the step ended with: the bot's answer, or the person's. */
+    output: sealedText('output'),
+    reason: text('reason'),
+    /** The bot's turn doing the step, while it is a bot's. */
+    turnId: text('turn_id'),
+    /** The card an approval step asks the person on. */
+    approvalId: text('approval_id'),
+    /** When a waiting step gives up, or, waiting for a time, goes on. */
+    waitUntil: ts('wait_until'),
+    /** The filter a step waiting for an event checks, with the run's values put in. */
+    filter: text('filter'),
+    /**
+     * The event that ended a step's wait (a webhook delivery, a mail), kept so the same one sent
+     * again does not start a run as well; what it carried is the step's output.
+     */
+    eventId: text('event_id'),
+    startedAt: created(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [uniqueIndex('routine_step_runs_position_uq').on(t.runId, t.position)],
 );
 
 /**
@@ -647,6 +723,11 @@ export const jobs = pgTable(
     finishedAt: ts('finished_at'),
     /** When the reply was handed to the sender; replies wait for the others of their turn. */
     deliveredAt: ts('delivered_at'),
+    /**
+     * Files the target handed back with its answer, as the sender finds them: copies in the
+     * sender's conversation folder.
+     */
+    replyFiles: jsonb('reply_files').$type<string[]>().notNull().default([]),
   },
   (t) => [
     index('jobs_root_idx').on(t.rootId),
@@ -901,6 +982,8 @@ export const skills = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     body: text('body').notNull().default(''),
+    /** The steps a person showed in the browser, when the skill was taught; replayed without the model. */
+    steps: jsonb('steps').$type<TaughtStep[]>(),
     /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
     createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** How many times a bot read it for a task, so the library shows which methods carry the work. */
@@ -1337,6 +1420,11 @@ export const emailAddresses = pgTable('email_addresses', {
   name: text('name').primaryKey(),
   /** Null once its bot gave it up or was deleted; the name stays taken. */
   botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+  /**
+   * Whether the bot may take sign-in codes from mail to this address and type them into the site
+   * that sent them; off until a person allows it.
+   */
+  signInCodes: boolean('sign_in_codes').notNull().default(false),
   createdAt: created(),
 });
 

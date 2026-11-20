@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   MAX_UPLOAD_BYTES,
   SLACK_BOT_SCOPES,
+  SLACK_OPTIONAL_SCOPES,
   questionItems,
   type Approval,
   type Bot,
@@ -156,6 +157,8 @@ export class SlackChannel {
   private tokenError: { code: string; note: string } | null = null;
   /** Permissions the app lacks, found when it connected; shown with the status, not stored. */
   private scopeNote: string | null = null;
+  /** The optional permissions the bot token lacks, as Slack last listed them. */
+  private optionalMissing: string[] = [];
   private unsubs: (() => void)[] = [];
   private stopped = false;
   /** Aborts on stop, so a wait for Slack's "slow down" does not hold the stop up. */
@@ -219,8 +222,12 @@ export class SlackChannel {
     const note = missing.length
       ? (await this.services.settings.translator())('slack.scopesMissing', { scopes: missing.join(', ') })
       : null;
-    if (note === this.scopeNote) return;
+    // An app set up before an optional permission was added works on without it; the person is
+    // told what stays off rather than shown an error.
+    const optional = scopes ? SLACK_OPTIONAL_SCOPES.filter((s) => !scopes.includes(s)) : [];
+    if (note === this.scopeNote && optional.join() === this.optionalMissing.join()) return;
     this.scopeNote = note;
+    this.optionalMissing = optional;
     this.changed();
   }
 
@@ -284,6 +291,7 @@ export class SlackChannel {
         slackName: p.slackName,
       })),
       error: row?.error ?? this.scopeNote,
+      optionalMissing: row?.secret ? this.optionalMissing : [],
     };
   }
 
@@ -364,6 +372,7 @@ export class SlackChannel {
       linked: mine ? { name: mine.name } : null,
       code: waiting?.[0] ?? null,
       codeUntil: waiting ? new Date(waiting[1].until).toISOString() : null,
+      optionalMissing: row?.secret ? this.optionalMissing : [],
     };
   }
 
@@ -416,11 +425,43 @@ export class SlackChannel {
         this.tokenState(ev.type === 'app_uninstalled' ? 'app_uninstalled' : 'token_revoked');
         return;
       }
+      if (ev?.type === 'reaction_added') return this.reacted(ev as unknown as Reaction);
       if (!ev || (ev.type !== 'message' && ev.type !== 'app_mention')) return;
       await this.received(ev);
     } else if (e.type === 'interactive') {
       await this.pressed(e.payload as Pressed);
     }
+  }
+
+  /**
+   * A linked person reacted to a message: their routines set to run on that reaction run on the
+   * message. It needs the optional `reactions:read` permission; without it Slack sends nothing.
+   */
+  private async reacted(ev: Reaction) {
+    const row = await this.row();
+    const item = ev.item;
+    if (!row?.secret || !ev.user || !ev.reaction || item?.type !== 'message' || !item.channel || !item.ts)
+      return;
+    const account = row.account as unknown as Account;
+    if (ev.user === account.botUserId) return;
+    if (!this.once(`reaction:${item.channel}:${item.ts}:${ev.reaction}:${ev.user}`)) return;
+    const person = await this.person(ev.user);
+    if (!person) return;
+    const api = this.botApi(row);
+    // A thread's replies come with the message they answer: the one reacted to is found by its time.
+    const found = await api.replies(item.channel, item.ts, 200, 1).catch(() => []);
+    const raw = found.find((m) => m.ts === item.ts)?.text ?? '';
+    if (!raw.trim()) return;
+    const text = slackText(raw, account.botUserId, await this.namesIn(api, raw));
+    await this.services.routines
+      .runFromSlackReaction({
+        userId: person.userId,
+        reaction: ev.reaction,
+        channel: item.channel,
+        ts: item.ts,
+        text,
+      })
+      .catch((err: unknown) => console.warn('slack reaction routine', err));
   }
 
   /** Whether this message was handled already (Slack sends a mention as two events). */
@@ -1100,6 +1141,14 @@ export class SlackChannel {
   private changed() {
     this.ctx.bus.refresh({ scope: 'channels' });
   }
+}
+
+/** A reaction someone added, as the Events API hands it over. */
+interface Reaction {
+  type: 'reaction_added';
+  user?: string;
+  reaction?: string;
+  item?: { type?: string; channel?: string; ts?: string };
 }
 
 /** A button press as Slack's interactivity sends it. */

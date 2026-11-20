@@ -3,6 +3,7 @@ import {
   type Approver,
   hideSecretAnswers,
   questionItems,
+  ROUTINE_APPROVAL_TOOL,
   type Approval,
   type ApprovalDecision,
   type PermissionMode,
@@ -1085,8 +1086,9 @@ export class ApprovalService {
   }
 
   /**
-   * On boot nothing is waiting any more, except a WhatsApp draft's card: the draft is kept and
-   * goes out when the card is answered, whenever that is.
+   * On boot nothing is waiting any more, except the cards whose answer is read from the card
+   * whenever it comes: a WhatsApp draft's, which goes out then, and a routine's approval step,
+   * whose run goes on then.
    */
   async expireAllPending() {
     await this.ctx.db
@@ -1095,7 +1097,7 @@ export class ApprovalService {
       .where(
         and(
           eq(schema.approvals.status, 'pending'),
-          notInArray(schema.approvals.toolName, [...WHATSAPP_DRAFT_TOOLS]),
+          notInArray(schema.approvals.toolName, [...WHATSAPP_DRAFT_TOOLS, ROUTINE_APPROVAL_TOOL]),
         ),
       );
   }

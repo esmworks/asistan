@@ -125,6 +125,9 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/instructions/decline': edit(),
   'POST /api/bots/:id/move': edit(),
   'POST /api/bots/:id/archive': edit(),
+  'POST /api/bots/:id/pause': edit(),
+  'GET /api/bots/:id/spend': edit(),
+  'POST /api/bots/pause-all': 'admin',
   'POST /api/bots/:id/restore': edit(),
   'DELETE /api/bots/:id': edit(),
   'POST /api/bots/:id/browser/window': edit(),
@@ -134,6 +137,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/teach': edit(),
   'GET /api/bots/:id/teach': edit(),
   'POST /api/bots/:id/teach/stop': edit(),
+  'POST /api/bots/:id/skills/:skillId/replay': edit(),
   'GET /api/bots/:id/conversations': edit(),
   'GET /api/bots/:id/actions': edit(),
   'GET /api/bots/:id/suggestions': edit(),
@@ -146,6 +150,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'DELETE /api/bots/:id/telegram': edit(),
   'POST /api/bots/:id/email': edit(),
   'DELETE /api/bots/:id/email': edit(),
+  'PUT /api/bots/:id/email/codes': edit(),
   'GET /api/bots/:id/emails': edit(),
   // A bot's folders hold every conversation's files: only those who may change the bot list them;
   // those who talk with it open the files of their own conversations (checked by the route).
@@ -206,6 +211,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/groups': 'admin',
   'PATCH /api/groups/:id': 'admin',
   'POST /api/groups/:id/move': 'admin',
+  'POST /api/groups/:id/pause': 'admin',
   'DELETE /api/groups/:id': 'admin',
 
   // Conversations.
@@ -271,6 +277,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/routines/:id/webhook': edit('routine'),
   'DELETE /api/routines/:id/webhook': edit('routine'),
   'GET /api/routines/:id/runs': edit('routine'),
+  'POST /api/routines/:id/runs/:runId/retry': edit('routine'),
+  'POST /api/routines/:id/runs/:runId/end-wait': edit('routine'),
   'GET /api/routines/:id/revisions': edit('routine'),
   // The service keeps each person to the rehearsals they asked for.
   'POST /api/routines/:id/rehearse': edit('routine'),
@@ -346,6 +354,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/discord': 'admin',
   'PATCH /api/discord': 'admin',
   'DELETE /api/discord': 'admin',
+  'GET /api/doctor': 'admin',
+  'POST /api/doctor/repair': 'admin',
   'GET /api/email': 'admin',
   'POST /api/email/secret': 'admin',
 };

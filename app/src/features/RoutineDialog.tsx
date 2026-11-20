@@ -1,4 +1,12 @@
-import { describeSchedule, parseCron, SHORT_DAY_NAMES, type Routine, type Schedule } from '@yumakbot/shared';
+import {
+  describeSchedule,
+  parseCron,
+  ROUTINE_APPROVAL_MAX_DAYS,
+  ROUTINE_WAIT_MAX_MINUTES,
+  SHORT_DAY_NAMES,
+  type Routine,
+  type Schedule,
+} from '@yumakbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, Webhook as WebhookIcon } from 'lucide-react';
@@ -31,6 +39,7 @@ import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
 import { RoutineRehearsal } from './RoutineRehearsal';
+import { RunSteps, StepsEditor, TemplatePicker, type StepForm } from './RoutineSteps';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -54,6 +63,37 @@ export function OpenedRoutineDialog() {
 const Form = z.object({
   name: z.string().trim().min(1, 'routine.nameRequired').max(80),
   prompt: z.string().trim().min(1, 'routine.promptRequired').max(20_000),
+  /** What it does after its instruction, in order. */
+  steps: z.array(
+    z.discriminatedUnion('kind', [
+      z.object({
+        id: z.string(),
+        kind: z.literal('agent'),
+        prompt: z.string().trim().min(1, 'routine.stepPromptRequired').max(20_000),
+        model: z.string().max(200),
+      }),
+      z.object({
+        id: z.string(),
+        kind: z.literal('approval'),
+        question: z.string().trim().min(1, 'routine.stepQuestionRequired').max(2000),
+        timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS),
+      }),
+      z.object({
+        id: z.string(),
+        kind: z.literal('notify'),
+        text: z.string().max(4000),
+        withBefore: z.boolean(),
+      }),
+      z.object({
+        id: z.string(),
+        kind: z.literal('wait'),
+        on: z.enum(['time', 'webhook', 'email']),
+        minutes: z.number().int().min(1).max(ROUTINE_WAIT_MAX_MINUTES),
+        filter: z.string().max(2000),
+        timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS),
+      }),
+    ]),
+  ),
   type: z.enum(['hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'cron', 'once']),
   expr: z
     .string()
@@ -76,6 +116,10 @@ const Form = z.object({
     .string()
     .trim()
     .regex(/^([CG][A-Z0-9]{6,20})?$/, 'routine.slackChannelInvalid'),
+  slackReaction: z
+    .string()
+    .trim()
+    .regex(/^:?[a-zA-Z0-9_+'-]{0,80}:?$/, 'routine.slackReactionInvalid'),
   watchUrl: z
     .string()
     .trim()
@@ -127,6 +171,13 @@ function fromRoutine(r?: Routine): Form {
   return {
     name: r?.name ?? '',
     prompt: r?.prompt ?? '',
+    steps: (r?.steps ?? []).map((x): StepForm =>
+      x.kind === 'agent'
+        ? { id: x.id, kind: x.kind, prompt: x.prompt, model: x.model ?? '' }
+        : x.kind === 'approval'
+          ? { id: x.id, kind: x.kind, question: x.question, timeoutDays: x.timeoutDays }
+          : { ...x },
+    ),
     type: s?.type ?? 'weekdays',
     time: s && 'time' in s ? s.time : '09:00',
     minute: s?.type === 'hourly' ? s.minute : 0,
@@ -144,6 +195,7 @@ function fromRoutine(r?: Routine): Form {
     onStartup: r?.onStartup ?? false,
     watchUrl: r?.watchUrl ?? '',
     slackChannel: r?.slackChannel ?? '',
+    slackReaction: r?.slackReaction ?? '',
     webhookFilter: r?.webhookFilter ?? '',
     webhookPost: r?.webhookPost ?? false,
     emailTrigger: r?.emailTrigger ?? false,
@@ -192,6 +244,15 @@ export function RoutineDialog({
       const body = {
         name: f.name,
         prompt: f.prompt,
+        steps: f.steps.map((x) =>
+          x.kind === 'agent'
+            ? { ...x, prompt: x.prompt.trim(), model: x.model.trim() }
+            : x.kind === 'approval'
+              ? { ...x, question: x.question.trim() }
+              : x.kind === 'notify'
+                ? { ...x, text: x.text.trim() }
+                : { ...x, filter: x.filter.trim() },
+        ),
         schedule: toSchedule(f),
         missed: f.missed,
         carryReport: f.carryReport,
@@ -199,6 +260,7 @@ export function RoutineDialog({
         onStartup: f.onStartup,
         watchUrl: f.watchUrl.trim() || null,
         slackChannel: f.slackChannel.trim() || null,
+        slackReaction: f.slackReaction.trim(),
         webhookFilter: f.webhookFilter.trim(),
         webhookPost: f.webhookPost,
         emailTrigger: f.emailTrigger,
@@ -229,6 +291,11 @@ export function RoutineDialog({
   });
   const err = form.formState.errors;
   const type = values.type;
+  const stepErrors = (values.steps ?? []).map((_, i) => {
+    const e = err.steps?.[i] as
+      { prompt?: { message?: string }; question?: { message?: string } } | undefined;
+    return e?.prompt?.message ?? e?.question?.message;
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -239,6 +306,17 @@ export function RoutineDialog({
         </DialogHeader>
         <form onSubmit={form.handleSubmit((f) => save.mutate(f))} className="flex min-h-0 flex-1 flex-col">
           <div className="scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pt-1 pb-6">
+            {!routine && (
+              <TemplatePicker
+                onPick={(tpl) => {
+                  const opts = { shouldDirty: true } as const;
+                  form.setValue('name', tpl.name, opts);
+                  form.setValue('prompt', tpl.prompt, opts);
+                  form.setValue('steps', tpl.steps, opts);
+                  if (tpl.weekly) form.setValue('type', 'weekly', opts);
+                }}
+              />
+            )}
             <Field label={t('routine.name')} error={err.name?.message}>
               <Input
                 {...form.register('name')}
@@ -265,6 +343,18 @@ export function RoutineDialog({
               )}
               {routine && <RoutineRehearsal routine={routine} prompt={values.prompt ?? ''} />}
             </Field>
+            <StepsEditor
+              steps={values.steps ?? []}
+              onChange={(next) =>
+                form.setValue('steps', next, {
+                  shouldDirty: true,
+                  shouldValidate: form.formState.isSubmitted,
+                })
+              }
+              errors={stepErrors}
+              modelListId="routine-model-options"
+              modelPlaceholder={t('routine.stepModelPlaceholder')}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('routine.when')}>
                 <Select value={type} onValueChange={(v) => form.setValue('type', v as Form['type'])}>
@@ -457,6 +547,21 @@ export function RoutineDialog({
                 <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackChannelHint')}</p>
               </Field>
             )}
+            {(slack?.available || !!values.slackReaction) && (
+              <Field label={t('routine.slackReaction')} error={err.slackReaction?.message}>
+                <Input
+                  {...form.register('slackReaction')}
+                  placeholder={t('routine.slackReactionPlaceholder')}
+                  className="rounded-xl"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackReactionHint')}</p>
+                {!!values.slackReaction?.trim() && slack?.optionalMissing.includes('reactions:read') && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {t('routine.slackReactionNoPermission')}
+                  </p>
+                )}
+              </Field>
+            )}
             <Field label={t('routine.watchUrl')} error={err.watchUrl?.message}>
               <Input
                 {...form.register('watchUrl')}
@@ -604,7 +709,7 @@ function RecentRuns({
   return (
     <div ref={ref} className="space-y-1.5">
       <div className="text-sm font-medium">{t('routine.runs')}</div>
-      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
+      <ul className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
         {runs.slice(0, 10).map((r) => (
           <li key={r.id}>
             <button
@@ -643,6 +748,7 @@ function RecentRuns({
                 )}
               </span>
             </button>
+            <RunSteps run={r} />
           </li>
         ))}
       </ul>

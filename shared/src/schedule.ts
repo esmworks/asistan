@@ -65,6 +65,86 @@ export const RoutineCheck = z.object({
 });
 export type RoutineCheck = z.infer<typeof RoutineCheck>;
 
+/** The most steps a routine may have after its own instruction. */
+export const ROUTINE_STEP_MAX = 10;
+
+const stepId = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
+
+/** The tool name of the card an approval step asks the person on. */
+export const ROUTINE_APPROVAL_TOOL = 'routine_approval';
+
+/** The longest an approval step waits for the person, in days. */
+export const ROUTINE_APPROVAL_MAX_DAYS = 30;
+/** The longest a step waits for a time, in minutes: as long as the longest wait for the person. */
+export const ROUTINE_WAIT_MAX_MINUTES = ROUTINE_APPROVAL_MAX_DAYS * 24 * 60;
+/** How many values a run keeps for its wait steps, and how long each may be. */
+export const ROUTINE_VARS_MAX = 20;
+export const ROUTINE_VAR_MAX = 500;
+/** A value's name, as a wait step's filter writes it between `{{` and `}}`. */
+export const ROUTINE_VAR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+
+/** The names of the values a filter puts in, each once, in order. */
+export function filterVars(filter: string): string[] {
+  return [...new Set([...filter.matchAll(/\{\{\s*([A-Za-z][A-Za-z0-9_]{0,39})\s*\}\}/g)].map((m) => m[1]!))];
+}
+
+/**
+ * A wait step's filter with the run's values put in. Null when one it names has none: an empty
+ * value would make a line such as `title~={{x}}` match every event, so the wait never starts.
+ */
+export function fillFilter(filter: string, vars: Readonly<Record<string, string>>): string | null {
+  let missing = false;
+  const filled = filter.replace(/\{\{\s*([A-Za-z][A-Za-z0-9_]{0,39})\s*\}\}/g, (_, name: string) => {
+    const v = vars[name]?.trim();
+    if (!v) missing = true;
+    return v ?? '';
+  });
+  return missing ? null : filled;
+}
+
+/**
+ * A step of a routine after its own instruction, done once the step before it ended well.
+ * `agent`: the bot works on another instruction, with the step before it as what it builds on, on a
+ * model of its own when one is named (empty for the routine's). `approval`: the run waits for the
+ * person to answer `question` about what the step before it ended with; they let it go on, turn it
+ * down (the run stops), or write what to change (the step before it is done again with that). Left
+ * unanswered for `timeoutDays`, the run ends. `wait`: the run waits `minutes`, or for the routine's
+ * webhook to be called or a mail to come to the bot whose content passes `filter` (the run's saved
+ * values put in for `{{name}}`); what came is handed to the next step. No event in `timeoutDays`
+ * ends the run. `notify`: with no AI, `text` (the run's saved values put in for `{{name}}`) and,
+ * with `withBefore`, what the step before it ended with go where the routine reports.
+ */
+export const RoutineStep = z.discriminatedUnion('kind', [
+  z.object({
+    id: stepId,
+    kind: z.literal('agent'),
+    prompt: z.string().trim().min(1, 'validation.stepPrompt').max(20_000),
+    model: z.string().trim().max(200).default(''),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('approval'),
+    question: z.string().trim().min(1, 'validation.stepQuestion').max(2000),
+    timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('notify'),
+    text: z.string().trim().max(4000).default(''),
+    withBefore: z.boolean().default(true),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('wait'),
+    on: z.enum(['time', 'webhook', 'email']),
+    minutes: z.number().int().min(1).max(ROUTINE_WAIT_MAX_MINUTES).default(60),
+    filter: z.string().max(2000).default(''),
+    timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
+  }),
+]);
+export type RoutineStep = z.infer<typeof RoutineStep>;
+export type RoutineStepKind = RoutineStep['kind'];
+
 export const Routine = z.object({
   /** The person whose work it runs as; null for the bot's owner. Missing on older servers. */
   createdByUserId: z.string().nullable().optional(),
@@ -72,6 +152,8 @@ export const Routine = z.object({
   botId: z.string(),
   name: z.string(),
   prompt: z.string(),
+  /** What it does after its instruction, in order; empty for a routine of one instruction. Missing on older servers. */
+  steps: z.array(RoutineStep).optional(),
   schedule: Schedule,
   timezone: z.string(),
   enabled: z.boolean(),
@@ -85,6 +167,11 @@ export const Routine = z.object({
   inMain: z.boolean(),
   /** The Slack channel its reports go to; it then works only with what the team shares. */
   slackChannel: z.string().nullable().optional(),
+  /**
+   * The Slack reaction (an emoji's name) that runs it on the message its person reacts to; empty
+   * for none. Missing on older servers.
+   */
+  slackReaction: z.string().optional(),
   /** Also runs once each time the server starts. */
   onStartup: z.boolean(),
   /** A page checked before each scheduled run, without the AI; the bot runs only when it changed. */
@@ -117,6 +204,12 @@ export const RoutineCreate = z.object({
   botId: z.string(),
   name: z.string().trim().min(1).max(80),
   prompt: z.string().trim().min(1).max(20_000),
+  /** Steps done in order after the instruction, each once the one before it ended well. */
+  steps: z
+    .array(RoutineStep)
+    .max(ROUTINE_STEP_MAX)
+    .refine((s) => new Set(s.map((x) => x.id)).size === s.length, 'validation.stepIds')
+    .default([]),
   schedule: Schedule,
   timezone: z.string().refine(isValidTimeZone, 'validation.timezone').default('Europe/Istanbul'),
   enabled: z.boolean().default(true),
@@ -142,6 +235,16 @@ export const RoutineCreate = z.object({
     .regex(/^[CG][A-Z0-9]{6,20}$/, 'validation.slackChannel')
     .nullable()
     .default(null),
+  /**
+   * The emoji name (`eyes`, `white_check_mark`) whose reaction in Slack, by the routine's own person
+   * on a message the bot can read, runs it on that message; empty for none.
+   */
+  slackReaction: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/^:|:$/g, '').toLowerCase())
+    .pipe(z.string().regex(/^[a-z0-9_+'-]{0,80}$/, 'validation.slackReaction'))
+    .default(''),
   /** Also runs once each time the server starts: on a desktop, when the computer is turned on. */
   onStartup: z.boolean().default(false),
   /**
@@ -214,8 +317,41 @@ export const RoutineRun = z.object({
    * the run looked like it had nothing new to work on. Null when no pre-check ran.
    */
   gate: z.object({ decision: RoutineGateDecision, reason: z.string() }).nullable(),
+  /**
+   * Each step of a run of a routine with steps, its own instruction first; missing for a run of a
+   * routine with none, and on older servers.
+   */
+  steps: z.array(z.lazy(() => RoutineStepRun)).optional(),
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
+
+/** How a step of a run went; `pending` has not started. */
+export const RoutineStepRunStatus = z.enum([
+  'pending',
+  'running',
+  'done',
+  'error',
+  'stopped',
+  'skipped',
+  'waiting',
+]);
+export const RoutineStepRun = z.object({
+  /** 0 is the routine's own instruction, 1 the first step after it. */
+  position: z.number().int().min(0),
+  /** `prompt` for the routine's own instruction, otherwise the step's kind. */
+  kind: z.string(),
+  status: RoutineStepRunStatus,
+  /** What the step ended with, cut short: the bot's answer, or the person's. */
+  output: z.string().nullable(),
+  reason: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  /** The card an approval step asks on; missing for other steps and on older servers. */
+  approvalId: z.string().nullable().optional(),
+  /** When a step waiting for the person or for something to happen gives up. */
+  waitUntil: z.string().nullable().optional(),
+});
+export type RoutineStepRun = z.infer<typeof RoutineStepRun>;
 
 /** An instruction a routine had, with when it was saved; the newest is the one it has now. */
 export const RoutineRevision = z.object({

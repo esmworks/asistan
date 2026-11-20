@@ -24,6 +24,7 @@ import {
   type TurnOutcome,
 } from '../engine/types';
 import { translator, type T } from '../i18n';
+import type { SpendStop } from '../services/usage';
 import {
   allowRulesFor,
   askRuleFor,
@@ -55,8 +56,17 @@ import { OWNER_ID } from '../users';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
+/** What folding an idle conversation came to; `skipped` when it could not be tried now. */
+export type FoldResult = 'skipped' | 'folded' | 'failed';
 
-const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
+const PRIORITY: Record<TurnSource, number> = {
+  user: 0,
+  reaction: 1,
+  routine: 1,
+  ticket: 1,
+  bot: 2,
+  upkeep: 3,
+};
 
 /** What let a step that changes something through, for the bot's list of what it did. */
 type LetThrough = { how: BotActionHow; rule?: string; approvalId?: string };
@@ -118,6 +128,19 @@ export function stallText(stall: Stall, t: T): string {
   return t('turn.stalledTool', { minutes, tool });
 }
 
+/** Why a turn did not start: the spending limit it would go past, and where to change it. */
+export function spendText(stop: SpendStop, name: string, t: T): string {
+  const key =
+    stop.scope === 'server'
+      ? stop.period === 'day'
+        ? 'turn.spendLimitDay'
+        : 'turn.spendLimit'
+      : stop.period === 'day'
+        ? 'turn.botSpendLimitDay'
+        : 'turn.botSpendLimit';
+  return t(key, { name, spent: stop.spentUsd.toFixed(2), limit: stop.limitUsd.toFixed(2) });
+}
+
 /** Whether the text names a skill as `$name`, as a word of its own. */
 export function taggedSkill(text: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -134,6 +157,10 @@ interface Running {
   steers: { turnId: string; messageId: string; prompt: string; outside: OutsideTrigger | null }[];
   /** Hand-overs still being written down; the turn waits for them before it ends. */
   handing: Promise<void>[];
+  /** Words held until the turn has said its last (see `afterTurn`). */
+  after: (() => Promise<void>)[];
+  /** Set once the held words are being written: later ones go in at once. */
+  ended: boolean;
 }
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
@@ -155,8 +182,24 @@ const interrupted = (message: string, byPerson = false): TurnOutcome => ({
 /** A message stopped by the usage limit runs again this long after the limit resets. */
 export const LIMIT_RETRY_DELAY_MS = 30_000;
 
+/** Why a turn was stopped when its bot was paused, as its controller's abort reason. */
+const PAUSED = 'paused';
+
 /** The longest a stop waits for the turns it stopped to end before it goes on. */
 const SETTLE_MS = 10_000;
+/** How full a session must be, of the fold window, before it is folded while idle. */
+const IDLE_FULL = 0.7;
+/** How long a conversation must have been quiet before it is folded. */
+const IDLE_AFTER_MS = 30 * 60_000;
+/** How often quiet conversations are looked for, and how many are folded at each look. */
+const SWEEP_MS = 5 * 60_000;
+const SWEEP_MAX = 3;
+/** Conversations looked at for each sweep, past those that cannot be folded now. */
+const SWEEP_LOOK = 50;
+/** A fold the engine has not finished by then is stopped, so the conversation is not held. */
+const FOLD_MS = 5 * 60_000;
+/** Conversations a person talks in; the bot's own work and rooms are left to fold as they run. */
+const FOLDED_KINDS = ['user', 'team'] as const;
 /**
  * Keeps a connection's answer that is too long for the model in the conversation's folder, under
  * tool-results/, where the bot can read or search it with its own tools.
@@ -183,6 +226,13 @@ const GUEST_READS: ReadonlySet<string> = new Set([
 
 export class TurnManager {
   private running = new Map<string, Running>();
+  /** Conversations being folded while idle, by id; a turn there waits until the fold is over. */
+  private folding = new Map<
+    string,
+    { botId: string | null; controller: AbortController; done: Promise<void> }
+  >();
+  private upkeep: ReturnType<typeof setInterval> | null = null;
+  private sweeping = false;
   private hooks: TurnFinishedHook[] = [];
   /** What hears of a rehearsal's turn ending; the other hooks never see one. */
   private rehearsalHooks: TurnFinishedHook[] = [];
@@ -220,19 +270,7 @@ export class TurnManager {
       .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
       .where(eq(schema.turns.status, 'running'))
       .returning();
-    for (const turn of stale) {
-      await this.services.threads.addMessage({
-        threadId: turn.threadId,
-        role: 'system',
-        author: 'system',
-        text: t('turn.interruptedByRestart'),
-        // A person's request is marked as a stop, so it can be run again from the note; other work
-        // (a routine, a ticket, another bot's request) is not run again that way.
-        ...(turn.source === 'user' && { props: { kind: 'interrupted' } }),
-        turnId: turn.id,
-      });
-      await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
-    }
+    await this.endLeft(stale, t);
     await this.services.approvals.expireAllPending();
     await this.resumeRetries();
     this.schedule();
@@ -551,6 +589,7 @@ export class TurnManager {
         found = true;
       }
     }
+    this.folding.get(threadId)?.controller.abort();
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
     for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
@@ -586,20 +625,275 @@ export class TurnManager {
     clearTimeout(timer);
   }
 
+  /**
+   * Stops the running turns of bots that were just paused, saying so in their conversations. What
+   * waits for them is left to `fill`: a person's message waits for the resume, the rest ends.
+   */
+  async stopBots(botIds: Iterable<string>): Promise<void> {
+    const ids = new Set(botIds);
+    const ends: Promise<void>[] = [];
+    for (const r of this.running.values()) {
+      if (!ids.has(r.turn.botId)) continue;
+      r.controller.abort(PAUSED);
+      ends.push(r.done);
+    }
+    for (const f of this.folding.values()) {
+      if (!f.botId || !ids.has(f.botId)) continue;
+      f.controller.abort(PAUSED);
+      ends.push(f.done);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled(ends),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, SETTLE_MS);
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+    this.schedule();
+  }
+
+  /** Turns marked running that nothing runs: said in their conversations, and their hooks run. */
+  private async endLeft(rows: TurnRow[], t: T) {
+    for (const turn of rows) {
+      await this.services.threads.addMessage({
+        threadId: turn.threadId,
+        role: 'system',
+        author: 'system',
+        text: t('turn.interruptedByRestart'),
+        // A person's request is marked as a stop, so it can be run again from the note; other work
+        // (a routine, a ticket, another bot's request) is not run again that way.
+        ...(turn.source === 'user' && { props: { kind: 'interrupted' } }),
+        turnId: turn.id,
+      });
+      this.emitState(turn.threadId, turn.botId);
+      await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
+    }
+  }
+
+  /** The turns this server is running now. */
+  liveTurnIds(): Set<string> {
+    return new Set(this.running.keys());
+  }
+
+  /**
+   * Ends turns the database says are running but this server does not run (a crash that the
+   * start did not see, a failure that skipped the finish), as a restart would. A turn running
+   * here is never touched, even if it is among `ids`.
+   */
+  async endStuck(ids: string[]): Promise<number> {
+    const left = ids.filter((id) => !this.running.has(id));
+    if (!left.length) return 0;
+    const t = await this.services.settings.translator();
+    const stale = await this.ctx.db
+      .update(schema.turns)
+      .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
+      .where(and(inArray(schema.turns.id, left), eq(schema.turns.status, 'running')))
+      .returning();
+    await this.endLeft(stale, t);
+    return stale.length;
+  }
+
   isRunning(threadId: string) {
     return [...this.running.values()].some((r) => r.turn.threadId === threadId);
+  }
+
+  /** Whether a turn of the bot is under way, in any of its conversations. */
+  botWorking(botId: string) {
+    return [...this.running.values()].some((r) => r.turn.botId === botId);
+  }
+
+  /**
+   * Folds the conversation's engine session into a summary now, while nobody waits on it, so the
+   * next message does not first wait for the fold the engine would make at the limit. A message
+   * that comes meanwhile waits for the fold and then runs on the folded session. Nothing is done
+   * for a conversation with work running or waiting, a paused or archived bot, a bot past its
+   * spending limit, or an engine that cannot fold. A fold the engine does not finish in a few
+   * minutes is stopped.
+   */
+  async foldIdle(threadId: string): Promise<FoldResult> {
+    if (this.stopped || this.folding.has(threadId) || this.isRunning(threadId)) return 'skipped';
+    const controller = new AbortController();
+    let release!: () => void;
+    const hold = { botId: null as string | null, controller, done: new Promise<void>((r) => (release = r)) };
+    // Held before anything is read: a turn queued from now on waits for the fold.
+    this.folding.set(threadId, hold);
+    const timer = setTimeout(() => controller.abort(), FOLD_MS);
+    timer.unref?.();
+    try {
+      return await this.fold(threadId, hold);
+    } catch (err) {
+      console.warn(`Folding conversation ${threadId} failed: ${(err as Error).message}`);
+      return 'failed';
+    } finally {
+      clearTimeout(timer);
+      this.folding.delete(threadId);
+      release();
+      if (hold.botId) this.emitState(threadId, hold.botId);
+      this.schedule();
+    }
+  }
+
+  private async fold(
+    threadId: string,
+    hold: { botId: string | null; controller: AbortController },
+  ): Promise<FoldResult> {
+    const { threads, bots, settings } = this.services;
+    const thread = await threads.row(threadId).catch(() => null);
+    if (!thread?.engineSessionId || !(FOLDED_KINDS as readonly string[]).includes(thread.kind))
+      return 'skipped';
+    const bot = await bots.get(thread.botId).catch(() => null);
+    if (!bot || bot.archivedAt) return 'skipped';
+    if (await bots.isPaused(bot)) return 'skipped';
+    if (await this.services.usage.reached(bot)) return 'skipped';
+    const engine = this.engineFor(bot);
+    if (!engine.compact) return 'skipped';
+    // Work queued or started before the hold goes first; the fold waits for another quiet spell.
+    const [waiting] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(and(eq(schema.turns.threadId, threadId), inArray(schema.turns.status, ['queued', 'running'])))
+      .limit(1);
+    if (waiting || this.isRunning(threadId) || hold.controller.signal.aborted) return 'skipped';
+    // Shown as at work, with its stop, while it holds the conversation.
+    hold.botId = bot.id;
+    this.emitState(threadId, bot.id);
+
+    const all = await settings.all();
+    const model =
+      bot.model || (bot.engine === 'claude' ? all.defaultModel : '') || this.ctx.config.claudeModel;
+    const paths = workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, bot.groupId);
+    const sandbox = sandboxFor(paths, {
+      projectDir: bot.projectDir,
+      internet: bot.internet,
+      readOnly: bot.permissionMode === 'readonly',
+    });
+    const locale = (await settings.all(thread.userId ?? undefined)).language ?? (await settings.locale());
+    const startedAt = new Date();
+    const outcome = await engine.compact({
+      threadId,
+      botId: bot.id,
+      model,
+      sessionId: thread.engineSessionId,
+      sessionCostUsd: thread.engineSessionCostUsd,
+      compactWindow: all.claudeCompactWindow,
+      sandbox,
+      locale,
+      signal: hold.controller.signal,
+    });
+    if (outcome.sessionCostUsd != null) await threads.setSessionCost(thread.id, outcome.sessionCostUsd);
+    if (outcome.ok) {
+      if (outcome.sessionId !== thread.engineSessionId)
+        await threads.setSession(thread.id, outcome.sessionId);
+      await threads.setSessionTokens(thread.id, outcome.contextTokens);
+    }
+    // Kept as a finished turn of its own, so the fold counts toward the bot's spending.
+    const t = translator(locale);
+    const turnId = newId();
+    await this.ctx.db.insert(schema.turns).values({
+      id: turnId,
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'upkeep',
+      status: outcome.ok ? 'done' : hold.controller.signal.aborted ? 'interrupted' : 'error',
+      prompt: '/compact',
+      error: outcome.ok ? null : outcome.message,
+      costUsd: outcome.costUsd,
+      engine: bot.engine,
+      model,
+      createdAt: startedAt,
+      startedAt,
+      finishedAt: new Date(),
+    });
+    if (!outcome.ok) {
+      console.warn(`Folding conversation ${threadId} failed: ${outcome.message}`);
+      return 'failed';
+    }
+    await threads.addMessage({
+      threadId: thread.id,
+      role: 'system',
+      author: 'system',
+      text: t('turn.compactedIdle'),
+      props: { kind: 'compacted' },
+      turnId,
+      quiet: true,
+    });
+    return 'folded';
+  }
+
+  /**
+   * Folds the quiet conversations whose session is near the fold window, a few at a time and one
+   * after another; on when the setting is.
+   */
+  async sweepIdle(now = new Date()): Promise<number> {
+    if (this.stopped || this.sweeping) return 0;
+    const all = await this.services.settings.all();
+    if (!all.idleCompact || all.claudeCompactWindow <= 0) return 0;
+    this.sweeping = true;
+    try {
+      const full = Math.floor(all.claudeCompactWindow * IDLE_FULL);
+      const quietSince = new Date(now.getTime() - IDLE_AFTER_MS);
+      const rows = await this.ctx.db
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(
+          and(
+            inArray(schema.threads.kind, [...FOLDED_KINDS]),
+            sql`${schema.threads.engineSessionId} is not null`,
+            sql`${schema.threads.engineSessionTokens} >= ${full}`,
+            // Quiet: no turn waiting, running, or finished since.
+            sql`not exists (select 1 from ${schema.turns} where ${schema.turns.threadId} = ${schema.threads.id}
+              and (${schema.turns.status} in ('queued', 'running') or ${schema.turns.finishedAt} > ${quietSince.toISOString()}::timestamptz))`,
+            // Folded once since the last turn, whether it worked: a fold that fails is not paid for
+            // again on every sweep, only after the conversation has moved on.
+            sql`coalesce((select ${schema.turns.source} from ${schema.turns}
+              where ${schema.turns.threadId} = ${schema.threads.id}
+              order by ${schema.turns.createdAt} desc limit 1), '') <> 'upkeep'`,
+          ),
+        )
+        .orderBy(desc(schema.threads.engineSessionTokens))
+        .limit(SWEEP_LOOK);
+      let folded = 0;
+      let tried = 0;
+      // Those that cannot be folded now (a paused bot, say) do not take the turn of the others.
+      for (const r of rows) {
+        if (this.stopped || tried >= SWEEP_MAX) break;
+        const result = await this.foldIdle(r.id);
+        if (result !== 'skipped') tried++;
+        if (result === 'folded') folded++;
+      }
+      return folded;
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  /** Looks for quiet conversations to fold every few minutes until shutdown. */
+  startUpkeep() {
+    if (this.upkeep || this.stopped) return;
+    this.upkeep = setInterval(() => {
+      void this.sweepIdle().catch((err: unknown) => console.warn(`Idle fold: ${String(err)}`));
+    }, SWEEP_MS);
+    this.upkeep.unref?.();
   }
 
   private emits = new Set<Promise<void>>();
 
   async shutdown() {
     this.stopped = true;
+    if (this.upkeep) clearInterval(this.upkeep);
+    this.upkeep = null;
     for (const timer of this.retries.values()) clearTimeout(timer);
     this.retries.clear();
+    for (const f of this.folding.values()) f.controller.abort();
     // A fill already under way may still start a turn; let it, so the abort below reaches it.
     await this.scheduling;
     for (const r of this.running.values()) r.controller.abort();
-    await Promise.allSettled([...this.running.values()].map((r) => r.done));
+    await Promise.allSettled([
+      ...[...this.running.values()].map((r) => r.done),
+      ...[...this.folding.values()].map((f) => f.done),
+    ]);
     await Promise.allSettled([...this.emits]);
   }
 
@@ -618,7 +912,7 @@ export class TurnManager {
         .from(schema.turns)
         .where(inArray(schema.turns.status, ['queued', 'running']))
         .limit(1);
-      if (!queued.length && this.running.size === 0) return;
+      if (!queued.length && this.running.size === 0 && this.folding.size === 0) return;
       if (Date.now() - start > timeoutMs) throw new Error('Turns did not finish in time');
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -642,11 +936,12 @@ export class TurnManager {
     queued.sort(
       (a, b) => PRIORITY[a.source] - PRIORITY[b.source] || a.createdAt.getTime() - b.createdAt.getTime(),
     );
-    const busy = new Set([...this.running.values()].map((r) => r.turn.threadId));
+    const busy = new Set([...[...this.running.values()].map((r) => r.turn.threadId), ...this.folding.keys()]);
+    const held = await this.holdPaused(queued);
     let slots = free;
     for (const t of queued) {
       if (slots <= 0 || this.stopped) break;
-      if (busy.has(t.threadId)) continue;
+      if (held.has(t.id) || busy.has(t.threadId)) continue;
       busy.add(t.threadId);
       try {
         const [started] = await this.ctx.db
@@ -665,9 +960,64 @@ export class TurnManager {
     }
   }
 
+  /**
+   * The queued turns of paused bots, which do not start now. A person's own message in one of the
+   * bot's conversations waits for the resume; any other work (a routine, another bot's request, a
+   * room's round) ends at once, so nothing that waits on it hangs.
+   */
+  private async holdPaused(queued: TurnRow[]): Promise<Set<string>> {
+    if (!queued.length) return new Set();
+    const paused = await this.services.bots.pausedIds();
+    const theirs = queued.filter((q) => paused.has(q.botId));
+    if (!theirs.length) return new Set();
+    const rooms = new Set(
+      (
+        await this.ctx.db
+          .select({ id: schema.threads.id })
+          .from(schema.threads)
+          .where(
+            and(
+              inArray(schema.threads.id, [...new Set(theirs.map((q) => q.threadId))]),
+              eq(schema.threads.kind, 'room'),
+            ),
+          )
+      ).map((r) => r.id),
+    );
+    const ending = theirs.filter((q) => !attended(q.source) || rooms.has(q.threadId));
+    if (ending.length) {
+      const t = await this.services.settings.translator();
+      const ended = await this.ctx.db
+        .update(schema.turns)
+        .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.botPaused') })
+        .where(
+          and(
+            inArray(
+              schema.turns.id,
+              ending.map((q) => q.id),
+            ),
+            eq(schema.turns.status, 'queued'),
+          ),
+        )
+        .returning();
+      for (const turn of ended) {
+        this.emitState(turn.threadId, turn.botId);
+        await this.runHooks(turn, interrupted(t('turn.botPaused')));
+      }
+    }
+    return new Set(theirs.map((q) => q.id));
+  }
+
   private launch(turn: TurnRow) {
     const controller = new AbortController();
-    const entry: Running = { turn, controller, done: Promise.resolve(), steers: [], handing: [] };
+    const entry: Running = {
+      turn,
+      controller,
+      done: Promise.resolve(),
+      steers: [],
+      handing: [],
+      after: [],
+      ended: false,
+    };
     this.running.set(turn.id, entry);
     this.emitState(turn.threadId, turn.botId);
     entry.done = this.execute(turn, controller)
@@ -683,6 +1033,11 @@ export class TurnManager {
       })
       .then(async () => {
         await Promise.allSettled(entry.handing);
+        // Before the next turn here starts, so it reads them (see `withPosts`).
+        entry.ended = true;
+        for (let fn = entry.after.shift(); fn; fn = entry.after.shift()) {
+          await fn().catch((err: unknown) => console.warn('after turn', err));
+        }
       })
       .finally(() => {
         this.running.delete(turn.id);
@@ -715,6 +1070,18 @@ export class TurnManager {
     return true;
   }
 
+  /**
+   * Holds `write` until the turn running in the conversation has posted its reply; false when
+   * none runs there, and the caller writes at once. A reply is posted only when its turn ends, so
+   * a note written while the bot is still at work would land above an answer written without it.
+   */
+  afterTurn(threadId: string, write: () => Promise<void>): boolean {
+    const entry = [...this.running.values()].find((r) => r.turn.threadId === threadId && !r.ended);
+    if (!entry) return false;
+    entry.after.push(write);
+    return true;
+  }
+
   /** A waiting message changed or taken back is no longer handed over. */
   private unsteer(turnId: string) {
     for (const r of this.running.values()) r.steers = r.steers.filter((s) => s.turnId !== turnId);
@@ -742,14 +1109,6 @@ export class TurnManager {
 
   private async execute(turn: TurnRow, controller: AbortController) {
     const { threads, bots, memory, approvals } = this.services;
-    // Spending is checked as a turn starts; one already running finishes.
-    const month = await this.services.usage.month();
-    if (month.limitUsd > 0 && month.costUsd >= month.limitUsd) {
-      const t = await this.services.settings.translator();
-      throw new Error(
-        t('turn.spendLimit', { spent: month.costUsd.toFixed(2), limit: month.limitUsd.toFixed(2) }),
-      );
-    }
     // A rehearsal works as the routine's real run would: with its model and, for a routine that
     // reports to a Slack channel, as a team conversation that uses only what the team shares.
     const [rehearsing] = turn.rehearsalId
@@ -762,6 +1121,9 @@ export class TurnManager {
     const threadRow = await threads.row(turn.threadId);
     const thread = rehearsing?.slackChannel ? { ...threadRow, kind: 'team' as const } : threadRow;
     const bot = await bots.get(turn.botId);
+    // Spending is checked as a turn starts; one already running finishes.
+    const stop = await this.services.usage.reached(bot);
+    if (stop) throw new Error(spendText(stop, bot.name, await this.services.settings.translator()));
     const paths = workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, bot.groupId);
     const sandbox = sandboxFor(paths, {
       projectDir: bot.projectDir,
@@ -810,11 +1172,16 @@ export class TurnManager {
     // room member another bot named, or a new round of the room, is the bots' doing.
     const present = attended(turn.source);
     // The turn's routine run: what outside text started it, and the model the routine names.
+    // A rehearsal runs only the routine's own instruction, so it has no step model.
     const [routineRun] = rehearsing
-      ? [{ trigger: null, model: rehearsing.model }]
+      ? [{ trigger: null, model: rehearsing.model, stepModel: null }]
       : turn.routineRunId
         ? await this.ctx.db
-            .select({ trigger: schema.routineRuns.trigger, model: schema.routines.model })
+            .select({
+              trigger: schema.routineRuns.trigger,
+              model: schema.routines.model,
+              stepModel: schema.routineRuns.stepModel,
+            })
             .from(schema.routineRuns)
             .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
             .where(eq(schema.routineRuns.id, turn.routineRunId))
@@ -916,6 +1283,7 @@ export class TurnManager {
         t,
         skills,
         email,
+        emailCodes: !!email && (await this.services.email.codesAllowed(bot.id)),
         apiSources,
         hasTables: await this.services.tables.any(bot.id),
         // Claude keeps its plan with its own to-do tool; other engines get this one.
@@ -1384,11 +1752,15 @@ export class TurnManager {
     const engine = this.engineFor(bot);
     const roomPrompt = (fresh: boolean) =>
       this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t, note });
+    const started = turn.startedAt ?? turn.createdAt;
+    const isPost = (m: { props: Record<string, unknown> }) =>
+      Boolean(m.props.posted || m.props.routineReport || m.props.whatsappDraft);
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
     const handoff = async (summary?: string) => {
       if (inRoom) return roomPrompt(true);
+      // Posts that landed while the turn waited to start come along too (see `withPosts`).
       const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
-        (m) => new Date(m.createdAt) <= turn.createdAt,
+        (m) => new Date(m.createdAt) <= (isPost(m) ? started : turn.createdAt),
       );
       // Outside text among them is read again by the new session.
       for (const m of messages) note(outsideIn(m.props));
@@ -1410,23 +1782,21 @@ export class TurnManager {
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
     // Webhook posts, routine reports and what became of a WhatsApp draft land in the conversation
-    // without a turn, so a live session never saw them; the ones since the bot last ran here come with this message. A handoff
-    // carries them already.
+    // without a turn, so a live session never saw them; the ones since the bot last ran here come
+    // with this message. A handoff carries them already. Counted from when turns started, not when
+    // they were asked: a note held until the last turn's reply (`afterTurn`) is written after a
+    // message queued meanwhile, and that message's turn is the one that must read it.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
-        .select({ createdAt: schema.turns.createdAt })
+        .select({ startedAt: schema.turns.startedAt })
         .from(schema.turns)
-        .where(and(eq(schema.turns.threadId, thread.id), lt(schema.turns.createdAt, turn.createdAt)))
-        .orderBy(desc(schema.turns.createdAt))
+        .where(and(eq(schema.turns.threadId, thread.id), lt(schema.turns.startedAt, started)))
+        .orderBy(desc(schema.turns.startedAt))
         .limit(1);
       const posts = (await threads.messages(thread.id, { limit: 50 }))
         .filter((m) => {
           const at = new Date(m.createdAt);
-          return (
-            (m.props.posted || m.props.routineReport || m.props.whatsappDraft) &&
-            at <= turn.createdAt &&
-            (!before || at > before.createdAt)
-          );
+          return isPost(m) && at <= started && (!before?.startedAt || at > before.startedAt);
         })
         .slice(-5);
       if (!posts.length) return prompt;
@@ -1518,8 +1888,10 @@ export class TurnManager {
       inRoom
         ? this.services.rooms.setSessionCost(thread.id, bot.id, costUsd)
         : threads.setSessionCost(thread.id, costUsd);
-    // A routine may name a cheaper or stronger model for its runs, on the bot's own engine.
+    // A routine may name a cheaper or stronger model for its runs, and a step of it one for itself,
+    // on the bot's own engine.
     const model =
+      routineRun?.stepModel ||
       routineRun?.model ||
       bot.model ||
       (bot.engine === 'claude' ? settings.defaultModel : '') ||
@@ -1684,6 +2056,10 @@ export class TurnManager {
         },
         signal: controller.signal,
       });
+      // How full the session is now: a long one is folded while idle (see `foldIdle`).
+      if (!backup && !inRoom && outcome.ok && outcome.contextTokens !== undefined) {
+        await threads.setSessionTokens(thread.id, outcome.contextTokens);
+      }
       // A run that said nothing of its cost leaves the total as it was: the next run counts it.
       if (!backup && outcome.sessionCostUsd != null) {
         sessionCost = outcome.sessionCostUsd;
@@ -1796,6 +2172,9 @@ export class TurnManager {
         .finish()
         .catch((err: unknown) => console.warn(`Could not journal a turn's files: ${String(err)}`));
     }
+    if (controller.signal.reason === PAUSED && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.botPaused'), paused: true };
+    }
     if (watchdog.stalled && !outcome.ok && outcome.kind === 'interrupted') {
       outcome = { ...outcome, kind: 'stalled', message: stallText(watchdog.stalled, t) };
     }
@@ -1903,7 +2282,9 @@ export class TurnManager {
               ? readableError(outcome.message)
               : await this.limitText(outcome.resetsAt ?? null)
             : outcome.kind === 'interrupted'
-              ? t('turn.stopped')
+              ? outcome.paused
+                ? t('turn.botPaused')
+                : t('turn.stopped')
               : outcome.kind === 'stalled'
                 ? outcome.message
                 : contextFull(outcome)
@@ -2011,7 +2392,8 @@ export class TurnManager {
       .state(threadId)
       .then((state) => {
         // A running entry may not be persisted as visible state yet.
-        const live = this.isRunning(threadId) && state === 'idle' ? 'running' : state;
+        const live =
+          (this.isRunning(threadId) || this.folding.has(threadId)) && state === 'idle' ? 'running' : state;
         this.ctx.bus.turn({ threadId, botId, state: live });
       })
       .catch((err) => {

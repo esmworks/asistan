@@ -1,5 +1,5 @@
 {
-  "id": "2a253ad6-f612-4576-9ed7-4dbbaad5750e",
+  "id": "099cdd1d-db51-4196-8387-3810e4c9a9f8",
   "prevId": "2f8d859d-8cc0-40de-af82-3b51a5c623ee",
   "version": "7",
   "dialect": "postgresql",
@@ -1111,6 +1111,26 @@
           "primaryKey": false,
           "notNull": false
         },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "daily_limit_usd": {
+          "name": "daily_limit_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "monthly_limit_usd": {
+          "name": "monthly_limit_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1836,6 +1856,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sign_in_codes": {
+          "name": "sign_in_codes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2031,6 +2058,12 @@
           "notNull": true,
           "default": 0
         },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2147,6 +2180,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "reply_files": {
+          "name": "reply_files",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
@@ -2477,12 +2517,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "valid_until": {
-          "name": "valid_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2683,12 +2717,6 @@
         "source_url": {
           "name": "source_url",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "valid_until": {
-          "name": "valid_until",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -4318,6 +4346,12 @@
           "notNull": true,
           "default": "''"
         },
+        "steps": {
+          "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
@@ -4587,6 +4621,13 @@
           "notNull": true,
           "default": "''"
         },
+        "title_auto": {
+          "name": "title_auto",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -4615,6 +4656,12 @@
         "engine_session_cost_usd": {
           "name": "engine_session_cost_usd",
           "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "engine_session_tokens": {
+          "name": "engine_session_tokens",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

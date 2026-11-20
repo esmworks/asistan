@@ -10,7 +10,7 @@ import {
   type Effort,
 } from '@yumakbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ChevronDown, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -28,6 +28,7 @@ import { useT } from '@/i18n';
 import { TelegramPanel } from './TelegramPanel';
 import { BotSharing } from './BotSharing';
 import { api } from '@/lib/api';
+import { useFormat } from '@/lib/format';
 import { newBotEngine, splitPiModel, type BotEngine } from '@/lib/new-bot';
 import {
   useBots,
@@ -96,6 +97,8 @@ const Form = z
     engine: z.enum(['claude', 'pi']),
     provider: z.string(),
     model: z.string().trim().max(100),
+    dailyLimit: z.string().trim().refine(isLimit, 'bot.limitInvalid'),
+    monthlyLimit: z.string().trim().refine(isLimit, 'bot.limitInvalid'),
   })
   .superRefine((f, ctx) => {
     if (f.engine === 'pi' && !f.model)
@@ -128,7 +131,16 @@ function initial(bot?: Bot, start: BotEngine = { engine: 'claude', model: '' }):
     instructionsUrl: bot?.instructionsUrl ?? '',
     engine: bot?.engine ?? start.engine,
     ...modelFields(bot ?? start),
+    dailyLimit: bot?.dailyLimitUsd ? String(bot.dailyLimitUsd) : '',
+    monthlyLimit: bot?.monthlyLimitUsd ? String(bot.monthlyLimitUsd) : '',
   };
+}
+
+/** A spending limit as typed: empty for none, else dollars, with a comma or a point. */
+const limitUsd = (v: string) => (v.trim() ? Math.round(Number(v.trim().replace(',', '.')) * 100) / 100 : 0);
+function isLimit(v: string) {
+  const n = limitUsd(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1_000_000;
 }
 
 function modelFields({ engine, model }: BotEngine): { provider: string; model: string } {
@@ -289,6 +301,8 @@ function BotForm({
         projectDir: f.projectDir.trim() || null,
         engine: f.engine,
         model: f.engine === 'pi' ? `${f.provider}/${f.model}` : f.model,
+        dailyLimitUsd: limitUsd(f.dailyLimit),
+        monthlyLimitUsd: limitUsd(f.monthlyLimit),
       };
       return bot ? api.updateBot(bot.id, body) : api.createBot(body);
     },
@@ -519,6 +533,31 @@ function BotForm({
               />
             </label>
             <div className="space-y-3 rounded-2xl bg-secondary/60 px-4 py-3">
+              <span className="block">
+                <span className="block text-sm font-medium">{t('bot.spendLimits')}</span>
+                <span className="block text-xs text-muted-foreground">{t('bot.spendLimitsHint')}</span>
+              </span>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={t('bot.dailyLimit')} error={err.dailyLimit?.message}>
+                  <Input
+                    {...form.register('dailyLimit')}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="rounded-xl tabular-nums"
+                  />
+                </Field>
+                <Field label={t('bot.monthlyLimit')} error={err.monthlyLimit?.message}>
+                  <Input
+                    {...form.register('monthlyLimit')}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="rounded-xl tabular-nums"
+                  />
+                </Field>
+              </div>
+              {bot && <BotSpent botId={bot.id} />}
+            </div>
+            <div className="space-y-3 rounded-2xl bg-secondary/60 px-4 py-3">
               <label className="flex items-center justify-between gap-4">
                 <span>
                   <span className="block text-sm font-medium">{t('bot.toolsOnly')}</span>
@@ -574,6 +613,19 @@ function BotForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** What the bot spent today and this month, under its limits. */
+function BotSpent({ botId }: { botId: string }) {
+  const t = useT();
+  const f = useFormat();
+  const { data } = useQuery({ queryKey: ['bot-spend', botId], queryFn: () => api.botSpend(botId) });
+  if (!data) return null;
+  return (
+    <p className="text-xs text-muted-foreground tabular-nums">
+      {t('bot.spent', { day: f.usd(data.dayUsd), month: f.usd(data.monthUsd) })}
+    </p>
   );
 }
 

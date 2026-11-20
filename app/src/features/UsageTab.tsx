@@ -27,6 +27,7 @@ import { Card, Row, useSaveSettings } from './SettingsDialog';
 /** What the bots cost over a period: a total, the cost per day and the cost per bot. */
 export function UsageTab() {
   const t = useT();
+  const { data: settings } = useSettings();
   const f = useFormat();
   const [days, setDays] = useState<UsageRange>(30);
   const [botId, setBotId] = useState<string | null>(null);
@@ -81,7 +82,8 @@ export function UsageTab() {
         <Report data={data} filtered={botId !== null} onPickBot={setBotId} />
       )}
       <PlanUsage plan={data?.plan} />
-      <MonthLimit month={data?.month} />
+      <SpendLimit period="month" spend={data?.month} />
+      {settings?.dailyLimitUsd !== undefined && <SpendLimit period="day" spend={data?.day} />}
       <RoutineGate gate={data?.gate} />
       <PromiseNet net={data?.promises} />
       <SuggestionNet net={data?.suggestions} />
@@ -96,31 +98,32 @@ export function UsageTab() {
   );
 }
 
-/** This month's spending against the limit, and the limit itself (empty or 0 for none). */
-function MonthLimit({ month }: { month?: UsageReport['month'] }) {
+/** This month's or today's spending against its limit, and the limit itself (empty or 0 for none). */
+function SpendLimit({ period, spend }: { period: 'month' | 'day'; spend?: UsageReport['month'] }) {
   const t = useT();
   const f = useFormat();
   const { data: settings } = useSettings();
   const save = useSaveSettings();
   const [draft, setDraft] = useState<string | null>(null);
-  const limit = settings?.monthlyLimitUsd ?? 0;
+  const key = period === 'month' ? 'monthlyLimitUsd' : 'dailyLimitUsd';
+  const limit = settings?.[key] ?? 0;
   const value = draft ?? (limit ? String(limit) : '');
   const commit = () => {
     if (draft === null) return;
     const n = Number(draft.replace(',', '.'));
     setDraft(null);
     if (!Number.isFinite(n) || n < 0 || n === limit) return;
-    save.mutate({ monthlyLimitUsd: Math.round(n * 100) / 100 });
+    save.mutate({ [key]: Math.round(n * 100) / 100 });
   };
-  const share = month && month.limitUsd > 0 ? Math.min(1, month.costUsd / month.limitUsd) : 0;
+  const share = spend && spend.limitUsd > 0 ? Math.min(1, spend.costUsd / spend.limitUsd) : 0;
   return (
-    <Card title={t('usage.month')}>
+    <Card title={t(period === 'month' ? 'usage.month' : 'usage.day')}>
       <Row
-        label={month ? f.usd(month.costUsd) : '–'}
+        label={spend ? f.usd(spend.costUsd) : '–'}
         hint={
-          month && month.limitUsd > 0
-            ? t('usage.monthOf', { limit: f.usd(month.limitUsd) })
-            : t('usage.noLimit')
+          spend && spend.limitUsd > 0
+            ? t(period === 'month' ? 'usage.monthOf' : 'usage.dayOf', { limit: f.usd(spend.limitUsd) })
+            : t(period === 'month' ? 'usage.noLimit' : 'usage.noDayLimit')
         }
       >
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -137,7 +140,7 @@ function MonthLimit({ month }: { month?: UsageReport['month'] }) {
           />
         </label>
       </Row>
-      {month && month.limitUsd > 0 && (
+      {spend && spend.limitUsd > 0 && (
         <div className="px-4 pb-4">
           <div className="h-2 overflow-hidden rounded-full bg-secondary">
             <div

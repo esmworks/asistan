@@ -17,12 +17,14 @@ import type {
 import { ALL_TOOLS } from '@yumakbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
+import { snapshotSteps } from './routine-steps';
 
 type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
 
 export const toGroup = (r: Row<typeof schema.groups>): Group => ({
   id: r.id,
   name: r.name,
+  pausedAt: iso(r.pausedAt),
   createdAt: r.createdAt.toISOString(),
 });
 
@@ -50,6 +52,9 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   instructionsCheckedAt: iso(r.instructionsCheckedAt),
   instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
+  pausedAt: iso(r.pausedAt),
+  dailyLimitUsd: r.dailyLimitUsd,
+  monthlyLimitUsd: r.monthlyLimitUsd,
   ownerUserId: r.ownerUserId,
   access: r.access,
   createdAt: r.createdAt.toISOString(),
@@ -148,6 +153,7 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   botId: r.botId,
   name: r.name,
   prompt: r.prompt,
+  steps: snapshotSteps(r.steps) ?? [],
   schedule: r.schedule as Schedule,
   timezone: r.timezone,
   enabled: r.enabled,
@@ -159,6 +165,7 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   carryReport: r.carryReport,
   inMain: r.inMain,
   slackChannel: r.slackChannel,
+  slackReaction: r.slackReaction,
   onStartup: r.onStartup,
   watchUrl: r.watchUrl,
   check: (r.check as RoutineCheck | null) ?? null,
@@ -175,7 +182,8 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   id: r.id,
   routineId: r.routineId,
   occurrence: r.occurrence,
-  status: r.status,
+  // A run held at an approval step reads as waiting; its reason says on whom.
+  status: r.status === 'paused' ? 'waiting' : r.status,
   reason: r.reason,
   threadId: r.threadId,
   startedAt: r.startedAt.toISOString(),

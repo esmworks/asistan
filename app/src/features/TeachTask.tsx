@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot, TaughtStep } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, GraduationCap } from 'lucide-react';
 import { useState } from 'react';
@@ -26,7 +26,7 @@ export function TeachTask({ bot }: { bot: Bot }) {
     refetchInterval: (q) => (q.state.data?.steps != null ? 1500 : false),
   });
   const steps = data?.steps ?? null;
-  const [draft, setDraft] = useState<{ name: string; description: string; body: string } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const start = useMutation({
     mutationFn: () => api.startTeaching(bot.id),
     onSuccess: () => {
@@ -95,22 +95,23 @@ export function TeachTask({ bot }: { bot: Bot }) {
   );
 }
 
-function SaveTaught({
-  bot,
-  draft,
-  onClose,
-}: {
-  bot: Bot;
-  draft: { name: string; description: string; body: string };
-  onClose(): void;
-}) {
+/** What a lesson turned into, to look over before it is saved as a skill. */
+interface Draft {
+  name: string;
+  description: string;
+  body: string;
+  taught: TaughtStep[];
+}
+
+function SaveTaught({ bot, draft, onClose }: { bot: Bot; draft: Draft; onClose(): void }) {
   const t = useT();
   const qc = useQueryClient();
   const [name, setName] = useState(draft.name);
   const [description, setDescription] = useState(draft.description);
   const [body, setBody] = useState(draft.body);
   const save = useMutation({
-    mutationFn: () => api.createSkill({ name, description, body, botIds: [bot.id] }),
+    // The steps go with the skill, so it can be replayed without the model.
+    mutationFn: () => api.createSkill({ name, description, body, steps: draft.taught, botIds: [bot.id] }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['skills'] });
       toast.success(t('teach.saved', { bot: bot.name }));

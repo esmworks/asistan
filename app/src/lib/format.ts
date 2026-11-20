@@ -64,7 +64,8 @@ export function formatters(locale: Locale) {
     fileSize(n: number): string {
       if (n < 1024) return `${n} B`;
       if (n < 1024 * 1024) return `${decimal.format(n / 1024)} KB`;
-      return `${decimal.format(n / 1024 / 1024)} MB`;
+      if (n < 1024 ** 3) return `${decimal.format(n / 1024 / 1024)} MB`;
+      return `${decimal.format(n / 1024 ** 3)} GB`;
     },
   };
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isValidTimeZone, Schedule } from './schedule';
+import { isValidTimeZone, ROUTINE_STEP_MAX, RoutineStep, Schedule } from './schedule';
 
 /**
  * The bot import file (`yumakbot-bot-import`, version 1). Another app produces it by following
@@ -36,6 +36,11 @@ export const BotImportRef = z
 export const BotImportRoutine = z.object({
   name: z.string().trim().min(1).max(80),
   prompt: z.string().trim().min(1).max(20_000),
+  /**
+   * Its steps after the instruction. One of a kind this version does not know turns the routine
+   * away: dropped, a step that waits for the person would let the next one go ahead unasked.
+   */
+  steps: z.array(RoutineStep).max(ROUTINE_STEP_MAX).default([]),
   schedule: Schedule,
   timezone: z.string().refine(isValidTimeZone, 'validation.timezone'),
   enabled: z.boolean().default(false),
@@ -136,6 +141,7 @@ export interface BotImportPlan {
     routines: {
       name: string;
       prompt: string;
+      steps: RoutineStep[];
       schedule: Schedule;
       timezone: string;
       enabledInSource: boolean;

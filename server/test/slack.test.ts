@@ -1,11 +1,21 @@
 import { createServer as httpServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, Bot, SlackLink, SlackStatus, Thread } from '@yumakbot/shared';
+import {
+  SLACK_BOT_SCOPES,
+  type Approval,
+  type Bot,
+  type Routine,
+  type RoutineRun,
+  type SlackLink,
+  type SlackStatus,
+  type Thread,
+} from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { slackMessages } from '../src/channels/format';
 import { holdRequest } from '../src/channels/common';
 import { namedBot, slackText } from '../src/channels/slack';
+import { eq } from 'drizzle-orm';
 import { schema } from '../src/db';
 import { testServer, waitFor, type Person, type TestServer } from './helpers';
 
@@ -141,6 +151,20 @@ async function fakeSlack() {
       if (where.mention)
         await send('events_api', { event_id: `Ev${at}m`, event: { ...event, type: 'app_mention' } });
       return at;
+    },
+    /** A reaction someone adds to a message, as the Events API hands it over. */
+    async react(user: string, reaction: string, channel: string, messageTs: string) {
+      const at = String(ts++);
+      await send('events_api', {
+        event_id: `Ev${at}r`,
+        event: {
+          type: 'reaction_added',
+          user,
+          reaction,
+          item: { type: 'message', channel, ts: messageTs },
+          event_ts: at,
+        },
+      });
     },
     async press(user: string, value: string, channel: string, message: { ts: string; thread?: string }) {
       await send('interactive', {
@@ -408,6 +432,48 @@ describe('Slack', () => {
     expect((await t.services.threads.row(req.threadId)).kind).toBe('team');
   });
 
+  it('kişinin kendi tepkisi, rutinini tepki verdiği mesajla çalıştırır', async () => {
+    const bot = await setUp();
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: { ayse: 'edit' } });
+    await link(ayse, 'UAYSE');
+    await link(mert, 'UMERT');
+    const r = await ayse.api<Routine>('POST', '/api/routines', {
+      botId: bot.id,
+      name: 'Şikâyet',
+      prompt: 'Bu mesaja bir cevap taslağı yaz',
+      schedule: { type: 'daily', time: '08:00' },
+      slackReaction: ':Eyes:',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.slackReaction).toBe('eyes');
+    slack.replies.set('1700000000.000100', [
+      { ts: '1700000000.000100', user: 'UMUSTERI', text: 'Siparişim hâlâ gelmedi' },
+    ]);
+    const runs = async () => (await ayse.api<RoutineRun[]>('GET', `/api/routines/${r.body.id}/runs`)).body;
+    // Someone else's reaction, or another reaction, starts nothing.
+    await slack.react('UMERT', 'eyes', 'C0GENEL01', '1700000000.000100');
+    await slack.react('UAYSE', 'thumbsup', 'C0GENEL01', '1700000000.000100');
+    await t.services.turns.idle();
+    expect(await runs()).toHaveLength(0);
+
+    await slack.react('UAYSE', 'eyes', 'C0GENEL01', '1700000000.000100');
+    await waitFor(async () => ((await runs()).length ? true : null));
+    await t.services.turns.idle();
+    const asked = t.engine.requests.at(-1)!;
+    expect(asked.prompt).toContain('Siparişim hâlâ gelmedi');
+    // The message is someone else's text: the run reads it as outside text.
+    const [run] = await runs();
+    const [row] = await t.services.ctx.db
+      .select({ trigger: schema.routineRuns.trigger })
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.id, run!.id));
+    expect(row!.trigger).toBe('forward');
+    // The same message reacted to again runs it once.
+    await slack.react('UAYSE', 'eyes', 'C0GENEL01', '1700000000.000100');
+    await t.services.turns.idle();
+    expect(await runs()).toHaveLength(1);
+  });
+
   const reacted = (name: string, ts: string) =>
     slack.sent('reactions.add').some((c) => c.body.timestamp === ts && c.body.name === name);
 
@@ -511,5 +577,26 @@ describe('Slack', () => {
     expect(r.status).toBe(200);
     expect(r.body.error).toContain('reactions:write');
     expect(r.body.error).not.toContain('chat:write');
+  });
+
+  it('an app without reactions:read works on, and says what that leaves off', async () => {
+    slack = await fakeSlack();
+    slack.scopes(SLACK_BOT_SCOPES.join(','));
+    t = await testServer({ slackApi: slack.base });
+    const r = await t.api<SlackStatus>('PUT', '/api/slack', { appToken: APP, botToken: BOT, botId: null });
+    expect(r.status).toBe(200);
+    expect(r.body.error).toBeNull();
+    expect(r.body.optionalMissing).toEqual(['reactions:read']);
+    // A person setting up a routine is told too, not only whoever looks after the Slack app.
+    expect((await t.api<SlackLink>('GET', '/api/slack/me')).body.optionalMissing).toEqual(['reactions:read']);
+
+    // Once the app has it, nothing is said.
+    slack.scopes([...SLACK_BOT_SCOPES, 'reactions:read'].join(','));
+    const again = await t.api<SlackStatus>('PUT', '/api/slack', {
+      appToken: APP,
+      botToken: BOT,
+      botId: null,
+    });
+    expect(again.body.optionalMissing).toEqual([]);
   });
 });

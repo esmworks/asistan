@@ -220,7 +220,8 @@ export class RehearsalService {
     return rows.map((r) => ({
       runId: r.id,
       startedAt: r.startedAt.toISOString(),
-      status: r.status,
+      // A run held at a step shows as waiting, as the routine's own list shows it.
+      status: r.status === 'paused' ? 'waiting' : r.status,
       trigger: r.trigger,
       replayable: r.kept,
     }));
@@ -252,7 +253,7 @@ export class RehearsalService {
         replay = {
           runId: r.replayRunId,
           startedAt: run.startedAt.toISOString(),
-          status: run.status,
+          status: run.status === 'paused' ? 'waiting' : run.status,
           report: said?.text ?? null,
         };
       }

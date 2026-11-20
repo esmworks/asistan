@@ -144,6 +144,8 @@ export interface SlackStatus {
   people: { userId: string; name: string; slackName: string }[];
   /** Why it stopped working, in Slack's words; null while it works. */
   error: string | null;
+  /** The optional permissions (`SLACK_OPTIONAL_SCOPES`) the bot token lacks; empty when Slack did not say. */
+  optionalMissing: string[];
 }
 
 /** One person's link to Slack. */
@@ -156,6 +158,8 @@ export interface SlackLink {
   /** The code to send the Slack app as `link <code>`; null when none is waiting. */
   code: string | null;
   codeUntil: string | null;
+  /** The optional permissions the Slack app lacks, so what needs them (a routine run by a reaction) does not work. */
+  optionalMissing: string[];
 }
 
 /** The permissions the Slack app's bot token needs; the manifest asks for them and the server checks them. */
@@ -173,6 +177,12 @@ export const SLACK_BOT_SCOPES = [
 ] as const;
 
 /**
+ * Permissions the manifest asks for that the server does without: an app set up before they were
+ * added is not told it lacks them, and only what needs one (a routine run by a reaction) stays off.
+ */
+export const SLACK_OPTIONAL_SCOPES = ['reactions:read'] as const;
+
+/**
  * What to paste into Slack's "Create an app from a manifest": Socket Mode (no public address),
  * the events and permissions the server uses, and the buttons on cards.
  */
@@ -187,12 +197,19 @@ export function slackManifest(name: string): string {
       },
       oauth_config: {
         scopes: {
-          bot: [...SLACK_BOT_SCOPES],
+          bot: [...SLACK_BOT_SCOPES, ...SLACK_OPTIONAL_SCOPES],
         },
       },
       settings: {
         event_subscriptions: {
-          bot_events: ['app_mention', 'message.channels', 'message.groups', 'message.im', 'message.mpim'],
+          bot_events: [
+            'app_mention',
+            'message.channels',
+            'message.groups',
+            'message.im',
+            'message.mpim',
+            'reaction_added',
+          ],
         },
         interactivity: { is_enabled: true },
         org_deploy_enabled: false,

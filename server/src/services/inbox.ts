@@ -205,7 +205,7 @@ export class Inbox {
     });
     if (!created) return { message, created };
     // A conversation is named after the words its first message opens with.
-    if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60));
+    if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60), true);
     const t = await s.settings.translator();
     const from = typeof extra.forwardedFrom === 'string' ? extra.forwardedFrom : '';
     const lead = chatAnswer && typeof extra.lead === 'string' ? `${extra.lead}\n\n` : '';

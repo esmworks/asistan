@@ -29,6 +29,11 @@ export interface NewMessage {
   turnId?: string | null;
   /** The person who wrote it, for a person's own message. */
   userId?: string | null;
+  /**
+   * A note of the server's own upkeep: the conversation keeps its place in the list and stays
+   * snoozed, as nobody did anything in it.
+   */
+  quiet?: boolean;
 }
 
 /** How many messages a conversation opens with, and how many each "load older" adds. */
@@ -435,9 +440,10 @@ export class ThreadService {
     this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
   }
 
-  async rename(id: string, title: string) {
+  /** `auto`: made from the first message's words, so a model may name the conversation better later. */
+  async rename(id: string, title: string, auto = false) {
     const row = await this.row(id);
-    await this.ctx.db.update(schema.threads).set({ title }).where(eq(schema.threads.id, id));
+    await this.ctx.db.update(schema.threads).set({ title, titleAuto: auto }).where(eq(schema.threads.id, id));
     this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
   }
 
@@ -477,7 +483,11 @@ export class ThreadService {
       .set({
         engineSessionId: sessionId,
         // A session that ends takes the outside text it had read with it.
-        ...(sessionId === null && { engineSessionCostUsd: null, outsideSession: null }),
+        ...(sessionId === null && {
+          engineSessionCostUsd: null,
+          engineSessionTokens: null,
+          outsideSession: null,
+        }),
       })
       .where(eq(schema.threads.id, id));
   }
@@ -491,6 +501,14 @@ export class ThreadService {
   }
 
   /** What the thread's engine session had cost by its last run. */
+  /** How full the session's context is now, for folding a long one while it is idle. */
+  async setSessionTokens(id: string, tokens: number | null) {
+    await this.ctx.db
+      .update(schema.threads)
+      .set({ engineSessionTokens: tokens })
+      .where(eq(schema.threads.id, id));
+  }
+
   async setSessionCost(id: string, costUsd: number) {
     await this.ctx.db
       .update(schema.threads)
@@ -667,11 +685,13 @@ export class ThreadService {
       const thread = await this.row(m.threadId);
       // What the person writes brings an archived conversation back to the list; a bot's reply or
       // a routine's run there leaves it archived until the person unarchives it.
-      await this.ctx.db
-        .update(schema.threads)
-        // Any new message wakes a snoozed conversation.
-        .set({ updatedAt: new Date(), snoozedUntil: null, ...(m.role === 'user' && { archivedAt: null }) })
-        .where(eq(schema.threads.id, m.threadId));
+      if (!m.quiet) {
+        await this.ctx.db
+          .update(schema.threads)
+          // Any new message wakes a snoozed conversation.
+          .set({ updatedAt: new Date(), snoozedUntil: null, ...(m.role === 'user' && { archivedAt: null }) })
+          .where(eq(schema.threads.id, m.threadId));
+      }
       this.ctx.bus.refresh({ scope: 'thread', threadId: m.threadId, botId: thread.botId });
       const message = toMessage(row!);
       for (const l of this.listeners) {

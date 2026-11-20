@@ -59,6 +59,8 @@ export type PermissionMode = z.infer<typeof PermissionMode>;
 export const Group = z.object({
   id: Id,
   name: z.string(),
+  /** Set while every bot of the group is paused. Missing from older servers. */
+  pausedAt: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type Group = z.infer<typeof Group>;
@@ -112,6 +114,14 @@ export const Bot = z.object({
   /** Why the document could not be read the last time it was looked at. */
   instructionsError: z.string().nullable().optional(),
   archivedAt: z.string().nullable(),
+  /**
+   * Set while the bot itself is paused; it also starts no work while its group is. Missing from
+   * older servers.
+   */
+  pausedAt: z.string().nullable().optional(),
+  /** The bot's own spending limits in US dollars, 0 for none. Missing from older servers. */
+  dailyLimitUsd: z.number().optional(),
+  monthlyLimitUsd: z.number().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /** The person who made the bot (or was given it). Missing from older servers. */
@@ -154,6 +164,9 @@ export const Avatar = z
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v),
     'validation.avatar',
   );
+/** A spending limit in US dollars, to the cent; 0 for none. */
+const SpendLimit = z.number().min(0).max(1_000_000);
+
 export const BotCreate = z.object({
   name: botName,
   description: z.string().max(500).default(''),
@@ -174,6 +187,10 @@ export const BotCreate = z.object({
   effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
   /** Which tools the bot gets; by default every tool its settings allow. */
   toolSelection: ToolSelection.default(ALL_TOOLS),
+  /** The most the bot may spend in a day, in US dollars; 0 for no limit of its own. */
+  dailyLimitUsd: SpendLimit.default(0),
+  /** The most the bot may spend in a calendar month, in US dollars; 0 for no limit of its own. */
+  monthlyLimitUsd: SpendLimit.default(0),
   /** A document (https) the instructions are kept in; null for instructions written here. */
   instructionsUrl: z
     .string()
@@ -1448,6 +1465,8 @@ export const UsageReport = z.object({
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
   month: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
+  /** Spending so far today (the server's time zone) and the daily limit (0: none); missing on older servers. */
+  day: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
   /**
    * How many turns may run at once: the person's choice (0 for the server's own) and the server's
    * own number; missing on older servers.
@@ -1653,12 +1672,55 @@ export const SkillName = z
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'validation.skillName');
 
+/** What a taught step was done to, as a person would name it (a button's words, a field's label). */
+export const TaughtTarget = z.object({
+  what: z.enum(['button', 'link', 'field', 'checkbox', 'menu', 'option', 'element']),
+  label: z.string().max(200),
+  secret: z.boolean(),
+});
+/**
+ * One step of a task a person showed a bot in its browser. Kept with the skill written from it, so
+ * the task can be done again step by step without the model; a step that no longer fits the page
+ * is where the bot takes over.
+ */
+export const TaughtStep = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('open'), url: z.string().max(4000) }),
+  z.object({ kind: z.literal('click'), target: TaughtTarget, url: z.string().max(4000) }),
+  z.object({
+    kind: z.literal('type'),
+    target: TaughtTarget,
+    text: z.string().max(10_000),
+    secret: z.boolean(),
+    url: z.string().max(4000),
+  }),
+  z.object({ kind: z.literal('key'), key: z.string().max(40), url: z.string().max(4000) }),
+  z.object({
+    kind: z.literal('nav'),
+    action: z.enum(['back', 'forward', 'reload']),
+    url: z.string().max(4000),
+  }),
+]);
+export type TaughtStep = z.infer<typeof TaughtStep>;
+export const TaughtSteps = z.array(TaughtStep).max(200);
+
+/** How a replay of taught steps went: how far it got, and the step that did not fit if it stopped. */
+export const ReplayResult = z.object({
+  ok: z.boolean(),
+  done: z.number().int(),
+  total: z.number().int(),
+  /** The step it stopped at (from 1) and why, in the server's language. */
+  failedAt: z.object({ step: z.number().int(), reason: z.string() }).optional(),
+});
+export type ReplayResult = z.infer<typeof ReplayResult>;
+
 export const Skill = z.object({
   id: Id,
   name: z.string(),
   /** When the skill applies; the bot sees this before it decides to read the rest. */
   description: z.string(),
   body: z.string(),
+  /** The steps a person showed, when the skill was taught in the browser; they can be replayed. */
+  steps: TaughtSteps.nullable().optional(),
   /** Bots that have it on. */
   botIds: z.array(Id),
   /** How many times a bot read it for a task, and when it last did. */
@@ -1696,6 +1758,7 @@ export const SkillCreate = z.object({
   name: SkillName,
   description: z.string().trim().min(1).max(1024),
   body: z.string().max(50_000).default(''),
+  steps: TaughtSteps.nullable().optional(),
   /** Bots to turn it on for at once. */
   botIds: z.array(Id).max(500).optional(),
 });
@@ -1909,9 +1972,18 @@ export const EmailSettings = z.object({
   domain: z.string(),
   /** What the relay sends as its bearer token; null until one is made. */
   secret: z.string().nullable(),
-  addresses: z.array(z.object({ botId: Id, name: z.string(), address: z.string().nullable() })),
+  addresses: z.array(
+    z.object({
+      botId: Id,
+      name: z.string(),
+      address: z.string().nullable(),
+      /** Whether the bot may type sign-in codes from this mailbox into the site that sent them. */
+      codes: z.boolean(),
+    }),
+  ),
 });
 export type EmailSettings = z.infer<typeof EmailSettings>;
+export const EmailCodes = z.object({ on: z.boolean() });
 export const EmailClaim = z.object({ name: z.string().trim().min(1).max(64) });
 
 /** What a plugin would add, read before anything is installed. */
@@ -2056,3 +2128,27 @@ export const TicketUpdate = z.object({
 });
 export type TicketUpdate = z.input<typeof TicketUpdate>;
 export const TicketCommentCreate = z.object({ text: z.string().trim().min(1).max(20_000) });
+
+/** What the server's own check looks at; each has its text in the app by this name. */
+export const DOCTOR_CHECKS = ['stuckTurns', 'staleApprovals', 'strayFolders', 'unreadable', 'disk'] as const;
+export const DoctorCheckId = z.enum(DOCTOR_CHECKS);
+export type DoctorCheckId = z.infer<typeof DoctorCheckId>;
+/** One finding of the server's check: how it stands, how many things it found, and if it can mend them. */
+export const DoctorCheck = z.object({
+  id: DoctorCheckId,
+  status: z.enum(['ok', 'warn', 'error']),
+  count: z.number().int(),
+  /** Bytes it is about: what stray folders take, or the free disk space. */
+  bytes: z.number().optional(),
+  /** Whether a repair can mend it without losing anything. */
+  repairable: z.boolean(),
+});
+export type DoctorCheck = z.infer<typeof DoctorCheck>;
+export const DoctorReport = z.object({
+  checkedAt: z.string(),
+  checks: z.array(DoctorCheck),
+  /** Where a repair put the folders it moved aside, when it moved any. */
+  movedTo: z.string().optional(),
+});
+export type DoctorReport = z.infer<typeof DoctorReport>;
+export const DoctorRepair = z.object({ checks: z.array(DoctorCheckId).min(1) });
