@@ -18,6 +18,11 @@ describe('format', () => {
     expect(enF.dayLabel(at(14), now)).toMatch(/^Yesterday 09:05/);
   });
 
+  it('words a bare calendar day', () => {
+    expect(trF.calendarDay('2026-11-16')).toBe('16 Kasım');
+    expect(enF.calendarDay('2026-11-16')).toBe('November 16');
+  });
+
   it('shortens times in the bot list', () => {
     expect(trF.shortTime(at(15), now)).toBe('09:05');
     expect(trF.shortTime(at(14), now)).toBe('Dün');

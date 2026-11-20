@@ -226,6 +226,7 @@ function refresh(origin: string, e: RefreshScope, inv: (...key: unknown[]) => vo
       // A room's list entry shows its latest line and who speaks.
       inv('rooms', origin);
       inv('messages', origin, e.threadId);
+      inv('turn-changes', origin, e.threadId);
       inv('thread', origin, e.threadId);
       inv('main-thread', origin, e.botId);
       inv('threads', origin, e.botId);
@@ -234,13 +235,23 @@ function refresh(origin: string, e: RefreshScope, inv: (...key: unknown[]) => vo
       break;
     case 'approvals':
       inv('approvals', origin);
+      inv('second-yes', origin);
       inv('summaries', origin);
+      break;
+    case 'promises':
+      inv('promises', origin);
+      break;
+    case 'routineSuggestions':
+      inv('routine-suggestions', origin);
       break;
     case 'memory':
       inv('memory', origin);
       break;
     case 'routines':
       inv('routines', origin);
+      // A routine's instruction may have changed, by a bot or on another device.
+      inv('routine-rehearsals', origin);
+      inv('routine-replayable', origin);
       inv('summaries', origin);
       break;
     case 'rules':

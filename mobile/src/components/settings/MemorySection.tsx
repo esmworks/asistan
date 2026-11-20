@@ -9,10 +9,12 @@ import { changeHint, changeLabel } from '@yumakbot/app/src/lib/memoryChange';
 import {
   historyText,
   historyWho,
+  noteExpired,
   noteMatches,
   pinnedFirst,
   placeLabel,
   placeNoteGroups,
+  untilDay,
 } from '@yumakbot/app/src/lib/memoryNotes';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +22,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { confirm, toast, toastError } from '@/components/overlay';
 import { IconButton, PillButton, Row, Section, SwitchRow } from '@/components/page';
+import { FormField } from '@/components/dialogs/common';
 import { Field } from '@/components/ui';
 import { ChoiceRow, Hint, Lead, Pad, Rows, useSaveSettings } from './common/controls';
 import { locale, t } from '@/i18n';
@@ -34,6 +37,7 @@ import {
   useStaleMemory,
 } from '@/lib/queries';
 import { ApiError } from '@/lib/api';
+import { isDay, notePatch } from '@/lib/memoryEdit';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 
@@ -55,20 +59,24 @@ function NoteLine({
 }: {
   m: Memory;
   detail?: string;
-  onSave: (m: Memory, content: string) => Promise<unknown>;
+  onSave: (m: Memory, patch: { content?: string; validUntil?: string | null }) => Promise<unknown>;
   onPin: (m: Memory) => void;
   onForget: (m: Memory) => void;
 }) {
   const c = useColors();
   const [draft, setDraft] = useState<string | null>(null);
+  // The date field's own text: a day, or empty for no end.
+  const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
   if (draft !== null) {
+    const dayBad = until !== '' && !isDay(until);
     const submit = () => {
       const content = draft.trim();
-      if (!content || busy) return;
-      if (content === m.content) return setDraft(null);
+      if (!content || busy || dayBad) return;
+      const patch = notePatch(m, content, until);
+      if (!Object.keys(patch).length) return setDraft(null);
       setBusy(true);
-      onSave(m, content)
+      onSave(m, patch)
         .then(() => setDraft(null))
         // A note changed meanwhile: the list is already fetched again, so leave the stale draft.
         .catch((e) => e instanceof ApiError && e.status === 409 && setDraft(null))
@@ -85,13 +93,31 @@ function NoteLine({
           returnKeyType="done"
           onSubmitEditing={submit}
         />
+        <FormField
+          label={t('memory.validUntil')}
+          hint={dayBad ? undefined : t('dialogs.dateHint')}
+          error={dayBad ? 'dialogs.dateHint' : undefined}
+        >
+          <Field
+            value={until}
+            onChangeText={(x) => setUntil(x.trim())}
+            accessibilityLabel={t('memory.validUntil')}
+            maxLength={10}
+            keyboardType="numbers-and-punctuation"
+            returnKeyType="done"
+            onSubmitEditing={submit}
+          />
+        </FormField>
         <View style={styles.pair}>
+          {until ? (
+            <PillButton variant="ghost" label={t('memory.validUntilClear')} onPress={() => setUntil('')} />
+          ) : null}
           <PillButton
             variant="primary"
             label={t('common.save')}
             onPress={submit}
             busy={busy}
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || dayBad}
           />
           <PillButton variant="ghost" label={t('common.cancel')} onPress={() => setDraft(null)} />
         </View>
@@ -99,10 +125,15 @@ function NoteLine({
     );
   }
   const text = m.site ? `${m.site} · ${m.content}` : m.content;
+  const ends = m.validUntil
+    ? t(noteExpired(m) ? 'memory.expiredOn' : 'memory.validUntilOn', {
+        date: fmt.calendarDay(untilDay(m.validUntil)),
+      })
+    : null;
   return (
     <Row
       label={text}
-      detail={[m.pinned ? t('memory.pinned') : null, detail].filter(Boolean).join(' · ') || undefined}
+      detail={[m.pinned ? t('memory.pinned') : null, detail, ends].filter(Boolean).join(' · ') || undefined}
       right={
         <View style={styles.pair}>
           <IconButton
@@ -112,7 +143,15 @@ function NoteLine({
             label={m.pinned ? t('memory.unpin') : t('memory.pin')}
             onPress={() => onPin(m)}
           />
-          <IconButton icon="edit-2" size={18} label={t('memory.edit')} onPress={() => setDraft(m.content)} />
+          <IconButton
+            icon="edit-2"
+            size={18}
+            label={t('memory.edit')}
+            onPress={() => {
+              setDraft(m.content);
+              setUntil(m.validUntil ? untilDay(m.validUntil) : '');
+            }}
+          />
           <IconButton icon="trash-2" size={18} label={t('common.delete')} onPress={() => onForget(m)} />
         </View>
       }
@@ -153,8 +192,8 @@ export function MemorySection() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory', origin] });
   // The server refuses a save over a note that changed meanwhile; the list is fetched again then.
   const save = useMutation({
-    mutationFn: ({ m, content }: { m: Memory; content: string }) =>
-      api.updateMemory(m.id, { content, updatedAt: m.updatedAt }),
+    mutationFn: ({ m, patch }: { m: Memory; patch: { content?: string; validUntil?: string | null } }) =>
+      api.updateMemory(m.id, { ...patch, ...(patch.content !== undefined && { updatedAt: m.updatedAt }) }),
     onSuccess: refresh,
     onError: (e) => {
       toastError(e);
@@ -200,7 +239,13 @@ export function MemorySection() {
           label: t('memory.undo'),
           onPress: () =>
             void api
-              .addMemory({ scope, botId: m.botId, content: m.content, site: m.site })
+              .addMemory({
+                scope,
+                botId: m.botId,
+                content: m.content,
+                site: m.site,
+                validUntil: m.validUntil,
+              })
               // A pinned note comes back pinned, as it was.
               .then((back) => (m.pinned ? api.updateMemory(back.id, { pinned: true }) : back))
               .then(refresh)
@@ -227,29 +272,35 @@ export function MemorySection() {
   });
   const searching = query.trim() !== '';
   const hit = (m: Memory) => noteMatches(m, query);
-  const user = pinnedFirst(memory.filter((m) => m.scope === 'user' && hit(m)));
-  const groups = botNoteGroups(memory.filter(hit), bots, archived).map((g) => ({
+  // A note past its "true until" date waits in its own list, not among the notes bots read.
+  const now = new Date();
+  const current = memory.filter((m) => !noteExpired(m, now));
+  const expiredHits = memory.filter((m) => noteExpired(m, now) && hit(m));
+  const user = pinnedFirst(current.filter((m) => m.scope === 'user' && hit(m)));
+  const groups = botNoteGroups(current.filter(hit), bots, archived).map((g) => ({
     ...g,
     notes: pinnedFirst(g.notes),
   }));
-  const roomGroups = placeNoteGroups(memory.filter(hit), t, rooms);
+  const roomGroups = placeNoteGroups(current.filter(hit), t, rooms);
   const staleHits = stale.filter(hit);
   const noteProps = {
-    onSave: (m: Memory, content: string) => save.mutateAsync({ m, content }),
+    onSave: (m: Memory, patch: { content?: string; validUntil?: string | null }) =>
+      save.mutateAsync({ m, patch }),
     onPin: (m: Memory) => pin.mutate(m),
     onForget: (m: Memory) => forget.mutate(m),
   };
   const reviewEvery = settings?.memoryReviewEvery;
   const botName = (id: string | null) =>
     [...bots, ...archived].find((b) => b.id === id)?.name ?? t('common.bot');
+  // Whose note it is: the person's own, a place's, or one bot's.
+  const whose = (m: Memory) =>
+    m.scope === 'user'
+      ? t('memory.staleShared')
+      : m.scope === 'room'
+        ? placeLabel(m.place, t, rooms)
+        : botName(m.botId);
   const staleDetail = (m: Memory) =>
-    `${
-      m.scope === 'user'
-        ? t('memory.staleShared')
-        : m.scope === 'room'
-          ? placeLabel(m.place, t, rooms)
-          : botName(m.botId)
-    } · ${
+    `${whose(m)} · ${
       m.lastUsedAt
         ? t('memory.lastUsed', { when: fmt.dayLabel(m.lastUsedAt) })
         : t('memory.neverUsed', { when: fmt.dayLabel(m.updatedAt) })
@@ -351,6 +402,18 @@ export function MemorySection() {
                 />
               </>
             ) : null}
+          </Rows>
+        </Section>
+      ) : null}
+      {expiredHits.length > 0 ? (
+        <Section title={t('memory.expired')}>
+          <Rows>
+            <Pad>
+              <Hint>{t('memory.expiredHint')}</Hint>
+            </Pad>
+            {expiredHits.map((m) => (
+              <NoteLine key={m.id} m={m} detail={whose(m)} {...noteProps} />
+            ))}
           </Rows>
         </Section>
       ) : null}
