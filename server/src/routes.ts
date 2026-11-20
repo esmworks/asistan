@@ -2,6 +2,7 @@ import { createReadStream, readdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import type { BackupService } from './services/backup';
 import type { MemoryReach } from './services/memory';
+import type { SkillReach } from './services/skills';
 import { MAX_AUDIO_BYTES, type TranscribeService } from './services/transcribe';
 import { MAX_EMAIL_BYTES } from './services/email';
 import { Readable } from 'node:stream';
@@ -223,6 +224,11 @@ function me(req: FastifyRequest): Principal {
 
 /** How the audit log names the person a request comes from. */
 const actorOf = (req: FastifyRequest) => `user:${me(req).userId}`;
+/** Who decides on skills: their makers, and those who look after the server. */
+const skillReach = (req: FastifyRequest): SkillReach => ({
+  userId: me(req).userId,
+  admin: canAdminister(me(req).role),
+});
 
 /** A browser problem as an answer to the person who asked. */
 function browserHttpError(err: unknown): unknown {
@@ -715,6 +721,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
       staleMemory: (await s.memory.stale(new Date(), notes)).length,
       pendingMemory: (await s.memory.pending(notes)).length,
+      pendingSkills: (await s.skills.changes(skillReach(req))).length,
     };
   });
 
@@ -965,6 +972,15 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const id = IdParams.parse(req.params).id;
     await ownSkill(req, id);
     await s.skills.remove(id);
+    return { ok: true };
+  });
+  // Changes bots found for skills the person may not change, for those who decide on each skill.
+  app.get('/api/skill-changes', async (req) => s.skills.changes(skillReach(req)));
+  app.post('/api/skill-changes/:id/accept', async (req) =>
+    s.skills.acceptChange(IdParams.parse(req.params).id, skillReach(req)),
+  );
+  app.post('/api/skill-changes/:id/reject', async (req) => {
+    await s.skills.rejectChange(IdParams.parse(req.params).id, skillReach(req));
     return { ok: true };
   });
   app.put('/api/skills/:id/bots/:botId', async (req) => {

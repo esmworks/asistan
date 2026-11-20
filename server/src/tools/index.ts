@@ -546,6 +546,7 @@ export class ToolFactory {
                 if (!skill) {
                   return t('tool.noSkill', { name, names: skills.map((k) => k.name).join(', ') });
                 }
+                await s.skills.markUsed(skill.id);
                 return `# ${skill.name}\n${skill.description}\n\n${skill.body}`.trim();
               },
               'read',
@@ -831,20 +832,35 @@ export class ToolFactory {
           name: z.string().min(1).max(64),
           description: z.string().min(1).max(1024),
           body: z.string().max(50_000),
+          reason: z.string().max(1000).optional(),
         },
         async (a) => {
-          // The bot changes itself only for someone who may change it.
-          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const name = skillSlug(a.name);
           if (!name) return t('tool.skillBadName');
           const mine = skills.find((k) => k.name === name);
           if (mine) {
+            // A skill reaches every bot that has it: a better way found for someone who may not
+            // change the skill waits for its owner, and changes nothing until they accept it.
+            if (!(await s.skills.mayChange(mine.id, await s.skills.reachOf(person)))) {
+              await s.skills.propose({
+                skillId: mine.id,
+                description: a.description,
+                body: a.body,
+                reason: a.reason?.trim() || null,
+                proposedBy: bot.id,
+                userId: person,
+                threadId: thread.id,
+              });
+              return t('tool.skillProposed', { name });
+            }
             await s.skills.update(mine.id, { description: a.description, body: a.body });
             return t('tool.skillUpdated', { name });
           }
+          // A new skill changes the bot: only for someone who may change it.
+          if (!(await mayChange())) return t('tool.changeNotAllowed');
           const taken = (await s.skills.list()).find((k) => k.name === name);
           if (taken) return t('tool.skillTaken', { name });
-          await s.skills.create({ name, description: a.description, body: a.body, botIds: [bot.id] });
+          await s.skills.create({ name, description: a.description, body: a.body, botIds: [bot.id] }, person);
           return t('tool.skillCreated', { name });
         },
         // The person sees the skill on a card before it is saved.

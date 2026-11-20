@@ -864,10 +864,42 @@ export const skills = pgTable(
     body: text('body').notNull().default(''),
     /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
     createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** How many times a bot read it for a task, so the library shows which methods carry the work. */
+    uses: integer('uses').notNull().default(0),
+    lastUsedAt: ts('last_used_at'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('skills_name_uq').on(t.name)],
+);
+
+/**
+ * A better way to do a skill's task, found by a bot working for someone who may not change the
+ * skill: a skill reaches every bot that has it, so the change waits here until the skill's owner
+ * (or an admin, for a skill nobody owns) reads it and accepts it.
+ */
+export const skillChanges = pgTable(
+  'skill_changes',
+  {
+    id: text('id').primaryKey(),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    /** The skill's description and text as the bot would have them. */
+    description: text('description').notNull(),
+    body: text('body').notNull(),
+    /** What the bot changed and why, in its own words. */
+    reason: text('reason'),
+    /** The bot that found it. */
+    proposedBy: text('proposed_by')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** The person the bot worked for when it found it. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    threadId: text('thread_id'),
+    createdAt: created(),
+  },
+  (t) => [index('skill_changes_skill_idx').on(t.skillId)],
 );
 
 /** Which bots have a skill turned on. */

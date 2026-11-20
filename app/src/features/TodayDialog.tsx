@@ -1,6 +1,6 @@
 import type { TodayReport } from '@yumakbot/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Brain, CircleAlert, CircleCheck, Clock, Loader2 } from 'lucide-react';
+import { Brain, CircleAlert, CircleCheck, Clock, Loader2, Sparkles } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useT } from '@/i18n';
@@ -79,6 +79,23 @@ export function TodayDialog() {
                       <Brain className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate">
                         {t('today.pendingMemory', { count: data.pendingMemory })}
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
+                        {t('today.pendingMemoryReview')}
+                      </span>
+                    </Item>
+                  ) : null}
+                  {/* Better ways bots found for the person's skills wait for the person to read them. */}
+                  {data.pendingSkills ? (
+                    <Item
+                      onClick={() => {
+                        useUi.getState().openSettings('skills');
+                        setOpen(false);
+                      }}
+                    >
+                      <Sparkles className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('today.pendingSkills', { count: data.pendingSkills })}
                       </span>
                       <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
                         {t('today.pendingMemoryReview')}

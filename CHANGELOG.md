@@ -3,6 +3,22 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## Unreleased
+
+### Added
+
+- A bot that finds a better way to do a skill's task while working for someone who may not change that skill now
+  suggests the change to the skill's owner instead of changing it for every bot that has it. The suggestion carries
+  the bot's reason; Settings → Skills shows it as a comparison with the skill as it is now, to accept or reject, and
+  the Today page counts the ones waiting. A newer suggestion from the same bot for the same person replaces the one
+  still waiting. Someone who may only talk with a bot can suggest changes too, but still cannot add skills to it.
+- Skills count how often bots read them, and the skills list shows the count.
+
+### Changed
+
+- A skill a bot saves for someone belongs to that person, who may then change or delete it like one they wrote.
+  Before, only the admins could.
+
 ## 0.6.1 — 2026-11-20
 
 ### Added
