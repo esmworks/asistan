@@ -1955,6 +1955,7 @@ export const en: Catalog<MessageKey> = {
   'apps.headerValue': 'Value',
   'apps.headerAdd': 'Add header',
   'apps.headerSaved': 'saved',
+  'apps.headerNameBlocked': 'This header is set by the app itself and cannot be changed.',
   'apps.tokenHint': 'Sent as an Authorization: Bearer header; never shown again.',
   'apps.tokenHelp': 'Create a {name} key',
   'apps.clientNeeded':
