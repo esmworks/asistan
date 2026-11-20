@@ -91,6 +91,21 @@ describe('süresi dolan notlar', () => {
     expect(await notes()).toHaveLength(0);
   });
 
+  it('süresi geçmiş notla aynı bilgi yeniden yazılınca yeni tarihiyle kaydedilir ve bota görünür', async () => {
+    const a = await t.bot({ name: 'Ali' });
+    const th = await main(a.id);
+    const old = await note(a.id, 'Ali izinde', iso(-1));
+    await t.send(th.id, '[araç:memory_write {"content":"Ali izinde","until":"2999-01-05"}]');
+    await t.services.turns.idle();
+    expect((await t.messages(th.id)).at(-1)!.text).not.toContain(old.id);
+    const kept = (await notes()).filter((m) => m.content === 'Ali izinde');
+    expect(kept).toHaveLength(2);
+    expect(kept.find((m) => m.id !== old.id)!.validUntil).toMatch(/^2999-01-05T/);
+    await t.send(th.id, 'merhaba');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('Ali izinde');
+  });
+
   it('süresi dolanlar silinmez; ayrı listelenir, Bugün sayısında olur, unutulmuş notlar listesine karışmaz', async () => {
     const a = await t.bot({ name: 'Ali' });
     const gone = await note(a.id, 'Geçen hafta tatildeydi', iso(-3));
