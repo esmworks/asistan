@@ -91,6 +91,7 @@ import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@/lib/
 import { editAsTyped } from '@/lib/undoableEdit';
 import { useHoldReload } from '@/lib/update';
 import { holdsFor, isOffline, retryOutbox, useOutbox } from '@/lib/outbox';
+import { markedName } from '@/lib/markup';
 import { ComputerButton } from './Computer';
 import { EmojiButton } from '@/components/EmojiPicker';
 import { PlanMeter } from './PlanMeter';
@@ -1626,6 +1627,12 @@ function Composer({
           items={attachments.items}
           onRemove={attachments.remove}
           onRetry={attachments.retry}
+          onMarkUp={(a, png, notes) => {
+            attachments.add([
+              new File([png], markedName(a.name, t('markup.fileSuffix')), { type: 'image/png' }),
+            ]);
+            if (notes) setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${notes}` : notes));
+          }}
         />
         <div className="flex items-end gap-1">
           <input

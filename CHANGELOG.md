@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Drawing on a picture before sending it: a pen button on an attached PNG, JPEG or WebP opens it to draw on in a
+  few colours and to pin numbered notes on it. "Add the marked copy" attaches the picture with the marks drawn in,
+  beside the untouched original, and puts the pins' notes in the message as a numbered list, so the bot sees both
+  where and what.
 - Bots make slide decks: a bot writes the slides (a cover, section dividers, titles with points, a paragraph, pictures
   from its folders, speaker notes) and gets a PowerPoint file in the conversation, which Keynote and Google Slides
   open too and the person can edit. Light or dark, with an accent colour; it costs nothing and reaches nothing

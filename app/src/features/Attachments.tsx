@@ -5,7 +5,7 @@ import {
   startUpload,
   type MessageFile,
 } from '@yumakbot/shared';
-import { AlertCircle, Download, FileText, Loader2, RotateCw, X } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, PenLine, RotateCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { create } from 'zustand';
@@ -16,6 +16,7 @@ import { previewKind } from '@/lib/preview';
 import { usePreview } from './FilePreview';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { ImageMarkup } from './ImageMarkup';
 
 /** An upload waiting on the server for its message; sending moves it into the conversation folder. */
 export interface StagedFile {
@@ -234,22 +235,40 @@ export function useAttachments(threadId: string) {
 /** Whether any conversation has files waiting in its composer. */
 export const useAnyAttachments = () => useComposerFiles((s) => Object.keys(s.byThread).length > 0);
 
+/** Pictures that can be drawn on: not a vector drawing or an animation, which a copy would flatten. */
+const MARKABLE = /\.(png|jpe?g|webp)$/i;
+
 export function AttachmentChips({
   items,
   onRemove,
   onRetry,
+  onMarkUp,
 }: {
   items: Attachment[];
   onRemove(a: Attachment): void;
   onRetry(a: Attachment): void;
+  /** A marked copy of a picture, and the notes left on it; the picture itself stays. */
+  onMarkUp?(a: Attachment, png: Blob, notes: string): void;
 }) {
   const t = useT();
   const { fileSize } = useFormat();
   // A picture about to be sent, seen at full size before sending.
   const [looking, setLooking] = useState<Attachment | null>(null);
+  const [marking, setMarking] = useState<Attachment | null>(null);
   if (!items.length) return null;
   return (
     <div className="flex flex-wrap gap-2 px-2 pt-2">
+      {marking?.preview && onMarkUp && (
+        <ImageMarkup
+          src={marking.preview}
+          name={marking.name}
+          onClose={() => setMarking(null)}
+          onSave={(png, notes) => {
+            onMarkUp(marking, png, notes);
+            setMarking(null);
+          }}
+        />
+      )}
       <Dialog open={!!looking} onOpenChange={(o) => !o && setLooking(null)}>
         <DialogContent className="flex max-h-[90vh] w-auto max-w-[min(1100px,96vw)] items-center justify-center rounded-3xl p-3 sm:max-w-[min(1100px,96vw)]">
           <DialogTitle className="sr-only">{looking?.name}</DialogTitle>
@@ -305,6 +324,17 @@ export function AttachmentChips({
               </span>
             )}
           </span>
+          {onMarkUp && a.saved && a.preview && MARKABLE.test(a.name) && (
+            <button
+              type="button"
+              onClick={() => setMarking(a)}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t('markup.open', { name: a.name })}
+              title={t('markup.open', { name: a.name })}
+            >
+              <PenLine className="size-3.5" />
+            </button>
+          )}
           {a.error && (
             <button
               type="button"
