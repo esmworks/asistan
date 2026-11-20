@@ -1,5 +1,5 @@
 import { eq, like } from 'drizzle-orm';
-import type { Model, ModelAuth } from '@earendil-works/pi-ai';
+import type { Model, ModelAuth, OpenAICompletionsCompat } from '@earendil-works/pi-ai';
 import { getModels, getProviders } from '@earendil-works/pi-ai/compat';
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai/models';
 import {
@@ -527,6 +527,8 @@ export class ProviderKeyService {
       const dev = (await this.catalog?.provider(provider))?.models[id];
       return dev ? withCatalog(base, dev) : base;
     }
+    // The client's types tie `compat` to one api, which the generic model type cannot name; the
+    // client reads it all the same.
     return {
       id,
       name: id,
@@ -542,7 +544,7 @@ export class ProviderKeyService {
         // Room for the input in a small window.
         Math.max(1_024, Math.floor((e.meta?.[id]?.contextWindow ?? 128_000) / 4)),
       ),
-    };
+    } as Model<string>;
   }
 }
 
@@ -552,7 +554,9 @@ export class ProviderKeyService {
  * client's guesses for OpenAI-only fields are turned off for it: a stricter server answers an
  * unknown `store` or the `developer` role with an error and the turn fails at once.
  */
-export function endpointApi(baseUrl: string): Pick<Model<string>, 'api' | 'compat'> {
+export function endpointApi(
+  baseUrl: string,
+): { api: 'openai-responses' } | { api: 'openai-completions'; compat: OpenAICompletionsCompat } {
   let host = '';
   try {
     host = new URL(baseUrl).hostname.toLowerCase();

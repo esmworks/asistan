@@ -1566,7 +1566,7 @@ describe('katalogda olmayan model', () => {
     expect(endpointApi('https://api.openai.com/v1')).toEqual({ api: 'openai-responses' });
     expect(endpointApi('https://API.OPENAI.com/v1/').api).toBe('openai-responses');
     expect(endpointApi('https://api.openai.com.evil.example/v1').api).toBe('openai-completions');
-    expect(endpointApi('http://127.0.0.1:11434/v1').compat).toMatchObject({ supportsStore: false });
+    expect(endpointApi('http://127.0.0.1:11434/v1')).toMatchObject({ compat: { supportsStore: false } });
     // Nothing alike: the first listed model stands in.
     expect(unlistedModel(listed, 'zzz')?.api).toBe('anthropic-messages');
     expect(unlistedModel([], 'gpt-6.2')).toBeUndefined();
