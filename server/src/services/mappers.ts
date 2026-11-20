@@ -171,7 +171,8 @@ export const toRun = (r: Row<typeof schema.routineRuns>): RoutineRun => ({
   id: r.id,
   routineId: r.routineId,
   occurrence: r.occurrence,
-  status: r.status,
+  // A run held at an approval step reads as waiting; its reason says on whom.
+  status: r.status === 'paused' ? 'waiting' : r.status,
   reason: r.reason,
   threadId: r.threadId,
   startedAt: r.startedAt.toISOString(),

@@ -530,8 +530,10 @@ export const routineRuns = pgTable(
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
     // `queued`: outside text that arrived while another run was going, kept until that one ends.
+    // `paused`: a step waits for the person (or, later, for something to happen); no turn is
+    // going, so it does not hold up the routine's other runs.
     status: text('status', {
-      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued'],
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued', 'paused'],
     }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
@@ -594,6 +596,10 @@ export const routineStepRuns = pgTable(
     reason: text('reason'),
     /** The bot's turn doing the step, while it is a bot's. */
     turnId: text('turn_id'),
+    /** The card an approval step asks the person on. */
+    approvalId: text('approval_id'),
+    /** When a waiting step gives up. */
+    waitUntil: ts('wait_until'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },

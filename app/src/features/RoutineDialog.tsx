@@ -1,4 +1,11 @@
-import { describeSchedule, parseCron, SHORT_DAY_NAMES, type Routine, type Schedule } from '@yumakbot/shared';
+import {
+  describeSchedule,
+  parseCron,
+  ROUTINE_APPROVAL_MAX_DAYS,
+  SHORT_DAY_NAMES,
+  type Routine,
+  type Schedule,
+} from '@yumakbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, Webhook as WebhookIcon } from 'lucide-react';
@@ -30,7 +37,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
-import { RunSteps, StepsEditor } from './RoutineSteps';
+import { RunSteps, StepsEditor, type StepForm } from './RoutineSteps';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -56,12 +63,20 @@ const Form = z.object({
   prompt: z.string().trim().min(1, 'routine.promptRequired').max(20_000),
   /** What it does after its instruction, in order. */
   steps: z.array(
-    z.object({
-      id: z.string(),
-      kind: z.literal('agent'),
-      prompt: z.string().trim().min(1, 'routine.stepPromptRequired').max(20_000),
-      model: z.string().max(200),
-    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        id: z.string(),
+        kind: z.literal('agent'),
+        prompt: z.string().trim().min(1, 'routine.stepPromptRequired').max(20_000),
+        model: z.string().max(200),
+      }),
+      z.object({
+        id: z.string(),
+        kind: z.literal('approval'),
+        question: z.string().trim().min(1, 'routine.stepQuestionRequired').max(2000),
+        timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS),
+      }),
+    ]),
   ),
   type: z.enum(['hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'cron', 'once']),
   expr: z
@@ -136,7 +151,11 @@ function fromRoutine(r?: Routine): Form {
   return {
     name: r?.name ?? '',
     prompt: r?.prompt ?? '',
-    steps: (r?.steps ?? []).map((x) => ({ id: x.id, kind: x.kind, prompt: x.prompt, model: x.model ?? '' })),
+    steps: (r?.steps ?? []).map((x): StepForm =>
+      x.kind === 'agent'
+        ? { id: x.id, kind: x.kind, prompt: x.prompt, model: x.model ?? '' }
+        : { id: x.id, kind: x.kind, question: x.question, timeoutDays: x.timeoutDays },
+    ),
     type: s?.type ?? 'weekdays',
     time: s && 'time' in s ? s.time : '09:00',
     minute: s?.type === 'hourly' ? s.minute : 0,
@@ -202,7 +221,11 @@ export function RoutineDialog({
       const body = {
         name: f.name,
         prompt: f.prompt,
-        steps: f.steps.map((x) => ({ ...x, prompt: x.prompt.trim(), model: x.model.trim() })),
+        steps: f.steps.map((x) =>
+          x.kind === 'agent'
+            ? { ...x, prompt: x.prompt.trim(), model: x.model.trim() }
+            : { ...x, question: x.question.trim() },
+        ),
         schedule: toSchedule(f),
         missed: f.missed,
         carryReport: f.carryReport,
@@ -240,7 +263,11 @@ export function RoutineDialog({
   });
   const err = form.formState.errors;
   const type = values.type;
-  const stepErrors = (values.steps ?? []).map((_, i) => err.steps?.[i]?.prompt?.message);
+  const stepErrors = (values.steps ?? []).map((_, i) => {
+    const e = err.steps?.[i] as
+      { prompt?: { message?: string }; question?: { message?: string } } | undefined;
+    return e?.prompt?.message ?? e?.question?.message;
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

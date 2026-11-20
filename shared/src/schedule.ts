@@ -70,10 +70,19 @@ export const ROUTINE_STEP_MAX = 10;
 
 const stepId = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
 
+/** The tool name of the card an approval step asks the person on. */
+export const ROUTINE_APPROVAL_TOOL = 'routine_approval';
+
+/** The longest an approval step waits for the person, in days. */
+export const ROUTINE_APPROVAL_MAX_DAYS = 30;
+
 /**
- * A step of a routine after its own instruction, done once the step before it ended well. `agent`:
- * the bot works on another instruction, with the step before it as what it builds on, on a model of
- * its own when one is named (empty for the routine's).
+ * A step of a routine after its own instruction, done once the step before it ended well.
+ * `agent`: the bot works on another instruction, with the step before it as what it builds on, on a
+ * model of its own when one is named (empty for the routine's). `approval`: the run waits for the
+ * person to answer `question` about what the step before it ended with; they let it go on, turn it
+ * down (the run stops), or write what to change (the step before it is done again with that). Left
+ * unanswered for `timeoutDays`, the run ends.
  */
 export const RoutineStep = z.discriminatedUnion('kind', [
   z.object({
@@ -81,6 +90,12 @@ export const RoutineStep = z.discriminatedUnion('kind', [
     kind: z.literal('agent'),
     prompt: z.string().trim().min(1, 'validation.stepPrompt').max(20_000),
     model: z.string().trim().max(200).default(''),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('approval'),
+    question: z.string().trim().min(1, 'validation.stepQuestion').max(2000),
+    timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
   }),
 ]);
 export type RoutineStep = z.infer<typeof RoutineStep>;
@@ -272,6 +287,10 @@ export const RoutineStepRun = z.object({
   reason: z.string().nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
+  /** The card an approval step asks on; missing for other steps and on older servers. */
+  approvalId: z.string().nullable().optional(),
+  /** When a step waiting for the person or for something to happen gives up. */
+  waitUntil: z.string().nullable().optional(),
 });
 export type RoutineStepRun = z.infer<typeof RoutineStepRun>;
 

@@ -27,6 +27,29 @@ export function kindAt(steps: readonly RoutineStep[], position: number): string 
   return position === 0 ? 'prompt' : (steps[position - 1]?.kind ?? 'agent');
 }
 
+/**
+ * The output the step before `position` handed on: that of the nearest bot step before it, as an
+ * approval step only lets through what came before it.
+ */
+export function handedOn(
+  steps: readonly RoutineStep[],
+  rows: readonly StepRow[],
+  position: number,
+): string | null {
+  for (let p = position - 1; p >= 0; p--) {
+    if (kindAt(steps, p) === 'approval') continue;
+    return rows.find((r) => r.position === p)?.output ?? null;
+  }
+  return null;
+}
+
+/** The nearest bot step at or before `position`: the one a written correction sends back to. */
+export function botStepAt(steps: readonly RoutineStep[], position: number): number {
+  let p = position;
+  while (p > 0 && kindAt(steps, p) === 'approval') p--;
+  return p;
+}
+
 /** Every step of a run, with the ones that have not started as `pending`. */
 export function stepList(steps: readonly RoutineStep[], rows: readonly StepRow[]): RoutineStepRun[] {
   const at = new Map(rows.map((r) => [r.position, r]));
@@ -52,6 +75,8 @@ export function stepList(steps: readonly RoutineStep[], rows: readonly StepRow[]
       reason: row.reason,
       startedAt: row.startedAt.toISOString(),
       finishedAt: iso(row.finishedAt),
+      ...(row.approvalId && { approvalId: row.approvalId }),
+      ...(row.waitUntil && { waitUntil: row.waitUntil.toISOString() }),
     };
   });
 }

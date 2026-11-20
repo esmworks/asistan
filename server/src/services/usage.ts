@@ -110,7 +110,12 @@ export class UsageService {
       date,
       costUsd,
       bots: [...bots.values()].sort((a, b) => b.turns - a.turns),
-      runs: runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString() })),
+      runs: runs.map((r) => ({
+        ...r,
+        // A run held at an approval step reads as waiting, as in the routine's own list.
+        status: r.status === 'paused' ? ('waiting' as const) : r.status,
+        startedAt: r.startedAt.toISOString(),
+      })),
     };
   }
 
