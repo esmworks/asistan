@@ -79,7 +79,10 @@ export function loadEmojis(): Promise<Emoji[]> {
  * The newest Emoji version this system draws, found by drawing the first emoji of each version,
  * newest first; null when that cannot be told (no canvas), and then nothing is left out.
  */
-export function newestDrawn(list: readonly Emoji[], draws: ((emoji: string) => boolean) | null): number | null {
+export function newestDrawn(
+  list: readonly Emoji[],
+  draws: ((emoji: string) => boolean) | null,
+): number | null {
   if (!draws) return null;
   const firsts = new Map<number, string>();
   for (const e of list) if (!firsts.has(e.version)) firsts.set(e.version, e.emoji);
