@@ -611,6 +611,8 @@ function Setup({
   const [ownSwitch, setOwnSwitch] = useState(false);
   const [headers, setHeaders] = useState<{ name: string; value: string }[]>([]);
   const [typed, setTyped] = useState({ name: '', value: '' });
+  // A catalog service rarely needs headers of its own: they stay behind a link until asked for.
+  const [showHeaders, setShowHeaders] = useState(!entry);
   const sentHeaders = formHeaders(headers, typed);
   const manages = useManagesServer();
   const [team, setTeam] = useState(false);
@@ -812,6 +814,18 @@ function Setup({
             )}
           </div>
         )}
+        {entry &&
+          (showHeaders ? (
+            <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
+          ) : (
+            <button
+              type="button"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={() => setShowHeaders(true)}
+            >
+              {t('apps.headerAdd')}
+            </button>
+          ))}
         {another && auth === 'oauth' && (
           <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-sm">
             {t('apps.accountSignInNote', { name: entry.name })}
