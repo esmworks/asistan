@@ -8,23 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
+import { clock, rehearsalSeconds, startedBySomething, triggerKey } from '@/lib/rehearsal';
 import { cn } from '@/lib/utils';
 
 const NONE = 'none';
-
-/** What the bot is handed on a replay, in words: the kinds a run can be started by. */
-const triggerKey = (trigger: string | null): MessageKey =>
-  trigger === 'watch' || trigger === 'webhook' || trigger === 'email' || trigger === 'whatsapp'
-    ? (`rehearsal.trigger.${trigger}` as MessageKey)
-    : 'rehearsal.trigger.manual';
-
-/** Whether anything starts the routine besides its schedule, so a replay is worth offering. */
-const startedBySomething = (r: Routine) =>
-  !!r.watchUrl || !!r.check || !!r.webhookToken || r.emailTrigger || !!r.whatsappGroup || !!r.whatsappPeople;
-
-const seconds = (r: Rehearsal) =>
-  r.finishedAt ? Math.max(0, Math.round((Date.parse(r.finishedAt) - Date.parse(r.startedAt)) / 1000)) : null;
-const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /**
  * Tries a routine once without doing anything, with the instruction as it is typed in the form and,
@@ -156,7 +143,7 @@ export function RoutineRehearsal({ routine, prompt }: { routine: Routine; prompt
 function Result({ rehearsal: r }: { rehearsal: Rehearsal }) {
   const t = useT();
   const f = useFormat();
-  const took = seconds(r);
+  const took = rehearsalSeconds(r);
   const would = r.steps.filter((s) => s.kind === 'would');
   const ran = r.steps.filter((s) => s.kind === 'ran');
   return (

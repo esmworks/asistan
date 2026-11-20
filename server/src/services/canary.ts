@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import type { Bot, CanaryAlarm } from '@yumakbot/shared';
-import { desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { AppTool } from '../engine/types';
@@ -280,9 +280,9 @@ export class CanaryService {
       .select({ alarm: schema.canaryAlarms, botName: schema.bots.name })
       .from(schema.canaryAlarms)
       .innerJoin(schema.bots, eq(schema.bots.id, schema.canaryAlarms.botId))
-      .where(isNull(schema.canaryAlarms.seenAt))
+      .where(and(eq(schema.canaryAlarms.userId, userId), isNull(schema.canaryAlarms.seenAt)))
       .orderBy(desc(schema.canaryAlarms.createdAt));
-    return rows.filter((r) => r.alarm.userId === userId).map((r) => toAlarm(r.alarm, r.botName));
+    return rows.map((r) => toAlarm(r.alarm, r.botName));
   }
 
   /** Marks one of `userId`'s alarms seen; anyone else's is not found. */

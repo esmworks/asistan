@@ -152,7 +152,8 @@ describe('taking back what one turn changed', () => {
       botId: bot.id,
       name: 'Noon',
       prompt: 'Say hi.',
-      steps: [],
+      // A routine of several steps, started by a reaction too: it comes back with all of it.
+      steps: [{ id: 'tell', kind: 'notify', text: 'Done.', withBefore: true }],
       schedule: { type: 'daily', time: '12:00' },
       timezone: 'UTC',
       enabled: true,
@@ -160,7 +161,7 @@ describe('taking back what one turn changed', () => {
       carryReport: false,
       inMain: false,
       slackChannel: null,
-      slackReaction: '',
+      slackReaction: 'eyes',
       onStartup: false,
       watchUrl: null,
       check: null,
@@ -182,13 +183,25 @@ describe('taking back what one turn changed', () => {
     expect(await t.services.routines.list(bot.id)).toHaveLength(0);
     expect((await undo(deleted)).body.items[0]!.outcome).toBe('restored');
     const [back] = await t.services.routines.list(bot.id);
-    expect(back).toMatchObject({ name: 'Noon', prompt: 'Say hi.' });
+    expect(back).toMatchObject({
+      name: 'Noon',
+      prompt: 'Say hi.',
+      steps: [{ id: 'tell', kind: 'notify', text: 'Done.', withBefore: true }],
+      slackReaction: 'eyes',
+    });
 
     await say(thread.id, `[araç:routine_update ${JSON.stringify({ routine: 'Noon', prompt: 'Say bye.' })}]`);
     const again = await lastTurn(thread.id);
     await t.services.routines.update(back!.id, { prompt: 'Edited by the person.' });
     expect((await undo(again)).body.items[0]!.outcome).toBe('later');
     expect((await t.services.routines.get(back!.id)).prompt).toBe('Edited by the person.');
+
+    // A change to its steps alone since the turn is seen too.
+    await say(thread.id, `[araç:routine_update ${JSON.stringify({ routine: 'Noon', prompt: 'Say bye.' })}]`);
+    const stepsLater = await lastTurn(thread.id);
+    await t.services.routines.update(back!.id, { steps: [] });
+    expect((await undo(stepsLater)).body.items[0]!.outcome).toBe('later');
+    expect((await t.services.routines.get(back!.id)).prompt).toBe('Say bye.');
   });
 
   it('puts a ticket and a skill back', async () => {

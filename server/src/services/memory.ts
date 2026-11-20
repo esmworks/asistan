@@ -368,6 +368,9 @@ export class MemoryService {
           input.scope === 'user' && input.userId ? eq(schema.memories.userId, input.userId) : undefined,
           input.scope === 'room' ? eq(schema.memories.place, input.place ?? '') : undefined,
           input.site ? eq(schema.memories.site, input.site) : isNull(schema.memories.site),
+          // A note past its date reaches no bot: the same fact said again is kept as a new note
+          // (with its own date) instead of being taken for one already there.
+          unexpired(new Date()),
         ),
       );
     const key = noteKey(input.content);

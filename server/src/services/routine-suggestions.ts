@@ -574,19 +574,35 @@ export class RoutineSuggestionService {
     await this.services.access.requireBot(viewer, row.botId, 'edit');
     const schedule = edits.schedule ?? row.schedule;
     if (!schedule) throw new HttpError(400, 'error.suggestionNoSchedule');
-    const routine = await this.services.routines.create(
-      RoutineCreate.parse({
-        botId: row.botId,
-        name: edits.name ?? row.name,
-        prompt: edits.instructions ?? row.instructions,
-        schedule,
-        timezone: row.timezone,
-      }),
-      viewer.userId,
-    );
+    const input = RoutineCreate.parse({
+      botId: row.botId,
+      name: edits.name ?? row.name,
+      prompt: edits.instructions ?? row.instructions,
+      schedule,
+      timezone: row.timezone,
+    });
+    // Claimed in one write before the routine is made: a second tap, or the same suggestion
+    // accepted on another device at once, finds it taken and makes no second routine.
+    const [claimed] = await this.ctx.db
+      .update(schema.routineSuggestions)
+      .set({ status: 'accepted', decidedAt: this.clock() })
+      .where(and(eq(schema.routineSuggestions.id, id), eq(schema.routineSuggestions.status, 'open')))
+      .returning({ id: schema.routineSuggestions.id });
+    if (!claimed) throw notFound('routineSuggestion');
+    let routine: Routine;
+    try {
+      routine = await this.services.routines.create(input, viewer.userId);
+    } catch (err) {
+      // No routine was made (a limit, a bad schedule): the suggestion is offered again.
+      await this.ctx.db
+        .update(schema.routineSuggestions)
+        .set({ status: 'open', decidedAt: null })
+        .where(eq(schema.routineSuggestions.id, id));
+      throw err;
+    }
     await this.ctx.db
       .update(schema.routineSuggestions)
-      .set({ status: 'accepted', routineId: routine.id, decidedAt: this.clock() })
+      .set({ routineId: routine.id })
       .where(eq(schema.routineSuggestions.id, id));
     this.ctx.bus.refresh({ scope: 'routineSuggestions' });
     return routine;
