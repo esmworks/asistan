@@ -15,6 +15,8 @@ import {
   connectionToolParts,
   describeAction,
   ApprovalDecision,
+  type Approver,
+  type SecondYes,
   BotAccess,
   BotCreate,
   type Bot,
@@ -295,6 +297,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   const peopleChanged = async (userId: string, signOut: boolean) => {
     await d.auth.forgetPerson(userId, signOut);
     s.access.forget();
+    // A step may have waited for this person's second yes.
+    await s.approvals.refuseUnanswerable();
     d.dropSockets(userId);
     s.ctx.bus.refresh({ scope: 'people' });
   };
@@ -631,6 +635,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await requireBotOwner(req, id);
     const bot = await s.bots.setAccess(id, BotAccess.parse(req.body));
     s.access.forget();
+    // Someone who lost the bot can no longer give a second yes on its steps.
+    await s.approvals.refuseUnanswerable();
     return leveled(req, bot);
   });
   // The document a bot's instructions are kept in: read it now, take its text, or turn it down.
@@ -1352,6 +1358,43 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/approvals/:id', async (req) =>
     s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId),
   );
+  // Steps that wait for this person's second yes, without the conversations they come from.
+  app.get('/api/approvals-second', async (req): Promise<SecondYes[]> => {
+    const locale = await serverLocale(s.ctx);
+    const names = await s.connections.names();
+    const botNames = new Map((await s.bots.list()).map((b) => [b.id, b.name]));
+    return (await s.approvals.waitingForSecond(me(req).userId)).map(({ card, askedBy }) => {
+      const server = connectionToolParts(card.toolName)?.server;
+      const said = describeAction(card.toolName, card.input, {
+        bot: botNames.get(card.botId) ?? '',
+        locale,
+        service: server ? names.get(server) : undefined,
+      });
+      return {
+        id: card.id,
+        botId: card.botId,
+        askedBy,
+        summary: card.summary,
+        step: said.step,
+        detail: said.detail,
+        firstApprover: card.firstApprover ?? null,
+        firstAt: card.firstAt ?? card.createdAt,
+        createdAt: card.createdAt,
+      };
+    });
+  });
+  // The second yes, given from that list: it only reaches a card waiting for one.
+  app.post('/api/approvals-second/:id', async (req) =>
+    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId, {
+      fromList: true,
+    }),
+  );
+  // Who could give a second yes on a bot's steps (every bot's, without `botId`).
+  app.get('/api/approvers', async (req): Promise<Approver[]> => {
+    const { botId } = z.object({ botId: z.string().min(1).optional() }).parse(req.query);
+    await checkRuleBot(req, botId);
+    return s.approvals.approvers(botId ?? null);
+  });
   // What a bot changed, and what let each step through.
   app.get('/api/bots/:id/actions', async (req) => {
     const { id } = IdParams.parse(req.params);
@@ -1404,7 +1447,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/rules', async (req) => {
     const body = PermissionRuleCreate.parse(req.body);
     await checkRuleBot(req, body.botId);
-    return s.approvals.addRule(body);
+    return s.approvals.addRule(body, me(req).userId);
   });
   app.delete('/api/rules/:id', async (req) => {
     const id = IdParams.parse(req.params).id;

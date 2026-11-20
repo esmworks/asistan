@@ -48,6 +48,11 @@ export interface NoticeEvent {
   botId: string;
   threadId: string;
   text: string;
+  /**
+   * Only these people are told, instead of those who see the conversation: a step waits for their
+   * second yes and they do not see the conversation, so `threadId` is empty.
+   */
+  to?: string[];
 }
 
 export interface TurnEvent {

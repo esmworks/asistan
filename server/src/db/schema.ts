@@ -333,6 +333,16 @@ export const approvals = pgTable(
      * their message in the chat in place of an answer. Null on cards from before it was kept.
      */
     decidedBy: text('decided_by', { enum: ['person', 'rule', 'typed'] }),
+    /**
+     * An "always ask" rule asked for a second person's yes: the step runs only after two different
+     * people allowed it. `secondUserId` is the one the rule named (anyone who may change the bot
+     * when null), kept as the rule had it when the card was made.
+     */
+    needsSecond: boolean('needs_second').notNull().default(false),
+    secondUserId: text('second_user_id'),
+    /** The first yes of such a card: who gave it and when. The card stays pending until the second. */
+    firstByUserId: text('first_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    firstAt: ts('first_at'),
     createdAt: created(),
     decidedAt: ts('decided_at'),
   },
@@ -358,6 +368,8 @@ export const botActions = pgTable(
     /** The rule that let it through, when one did. */
     rule: text('rule'),
     approvalId: text('approval_id'),
+    /** The people whose yes on a card let it through: two for a step that needed a second person. */
+    approvedBy: jsonb('approved_by').$type<string[]>().notNull().default([]),
     /** Taken in a run outside text started. */
     outside: boolean('outside').notNull().default(false),
     createdAt: created(),
@@ -382,6 +394,13 @@ export const permissionRules = pgTable('permission_rules', {
    */
   field: text('field'),
   limit: doublePrecision('limit_value'),
+  /**
+   * An ask rule's step runs only after two different people said yes. `secondUserId` names the
+   * second one; without it, anyone but the first who may change the bot. Not a reference: a
+   * person who is gone leaves a rule nobody can answer, so the step is refused, not loosened.
+   */
+  secondPerson: boolean('second_person').notNull().default(false),
+  secondUserId: text('second_user_id'),
   createdAt: created(),
 });
 

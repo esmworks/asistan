@@ -4,6 +4,7 @@ import type { Catalog } from '@yumakbot/shared';
 export const tr = {
   // Shared words
   'common.bot': 'Bot',
+  'common.someone': 'Biri',
   'common.loading': 'Yükleniyor…',
   'common.add': 'Ekle',
   'common.save': 'Kaydet',
@@ -334,6 +335,10 @@ export const tr = {
   'today.canaryOpen': 'Sohbeti aç',
   'today.canarySeen': 'Gördüm',
   'today.waiting': 'Seni bekleyenler',
+  'second.title': 'İkinci onayını bekleyenler',
+  'second.askedBy': '{name} istedi',
+  'second.firstYes': '{name} evet dedi, {when}',
+  'second.allow': 'Evet de',
   'today.waitingNone': 'Seni bekleyen bir şey yok.',
   'today.bots': 'Botların yaptıkları',
   'today.botsNone': 'Bugün henüz hiçbir bot çalışmadı.',
@@ -855,6 +860,9 @@ export const tr = {
 
   // Approval cards
   'approval.question': 'İzin veriyor musun?',
+  'approval.needsSecond':
+    'Bu adım iki kişinin onayını istiyor. Seninkinden sonra botu değiştirebilen başka biri sorulur.',
+  'approval.waitingSecond': '{name} evet dedi. İkinci kişi bekleniyor.',
   'approval.allowOnce': 'Bu seferlik izin ver',
   'approval.allowAlways': 'Hep izin ver',
   'approval.allowAlwaysHint':
@@ -1523,6 +1531,15 @@ export const tr = {
   'rules.limitOver': 'yalnızca {field} > {limit} olduğunda ya da okunamadığında',
   'rules.limitInvalid': 'Sınır için sıfır ya da daha büyük bir sayı gir',
   'rules.forBot': 'Yalnızca {bot} için',
+  'rules.forBotLabel': 'Kapsam',
+  'rules.allBots': 'Her bot',
+  'rules.second': 'İkinci kişinin onayını iste',
+  'rules.secondWho': 'İkinci kişi',
+  'rules.secondAnyone': 'Botu değiştirebilen herhangi biri',
+  'rules.secondHint':
+    'Adım yalnızca iki farklı kişi evet dedikten sonra çalışır: ilki kartta, ikincisi botu değiştirebilen başka biri; o, konuşmayı görmeden adımı görür. “Hep izin ver” sunulmaz, tam erişimli bot da bekler.',
+  'rules.secondOn': 'ikinci kişinin onayını ister',
+  'rules.secondNamed': 'ikinci onayı {name} vermeli',
   'rules.blockHint':
     'Hiçbir kipte ve kart açılmadan asla çalışmaz; engel diğer bütün kurallardan önce gelir. Bota engellendiği söylenir.',
 

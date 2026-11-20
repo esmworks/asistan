@@ -516,10 +516,41 @@ export const Approval = z.object({
   answer: z.string().nullable(),
   /** Allowed with "Hep izin ver": the bot now goes ahead by itself (full access). */
   remembered: z.boolean(),
+  /**
+   * An "always ask" rule wants two different people's yes. Once the first said yes the card stays
+   * pending, `firstApprover` and `firstAt` say who and when, and it waits for the second. Missing
+   * from older servers.
+   */
+  needsSecond: z.boolean().optional(),
+  firstApprover: Id.nullable().optional(),
+  firstAt: z.string().nullable().optional(),
   createdAt: z.string(),
   decidedAt: z.string().nullable(),
 });
 export type Approval = z.infer<typeof Approval>;
+
+/**
+ * A step that waits for a second person's yes, as that person sees it: what it is and who said
+ * yes first, without the conversation it comes from. People are given by id.
+ */
+export const SecondYes = z.object({
+  id: Id,
+  botId: Id,
+  /** Whose request it is; null for the bot's own work (a routine, a hook). */
+  askedBy: Id.nullable(),
+  /** The card's words, and the step and its details as the card shows them under "What?". */
+  summary: z.string(),
+  step: z.string(),
+  detail: z.string().nullable(),
+  firstApprover: Id.nullable(),
+  firstAt: z.string(),
+  createdAt: z.string(),
+});
+export type SecondYes = z.infer<typeof SecondYes>;
+
+/** A person who could give a second yes on a bot's steps. */
+export const Approver = z.object({ id: Id, name: z.string() });
+export type Approver = z.infer<typeof Approver>;
 
 /**
  * A step that changes something which a bot was let through, and what let it: `card` the person,
@@ -535,6 +566,8 @@ export const BotAction = z.object({
   summary: z.string(),
   how: BotActionHow,
   rule: z.string().nullable(),
+  /** The people whose yes let the step through (two when it needed a second person). Missing from older servers. */
+  approvedBy: z.array(Id).optional(),
   outside: z.boolean(),
   createdAt: z.string(),
 });
@@ -850,6 +883,12 @@ export const PermissionRule = z.object({
    */
   field: z.string().nullable().optional(),
   limit: z.number().nullable().optional(),
+  /**
+   * An ask rule's step runs only after two different people said yes; `secondUserId` names the
+   * second one, or anyone but the first who may change the bot when null. Missing from older servers.
+   */
+  secondPerson: z.boolean().optional(),
+  secondUserId: Id.nullable().optional(),
   createdAt: z.string(),
 });
 export type PermissionRule = z.infer<typeof PermissionRule>;
@@ -863,10 +902,20 @@ export const PermissionRuleCreate = z
     botId: Id.nullable().optional(),
     field: z.string().trim().max(100).regex(LIMIT_FIELD, 'validation.limitField').optional(),
     limit: z.number().finite().nonnegative().optional(),
+    secondPerson: z.boolean().optional(),
+    secondUserId: Id.nullable().optional(),
   })
   .refine((r) => (r.field === undefined) === (r.limit === undefined), {
     message: 'validation.limitBoth',
     path: ['limit'],
+  })
+  .refine((r) => !r.secondPerson || r.list === 'ask', {
+    message: 'validation.secondAsk',
+    path: ['secondPerson'],
+  })
+  .refine((r) => !r.secondUserId || r.secondPerson, {
+    message: 'validation.secondNamed',
+    path: ['secondUserId'],
   });
 
 /** `room`: a note about a place (a chat app channel, or a room), read only where it was written. */

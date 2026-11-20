@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useBots, useSummaries } from '@/lib/queries';
 import { useUi } from '@/lib/store';
+import { SecondYesSection } from './SecondYes';
 import { cn } from '@/lib/utils';
 
 /**
@@ -88,6 +89,8 @@ export function TodayDialog() {
                 </div>
               </section>
             ) : null}
+            {/* Steps that need this person's second yes; they do not see the conversation. */}
+            <SecondYesSection enabled={open} />
             <Section
               title={t('today.waiting')}
               empty={t('today.waitingNone')}

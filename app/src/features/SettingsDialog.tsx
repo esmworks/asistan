@@ -71,6 +71,7 @@ import {
   useStaleMemory,
   useRoutines,
   useRules,
+  usePeople,
   useManagesServer,
   useSession,
   useSettings,
@@ -120,7 +121,7 @@ import { ProfileTab } from './ProfileTab';
 import { SkillsTab } from './SkillsTab';
 import { UsageTab } from './UsageTab';
 import { VaultTab } from './VaultTab';
-import { PeopleTab } from './PeopleTab';
+import { PeopleTab, personName, personNameOf } from './PeopleTab';
 import { AccountForm } from './AccountSetup';
 import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
@@ -1269,13 +1270,38 @@ function Permissions() {
   const limitNumber = limit.trim() ? Number(limit.trim().replace(',', '.')) : null;
   const limitBad = !!limit.trim() && (!Number.isFinite(limitNumber) || (limitNumber ?? 0) < 0);
   const limited = !!field.trim() && limitNumber !== null && !limitBad;
+  // The bot a rule is for ('all': every bot), and whether its step needs a second person's yes.
+  const [forBot, setForBot] = useState('all');
+  const [second, setSecond] = useState(false);
+  const [secondUser, setSecondUser] = useState('anyone');
+  const { data: people = [] } = usePeople();
+  // Offered only when at least one other person could give that yes.
+  const { data: approvers = [] } = useQuery({
+    queryKey: ['approvers', forBot],
+    queryFn: () => api.approvers(forBot === 'all' ? null : forBot),
+    enabled: list === 'ask',
+    retry: false,
+  });
+  const secondOffered = list === 'ask' && approvers.length >= 2;
+  const needsSecond = secondOffered && second;
   const add = useMutation({
     mutationFn: () =>
-      api.addRule({ list, pattern, ...(limited && { field: field.trim(), limit: limitNumber! }) }),
+      api.addRule({
+        list,
+        pattern,
+        ...(forBot !== 'all' && { botId: forBot }),
+        ...(limited && { field: field.trim(), limit: limitNumber! }),
+        ...(needsSecond && {
+          secondPerson: true,
+          ...(secondUser !== 'anyone' && { secondUserId: secondUser }),
+        }),
+      }),
     onSuccess: () => {
       setPattern('');
       setField('');
       setLimit('');
+      setSecond(false);
+      setSecondUser('anyone');
       void qc.invalidateQueries({ queryKey: ['rules'] });
     },
     onError: (e) => toast.error((e as Error).message),
@@ -1294,7 +1320,7 @@ function Permissions() {
         .map((r) => {
           // The readable name on top, the rule as it is matched under it, and the one bot it is for.
           const label = ruleLabel(r.pattern, t, apps);
-          const forBot = r.botId ? t('rules.forBot', { bot: botNames.get(r.botId) ?? r.botId }) : '';
+          const forBotLabel = r.botId ? t('rules.forBot', { bot: botNames.get(r.botId) ?? r.botId }) : '';
           const bound =
             r.field && typeof r.limit === 'number'
               ? t(r.list === 'allow' ? 'rules.limitAllow' : 'rules.limitOver', {
@@ -1302,7 +1328,14 @@ function Permissions() {
                   limit: f.number(r.limit),
                 })
               : '';
-          const hint = [label ? r.pattern : '', bound, forBot].filter(Boolean).join(' · ');
+          const twoKeys = r.secondPerson
+            ? r.secondUserId
+              ? t('rules.secondNamed', {
+                  name: personNameOf(people, r.secondUserId, t('people.owner'), t('common.someone')),
+                })
+              : t('rules.secondOn')
+            : '';
+          const hint = [label ? r.pattern : '', bound, twoKeys, forBotLabel].filter(Boolean).join(' · ');
           return (
             <Row key={r.id} label={label ?? r.pattern} hint={hint || undefined}>
               <Button
@@ -1371,6 +1404,55 @@ function Permissions() {
         <p className={cn('text-xs', limitBad ? 'text-destructive' : 'text-muted-foreground')}>
           {t(limitBad ? 'rules.limitInvalid' : 'rules.limitHint')}
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{t('rules.forBotLabel')}</span>
+          <Select
+            value={forBot}
+            onValueChange={(v) => {
+              setForBot(v);
+              setSecondUser('anyone');
+            }}
+          >
+            <SelectTrigger className="h-8 w-48 rounded-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('rules.allBots')}</SelectItem>
+              {bots.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {secondOffered && (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={second} onCheckedChange={setSecond} />
+              {t('rules.second')}
+            </label>
+            {second && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('rules.secondWho')}</span>
+                <Select value={secondUser} onValueChange={setSecondUser}>
+                  <SelectTrigger className="h-8 w-56 rounded-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="anyone">{t('rules.secondAnyone')}</SelectItem>
+                    {approvers.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {personName({ displayName: p.name, username: null }, t('people.owner'))}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">{t('rules.secondHint')}</p>
+          </div>
+        )}
       </form>
       {section('ask', 'rules.ask', 'rules.askHint')}
       {section('allow', 'rules.allow', 'rules.allowHint')}

@@ -74,7 +74,8 @@ import { useLocale, useT, type T } from '@/i18n';
 import { api } from '@/lib/api';
 import { newClientId } from '@/lib/format';
 import type { BotActivity } from '@/lib/botActivity';
-import { useApprovals, useConnections, useJob, useMainThread } from '@/lib/queries';
+import { useApprovals, useConnections, useJob, useMainThread, usePeople } from '@/lib/queries';
+import { personNameOf } from './PeopleTab';
 import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
 import { BotPage } from './BotPage';
@@ -1278,6 +1279,7 @@ function ApprovalCard({
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const { data: approvals } = useApprovals();
+  const { data: people = [] } = usePeople();
   const a = approvals?.find((x) => x.id === approvalId);
   const connection = useToolConnection(a?.toolName);
   const service = connection?.name;
@@ -1319,7 +1321,9 @@ function ApprovalCard({
     }
   }
   if (a.kind === 'login' && a.status === 'pending') return <LoginCard a={a} />;
-  const notes = (heldBy || reviewReason || askRule || outside || resembles) && (
+  // A step that needs two people's yes, and has the first: it waits for the second.
+  const waitingSecond = a.needsSecond && a.status === 'pending' && !!a.firstAt;
+  const notes = (heldBy || reviewReason || askRule || outside || resembles || a.needsSecond) && (
     <>
       {resembles && (
         <div className="text-sm font-medium text-destructive">
@@ -1338,6 +1342,15 @@ function ApprovalCard({
         <div className="text-xs text-muted-foreground">{t('approval.askRule', { rule: askRule })}</div>
       )}
       {outside && <div className="text-xs text-muted-foreground">{t(`approval.outside.${outside}`)}</div>}
+      {a.needsSecond && (
+        <div className="text-xs text-muted-foreground">
+          {waitingSecond
+            ? t('approval.waitingSecond', {
+                name: personNameOf(people, a.firstApprover, t('people.owner'), t('common.someone')),
+              })
+            : t('approval.needsSecond')}
+        </div>
+      )}
     </>
   );
   // A mail shows as the mail itself, with the button that sends it.
@@ -1350,7 +1363,7 @@ function ApprovalCard({
         service={service}
         connectionId={connection?.id}
         notes={notes}
-        offerAlways={!heldBy && !askRule && !outside && !resembles}
+        offerAlways={!heldBy && !askRule && !outside && !resembles && !a.needsSecond}
         busy={decide.isPending}
         onDecide={(d) => decide.mutate(d)}
       />
@@ -1370,17 +1383,20 @@ function ApprovalCard({
         </div>
       </div>
       <div className="flex flex-wrap gap-2 pl-8">
-        <Button
-          size="sm"
-          className="rounded-full"
-          disabled={decide.isPending}
-          onClick={() => decide.mutate({ decision: 'allow' })}
-        >
-          <Check /> {t('approval.allowOnce')}
-        </Button>
+        {/* After the first yes the second must come from someone else: no button for it here. */}
+        {!waitingSecond && (
+          <Button
+            size="sm"
+            className="rounded-full"
+            disabled={decide.isPending}
+            onClick={() => decide.mutate({ decision: 'allow' })}
+          >
+            <Check /> {t('approval.allowOnce')}
+          </Button>
+        )}
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && !resembles && !noAlways && (
+        {!heldBy && !askRule && !outside && !resembles && !noAlways && !a.needsSecond && (
           <Button
             size="sm"
             variant="secondary"
@@ -1536,7 +1552,7 @@ function AnsweredLine({ text }: { text: string }) {
 }
 
 /** What exactly the bot will run or touch, hidden until asked for. */
-function Detail({ text }: { text: string }) {
+export function Detail({ text }: { text: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   return (

@@ -1,5 +1,6 @@
 import {
   APPROVAL_TIMED_OUT,
+  type Approver,
   hideSecretAnswers,
   questionItems,
   type Approval,
@@ -8,7 +9,20 @@ import {
   type PermissionRule,
   type PermissionSuggestions,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, notInArray, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  notInArray,
+  or,
+  type SQL,
+} from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { PermissionAnswer } from '../engine/types';
@@ -18,7 +32,7 @@ import { toApproval, toRule } from './mappers';
 import { serverTranslator } from './settings';
 import type { VaultService } from './vault';
 import { OWNER_ID } from '../users';
-import { botLevel } from './access';
+import { botLevel, managesServer } from './access';
 import { commandParts, freePart } from './shell-parts';
 import { redactSecrets } from './secrets';
 
@@ -287,9 +301,13 @@ export function askRuleMatches(rules: PermissionRule[], toolName: string, input:
   return !!askRuleFor(rules, toolName, input);
 }
 
-/** The "always ask" rule that covers this call, if one does. */
+/**
+ * The "always ask" rule that covers this call, if one does. One that wants a second person's yes
+ * comes first: a plainer rule covering the same step must not hide it.
+ */
 export function askRuleFor(rules: PermissionRule[], toolName: string, input: Record<string, unknown>) {
-  return rules.find((r) => r.list === 'ask' && ruleCovers(r, toolName, input)) ?? null;
+  const covering = rules.filter((r) => r.list === 'ask' && ruleCovers(r, toolName, input));
+  return covering.find((r) => r.secondPerson) ?? covering[0] ?? null;
 }
 
 /** The block rule that covers this call, if one does. */
@@ -653,6 +671,8 @@ export class ApprovalService {
     onCreated?: (a: Approval) => Promise<void>;
     /** Asked in a run outside text started; see `answer`. */
     outside?: boolean;
+    /** An "always ask" rule wants two people's yes; `named` is the second one it names, if any. */
+    second?: { named: string | null };
   }): Promise<Outcome & { approvalId: string }> {
     const id = newId();
     const [row] = await this.ctx.db
@@ -669,6 +689,8 @@ export class ApprovalService {
         options: opts.options ?? [],
         status: 'pending',
         outside: !!opts.outside,
+        needsSecond: !!opts.second,
+        secondUserId: opts.second?.named ?? null,
       })
       .returning();
     const result = new Promise<Outcome>((resolve) => {
@@ -697,11 +719,26 @@ export class ApprovalService {
     }
   }
 
-  async answer(id: string, d: ApprovalDecision, by: string | null = null): Promise<Approval> {
+  /**
+   * `fromList`: the answer comes from the list of steps waiting for a second yes, whose person
+   * does not see the conversation; it only ever reaches a card that waits for that second yes.
+   */
+  async answer(
+    id: string,
+    d: ApprovalDecision,
+    by: string | null = null,
+    opts: { fromList?: boolean } = {},
+  ): Promise<Approval> {
     const stored = await this.row(id);
     const current = toApproval(stored);
+    // A card that wants two people's yes (see `needsSecond`) is answered by the rules below.
+    const twoKeys = stored.needsSecond && current.kind === 'tool';
+    if (opts.fromList && !(twoKeys && stored.firstAt)) throw notFound('approval');
     if (current.status !== 'pending') throw new HttpError(409, 'error.cardAnswered');
-    if (!(await this.mayAnswer(stored, by))) throw new HttpError(403, 'error.cardNotYours');
+    if (twoKeys) {
+      const first = await this.checkTwoKeys(stored, d, by, !!opts.fromList);
+      if (first) return first;
+    } else if (!(await this.mayAnswer(stored, by))) throw new HttpError(403, 'error.cardNotYours');
     const status = d.decision === 'allow' ? 'allowed' : 'denied';
     const botRules = await this.rules(stored.botId);
     // "Always allow" lets the bot go ahead by itself from now on, at full access, not only for
@@ -712,6 +749,7 @@ export class ApprovalService {
       !!d.remember &&
       d.decision === 'allow' &&
       current.kind === 'tool' &&
+      !twoKeys &&
       !stored.outside &&
       !askRuleMatches(botRules, current.toolName, current.input) &&
       (await this.mayChangeBot(stored.botId, by));
@@ -749,8 +787,22 @@ export class ApprovalService {
     }
     const [row] = await this.ctx.db
       .update(schema.approvals)
-      .set({ status, answer, remembered, decidedBy: 'person', decidedByUserId: by, decidedAt: new Date() })
-      .where(and(eq(schema.approvals.id, id), eq(schema.approvals.status, 'pending')))
+      .set({
+        status,
+        answer,
+        remembered,
+        decidedBy: 'person',
+        decidedByUserId: by ?? (twoKeys ? OWNER_ID : null),
+        decidedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.approvals.id, id),
+          eq(schema.approvals.status, 'pending'),
+          // The second yes only counts after a first one: not if this card is answered at once.
+          twoKeys && status === 'allowed' ? isNotNull(schema.approvals.firstAt) : undefined,
+        ),
+      )
       .returning();
     if (!row) throw new HttpError(409, 'error.cardAnswered');
     if (remembered) await this.goFullAccess(stored.botId, by);
@@ -775,6 +827,187 @@ export class ApprovalService {
     if (remembered) await this.allowAllWaiting(stored.botId, id, by);
     this.ctx.bus.refresh({ scope: 'approvals' });
     return toApproval(row);
+  }
+
+  /**
+   * The people who may give a bot's steps a second yes: those who may change it (a person it is
+   * shared with to talk with only does not), or, for a rule on every bot, those who look after
+   * the server. Not people who may no longer sign in.
+   */
+  async approvers(botId: string | null): Promise<Approver[]> {
+    const people = await this.ctx.db
+      .select({
+        id: schema.users.id,
+        role: schema.users.role,
+        displayName: schema.users.displayName,
+        username: schema.users.username,
+      })
+      .from(schema.users)
+      .where(isNull(schema.users.disabledAt))
+      .orderBy(asc(schema.users.createdAt));
+    const [bot] = botId
+      ? await this.ctx.db
+          .select({ ownerUserId: schema.bots.ownerUserId, access: schema.bots.access })
+          .from(schema.bots)
+          .where(eq(schema.bots.id, botId))
+          .limit(1)
+      : [];
+    return people
+      .filter((u) =>
+        botId ? !!bot && botLevel({ userId: u.id, role: u.role }, bot) === 'edit' : managesServer(u.role),
+      )
+      .map((u) => ({ id: u.id, name: u.displayName || u.username || '' }));
+  }
+
+  /** Whether anyone could give a card's second yes at all: someone who may change the bot, or the one named. */
+  async hasSecond(botId: string, named: string | null): Promise<boolean> {
+    return (await this.secondApprovers(botId, named)).length > 0;
+  }
+
+  /** Who may give the second yes of a card: the person its rule named, or any of `approvers`. */
+  private async secondApprovers(botId: string, named: string | null): Promise<Approver[]> {
+    const all = await this.approvers(botId);
+    return named ? all.filter((p) => p.id === named) : all;
+  }
+
+  /**
+   * What a rule that wants a second person needs: someone other than the one who makes it could
+   * give that yes, and a named person may do so. A rule nobody else could answer would only ever
+   * refuse its steps.
+   */
+  private async checkSecondRule(
+    r: { botId?: string | null; secondUserId?: string | null },
+    by: string | null,
+  ) {
+    const pool = await this.approvers(r.botId ?? null);
+    if (r.secondUserId && !pool.some((p) => p.id === r.secondUserId)) {
+      throw new HttpError(400, 'error.secondNamedInvalid');
+    }
+    if (!pool.some((p) => p.id !== (by ?? OWNER_ID))) throw new HttpError(409, 'error.secondNobody');
+  }
+
+  /**
+   * The rules of an answer to a card that wants two people's yes. Null when the answer goes on
+   * like any other (a "no" from either person, the second yes); otherwise the first yes, kept
+   * here: the card stays pending and those who may give the second are told.
+   */
+  private async checkTwoKeys(
+    stored: typeof schema.approvals.$inferSelect,
+    d: ApprovalDecision,
+    by: string | null,
+    fromList: boolean,
+  ): Promise<Approval | null> {
+    // A caller with no person (the app itself) is the owner.
+    const who = by ?? OWNER_ID;
+    const waiting = !!stored.firstAt;
+    const pool = await this.secondApprovers(stored.botId, stored.secondUserId);
+    const isSecond = pool.some((p) => p.id === who) && who !== stored.firstByUserId;
+    // The list of steps waiting for a second yes is for those who could give it, and the first person.
+    if (fromList && !isSecond && who !== stored.firstByUserId) throw notFound('approval');
+    if (d.decision === 'deny') {
+      // Either person may refuse; so may anyone who could answer an ordinary card.
+      if (waiting && (who === stored.firstByUserId || isSecond)) return null;
+      if (await this.mayAnswer(stored, by)) return null;
+      throw new HttpError(403, 'error.cardNotYours');
+    }
+    if (waiting) {
+      if (isSecond) return null;
+      throw new HttpError(403, who === stored.firstByUserId ? 'error.secondSame' : 'error.secondNotYou');
+    }
+    if (!(await this.mayAnswer(stored, by))) throw new HttpError(403, 'error.cardNotYours');
+    // The person named for the second yes cannot also give the first.
+    if (stored.secondUserId === who) throw new HttpError(403, 'error.secondNamedFirst');
+    const others = pool.filter((p) => p.id !== who);
+    if (!others.length) throw new HttpError(409, 'error.secondNobody');
+    const [row] = await this.ctx.db
+      .update(schema.approvals)
+      .set({ firstByUserId: who, firstAt: new Date() })
+      .where(
+        and(
+          eq(schema.approvals.id, stored.id),
+          eq(schema.approvals.status, 'pending'),
+          isNull(schema.approvals.firstAt),
+        ),
+      )
+      .returning();
+    if (!row) throw new HttpError(409, 'error.cardAnswered');
+    this.ctx.bus.refresh({ scope: 'approvals' });
+    this.ctx.bus.notice({
+      kind: 'needsYou',
+      need: 'tool',
+      botId: stored.botId,
+      // The second person does not see the conversation.
+      threadId: '',
+      text: truncate(stored.summary, 200),
+      to: others.map((p) => p.id),
+    });
+    return toApproval(row);
+  }
+
+  /**
+   * The steps waiting for this person's second yes, newest first, with whose request each is: the
+   * ones whose first yes came from someone else, which they could give. The conversation they
+   * come from is not part of it.
+   */
+  async waitingForSecond(who: string): Promise<{ card: Approval; askedBy: string | null }[]> {
+    const rows = await this.ctx.db
+      .select({ approval: schema.approvals, askedBy: schema.turns.userId })
+      .from(schema.approvals)
+      .leftJoin(schema.turns, eq(schema.turns.id, schema.approvals.turnId))
+      .where(
+        and(
+          eq(schema.approvals.status, 'pending'),
+          eq(schema.approvals.kind, 'tool'),
+          eq(schema.approvals.needsSecond, true),
+          isNotNull(schema.approvals.firstAt),
+        ),
+      )
+      .orderBy(desc(schema.approvals.createdAt))
+      .limit(200);
+    const out: { card: Approval; askedBy: string | null }[] = [];
+    for (const r of rows) {
+      if (!this.waiters.has(r.approval.id) || r.approval.firstByUserId === who) continue;
+      if (!(await this.secondApprovers(r.approval.botId, r.approval.secondUserId)).some((p) => p.id === who))
+        continue;
+      out.push({ card: toApproval(r.approval), askedBy: r.askedBy });
+    }
+    return out;
+  }
+
+  /**
+   * Refuses the cards waiting for a second yes that nobody could give any more: the person named
+   * is gone or lost the bot, or no one who may change it is left. Run whenever people or a bot's
+   * sharing change, so the bot is told and does not wait for a yes that cannot come.
+   */
+  async refuseUnanswerable(): Promise<void> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.status, 'pending'),
+          eq(schema.approvals.kind, 'tool'),
+          eq(schema.approvals.needsSecond, true),
+        ),
+      );
+    if (!rows.length) return;
+    const t = await serverTranslator(this.ctx);
+    for (const r of rows) {
+      const pool = (await this.secondApprovers(r.botId, r.secondUserId)).filter(
+        (p) => p.id !== r.firstByUserId,
+      );
+      if (pool.length) continue;
+      const reason = t('approval.secondGone');
+      const [done] = await this.ctx.db
+        .update(schema.approvals)
+        .set({ status: 'denied', answer: reason, decidedBy: 'rule', decidedAt: new Date() })
+        .where(and(eq(schema.approvals.id, r.id), eq(schema.approvals.status, 'pending')))
+        .returning();
+      if (!done) continue;
+      this.waiters.get(r.id)?.resolve({ status: 'denied', answer: reason });
+      this.waiters.delete(r.id);
+    }
+    this.ctx.bus.refresh({ scope: 'approvals' });
   }
 
   /**
@@ -827,7 +1060,7 @@ export class ApprovalService {
         ),
       );
     for (const r of rows) {
-      if (r.id === except || r.outside || !this.waiters.has(r.id)) continue;
+      if (r.id === except || r.outside || r.needsSecond || !this.waiters.has(r.id)) continue;
       if (askRuleMatches(rules, r.toolName, r.input)) continue;
       const [done] = await this.ctx.db
         .update(schema.approvals)
@@ -990,16 +1223,24 @@ export class ApprovalService {
     return rows.map(toRule);
   }
 
-  async addRule(r: {
-    list: 'ask' | 'allow' | 'block';
-    pattern: string;
-    note: string;
-    botId?: string | null;
-    /** An amount limit: both or neither (see `withinLimit`). */
-    field?: string | null;
-    limit?: number | null;
-  }): Promise<PermissionRule> {
+  async addRule(
+    r: {
+      list: 'ask' | 'allow' | 'block';
+      pattern: string;
+      note: string;
+      botId?: string | null;
+      /** An amount limit: both or neither (see `withinLimit`). */
+      field?: string | null;
+      limit?: number | null;
+      /** An ask rule that wants a second person's yes, and who gives it (anyone who may change the bot when null). */
+      secondPerson?: boolean;
+      secondUserId?: string | null;
+    },
+    by: string | null = null,
+  ): Promise<PermissionRule> {
     const limited = !!r.field && typeof r.limit === 'number';
+    const second = r.list === 'ask' && !!r.secondPerson;
+    if (second) await this.checkSecondRule(r, by);
     const [row] = await this.ctx.db
       .insert(schema.permissionRules)
       .values({
@@ -1010,6 +1251,8 @@ export class ApprovalService {
         botId: r.botId ?? null,
         field: limited ? r.field : null,
         limit: limited ? r.limit : null,
+        secondPerson: second,
+        secondUserId: second ? (r.secondUserId ?? null) : null,
       })
       .returning();
     this.ctx.bus.refresh({ scope: 'rules' });

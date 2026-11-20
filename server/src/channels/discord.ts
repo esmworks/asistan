@@ -835,21 +835,25 @@ export class DiscordChannel {
     }
     await respond({ ack: true });
     const allow = choice.kind === 'q' || choice.value !== 'n';
+    let waiting = false;
     try {
-      await this.services.approvals.answer(
+      const after = await this.services.approvals.answer(
         card.id,
         option === null
           ? { decision: allow ? 'allow' : 'deny', remember: false }
           : { decision: 'allow', answer: option, remember: false },
         row.userId,
       );
+      // The first yes of a step that needs two people leaves it waiting for the second.
+      waiting = after.status === 'pending';
     } catch (err) {
       if (err instanceof HttpError && (err.status === 409 || err.status === 403)) return;
       throw err;
     }
     // The buttons go, and the card says how it was answered and by whom.
     if (i.channel_id && i.message?.id) {
-      const result = option ?? t(allow ? 'channel.allowed' : 'channel.denied');
+      const result =
+        option ?? t(!allow ? 'channel.denied' : waiting ? 'channel.waitingSecond' : 'channel.allowed');
       const name = nameOf(presser, i.member?.nick);
       const done = `${i.message.content ?? ''}\n\n${t('discord.answered', { result: truncate(result, 190), name })}`;
       await api.edit(i.channel_id, i.message.id, truncate(done, 2000)).catch(() => {});

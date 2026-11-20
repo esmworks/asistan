@@ -242,6 +242,10 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/approvals': 'self',
   'GET /api/approvals/:id': read('approval'),
   'POST /api/approvals/:id': read('approval'),
+  // The service keeps each person to the steps waiting for their second yes.
+  'GET /api/approvals-second': 'self',
+  'POST /api/approvals-second/:id': 'self',
+  'GET /api/approvers': 'self',
   'GET /api/rules': 'self',
   'POST /api/rules': 'self',
   'DELETE /api/rules/:id': 'self',

@@ -109,6 +109,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       break;
     case 'approvals':
       inv('approvals');
+      inv('second-yes');
       inv('summaries');
       // An answered card counts toward ways to ask less.
       inv('suggestions');

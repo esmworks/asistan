@@ -41,6 +41,8 @@ import type {
   MemoryHistoryLine,
   Message,
   PermissionRule,
+  Approver,
+  SecondYes,
   ProviderInfo,
   ModelInfo,
   CustomEndpointCreate,
@@ -525,6 +527,13 @@ export const api = {
   job: (id: string) => http.get<JobView>(`/api/jobs/${id}`),
 
   approvals: () => http.get<Approval[]>('/api/approvals'),
+  /** Steps waiting for this person's second yes, without the conversations they come from. */
+  secondYes: () => http.get<SecondYes[]>('/api/approvals-second'),
+  answerSecond: (id: string, decision: 'allow' | 'deny') =>
+    http.post<Approval>(`/api/approvals-second/${id}`, { decision }),
+  /** Who could give a second yes on a bot's steps; on every bot's without a bot. */
+  approvers: (botId?: string | null) =>
+    http.get<Approver[]>(`/api/approvers${botId ? `?botId=${encodeURIComponent(botId)}` : ''}`),
   answer: (
     id: string,
     d: {
@@ -576,6 +585,8 @@ export const api = {
     botId?: string | null;
     field?: string;
     limit?: number;
+    secondPerson?: boolean;
+    secondUserId?: string | null;
   }) => http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 

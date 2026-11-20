@@ -274,6 +274,12 @@ const tr = {
   'error.notAnthropicKey': 'Bu bir Anthropic API anahtarı değil',
   'error.cardAnswered': 'Bu kart zaten yanıtlandı',
   'error.cardNotYours': 'Bu kartı yalnızca soran kişi ya da botu değiştirebilenler yanıtlayabilir',
+  'error.secondNobody':
+    'Bu adımın ikinci onayını verebilecek başka kimse yok; botu değiştirebilen en az iki kişi gerekir',
+  'error.secondNamedInvalid': 'Seçtiğin kişi bu botun adımlarına ikinci onayı veremez',
+  'error.secondSame': 'Aynı kişi iki onay veremez; ikinci onay başka birinden gelmeli',
+  'error.secondNotYou': 'Bu adımın ikinci onayını siz veremezsiniz',
+  'error.secondNamedFirst': 'Bu kuralda ikinci onayı verecek kişi sizsiniz; ilk onay başka birinden gelmeli',
   'error.teamThreadManage': 'Ekip konuşmasını yalnızca botu değiştirebilenler düzenleyebilir ya da silebilir',
   'error.slackToken':
     'Slack anahtarları geçerli görünmüyor: uygulama anahtarı xapp- ile, bot anahtarı xoxb- ile başlar',
@@ -346,6 +352,8 @@ const tr = {
   'validation.limitField':
     'Alan adı harf, rakam, _ ve - içerebilir; iç içe alanlar noktayla ayrılır (ör. iade.tutar)',
   'validation.limitBoth': 'Tutar sınırı için hem alanı hem sınırı gir',
+  'validation.secondAsk': 'İkinci kişinin onayı yalnızca “her zaman sor” kuralında istenebilir',
+  'validation.secondNamed': 'İkinci onaylayan kişi için önce “ikinci kişi onayı”nı aç',
   'validation.instructionsUrl': 'Talimat belgesi https:// ile başlayan bir adres olmalı',
   'validation.domain': 'Geçersiz alan adı',
   'validation.headerName': 'Başlık adı yalnızca harf, rakam ve - içerebilir',
@@ -476,6 +484,9 @@ const tr = {
   'approval.typedInstead':
     'Kullanıcı bu adımı onaylamadı; kartı cevaplamak yerine sohbete şunu yazdı. Buna göre devam et:\n<<<\n{text}\n>>>',
   'approval.blockNote': 'Karttan engellendi',
+  'approval.secondGone': 'İkinci onayı verecek kişi artık yok ya da bota erişemiyor; adım yapılmadı.',
+  'turn.secondNobody':
+    'Bu adım iki kişinin onayını istiyor ama ikinci onayı verebilecek kimse yok; yapılmadı. Başka bir yol dene ya da yapamadığını söyle.',
 
   // Bot-to-bot jobs
   'job.marker': '{to} adlı bota mesaj gönderildi',
@@ -1532,6 +1543,9 @@ const tr = {
   'channel.routine': 'Rutin',
   'channel.otherChat': 'Başka bir konuşma',
   'channel.noticeNeedsYou': '🔔 **{title}**: {text}\n_Yumak Bot uygulamasında seni bekliyor._',
+  'channel.noticeSecond': '🔔 {text}\n_İkinci onayın bekleniyor; Yumak Bot uygulamasında._',
+  'channel.waitingSecond': 'İlk onay alındı; ikinci kişinin onayı bekleniyor',
+  'channel.needsSecond': 'Bu adım iki kişinin onayını istiyor; ikinci onay başka birinden gelecek.',
   'channel.noticeError': '⚠️ **{title}**: {text}',
   'channel.switched': 'Artık **{bot}** ile konuşuyorsun.',
   'channel.current':
@@ -1813,6 +1827,13 @@ const en: Catalog<ServerKey> = {
   'error.notAnthropicKey': 'This is not an Anthropic API key',
   'error.cardAnswered': 'This card has already been answered',
   'error.cardNotYours': 'Only the person who asked, or someone who may change the bot, can answer this card',
+  'error.secondNobody':
+    'Nobody else could give the second yes on this step; at least two people who may change the bot are needed',
+  'error.secondNamedInvalid': 'The person you chose cannot give the second yes on this bot’s steps',
+  'error.secondSame': 'The same person cannot say yes twice; the second yes must come from someone else',
+  'error.secondNotYou': 'You cannot give the second yes on this step',
+  'error.secondNamedFirst':
+    'In this rule you are the one who gives the second yes; the first must come from someone else',
   'error.teamThreadManage': 'Only those who may change the bot can edit or delete a team conversation',
   'error.slackToken':
     "The Slack tokens don't look right: the app token starts with xapp-, the bot token with xoxb-",
@@ -1887,6 +1908,8 @@ const en: Catalog<ServerKey> = {
   'validation.limitField':
     'A field name may hold letters, digits, _ and -; nested fields are joined with a dot (e.g. refund.amount)',
   'validation.limitBoth': 'An amount limit needs both the field and the limit',
+  'validation.secondAsk': 'A second person’s yes can only be asked for by an “always ask” rule',
+  'validation.secondNamed': 'Turn on “needs a second person” before naming who gives it',
   'validation.instructionsUrl': 'The instructions document must be an address starting with https://',
   'validation.domain': 'Invalid domain name',
   'validation.headerName': 'A header name may hold only letters, digits and -',
@@ -2016,6 +2039,10 @@ const en: Catalog<ServerKey> = {
   'approval.typedInstead':
     'The user did not approve this step; instead of answering the card they wrote this in the chat. Go on from it:\n<<<\n{text}\n>>>',
   'approval.blockNote': 'Blocked from a card',
+  'approval.secondGone':
+    'The person who was to give the second yes is gone or can no longer reach the bot; the step was not taken.',
+  'turn.secondNobody':
+    'This step needs two people’s yes but nobody could give the second; it was not taken. Try another way, or say you cannot do it.',
 
   'job.marker': 'Message sent to {to}',
   'job.approvalNote': '[Verified by the server: user approval {id} — "{summary}"{answer}]',
@@ -3063,6 +3090,9 @@ const en: Catalog<ServerKey> = {
   'channel.routine': 'Routine',
   'channel.otherChat': 'Another conversation',
   'channel.noticeNeedsYou': '🔔 **{title}**: {text}\n_Waiting for you in the Yumak Bot app._',
+  'channel.noticeSecond': '🔔 {text}\n_Your second yes is wanted, in the Yumak Bot app._',
+  'channel.waitingSecond': 'First yes taken; waiting for a second person',
+  'channel.needsSecond': 'This step needs two people’s yes; the second will come from someone else.',
   'channel.noticeError': '⚠️ **{title}**: {text}',
   'channel.switched': 'You are now talking to **{bot}**.',
   'channel.current': 'You are talking to **{bot}**. To switch to another bot: /bot <name>\nBots: {bots}',

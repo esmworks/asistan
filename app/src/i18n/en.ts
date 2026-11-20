@@ -3,6 +3,7 @@ import type { MessageKey } from './tr';
 
 export const en: Catalog<MessageKey> = {
   'common.bot': 'Bot',
+  'common.someone': 'Someone',
   'common.loading': 'Loading…',
   'common.add': 'Add',
   'common.save': 'Save',
@@ -335,6 +336,10 @@ export const en: Catalog<MessageKey> = {
   'today.canaryOpen': 'Open the conversation',
   'today.canarySeen': 'Mark as seen',
   'today.waiting': 'Waiting for you',
+  'second.title': 'Waiting for your second yes',
+  'second.askedBy': 'Asked by {name}',
+  'second.firstYes': '{name} said yes, {when}',
+  'second.allow': 'Say yes',
   'today.waitingNone': 'Nothing is waiting for you.',
   'today.bots': 'What the bots did',
   'today.botsNone': 'No bot has worked today yet.',
@@ -873,6 +878,9 @@ export const en: Catalog<MessageKey> = {
   'message.count': { one: '{count} message', other: '{count} messages' },
 
   'approval.question': 'Do you allow it?',
+  'approval.needsSecond':
+    'This step needs two people’s yes. After yours, someone else who may change the bot is asked.',
+  'approval.waitingSecond': '{name} said yes. Waiting for a second person.',
   'approval.allowOnce': 'Allow this time',
   'approval.allowAlways': 'Always allow',
   'approval.allowAlwaysHint':
@@ -1532,6 +1540,15 @@ export const en: Catalog<MessageKey> = {
   'rules.limitOver': 'only when {field} > {limit}, or cannot be read',
   'rules.limitInvalid': 'Enter a number of zero or more for the limit',
   'rules.forBot': 'Only for {bot}',
+  'rules.forBotLabel': 'For',
+  'rules.allBots': 'Every bot',
+  'rules.second': 'Needs a second person’s yes',
+  'rules.secondWho': 'Second person',
+  'rules.secondAnyone': 'Anyone who may change the bot',
+  'rules.secondHint':
+    'The step runs only after two different people said yes: the first on the card, the second from someone else who may change the bot, who sees the step without the conversation. Always allow is not offered, and a bot at full access still waits.',
+  'rules.secondOn': 'needs a second person’s yes',
+  'rules.secondNamed': 'needs {name}’s yes as the second',
   'rules.blockHint':
     'Never run, in any mode and without a card; a block outranks every other rule. The bot is told it was blocked.',
 

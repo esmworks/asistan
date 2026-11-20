@@ -1240,8 +1240,15 @@ export class TurnManager {
       // The card names an "always ask" rule that covers this call, in every mode: "always allow"
       // cannot outdo it, so the card does not offer that. A bot allowed to go ahead by itself
       // stops only for such a rule.
-      const askRule = askRuleFor(rules, ask.toolName, ask.input)?.pattern;
+      const askedRule = askRuleFor(rules, ask.toolName, ask.input);
+      const askRule = askedRule?.pattern;
       const held = askRule ? (mode === 'auto' ? { heldBy: askRule } : { askRule }) : {};
+      // The rule wants a second person's yes: the step is refused at once when nobody could give it,
+      // not left waiting for a yes that cannot come. Full access does not skip it either.
+      const second = askedRule?.secondPerson ? { named: askedRule.secondUserId ?? null } : undefined;
+      if (second && !(await approvals.hasSecond(bot.id, second.named))) {
+        return { behavior: 'deny', message: t('turn.secondNobody') };
+      }
       const result = await approvals.ask({
         threadId: thread.id,
         botId: bot.id,
@@ -1258,6 +1265,7 @@ export class TurnManager {
         timeoutMs: present ? undefined : this.ctx.config.unattendedApprovalMs,
         // A copy of a site gets no "always allow", nor an answer from another card's rule.
         outside: locked || capped || !!copied,
+        second,
         onCreated: async (a) => {
           await threads.addMessage({
             threadId: thread.id,
@@ -1267,6 +1275,7 @@ export class TurnManager {
             props: {
               approvalId: a.id,
               ...held,
+              ...(second ? { needsSecond: true } : {}),
               ...(locked || capped ? { noAlways: true } : {}),
               ...(copied ? { resembles: copied.charAt(0).toUpperCase() + copied.slice(1) } : {}),
             },

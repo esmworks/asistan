@@ -7,6 +7,16 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A step can need two people. An "always ask" rule (with or without its amount limit) can now ask for a second
+  person's yes, for things like a card filled above 1,000 or a `git push` that one person alone should not decide.
+  The first yes works as before, from the app or a chat app; the card then waits as "waiting for a second person"
+  and shows who said yes, and the step does not run. The second yes comes from someone else who may change the bot
+  (or the one person the rule names), who sees the step and who asked for it, with the first yes and when, in a
+  "Waiting for your second yes" list on the Today page, and is told alone, without the conversation, which stays
+  private. The same person cannot give both yeses, a "no" from either refuses it, "always allow" is never offered
+  on such a card and a bot at full access still waits. If the second person is removed or loses the bot while it
+  waits, the card is refused with a reason, and a rule nobody else could answer is not saved. The bot's list of
+  steps names both people.
 - A bot that is being steered by text it read (a page, a mail, a webhook, another bot) is now caught by two
   trip-wires that nothing the person asks for would ever touch. Every bot's prompt carries a private line it is told
   never to repeat; if that line shows up in a tool's input (as it is, percent-encoded, in hex or in base64) or in
