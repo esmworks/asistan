@@ -119,6 +119,32 @@ describe.skipIf(!BROWSER)('postadan giriş kodu: gerçek tarayıcı', () => {
     `<form action="${action}"><label>Kod <input name="kod" autocomplete="one-time-code"></label>` +
     '<button>Devam</button></form>';
 
+  it('hesabı olmayan birinin işinde bot hesaplara giremez: şifre, iki adımlı kod ve posta kodu araçları yok', async () => {
+    const bot = await t.bot({ name: 'Misafirli' });
+    await t.api('PATCH', '/api/settings', { emailDomain: 'bots.example.com' });
+    await t.api('POST', '/api/email/secret');
+    await t.api('POST', `/api/bots/${bot.id}/email`, { name: 'misafir' });
+    await t.api('PUT', `/api/bots/${bot.id}/email/codes`, { on: true });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const names = (): string[] => t.engine.requests.at(-1)!.tools.map((x: AppTool) => x.name);
+    const signIn = ['browser_login', 'browser_code', 'browser_email_code'];
+
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    expect(names()).toEqual(expect.arrayContaining(signIn));
+
+    await t.services.turns.enqueue({
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'user',
+      prompt: 'bankaya gir',
+      guest: true,
+    });
+    await t.services.turns.idle();
+    expect(names()).toContain('browser_open');
+    for (const name of signIn) expect(names()).not.toContain(name);
+  });
+
   it('sitenin postasındaki kodu kendi alanına yazar; bot kodu görmez', async () => {
     const bot = await t.bot({ name: 'Girişçi', permissionMode: 'auto' });
     await t.api('PATCH', '/api/settings', { emailDomain: 'bots.example.com' });

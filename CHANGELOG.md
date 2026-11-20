@@ -48,6 +48,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Changed
 
+- Someone with no account here (a member of a Discord server, say) can no longer have a bot sign in to a site: the
+  vault's password, its two-step codes and codes mailed to the bot are not offered in their turns, since those tools
+  run without a card.
+
 - A skill a bot saves for someone belongs to that person, who may then change or delete it like one they wrote.
   Before, only the admins could.
 

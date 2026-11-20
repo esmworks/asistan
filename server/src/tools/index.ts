@@ -119,7 +119,17 @@ const TEAM_OFF = new Set<string>([
  * Tools a turn asked by someone with no account here does without: each starts work that later
  * goes on for the person the turn acts for, with all they may do.
  */
-const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save', 'browser_card']);
+const GUEST_OFF = new Set<string>([
+  'ticket_create',
+  'ticket_update',
+  'skill_save',
+  'browser_card',
+  // Signing in with the vault's password, its two-step code or a code mailed to the bot runs
+  // without a card: someone with no account here would get into the person's accounts by asking.
+  'browser_login',
+  'browser_code',
+  'browser_email_code',
+]);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
