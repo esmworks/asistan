@@ -130,22 +130,25 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
     queryFn: api.whatsappGroups,
     enabled: connected,
   });
-  const form = () => ({
-    mode,
-    phone,
-    botId: botId || null,
-    notices,
-    chats,
-    autoSend,
-    door,
+  const form = () => {
     // A number as it is typed, with spaces or a plus, is kept as its digits.
-    routes: routes
-      .map(({ name: _name, ...r }) => ({
-        ...r,
-        chat: r.chat.includes('@') ? r.chat : r.chat.replace(/\D/g, ''),
-      }))
-      .filter((r) => r.chat && r.botId),
-  });
+    const given = routes.map(({ name: _name, ...r }) => ({
+      ...r,
+      chat: r.chat.includes('@') ? r.chat : r.chat.replace(/\D/g, ''),
+    }));
+    // A row left empty is dropped; one half filled stops the save, not to be lost unseen.
+    if (given.some((r) => !r.chat !== !r.botId)) throw new Error(t('whatsapp.routeNoBot'));
+    return {
+      mode,
+      phone,
+      botId: botId || null,
+      notices,
+      chats,
+      autoSend,
+      door,
+      routes: given.filter((r) => r.chat && r.botId),
+    };
+  };
   const setRoute = (i: number, change: Partial<WhatsAppRoute>) =>
     setRoutes((all) => all.map((r, j) => (j === i ? { ...r, ...change } : r)));
   const groupName = (chat: string) => groups?.find((g) => g.id === chat)?.name;
@@ -297,6 +300,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           <span className="block text-sm font-medium">{t('whatsapp.door')}</span>
           <div className="flex flex-wrap gap-2">
             <Select
+              disabled={mode === 'own'}
               value={door?.botId ?? NONE}
               onValueChange={(v) => setDoor(v === NONE ? null : { botId: v, mode: door?.mode ?? 'draft' })}
             >
@@ -312,9 +316,14 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
                 ))}
               </SelectContent>
             </Select>
-            {door && <ReplyModeSelect value={door.mode} onChange={(m) => setDoor({ ...door, mode: m })} />}
+            {door && mode !== 'own' && (
+              <ReplyModeSelect value={door.mode} onChange={(m) => setDoor({ ...door, mode: m })} />
+            )}
           </div>
-          {!doorBot && (
+          {mode === 'own' && (
+            <span className="block text-xs text-muted-foreground">{t('whatsapp.doorOwn')}</span>
+          )}
+          {mode !== 'own' && !doorBot && (
             <Button
               type="button"
               variant="secondary"

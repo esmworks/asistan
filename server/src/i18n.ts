@@ -1380,6 +1380,8 @@ const tr = {
   'tool.whatsapp_suggest_route':
     'Bu WhatsApp sohbetini sahibine belli bir bota vermeyi önerir (bot: botun adı, reason: kısa gerekçe). Sahibe bir kart gider; onaylarsa kişinin mesajlarına o bot cevap verir. Yalnızca konu açıkça bir botun işiyse kullan.',
   'tool.whatsappRouteNotHere': 'Bu araç yalnızca karşılama botunun bir kişiyle WhatsApp sohbetinde çalışır.',
+  'tool.whatsappRouteNoNumber':
+    'WhatsApp bu kişinin numarasını göstermiyor; bir sohbet ancak numarasıyla bir bota verilebilir. Yazana kendiniz kısaca cevap verin.',
   'tool.whatsappRouteUnknown': 'Böyle bir bot yok. Önerebileceğin botlar: {names}',
   'tool.whatsappRouteWaiting': 'Bu sohbet için bir öneri zaten sahibin cevabını bekliyor.',
   'tool.whatsappRouteAsked':
@@ -2875,6 +2877,8 @@ const en: Catalog<ServerKey> = {
   'tool.whatsapp_suggest_route':
     'Suggests to the owner that this WhatsApp chat go to a certain bot (bot: the bot’s name, reason: a short reason). The owner gets a card; if they approve, that bot answers this person’s messages. Use it only when the subject is clearly a bot’s work.',
   'tool.whatsappRouteNotHere': 'This tool works only in the front door’s WhatsApp chat with a person.',
+  'tool.whatsappRouteNoNumber':
+    'WhatsApp does not show this person’s number, and a chat is given to a bot only by its number. Answer them briefly yourself.',
   'tool.whatsappRouteUnknown': 'There is no such bot. Bots you may suggest: {names}',
   'tool.whatsappRouteWaiting': 'A suggestion for this chat is already waiting for the owner’s answer.',
   'tool.whatsappRouteAsked':

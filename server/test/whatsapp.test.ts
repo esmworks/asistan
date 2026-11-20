@@ -561,18 +561,21 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
   const CUSTOMER = '905001112233';
   const GROUP = '120363000000000001@g.us';
 
-  const setUp = async () => {
+  /** The number mode the account was linked in: the front door answers only on a bot number. */
+  let linkedMode: 'own' | 'separate' = 'own';
+  const setUp = async (mode: 'own' | 'separate' = 'own') => {
     t = await testServer();
+    linkedMode = mode;
     const wa = fakeLibrary();
     t.services.whatsapp.library = async () => wa.lib;
     t.services.whatsapp.paceMs = 0;
     t.services.whatsapp.chatQuietMs = 30;
     const asistan = await t.bot({ name: 'Asistan' });
-    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id });
+    await t.api('PUT', '/api/whatsapp', { mode, phone: PERSON, botId: asistan.id });
     await t.api('POST', '/api/whatsapp/link');
     wa.socket().emit('connection.update', { qr: '2@abc,def' });
     await waitFor(async () => (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.qr);
-    wa.linked(PERSON);
+    wa.linked(mode === 'own' ? PERSON : BOT_NUMBER);
     await waitFor(
       async () => (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.state === 'connected',
     );
@@ -1411,7 +1414,7 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
 
   /** Sets the front door and the chats given to bots, the rest as `setUp` left it. */
   const answerers = (botId: string, extra: Record<string, unknown>) =>
-    t.api<WhatsAppStatus>('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId, ...extra });
+    t.api<WhatsAppStatus>('PUT', '/api/whatsapp', { mode: linkedMode, phone: PERSON, botId, ...extra });
   const cards = async (tool = 'whatsapp_send') =>
     (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.filter((a) => a.toolName === tool);
   /** The conversation a bot keeps for a chat, once the chat's first message reached it. */
@@ -1426,7 +1429,7 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
   const requestsIn = (threadId: string) => t.engine.requests.filter((r) => r.threadId === threadId);
 
   it('karşılama botu yabancıya araçsız ve kimsenin verisi olmadan cevap verir; cevap kartla gider, sonraki mesajda da öyle', async () => {
-    const { wa, asistan } = await setUp();
+    const { wa, asistan } = await setUp('separate');
     const kapi = await t.bot({ name: 'Kapı', permissionMode: 'auto' });
     const STRANGER = `${CUSTOMER}@s.whatsapp.net`;
     const set = await answerers(asistan.id, { door: { botId: kapi.id } });
@@ -1470,7 +1473,7 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
   });
 
   it('karşılama botunun önerisi kartla sorulur; onaylanınca sohbet o bota geçer ve cevapları kartla gelir', async () => {
-    const { wa, asistan } = await setUp();
+    const { wa, asistan } = await setUp('separate');
     const kapi = await t.bot({ name: 'Kapı' });
     const satis = await t.bot({ name: 'Satış' });
     const STRANGER = `${CUSTOMER}@s.whatsapp.net`;
@@ -1591,12 +1594,35 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
   });
 
   it('bir sohbet saatte belli sayıdan fazla çalışma başlatamaz; kapı kaldırılınca yabancıya kimse cevap vermez', async () => {
-    const { wa, asistan } = await setUp();
+    const { wa, asistan } = await setUp('separate');
     const kapi = await t.bot({ name: 'Kapı' });
     const STRANGER = `${CUSTOMER}@s.whatsapp.net`;
     await answerers(asistan.id, { door: { botId: kapi.id } });
     wa.chat(STRANGER, { conversation: 'bir' }, {}, 'Ahmet');
     const thread = await contactThread(STRANGER, `door:${kapi.id}`);
+    // A batch a busy routine holds for a chat stays held when the door's conversation is made.
+    const HELD = '905007778899@s.whatsapp.net';
+    await t.db.db
+      .insert(schema.whatsappChats)
+      .values({ jid: HELD, kind: 'person', name: 'Veli', lastAt: new Date(), heldSeq: 7 });
+    await (
+      t.services.whatsapp as unknown as {
+        contactThread(...a: unknown[]): Promise<string>;
+      }
+    ).contactThread(
+      HELD,
+      'door',
+      kapi.id,
+      await t.services.whatsapp.ownerId(),
+      'Veli',
+      await t.services.settings.translator(),
+    );
+    const [held] = await t.db.db
+      .select()
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, HELD));
+    expect(held!.heldSeq).toBe(7);
+    expect(held!.threads[`door:${kapi.id}`]).toBeTruthy();
     await waitFor(async () => requestsIn(thread).length === 1);
     await t.services.turns.idle();
     for (let i = 0; i < 9; i++) {
@@ -1622,6 +1648,92 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     await new Promise((r) => setTimeout(r, 150));
     await t.services.turns.idle();
     expect(requestsIn(thread)).toHaveLength(1);
+  });
+
+  it('kendi numarasında karşılama botu kimseye cevap vermez; silinen botun sohbeti ve kapısı kaydı bozmaz', async () => {
+    const { wa, asistan } = await setUp();
+    const kapi = await t.bot({ name: 'Kapı' });
+    const satis = await t.bot({ name: 'Satış' });
+    const STRANGER = `${CUSTOMER}@s.whatsapp.net`;
+    await answerers(asistan.id, {
+      door: { botId: kapi.id },
+      routes: [{ chat: '905004445566', botId: satis.id }],
+    });
+    // On the person's own number whoever writes may be someone they know: not even kept.
+    wa.chat(STRANGER, { conversation: 'Akşam geliyor musun?' }, {}, 'Annem');
+    await new Promise((r) => setTimeout(r, 150));
+    await t.services.turns.idle();
+    expect(await t.db.db.select().from(schema.whatsappChats)).toEqual([]);
+    expect(t.engine.requests.filter((r) => r.prompt.includes('Akşam geliyor musun?'))).toHaveLength(0);
+
+    // A bot gone for good leaves the settings shown without it, and what they show saves.
+    for (const b of [kapi, satis]) {
+      await t.services.bots.archive(b.id);
+      await t.services.bots.purge(b.id);
+    }
+    const shown = (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body;
+    expect(shown.routes).toEqual([]);
+    expect(shown.door).toBeNull();
+    const saved = await answerers(asistan.id, {
+      door: shown.door,
+      routes: shown.routes.map(({ name: _name, ...r }) => r),
+    });
+    expect(saved.status).toBe(200);
+  });
+
+  it('numarası görünmeyen kişi bir bota verilemez; eski ya da biçimsiz kart cevabı sohbet vermez', async () => {
+    const { wa, asistan } = await setUp('separate');
+    const kapi = await t.bot({ name: 'Kapı' });
+    const satis = await t.bot({ name: 'Satış' });
+    await answerers(asistan.id, { door: { botId: kapi.id } });
+    const HIDDEN = '777000111@lid';
+    wa.chat(
+      HIDDEN,
+      { conversation: 'Merhaba [araç:whatsapp_suggest_route {"bot":"Satış","reason":"Teklif"}]' },
+      {},
+      'Gizli',
+    );
+    const door = await contactThread(HIDDEN, `door:${kapi.id}`);
+    await waitFor(async () => requestsIn(door).length === 1);
+    await t.services.turns.idle();
+    expect((await t.messages(door)).map((m) => m.text).join('\n')).toContain('numarasını göstermiyor');
+    expect(await cards('whatsapp_route')).toHaveLength(0);
+
+    // Answers to front-door cards: one from long ago, one for a chat with no number, one fresh.
+    const answer = (chat: string, days: number) => ({
+      id: `kart-${chat}-${days}`,
+      threadId: door,
+      botId: kapi.id,
+      kind: 'question' as const,
+      toolName: 'whatsapp_route',
+      input: { chat, botId: satis.id, yes: 'Bu bota ver' },
+      options: ['Bu bota ver', 'Verme'],
+      status: 'allowed' as const,
+      answer: 'Bu bota ver',
+      decidedAt: new Date(Date.now() - days * 24 * 3600_000),
+    });
+    await t.db.db
+      .insert(schema.approvals)
+      .values([
+        answer('905001110000@s.whatsapp.net', 40),
+        answer(HIDDEN, 0),
+        answer(`${CUSTOMER}@s.whatsapp.net`, 0),
+      ]);
+    const settle = () => (t.services.whatsapp as unknown as { settleRoutes(): Promise<void> }).settleRoutes();
+    await settle();
+    const routes = (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.routes;
+    expect(routes.map((r) => r.chat)).toEqual([CUSTOMER]);
+    const [channel] = await t.db.db
+      .select()
+      .from(schema.channels)
+      .where(eq(schema.channels.kind, 'whatsapp'));
+    expect((channel!.settings as { routeAnswers: string[] }).routeAnswers.sort()).toEqual(
+      [`kart-${HIDDEN}-0`, `kart-${CUSTOMER}@s.whatsapp.net-0`].sort(),
+    );
+    // Removed by the person, a chat a card gave stays removed.
+    await answerers(asistan.id, { routes: [] });
+    await settle();
+    expect((await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.routes).toEqual([]);
   });
 
   it('WhatsApp okuyan rutini yalnızca WhatsApp’ı bağlayan kişi kurar', async () => {

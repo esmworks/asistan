@@ -11,7 +11,7 @@ import {
   type WhatsAppDoor,
   type WhatsAppGroup,
   type WhatsAppReplyMode,
-  type WhatsAppRoute,
+  WhatsAppRoute,
   type WhatsAppSet,
   type WhatsAppStatus,
 } from '@yumakbot/shared';
@@ -116,6 +116,12 @@ const routeChat = (chat: string) => (chat.includes('@') ? chat : `${chat}@s.what
 
 /** Where a chat given to a bot, or the front door, keeps its conversation, in the chat's threads. */
 type ContactRole = 'door' | 'route';
+/** A conversation a bot keeps for a chat it answers. */
+type Contact = { chat: string; kind: 'person' | 'group'; role: ContactRole; botId: string };
+/** How many conversations' answer to `contactOf` are kept in memory. */
+const CONTACTS_KEPT = 5000;
+/** How long a front-door card's answer is looked for. */
+const ROUTE_ANSWER_MS = 30 * 24 * 3600_000;
 const contactKey = (role: ContactRole, botId: string) => `${role}:${botId}`;
 
 /**
@@ -528,6 +534,10 @@ export class WhatsAppChannel {
   private routes = new Map<string, WhatsAppRoute>();
   /** The front door, when one is set. */
   private door: WhatsAppDoor | null = null;
+  /** Conversations known to be, or not to be, a chat's own (`contactOf`). */
+  private contacts = new Map<string, Contact | null>();
+  /** Front-door answers are settled one refresh at a time. */
+  private routing: Promise<void> = Promise.resolve();
   /** Messages of chats given to a bot, or at the front door, waiting for the chat to go quiet. */
   private contactWaits = new Map<
     string,
@@ -579,7 +589,9 @@ export class WhatsAppChannel {
         if (e.scope === 'routines') void this.loadFollowed().catch(() => {});
         if (e.scope === 'approvals') {
           void this.settleDrafts().catch((err: unknown) => console.warn('whatsapp draft', err));
-          void this.settleRoutes().catch((err: unknown) => console.warn('whatsapp route', err));
+          this.routing = this.routing
+            .then(() => this.settleRoutes())
+            .catch((err: unknown) => console.warn('whatsapp route', err));
         }
       }),
     );
@@ -653,8 +665,9 @@ export class WhatsAppChannel {
       notices: s.notices !== false,
       chats: s.chats === true,
       autoSend: s.autoSend === true,
-      routes: await this.routesShown(s.routes ?? []),
-      door: s.door ?? null,
+      // A chat or a door whose bot is gone, or a chat kept in a shape a save would refuse, is not
+      // shown: the form sends back what it shows, and these would make every save fail.
+      ...(await this.contactsShown(s)),
       linked: (row?.account as { number?: string } | undefined)?.number ?? null,
       qr: this.state === 'linking' && this.qr ? await qrImage(this.qr) : null,
       error: row?.error ?? null,
@@ -1301,7 +1314,29 @@ export class WhatsAppChannel {
 
   private loadRoutes(settings: Settings) {
     this.routes = new Map((settings.routes ?? []).map((r) => [routeChat(r.chat), r]));
-    this.door = settings.door ?? null;
+    // On the person's own number everyone who writes is someone they know: the front door answers
+    // only on a number of the bots' own.
+    this.door = settings.mode === 'own' ? null : (settings.door ?? null);
+  }
+
+  /** The routes and the door as the settings show them: only those whose bot is still here. */
+  private async contactsShown(s: Settings) {
+    const named = [...(s.routes ?? []).map((r) => r.botId), ...(s.door ? [s.door.botId] : [])];
+    const here = new Set(
+      named.length
+        ? (
+            await this.ctx.db
+              .select({ id: schema.bots.id })
+              .from(schema.bots)
+              .where(inArray(schema.bots.id, named))
+          ).map((b) => b.id)
+        : [],
+    );
+    const routes = (s.routes ?? []).filter((r) => here.has(r.botId) && WhatsAppRoute.safeParse(r).success);
+    return {
+      routes: await this.routesShown(routes),
+      door: s.door && here.has(s.door.botId) ? s.door : null,
+    };
   }
 
   /** The routes as the settings show them, with the name each chat goes by here. */
@@ -1445,7 +1480,7 @@ export class WhatsAppChannel {
   ): Promise<string> {
     const key = contactKey(role, botId);
     const [row] = await this.ctx.db
-      .select({ threads: schema.whatsappChats.threads })
+      .select({ threads: schema.whatsappChats.threads, kind: schema.whatsappChats.kind })
       .from(schema.whatsappChats)
       .where(eq(schema.whatsappChats.jid, chat))
       .limit(1);
@@ -1461,7 +1496,12 @@ export class WhatsAppChannel {
       ),
       userId: owner,
     });
-    await this.moveOn(chat, 0, { [key]: made.id }, null);
+    this.contacts.set(made.id, { chat, kind: row?.kind ?? 'person', role, botId });
+    // Only the conversation is noted: where routines are in the chat stays as it is.
+    await this.ctx.db
+      .update(schema.whatsappChats)
+      .set({ threads: sql`${schema.whatsappChats.threads} || ${JSON.stringify({ [key]: made.id })}::jsonb` })
+      .where(eq(schema.whatsappChats.jid, chat));
     return made.id;
   }
 
@@ -1482,9 +1522,18 @@ export class WhatsAppChannel {
    * or at the front door (`door`). Every turn there works with no one's own data, and at the front
    * door with no tool but suggesting a bot for the chat.
    */
-  async contactOf(
-    threadId: string,
-  ): Promise<{ chat: string; kind: 'person' | 'group'; role: ContactRole; botId: string } | null> {
+  async contactOf(threadId: string): Promise<Contact | null> {
+    // Asked at the start and end of every turn: a conversation's answer never changes once known,
+    // as one is made a chat's only when it is created.
+    const known = this.contacts.get(threadId);
+    if (known !== undefined) return known;
+    const found = await this.findContact(threadId);
+    if (this.contacts.size >= CONTACTS_KEPT) this.contacts.clear();
+    this.contacts.set(threadId, found);
+    return found;
+  }
+
+  private async findContact(threadId: string): Promise<Contact | null> {
     const [row] = await this.ctx.db
       .select({
         jid: schema.whatsappChats.jid,
@@ -1648,6 +1697,8 @@ export class WhatsAppChannel {
     const contact = await this.contactOf(d.threadId);
     if (!contact || contact.role !== 'door' || contact.kind !== 'person')
       return t('tool.whatsappRouteNotHere');
+    // A chat is given to a bot by its number; one WhatsApp shows without it cannot be.
+    if (!numberOf(contact.chat)) return t('tool.whatsappRouteNoNumber');
     const owner = await this.ownerId();
     if (!owner) return t('tool.whatsappRouteNotHere');
     const reached = new Set(
@@ -1719,8 +1770,9 @@ export class WhatsAppChannel {
   private async settleRoutes() {
     const row = await this.row();
     if (!row) return;
-    const settings = row.settings as Settings;
-    const done = new Set(settings.routeAnswers ?? []);
+    const done = new Set((row.settings as Settings).routeAnswers ?? []);
+    // Cards answered lately: the ones kept as handled are only these, so the list stays short and
+    // an older card never counts again.
     const answered = await this.ctx.db
       .select({
         id: schema.approvals.id,
@@ -1729,24 +1781,35 @@ export class WhatsAppChannel {
         input: schema.approvals.input,
       })
       .from(schema.approvals)
-      .where(and(eq(schema.approvals.toolName, 'whatsapp_route'), ne(schema.approvals.status, 'pending')));
+      .where(
+        and(
+          eq(schema.approvals.toolName, 'whatsapp_route'),
+          ne(schema.approvals.status, 'pending'),
+          gt(
+            sql`coalesce(${schema.approvals.decidedAt}, ${schema.approvals.createdAt})`,
+            new Date(Date.now() - ROUTE_ANSWER_MS),
+          ),
+        ),
+      );
     const fresh = answered.filter((a) => !done.has(a.id));
     if (!fresh.length) return;
-    const routes = [...(settings.routes ?? [])];
-    for (const a of fresh) {
-      const input = a.input as { chat?: unknown; botId?: unknown; yes?: unknown };
-      if (a.status !== 'allowed' || a.answer !== input.yes) continue;
-      if (typeof input.chat !== 'string' || typeof input.botId !== 'string') continue;
-      const chat = numberOf(input.chat) ?? input.chat;
-      const at = routes.findIndex((r) => routeChat(r.chat) === input.chat);
-      // What the door suggested asks first: the person decides later whether it goes at once.
-      const route: WhatsAppRoute = { chat, botId: input.botId, mode: 'draft' };
-      if (at >= 0) routes[at] = route;
-      else routes.push(route);
-    }
-    const kept = [...done, ...fresh.map((a) => a.id)].slice(-200);
-    await this.saveSettings(row, { routes, routeAnswers: kept });
-    this.loadRoutes({ ...settings, routes });
+    // Built on the settings as they are when written, so a save made meanwhile is kept.
+    await this.saveSettings(row, (now) => {
+      const routes = [...(now.routes ?? [])];
+      for (const a of fresh) {
+        const input = a.input as { chat?: unknown; botId?: unknown; yes?: unknown };
+        if (a.status !== 'allowed' || a.answer !== input.yes) continue;
+        if (typeof input.chat !== 'string' || typeof input.botId !== 'string') continue;
+        // What the door suggested asks first: the person decides later whether it goes at once.
+        const route = WhatsAppRoute.safeParse({ chat: numberOf(input.chat), botId: input.botId });
+        if (!route.success) continue;
+        const at = routes.findIndex((r) => routeChat(r.chat) === input.chat);
+        if (at >= 0) routes[at] = route.data;
+        else routes.push(route.data);
+      }
+      return { routes, routeAnswers: answered.map((a) => a.id) };
+    });
+    this.loadRoutes(((await this.row())?.settings ?? {}) as Settings);
     this.changed();
   }
 
