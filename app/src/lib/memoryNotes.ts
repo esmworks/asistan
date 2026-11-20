@@ -17,6 +17,24 @@ export function noteMatches(m: Pick<Memory, 'content' | 'site'>, query: string):
   return words.every((w) => text.includes(w));
 }
 
+/** Whether a note's "true until" time has passed. */
+export function noteExpired(m: Pick<Memory, 'validUntil'>, now = new Date()): boolean {
+  return !!m.validUntil && new Date(m.validUntil).getTime() <= now.getTime();
+}
+
+/** A note's "true until" time as the day on the person's own calendar (`2026-11-27`), for a date field. */
+export function untilDay(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The end of a day of the person's own calendar (`2026-11-27`), as the time a note is true until. */
+export function untilEndOfDay(day: string): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  return new Date(y, m - 1, d, 23, 59).toISOString();
+}
+
 /** Pinned notes first; the rest keep their order. */
 export function pinnedFirst<M extends Pick<Memory, 'pinned'>>(notes: readonly M[]): M[] {
   return [...notes.filter((m) => m.pinned), ...notes.filter((m) => !m.pinned)];

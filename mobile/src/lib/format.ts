@@ -15,6 +15,7 @@ export function formatters(locale: Locale, t: Translate<MessageKey>) {
   const time = new Intl.DateTimeFormat(tag, { hour: '2-digit', minute: '2-digit' });
   const day = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'long' });
   const dayYear = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'long', year: 'numeric' });
+  const calendar = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'long', timeZone: 'UTC' });
   const weekday = new Intl.DateTimeFormat(tag, { weekday: 'long' });
   const weekdayShort = new Intl.DateTimeFormat(tag, { weekday: 'short' });
   const capitalize = (s: string) => s.charAt(0).toLocaleUpperCase(tag) + s.slice(1);
@@ -29,6 +30,11 @@ export function formatters(locale: Locale, t: Translate<MessageKey>) {
       if (diff === 1) return t('date.yesterday', { time: at });
       if (diff > 1 && diff < 7) return `${capitalize(weekday.format(d))} ${at}`;
       return `${(d.getFullYear() === now.getFullYear() ? day : dayYear).format(d)} ${at}`;
+    },
+
+    /** A YYYY-MM-DD day on its own: "16 Kasım" / "November 16". */
+    calendarDay(key: string): string {
+      return calendar.format(new Date(`${key}T00:00:00Z`));
     },
 
     /** Beside a bot in the list: the time today, "Dün", a weekday this week, else the day. */

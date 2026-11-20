@@ -9,7 +9,7 @@ import {
 } from '@yumakbot/shared';
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { Loading, Note, PillButton, Row, Section, Segments } from '@/components/page';
+import { Loading, Note, PillButton, Row, Section, Segments, SwitchRow } from '@/components/page';
 import { fileSize, shareFile } from '@/components/panel/files';
 import { ChoiceRow, Hint, Pad, Rows, useSaveSettings } from './common/controls';
 import { usd } from './more/money';
@@ -71,6 +71,7 @@ export function UsageSection() {
       <PlanUsage plan={data?.plan} />
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
+      <PromiseNet net={data?.promises} />
       <Parallel parallel={data?.parallel} />
       <Storage />
       <PillButton
@@ -362,6 +363,31 @@ function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
           </>
         ) : null}
       </Pad>
+    </Section>
+  );
+}
+
+/** The promise safety net: on or off, and over the period what its looks at replies cost. */
+function PromiseNet({ net }: { net?: UsageReport['promises'] }) {
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const on = settings?.promiseKeeper;
+  // A server older than the net does not offer it.
+  if (on === undefined) return null;
+  return (
+    <Section title={t('usage.promises')} footer={t('usage.promises.hint')}>
+      <SwitchRow
+        label={t('usage.promises.on')}
+        value={on}
+        onChange={(promiseKeeper) => save.mutate({ promiseKeeper })}
+      />
+      {net ? (
+        <Pad>
+          <Hint>
+            {t('usage.promises.checks', { count: net.checks, cost: usd(net.costUsd), found: net.found })}
+          </Hint>
+        </Pad>
+      ) : null}
     </Section>
   );
 }

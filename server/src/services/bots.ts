@@ -243,6 +243,10 @@ export class BotService {
     await this.ctx.db
       .delete(schema.auditLog)
       .where(and(eq(schema.auditLog.targetType, 'memory'), eq(schema.auditLog.owner, `bot:${id}`)));
+    // Notes of the bot that another bot's turn changed (a manager's) are in that turn's journal too.
+    await this.ctx.db
+      .delete(schema.turnChanges)
+      .where(and(eq(schema.turnChanges.kind, 'memory'), eq(schema.turnChanges.scopeBotId, id)));
     await this.ctx.db.delete(schema.bots).where(eq(schema.bots.id, id));
     // Saved sign-ins, keys and APIs kept for some bots name them by id: a bot that is gone leaves
     // those lists, and one kept for it alone is then open to none.

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
 import type { Services } from '../services';
+import type { ChangeNote } from '../services/turn-changes';
 import type { Define } from './index';
 
 /** Rows a bot reads in one call, at most. */
@@ -28,10 +29,12 @@ export function tableTools(opts: {
   services: Services;
   botId: string;
   t: T;
+  /** Puts a change into the journal that takes the turn back. */
+  note: (c: ChangeNote) => Promise<void>;
   /** False for a bot with no table yet: it gets only what starts one, not six tools every turn. */
   hasTables: boolean;
 }): AppTool[] {
-  const { def, services: s, botId, t } = opts;
+  const { def, services: s, botId, t, note } = opts;
   const yes = t('tool.tableYes');
   const no = t('tool.tableNo');
   /** The bot's table by name, or the reason it has none, listing those it has. */
@@ -44,6 +47,11 @@ export function tableTools(opts: {
   };
   const columnsLine = (x: BotTable) =>
     x.columns.map((c) => `${c.name} (${t(`tool.tableType.${c.type}`)})`).join(', ');
+  /** What a row is called in the list of a turn's changes: its table and its first cell. */
+  const rowLabel = (x: BotTable, r: TableRow) => {
+    const first = x.columns[0];
+    return `${x.name}: ${first ? cellText(r.values[first.name], yes, no) || r.id : r.id}`;
+  };
   const rowLine = (x: BotTable, r: TableRow) =>
     `- [${r.id}] ${x.columns
       .map((c) => `${c.name}: ${cellText(r.values[c.name], yes, no) || '—'}`)
@@ -128,6 +136,15 @@ export function tableTools(opts: {
         const x = await table(a.table);
         if (typeof x === 'string') return x;
         const added = await s.tables.addRows(x.id, a.rows);
+        for (const r of added) {
+          await note({
+            kind: 'table_row',
+            op: 'create',
+            targetId: r.id,
+            label: rowLabel(x, r),
+            after: { tableId: x.id, updatedAt: r.updatedAt },
+          });
+        }
         return t('tool.tableAdded', {
           table: x.name,
           count: added.length,
@@ -142,7 +159,23 @@ export function tableTools(opts: {
       async (a) => {
         const x = await table(a.table);
         if (typeof x === 'string') return x;
+        const prev = await s.tables.rowById(x.id, a.id);
         const row = await s.tables.updateRow(x.id, a.id, a.values);
+        if (prev) {
+          await note({
+            kind: 'table_row',
+            op: 'update',
+            targetId: row.id,
+            label: rowLabel(x, row),
+            before: {
+              tableId: x.id,
+              values: prev.values,
+              updatedAt: prev.updatedAt,
+              createdAt: prev.createdAt,
+            },
+            after: { tableId: x.id, updatedAt: row.updatedAt },
+          });
+        }
         return `${t('tool.tableUpdated', { table: x.name })}\n${rowLine(x, row)}`;
       },
       'internal',
@@ -153,7 +186,19 @@ export function tableTools(opts: {
       async (a) => {
         const x = await table(a.table);
         if (typeof x === 'string') return x;
+        const prev = (await Promise.all(a.ids.map((id) => s.tables.rowById(x.id, id)))).filter(
+          (r): r is TableRow => !!r,
+        );
         const n = await s.tables.deleteRows(x.id, a.ids);
+        for (const r of prev) {
+          await note({
+            kind: 'table_row',
+            op: 'delete',
+            targetId: r.id,
+            label: rowLabel(x, r),
+            before: { tableId: x.id, values: r.values, updatedAt: r.updatedAt, createdAt: r.createdAt },
+          });
+        }
         return t('tool.tableDeleted', { table: x.name, count: n });
       },
       'internal',

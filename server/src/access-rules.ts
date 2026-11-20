@@ -165,7 +165,17 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/summaries': 'self',
   'GET /api/search': 'self',
   'GET /api/today': 'self',
+  // A person's own promises; the handler keeps each person to theirs, admins included.
+  'GET /api/promises': 'self',
+  'POST /api/promises/:id/done': 'self',
+  'POST /api/promises/:id/drop': 'self',
+  // Routines suggested from a person's own requests; the handler keeps each person to theirs.
+  'GET /api/routine-suggestions': 'self',
+  'POST /api/routine-suggestions/:id/accept': 'self',
+  'POST /api/routine-suggestions/:id/dismiss': 'self',
   'GET /api/turns/:id/result': read('turn'),
+  'GET /api/turns/:id/changes': read('turn'),
+  'POST /api/turns/:id/undo': write('turn'),
   // How much work stopping the whole server would stop: for those who look after it.
   'GET /api/turns/running': 'admin',
 
@@ -213,6 +223,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PATCH /api/threads/:id': manage(),
   'DELETE /api/threads/:id': manage(),
   'GET /api/threads/:id/messages': read(),
+  'GET /api/threads/:id/turn-changes': read(),
   'POST /api/threads/:id/messages': write(),
   'PATCH /api/messages/:id': manage('message'),
   'POST /api/messages/:id/steer': write('message'),
@@ -248,6 +259,10 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/approvals': 'self',
   'GET /api/approvals/:id': read('approval'),
   'POST /api/approvals/:id': read('approval'),
+  // The service keeps each person to the steps waiting for their second yes.
+  'GET /api/approvals-second': 'self',
+  'POST /api/approvals-second/:id': 'self',
+  'GET /api/approvers': 'self',
   'GET /api/rules': 'self',
   'POST /api/rules': 'self',
   'DELETE /api/rules/:id': 'self',
@@ -265,6 +280,11 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/routines/:id/runs/:runId/retry': edit('routine'),
   'POST /api/routines/:id/runs/:runId/end-wait': edit('routine'),
   'GET /api/routines/:id/revisions': edit('routine'),
+  // The service keeps each person to the rehearsals they asked for.
+  'POST /api/routines/:id/rehearse': edit('routine'),
+  'GET /api/routines/:id/rehearsals': edit('routine'),
+  'GET /api/routines/:id/rehearsals/:rehearsalId': edit('routine'),
+  'GET /api/routines/:id/replayable': edit('routine'),
 
   // Memory: each person's own notes, and those of the bots they may change (checked by the routes).
   'GET /api/memory': 'self',
@@ -299,6 +319,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/api-keys': 'self',
   'POST /api/api-keys': 'self',
   'POST /api/api-keys/import': 'self',
+  'POST /api/api-keys/trap': 'self',
+  'POST /api/canary-alarms/:id/seen': 'self',
   'PATCH /api/api-keys/:id': 'self',
   'DELETE /api/api-keys/:id': 'self',
   'GET /api/vault': 'self',

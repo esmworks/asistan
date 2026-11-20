@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BotAvatar } from '@/components/BotAvatar';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useT } from '@/i18n';
 import { useFormat } from '@/lib/format';
@@ -84,6 +85,8 @@ export function UsageTab() {
       <SpendLimit period="month" spend={data?.month} />
       {settings?.dailyLimitUsd !== undefined && <SpendLimit period="day" spend={data?.day} />}
       <RoutineGate gate={data?.gate} />
+      <PromiseNet net={data?.promises} />
+      <SuggestionNet net={data?.suggestions} />
       <Parallel parallel={data?.parallel} />
       <Storage />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
@@ -188,6 +191,47 @@ function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
           {gate.skipped > 0 && <div>{t('usage.gate.skipped', { count: gate.skipped })}</div>}
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The promise safety net: on or off, and over the period what its looks at replies cost. */
+function PromiseNet({ net }: { net?: UsageReport['promises'] }) {
+  const t = useT();
+  const f = useFormat();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const on = settings?.promiseKeeper;
+  // A server older than the net does not offer it.
+  if (on === undefined) return null;
+  return (
+    <Card title={t('usage.promises')}>
+      <Row label={t('usage.promises.on')} hint={t('usage.promises.hint')}>
+        <Switch
+          checked={on}
+          aria-label={t('usage.promises.on')}
+          onCheckedChange={(v) => save.mutate({ promiseKeeper: v })}
+        />
+      </Row>
+      {net && (
+        <div className="px-4 pb-4 text-sm text-muted-foreground tabular-nums">
+          {t('usage.promises.checks', { count: net.checks, cost: f.usd(net.costUsd), found: net.found })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** The calls the routine suggestions made to the small model over the period, and what they cost. */
+function SuggestionNet({ net }: { net?: UsageReport['suggestions'] }) {
+  const t = useT();
+  const f = useFormat();
+  if (!net) return null;
+  return (
+    <Card title={t('usage.suggestions')}>
+      <div className="px-4 py-3 text-sm text-muted-foreground tabular-nums">
+        {t('usage.suggestions.checks', { count: net.checks, cost: f.usd(net.costUsd), found: net.found })}
+      </div>
     </Card>
   );
 }
@@ -373,16 +417,24 @@ function Report({
           })
         )}
       </Card>
-      {!!data.routines?.length && (
+      {!!(data.routines?.length || data.rehearsals?.length) && (
         <Card title={t('usage.routines')}>
-          {data.routines.map((r) => {
+          {[
+            ...(data.routines ?? []).map((r) => ({ ...r, key: r.routineId, label: r.name })),
+            // A rehearsal's cost is real, and shown apart from the routine's own runs.
+            ...(data.rehearsals ?? []).map((r) => ({
+              ...r,
+              key: `rehearsal-${r.routineId}`,
+              label: t('usage.rehearsalOf', { name: r.name }),
+            })),
+          ].map((r) => {
             const share = data.total.costUsd > 0 ? r.costUsd / data.total.costUsd : 0;
             const bot = r.botId ? byId.get(r.botId) : undefined;
             return (
-              <div key={r.routineId} className="flex items-center gap-3 px-4 py-3">
+              <div key={r.key} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 text-sm">
-                    <span className="truncate">{r.name}</span>
+                    <span className="truncate">{r.label}</span>
                     {bot && !filtered && (
                       <span className="shrink-0 text-xs text-muted-foreground">{bot.name}</span>
                     )}

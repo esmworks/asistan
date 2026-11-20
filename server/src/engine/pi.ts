@@ -723,6 +723,9 @@ export class PiEngine implements Engine {
         const entry = reached ? { perm: toolPermName(reached) } : byName.get(toolCall.name);
         if (!entry) return { block: true, reason: t('engine.unknownTool', { name: toolCall.name }) };
         const input = ((reached ? via!.arguments : args) ?? {}) as Record<string, unknown>;
+        // Looked at as the model wrote it, before a file tool's card shortens it.
+        const refused = await req.screen?.({ toolName: entry.perm, input });
+        if (refused) return { block: true, reason: refused };
         let cardInput = input;
         if (entry.file) {
           try {

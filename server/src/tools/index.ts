@@ -25,6 +25,7 @@ import {
   type Routine,
   type Skill,
   type WhatsAppGroup,
+  zonedTime,
 } from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -51,6 +52,14 @@ import { placeOf, ROOM_NOTES_PER_PLACE, sourceOf } from '../services/memory';
 import { redactSecrets } from '../services/secrets';
 import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
+import {
+  noteShape,
+  pickFields,
+  routineShape,
+  sig,
+  skillShape,
+  type ChangeNote,
+} from '../services/turn-changes';
 import { OWNER_ID } from '../users';
 import { atLeast, managesServer } from '../services/access';
 import { closestNames } from '../services/bots';
@@ -71,6 +80,29 @@ const choiceLabel = (c: z.infer<typeof Choice>) => (typeof c === 'string' ? c : 
 /** Query parameters that carry a sign-in or a signature rather than say which page it is. */
 const SECRET_PARAM =
   /(?:^|[_.-])(?:token|secret|password|passwd|pwd|key|apikey|sig|signature|auth|session|sessionid|sid|credential|code)s?(?:$|[_.-])|^x-(?:amz|goog)-/i;
+
+/**
+ * The moment a bot says a note is true until, as an ISO time; null for none (an empty answer) and
+ * undefined for something that is not a date. A date alone means the end of that day and a time
+ * with no offset is the person's own clock, both read in `timezone`; a time with an offset
+ * (`...Z`, `...+03:00`) is taken as it stands.
+ */
+export function noteUntil(text: string, timezone: string): string | null | undefined {
+  const given = text.trim();
+  if (!given) return null;
+  const date = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(given);
+  if (date) {
+    const [, y, mo, d, h = '23', mi = '59'] = date;
+    const real = new Date(Date.UTC(+y!, +mo! - 1, +d!));
+    // A day that does not exist (the 31st of November) is no date.
+    if (real.getUTCMonth() !== +mo! - 1 || +h > 23 || +mi > 59) return undefined;
+    return zonedTime(`${y}-${mo}-${d}`, `${h}:${mi}`, timezone).toISOString();
+  }
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/.test(given))
+    return undefined;
+  const at = new Date(given.replace(' ', 'T'));
+  return Number.isNaN(at.getTime()) ? undefined : at.toISOString();
+}
 
 /**
  * The page a bot says a fact came from, as a web address the person can open; null for none and
@@ -108,6 +140,8 @@ const TEAM_OFF = new Set<string>([
   'routine_create',
   'routine_update',
   'routine_delete',
+  // The person's own promises to others: a team or a chat app's stranger has none to keep here.
+  'promise_track',
   'my_activity',
   'conversations_search',
   'message_read',
@@ -127,6 +161,7 @@ const GUEST_OFF = new Set<string>([
   'ticket_update',
   'skill_save',
   'browser_card',
+  'promise_track',
   // Signing in with the vault's password, its two-step code or a code mailed to the bot runs
   // without a card: someone with no account here would get into the person's accounts by asking.
   'browser_login',
@@ -246,6 +281,7 @@ export type ToolName =
   | 'routine_create'
   | 'routine_update'
   | 'routine_delete'
+  | 'promise_track'
   | 'routine_failed'
   | 'routine_set'
   | 'routine_stop'
@@ -369,6 +405,14 @@ export class ToolFactory {
     const s = this.services;
     // Whom the turn works for: who asked, else whose conversation it is, else the bot's owner.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
+    /**
+     * Puts a change the turn made in the bot's own world into the journal that takes the turn
+     * back. Called once the step went through, and never fails the step it follows.
+     */
+    const journal = (c: ChangeNote) =>
+      s.changes
+        .record({ turnId: turn.id, threadId: thread.id, botId: bot.id, userId: person }, c)
+        .catch((err: unknown) => console.warn(`Could not journal a change of a turn: ${String(err)}`));
     // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins; so
     // does a WhatsApp chat a bot answers for the person, where someone else writes.
     const team = thread.kind === 'team' || !!opts.contact;
@@ -497,6 +541,8 @@ export class ToolFactory {
      * The bots whose own notes this bot may read and change, by id with their names: itself, and for
      * a manager every bot that is not a manager, archived ones too so their notes can be cleared.
      */
+    // The clock a date a bot gives for a note is read on: the person's, or the team's in a team conversation.
+    const zone = async () => (team ? await s.settings.team() : await s.settings.all(person)).timezone;
     // The place this conversation is in, for the notes about a place; null when it is in none.
     let placeHere: Promise<string | null> | undefined;
     const place = () => (placeHere ??= placeOf(this.ctx, thread));
@@ -749,6 +795,16 @@ export class ToolFactory {
             },
             person,
           );
+          // What the bot promised is now set up: the promise safety net leaves this turn's reply alone.
+          s.promises.routineTouched(turn.id);
+          await journal({
+            kind: 'routine',
+            op: 'create',
+            targetId: r.id,
+            label: r.name,
+            scopeBotId: r.botId,
+            after: { sig: sig(routineShape(r)) },
+          });
           const made = t('tool.routineCreated', {
             name: r.name,
             when: describeSchedule(r.schedule, await s.settings.locale()),
@@ -830,6 +886,16 @@ export class ToolFactory {
             routines.find((x) => x.id !== r.id && x.botId === r.botId && x.name.toLowerCase() === rename);
           if (taken) return t('tool.routineExists', { name: taken.name });
           const updated = await s.routines.update(r.id, patch, person);
+          s.promises.routineTouched(turn.id);
+          await journal({
+            kind: 'routine',
+            op: 'update',
+            targetId: r.id,
+            label: updated.name,
+            scopeBotId: r.botId,
+            before: { patch: pickFields(r, Object.keys(patch)) },
+            after: { sig: sig(routineShape(updated)) },
+          });
           return t('tool.routineUpdated', {
             name: updated.name,
             when: describeSchedule(updated.schedule, await s.settings.locale()),
@@ -840,6 +906,39 @@ export class ToolFactory {
         // The person sees which routine changes, and how, on a card first.
       ),
       def(
+        'promise_track',
+        {
+          what: z.string().trim().min(1).max(300),
+          to: z.string().trim().max(100).default(''),
+          /** The day it is due, YYYY-MM-DD in the person's time zone; left out when it has none. */
+          due: z.string().trim().max(20).optional(),
+        },
+        async ({ what, to, due }) => {
+          // The turn dealt with a promise itself: the safety net has nothing to add to its reply.
+          s.promises.routineTouched(turn.id);
+          const day = due?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+          if (due && (!day || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day))
+            return t('tool.promiseBadDue', { due });
+          const row = await s.promises.track({
+            person,
+            bot,
+            threadId: thread.id,
+            what,
+            toWhom: to,
+            day,
+            schedule: await mayChange(),
+            t,
+          });
+          return t(row.routineId ? 'tool.promiseTrackedRemind' : 'tool.promiseTracked', {
+            what: row.text,
+            day: day ?? '-',
+          });
+        },
+        // The person sees and closes every promise on their Today page, and a reminder is a routine
+        // they can cancel there, so the bot notes it without a card.
+        'internal',
+      ),
+      def(
         'routine_delete',
         { routine: z.string().min(1).max(200), bot: z.string().min(1).max(200).optional() },
         async (a) => {
@@ -848,9 +947,21 @@ export class ToolFactory {
           const found = await pickRoutine(a.routine, a.bot);
           if (typeof found === 'string') return found;
           await s.routines.remove(found.routine.id);
+          await journal({
+            kind: 'routine',
+            op: 'delete',
+            targetId: found.routine.id,
+            label: found.routine.name,
+            scopeBotId: found.routine.botId,
+            before: {
+              botId: found.routine.botId,
+              createdBy: found.routine.createdByUserId,
+              shape: routineShape(found.routine),
+            },
+          });
           return t('tool.routineDeleted', { name: found.routine.name });
         },
-        // Deleting cannot be undone: the person approves it on a card first.
+        // The person approves the deletion on a card first; the turn can be taken back from the app.
       ),
       ...(turn.routineRunId
         ? [
@@ -921,14 +1032,34 @@ export class ToolFactory {
               });
               return t('tool.skillProposed', { name });
             }
-            await s.skills.update(mine.id, { description: a.description, body: a.body });
+            const updated = await s.skills.update(mine.id, { description: a.description, body: a.body });
+            await journal({
+              kind: 'skill',
+              op: 'update',
+              targetId: mine.id,
+              label: name,
+              scopeBotId: bot.id,
+              before: skillShape(mine),
+              after: { sig: sig(skillShape(updated)) },
+            });
             return t('tool.skillUpdated', { name });
           }
           // A new skill changes the bot: only for someone who may change it.
           if (!(await mayChange())) return t('tool.changeNotAllowed');
           const taken = (await s.skills.list()).find((k) => k.name === name);
           if (taken) return t('tool.skillTaken', { name });
-          await s.skills.create({ name, description: a.description, body: a.body, botIds: [bot.id] }, person);
+          const created = await s.skills.create(
+            { name, description: a.description, body: a.body, botIds: [bot.id] },
+            person,
+          );
+          await journal({
+            kind: 'skill',
+            op: 'create',
+            targetId: created.id,
+            label: name,
+            scopeBotId: bot.id,
+            after: { sig: sig(skillShape(created)) },
+          });
           return t('tool.skillCreated', { name });
         },
         // The person sees the skill on a card before it is saved.
@@ -1042,7 +1173,7 @@ export class ToolFactory {
           return found
             .map(
               (m) =>
-                `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}${m.sourceUrl ? ` (${t('tool.memorySource', { url: m.sourceUrl })})` : ''}`,
+                `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}${m.sourceUrl ? ` (${t('tool.memorySource', { url: m.sourceUrl })})` : ''}${m.validUntil ? ` (${t('tool.memoryUntil', { date: m.validUntil })})` : ''}`,
             )
             .join('\n');
         },
@@ -1055,10 +1186,14 @@ export class ToolFactory {
           scope: z.enum(['bot', 'user', 'room']).default('bot'),
           site: z.string().max(253).optional(),
           from: z.string().max(2000).optional(),
+          until: z.string().max(40).optional(),
         },
-        async ({ content, scope, site, from }) => {
+        async ({ content, scope, site, from, until }) => {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
+          const validUntil = until === undefined ? null : noteUntil(until, await zone());
+          if (validUntil === undefined) return t('tool.memoryBadUntil', { until: until! });
+          if (validUntil && new Date(validUntil).getTime() <= Date.now()) return t('tool.memoryUntilPast');
           let host: string | null = null;
           if (site) {
             try {
@@ -1094,6 +1229,7 @@ export class ToolFactory {
             before: null,
             ...note,
             sourceUrl,
+            validUntil,
           });
           if (gate.say !== undefined) return gate.say;
           const m = await s.memory.create({
@@ -1101,6 +1237,15 @@ export class ToolFactory {
             source: `bot:${bot.id}`,
             threadId: thread.id,
             sourceUrl,
+            validUntil,
+          });
+          await journal({
+            kind: 'memory',
+            op: 'create',
+            targetId: m.id,
+            label: truncate(m.content, 80),
+            scopeBotId: m.scope === 'bot' ? m.botId : null,
+            after: { sig: sig(noteShape(m)) },
           });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
@@ -1116,10 +1261,15 @@ export class ToolFactory {
           id: z.string(),
           content: z.string().trim().min(1).max(2000),
           from: z.string().max(2000).optional(),
+          until: z.string().max(40).optional(),
         },
-        async ({ id, content, from }) => {
+        async ({ id, content, from, until }) => {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
+          // Left out, the note keeps its date; an empty answer takes it away.
+          const validUntil = until === undefined ? undefined : noteUntil(until, await zone());
+          if (validUntil === undefined && until !== undefined) return t('tool.memoryBadUntil', { until });
+          if (validUntil && new Date(validUntil).getTime() <= Date.now()) return t('tool.memoryUntilPast');
           const m = await s.memory.get(id);
           const here = await place();
           if (
@@ -1139,20 +1289,32 @@ export class ToolFactory {
             place: m.place,
             site: m.site,
             sourceUrl,
+            // A waiting change can give a note a date, not take it away.
+            validUntil: validUntil ?? null,
           });
           if (gate.say !== undefined) return gate.say;
           // Written against the version read above, so a change made while a card waited is not
           // written over.
           try {
-            await s.memory.update(
+            const u = await s.memory.update(
               id,
               {
                 content: clean.text,
                 expectedUpdatedAt: m.updatedAt,
                 ...sourceOf({ threadId: thread.id, sourceUrl }),
+                ...(validUntil !== undefined && { validUntil }),
               },
               `bot:${bot.id}`,
             );
+            await journal({
+              kind: 'memory',
+              op: 'update',
+              targetId: id,
+              label: truncate(u.content, 80),
+              scopeBotId: m.scope === 'bot' ? m.botId : null,
+              before: { content: m.content, validUntil: m.validUntil ?? null },
+              after: { sig: sig(noteShape(u)) },
+            });
           } catch (err) {
             if (err instanceof HttpError && err.status === 409) return t('tool.memoryChangedSince');
             // A pinned note may only grow as far as the pinned room left; the bot hears why.
@@ -1192,6 +1354,15 @@ export class ToolFactory {
           });
           if (gate.say !== undefined) return gate.say;
           await s.memory.remove(id, `bot:${bot.id}`);
+          await journal({
+            kind: 'memory',
+            op: 'delete',
+            targetId: id,
+            label: '',
+            scopeBotId: m.scope === 'bot' ? m.botId : null,
+            // The words were deleted on purpose: none of them is kept, so it cannot be put back.
+            reason: 'deleted',
+          });
           // The words that went are in the answer, so the step shows what was forgotten. A manager
           // deleting another bot's note is told what that bot loses.
           const gone = t('tool.memoryForgot', { content: truncate(m.content, 200) });
@@ -1554,8 +1725,20 @@ export class ToolFactory {
         ),
       );
     }
-    tools.push(...ticketTools({ def, services: s, bot, turn, t, reach: (ref) => reachBot(ref, 'chat') }));
-    tools.push(...tableTools({ def, services: s, botId: bot.id, t, hasTables: opts.hasTables ?? true }));
+    tools.push(
+      ...ticketTools({
+        def,
+        services: s,
+        bot,
+        turn,
+        t,
+        note: journal,
+        reach: (ref) => reachBot(ref, 'chat'),
+      }),
+    );
+    tools.push(
+      ...tableTools({ def, services: s, botId: bot.id, t, note: journal, hasTables: opts.hasTables ?? true }),
+    );
     // With the internet off the bot gets neither its browser nor its desktop, which reach it too.
     if (this.ctx.browser.available && bot.internet) {
       const askLogin: AskLogin = async (site, host) => {
@@ -1691,7 +1874,9 @@ export class ToolFactory {
       tools.push(...(bot.projectDir ? desk.filter((x) => x.name !== 'run_command') : desk));
     }
     if (bot.isManager && !team) {
-      tools.push(...this.managerTools(bot, signal, t, unattended, person, (ref) => reachBot(ref, 'edit')));
+      tools.push(
+        ...this.managerTools(bot, signal, t, unattended, person, (ref) => reachBot(ref, 'edit'), journal),
+      );
       // A manager also reads and tidies the other bots' own notes.
       for (const x of tools) {
         if (MANAGER_MEMORY_TOOLS.has(x.name)) x.description = `${x.description} ${t('tool.memoryManager')}`;
@@ -1711,6 +1896,8 @@ export class ToolFactory {
     person: string,
     /** A bot the person may change, by name or id. */
     reach: (ref: string) => Promise<Bot>,
+    /** Puts a change into the journal that takes the turn back. */
+    note: (c: ChangeNote) => Promise<void>,
   ): AppTool[] {
     const def = definer(t);
     const s = this.services;
@@ -1956,6 +2143,16 @@ export class ToolFactory {
           };
           const updated = await s.bots.update(target.id, patch);
           await audit('update', target.id, target, updated);
+          const keys = Object.keys(patch);
+          await note({
+            kind: 'bot',
+            op: 'update',
+            targetId: target.id,
+            label: updated.name,
+            scopeBotId: target.id,
+            before: { what: 'settings', patch: pickFields(target, keys) },
+            after: { sig: sig(pickFields(updated, keys)) },
+          });
           return t('tool.updated', { name: updated.name });
         },
         // Loosening a bot's limits, and changing another bot's instructions, section or engine, asks
@@ -2012,8 +2209,20 @@ export class ToolFactory {
             const ok = await confirm(said, { bot: target.name, skill: skill.name, on: a.on }, 'bot_skill');
             if (!ok) return t('tool.changeDenied');
           }
+          const was = skill.botIds.includes(target.id);
           await s.skills.setBot(skill.id, target.id, a.on);
           await audit('skill', target.id, null, { skill: skill.name, on: a.on });
+          if (was !== a.on) {
+            await note({
+              kind: 'bot',
+              op: 'update',
+              targetId: target.id,
+              label: `${target.name} · ${skill.name}`,
+              scopeBotId: target.id,
+              before: { what: 'skill', skillId: skill.id, was },
+              after: { on: a.on },
+            });
+          }
           return t(a.on ? 'tool.skillOn' : 'tool.skillOff', { skill: skill.name, name: target.name });
         },
         'internal',
@@ -2026,6 +2235,15 @@ export class ToolFactory {
           if (target.isManager) return t('tool.managerArchive');
           const archived = await s.bots.archive(target.id);
           await audit('archive', target.id, target, archived);
+          await note({
+            kind: 'bot',
+            op: 'update',
+            targetId: target.id,
+            label: target.name,
+            scopeBotId: target.id,
+            before: { what: 'archive' },
+            after: { archived: true },
+          });
           return t('tool.archived', { name: target.name });
         },
         // Archiving can be undone from the app.

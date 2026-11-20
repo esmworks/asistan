@@ -5,6 +5,7 @@ import type { T } from '../i18n';
 import type { TurnRow } from '../runtime/turns';
 import type { Services } from '../services';
 import { truncate } from '../util';
+import { pickFields, sig, ticketShape, type ChangeNote } from '../services/turn-changes';
 import type { Define } from './index';
 
 /**
@@ -20,8 +21,10 @@ export function ticketTools(opts: {
   t: T;
   /** A bot the turn's person may talk with, by name or id. */
   reach: (ref: string) => Promise<Bot>;
+  /** Puts a change into the journal that takes the turn back. */
+  note: (c: ChangeNote) => Promise<void>;
 }): AppTool[] {
-  const { def, services: s, bot, turn, t } = opts;
+  const { def, services: s, bot, turn, t, note } = opts;
   const by = `bot:${bot.id}`;
   const start = turn.source !== 'ticket';
   const names = async () => new Map((await s.bots.list()).map((b) => [b.id, b.name]));
@@ -87,6 +90,13 @@ export function ticketTools(opts: {
           // Opened for the person the turn works for.
           turn.userId,
         );
+        await note({
+          kind: 'ticket',
+          op: 'create',
+          targetId: k.id,
+          label: `#${k.number} ${k.title}`,
+          after: { sig: sig(ticketShape(k)) },
+        });
         return t(start || !k.assigneeBotId ? 'tool.ticketCreated' : 'tool.ticketCreatedWaiting', {
           number: k.number,
         });
@@ -108,17 +118,24 @@ export function ticketTools(opts: {
         const k = await s.tickets.find(a.ticket);
         if (!k) return t('tool.ticketMissing', { ticket: String(a.ticket) });
         const assigneeBotId = await assignee(a.assign_to);
-        await s.tickets.update(
-          k.id,
-          {
-            ...(a.status && { status: a.status }),
-            ...(a.priority && { priority: a.priority }),
-            ...(a.title && { title: a.title }),
-            ...(a.description !== undefined && { description: a.description }),
-            ...(assigneeBotId !== undefined && { assigneeBotId }),
-          },
-          start,
-        );
+        const patch = {
+          ...(a.status && { status: a.status }),
+          ...(a.priority && { priority: a.priority }),
+          ...(a.title && { title: a.title }),
+          ...(a.description !== undefined && { description: a.description }),
+          ...(assigneeBotId !== undefined && { assigneeBotId }),
+        };
+        const updated = await s.tickets.update(k.id, patch, start);
+        if (Object.keys(patch).length) {
+          await note({
+            kind: 'ticket',
+            op: 'update',
+            targetId: k.id,
+            label: `#${k.number} ${updated.title}`,
+            before: { patch: pickFields(k, Object.keys(patch)) },
+            after: { sig: sig(ticketShape(updated)) },
+          });
+        }
         if (a.comment?.trim()) await s.tickets.comment(k.id, a.comment.trim(), by);
         return t('tool.ticketUpdated', { number: k.number });
       },

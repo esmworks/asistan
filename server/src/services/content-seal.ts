@@ -95,7 +95,21 @@ const SEALED: Sealed[] = [
   {
     table: schema.routineRuns,
     id: schema.routineRuns.id,
-    columns: [['payload', schema.routineRuns.payload, 'text']],
+    columns: [
+      ['payload', schema.routineRuns.payload, 'text'],
+      ['triggerInput', schema.routineRuns.triggerInput, 'text'],
+    ],
+  },
+  {
+    // A rehearsal holds the instruction as tried, what the bot wrote and the steps it would take.
+    table: schema.routineRehearsals,
+    id: schema.routineRehearsals.id,
+    columns: [
+      ['prompt', schema.routineRehearsals.prompt, 'text'],
+      ['report', schema.routineRehearsals.report, 'text'],
+      ['steps', schema.routineRehearsals.steps, 'json'],
+      ['error', schema.routineRehearsals.error, 'text'],
+    ],
   },
   {
     table: schema.emails,
@@ -117,6 +131,42 @@ const SEALED: Sealed[] = [
     table: schema.ticketComments,
     id: schema.ticketComments.id,
     columns: [['text', schema.ticketComments.text, 'text']],
+  },
+  {
+    // A promise is lifted from the conversation's words, so it is sealed with them.
+    table: schema.promises,
+    id: schema.promises.id,
+    columns: [
+      ['text', schema.promises.text, 'text'],
+      ['toWhom', schema.promises.toWhom, 'text'],
+      ['condition', schema.promises.condition, 'text'],
+    ],
+  },
+  {
+    // A suggested routine is written from the person's own requests, so it is sealed with them.
+    table: schema.routineSuggestions,
+    id: schema.routineSuggestions.id,
+    columns: [
+      ['name', schema.routineSuggestions.name, 'text'],
+      ['instructions', schema.routineSuggestions.instructions, 'text'],
+      ['signature', schema.routineSuggestions.signature, 'text'],
+    ],
+  },
+  {
+    // The sites a turn had read before a trip-wire; they say where the person has been.
+    table: schema.canaryAlarms,
+    id: schema.canaryAlarms.id,
+    columns: [['sources', schema.canaryAlarms.sources, 'json']],
+  },
+  {
+    // What a turn changed, with the words and file contents as they were before.
+    table: schema.turnChanges,
+    id: schema.turnChanges.id,
+    columns: [
+      ['label', schema.turnChanges.label, 'text'],
+      ['before', schema.turnChanges.before, 'json'],
+      ['after', schema.turnChanges.after, 'json'],
+    ],
   },
 ];
 

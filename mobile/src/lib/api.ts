@@ -12,11 +12,21 @@ import type {
   BotImportPlan,
   BotImportResult,
   Approval,
+  Approver,
   Bot,
   BotSummary,
   SessionInfo,
   AccountSet,
   TodayReport,
+  Pledge,
+  TurnChanges,
+  Rehearsal,
+  RehearsalStart,
+  ReplayableRun,
+  SecondYes,
+  PersonInfo,
+  RoutineSuggestion,
+  RoutineSuggestionAccept,
   Group,
   Memory,
   MemoryChange,
@@ -215,6 +225,12 @@ export interface Settings {
   maxTurns?: number;
   /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
   memoryReviewEvery?: number;
+  /** Whether the person's own requests are looked at for something asked again and again; missing on older servers. */
+  routineSuggestions?: boolean;
+  /** The promise safety net after a bot's reply; missing on older servers. */
+  promiseKeeper?: boolean;
+  /** The time of day a reminder of the person's own promise arrives (HH:MM); missing on older servers. */
+  promiseRemindAt?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -308,6 +324,23 @@ export function apiFor(origin: string) {
     updateBot: (id: string, b: unknown) => http.patch<Bot>(`/api/bots/${id}`, b),
     archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
     today: () => http.get<TodayReport>('/api/today'),
+    /** A bot caught steered by outside text stays on Today until the person says they saw it. */
+    canaryAlarmSeen: (id: string) => http.post<{ ok: true }>(`/api/canary-alarms/${id}/seen`, {}),
+    /** Steps waiting for this person's second yes, without the conversations they come from. */
+    secondYes: () => http.get<SecondYes[]>('/api/approvals-second'),
+    answerSecond: (id: string, decision: 'allow' | 'deny') =>
+      http.post<Approval>(`/api/approvals-second/${id}`, { decision }),
+    /** The person's open promises: a bot's, and their own to others. */
+    promises: () => http.get<Pledge[]>('/api/promises'),
+    promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
+    promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),
+    routineSuggestions: () => http.get<RoutineSuggestion[]>('/api/routine-suggestions'),
+    acceptRoutineSuggestion: (id: string, input: RoutineSuggestionAccept) =>
+      http.post<Routine>(`/api/routine-suggestions/${id}/accept`, input),
+    dismissRoutineSuggestion: (id: string) =>
+      http.post<{ ok: true }>(`/api/routine-suggestions/${id}/dismiss`, {}),
+    /** Who is on this server, to name who asked and who said the first yes. */
+    people: () => http.get<PersonInfo[]>('/api/people'),
     /** Pins a message above its conversation; null takes the pin away. */
     pinMessage: (threadId: string, messageId: string | null) =>
       http.put<Thread>(`/api/threads/${threadId}/pin`, { messageId }),
@@ -454,14 +487,30 @@ export function apiFor(origin: string) {
     updateVaultLogin: (id: string, v: VaultLoginUpdate) => http.patch<VaultLogin>(`/api/vault/${id}`, v),
     removeVaultLogin: (id: string) => http.del<{ ok: true }>(`/api/vault/${id}`),
     rules: () => http.get<PermissionRule[]>('/api/rules'),
-    addRule: (r: { list: 'ask' | 'allow'; pattern: string }) => http.post<PermissionRule>('/api/rules', r),
+    addRule: (r: {
+      list: 'ask' | 'allow';
+      pattern: string;
+      botId?: string;
+      secondPerson?: boolean;
+      secondUserId?: string;
+    }) => http.post<PermissionRule>('/api/rules', r),
+    /** Who could give a second yes on a bot's steps; on every bot's without a bot. */
+    approvers: (botId?: string | null) =>
+      http.get<Approver[]>(`/api/approvers${botId ? `?botId=${encodeURIComponent(botId)}` : ''}`),
     removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
     memory: () => http.get<Memory[]>('/api/memory'),
-    addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
-      http.post<Memory>('/api/memory', m),
-    updateMemory: (id: string, p: { content?: string; pinned?: boolean; updatedAt?: string }) =>
-      http.patch<Memory>(`/api/memory/${id}`, p),
+    addMemory: (m: {
+      scope: 'bot' | 'user';
+      botId?: string | null;
+      content: string;
+      site?: string | null;
+      validUntil?: string | null;
+    }) => http.post<Memory>('/api/memory', m),
+    updateMemory: (
+      id: string,
+      p: { content?: string; pinned?: boolean; validUntil?: string | null; updatedAt?: string },
+    ) => http.patch<Memory>(`/api/memory/${id}`, p),
     memoryHistory: () => http.get<MemoryHistoryLine[]>('/api/memory-history'),
     removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
     /** Deletes every note the bot keeps for itself. */
@@ -480,6 +529,17 @@ export function apiFor(origin: string) {
     runRoutine: (id: string) => http.post<RoutineRun | null>(`/api/routines/${id}/run`),
     routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
     routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
+    /** Tries a routine once without doing anything; the server decides who may. */
+    rehearseRoutine: (id: string, body: RehearsalStart) =>
+      http.post<Rehearsal>(`/api/routines/${id}/rehearse`, body),
+    routineRehearsals: (id: string) => http.get<Rehearsal[]>(`/api/routines/${id}/rehearsals`),
+    /** The routine's latest runs, with whether what started each was kept so it can be replayed. */
+    routineReplayable: (id: string) => http.get<ReplayableRun[]>(`/api/routines/${id}/replayable`),
+    /** The turns of a conversation with something to put back, with how many changes each made. */
+    turnChangesPending: (threadId: string) =>
+      http.get<Record<string, number>>(`/api/threads/${threadId}/turn-changes`),
+    turnChanges: (turnId: string) => http.get<TurnChanges>(`/api/turns/${turnId}/changes`),
+    undoTurn: (turnId: string) => http.post<TurnChanges>(`/api/turns/${turnId}/undo`, {}),
 
     library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),
     /** `inline`: an image to show on the page rather than a download. */

@@ -84,6 +84,12 @@ export function buildSystemPrompt(opts: {
   contact?: 'route' | 'door';
   /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
   recall?: boolean;
+  /**
+   * The bot's private token: a line it is told never to repeat or write anywhere. Seeing it in a
+   * tool's input or a reply means text the bot read is making it copy its prompt out. The same
+   * for every turn of the bot, so the prompt keeps its cache.
+   */
+  canary?: string;
 }): string {
   const { bot, paths, memory, peers } = opts;
   const t = translator(opts.locale);
@@ -122,8 +128,9 @@ export function buildSystemPrompt(opts: {
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: opts.timezone, dateStyle: 'short' });
   // A note a bot wrote says so, and each stays on its own line: notes are what was learned,
   // never a rule of this prompt or a request of the person's.
+  // A note that is only true for a while says until when, so the bot knows the fact is temporary.
   const note = (m: Memory) =>
-    `- (${day.format(new Date(m.updatedAt))}) ${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
+    `- (${day.format(new Date(m.updatedAt))}) ${m.validUntil ? `(${t('prompt.noteUntil', { date: day.format(new Date(m.validUntil)) })}) ` : ''}${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
   if (user.length || own.length || room.length) lines.push('', t('prompt.memoryNotes'));
   if (user.length) {
     lines.push('', t('prompt.userMemory'));
@@ -190,9 +197,11 @@ export function buildSystemPrompt(opts: {
     '',
     t('prompt.rules'),
     t('prompt.ruleData'),
+    ...(opts.canary ? [t('prompt.canary', { token: opts.canary })] : []),
     t('prompt.ruleApproval'),
     t('prompt.ruleAsk'),
     t('prompt.ruleMemory'),
+    t('prompt.rulePromises'),
     ...(opts.recall === false ? [] : [t('prompt.ruleRecall')]),
     t('prompt.ruleTryFirst'),
     t('prompt.rulePersist'),

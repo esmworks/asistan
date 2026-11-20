@@ -11,6 +11,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AreaBox, FormField, SaveButton, TextBox } from '@/components/dialogs/common';
+import { Rehearsal } from '@/components/dialogs/Rehearsal';
 import { isLoopback, runCommand, TIME, tomorrow } from '@/components/dialogs/model';
 import { confirm, toast, toastError } from '@/components/overlay';
 import { Empty, Loading, PillButton, Page, Row, Section, SwitchRow, back } from '@/components/page';
@@ -304,6 +305,8 @@ function RoutinePage({ routine, initialBotId }: { routine?: Routine; initialBotI
           invalid={!!err('prompt')}
         />
       </FormField>
+
+      {routine ? <Rehearsal routine={routine} prompt={v.prompt} /> : null}
 
       <Section>
         <Rows>

@@ -2908,11 +2908,13 @@ export class WhatsAppChannel {
     try {
       if (kind === 'a') {
         // Answered as the person who linked WhatsApp, so "always allow" is theirs to give.
-        await this.services.approvals.answer(
+        const after = await this.services.approvals.answer(
           approvalId,
           { decision: value === 'n' ? 'deny' : 'allow', remember: value === 'r' },
           row?.userId ?? null,
         );
+        // The first yes of a step that needs two people leaves it waiting for the second.
+        if (after.status === 'pending') await this.say(jid, t('channel.waitingSecond'));
       } else {
         const { items } = questionItems(approval);
         const option = items.length === 1 ? items[0]!.options[Number(value)] : undefined;
@@ -2925,6 +2927,10 @@ export class WhatsAppChannel {
       }
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) return false;
+      if (err instanceof HttpError && err.status === 403) {
+        await this.say(jid, err.localized(t));
+        return true;
+      }
       throw err;
     }
     return true;
@@ -3160,6 +3166,13 @@ export class WhatsAppChannel {
     if (!target || target.row.botId !== e.botId) return;
     const settings = target.row.settings as Settings;
     if (settings.notices === false) return;
+    // A step waiting for this person's second yes: told to them alone, with no conversation named.
+    if (e.to) {
+      if (!e.to.includes(target.row.userId)) return;
+      const t = await this.services.settings.translator();
+      await this.say(target.jid, t('channel.noticeSecond', { text: e.text }));
+      return;
+    }
     // Only of the person's own conversations, or the bot's own work they may change.
     if (!(await this.services.access.noticeAudience(e.threadId)).includes(target.row.userId)) return;
     // Its cards come as cards there, or the person is in the app with it.

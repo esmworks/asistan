@@ -325,14 +325,22 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   computerCheck?.unref();
 
   // Attachments whose message was never sent (the page was closed with them on it).
-  // Old lines of the bots' lists of what they changed go with it.
+  // Old lines of the bots' lists of what they changed, and of what turns changed, go with it.
   const sweep = () => {
     void sweepUploads(config.dataDir).catch((err) => console.warn(`Upload sweep failed: ${String(err)}`));
     void services.actions.prune().catch((err) => console.warn(`Action list sweep failed: ${String(err)}`));
+    void services.changes.prune().catch((err) => console.warn(`Turn change sweep failed: ${String(err)}`));
+    void services.rehearsals.prune().catch((err) => console.warn(`Rehearsal sweep failed: ${String(err)}`));
     // Documents bots' instructions are kept in are looked at once a day.
     void services.instructionDocs
       .checkDue()
       .catch((err) => console.warn(`Instructions document check failed: ${String(err)}`));
+    // Each person's requests are looked at for something asked again and again, once a day. Not
+    // with a test's own engine, which would spend the day's look at the start, before any request.
+    if (!opts.engine && !fake)
+      void services.routineSuggestions
+        .runDue()
+        .catch((err) => console.warn(`Routine suggestions failed: ${String(err)}`));
   };
   sweep();
   const sweepTimer = setInterval(sweep, 60 * 60_000);
@@ -705,7 +713,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   bus.on('delta', (e) => void toThread(e.threadId).then((to) => to.emit('delta', e)));
   bus.on('turn', (e) => void toThread(e.threadId).then((to) => to.emit('turn', e)));
   bus.on('notice', (e) => {
-    void services.access.noticeAudience(e.threadId).then((users) => {
+    // A notice for named people (a second yes wanted) goes to them alone.
+    void (e.to ? Promise.resolve(e.to) : services.access.noticeAudience(e.threadId)).then((users) => {
       toPeople(users).emit('notice', e);
       return services.push.notice(e, users);
     });
@@ -757,6 +766,8 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       services.subscriptions.stop();
       await services.turns.shutdown();
       await services.memoryReview.shutdown();
+      await services.promises.shutdown();
+      await services.routineSuggestions.shutdown();
       await services.titles.shutdown();
       await services.meetings.shutdown();
       await browser.shutdown();

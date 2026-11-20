@@ -361,6 +361,60 @@ export const RoutineRevision = z.object({
 });
 export type RoutineRevision = z.infer<typeof RoutineRevision>;
 
+/** One step of a rehearsal, in order: `ran` only read and was done, `would` is what the bot would have done. */
+export const RehearsalStep = z.object({
+  kind: z.enum(['ran', 'would']),
+  tool: z.string(),
+  summary: z.string(),
+  at: z.string(),
+});
+export type RehearsalStep = z.infer<typeof RehearsalStep>;
+
+/** Starts a rehearsal: `prompt` is the instruction as typed (the saved one when left out); `replayRunId` a run whose input is replayed. */
+export const RehearsalStart = z.object({
+  prompt: z.string().min(1).max(20_000).optional(),
+  replayRunId: z.string().min(1).max(64).optional(),
+});
+export type RehearsalStart = z.infer<typeof RehearsalStart>;
+
+/** A routine tried once without doing anything, as its person reads it. */
+export const Rehearsal = z.object({
+  id: z.string(),
+  routineId: z.string(),
+  /** The instruction was the one typed in the dialog, not the saved one. */
+  draft: z.boolean(),
+  prompt: z.string(),
+  status: z.enum(['running', 'done', 'error', 'stopped']),
+  /** What the bot wrote at the end. */
+  report: z.string(),
+  steps: z.array(RehearsalStep),
+  error: z.string().nullable(),
+  /** Engine-reported cost in US dollars; null until it ends or when the engine does not tell. */
+  costUsd: z.number().nullable(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  /** The run whose input was replayed, with the report it actually wrote; null when none was. */
+  replay: z
+    .object({
+      runId: z.string(),
+      startedAt: z.string(),
+      status: RoutineRunStatus,
+      report: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type Rehearsal = z.infer<typeof Rehearsal>;
+
+/** One of a routine's latest runs, and whether what started it was kept so it can be replayed. */
+export const ReplayableRun = z.object({
+  runId: z.string(),
+  startedAt: z.string(),
+  status: RoutineRunStatus,
+  trigger: z.string().nullable(),
+  replayable: z.boolean(),
+});
+export type ReplayableRun = z.infer<typeof ReplayableRun>;
+
 export function isValidTimeZone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });

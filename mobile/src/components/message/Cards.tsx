@@ -21,7 +21,8 @@ import { PillButton } from '@/components/page';
 import { toastError } from '@/components/overlay';
 import { locale, t } from '@/i18n';
 import { nav } from '@/lib/nav';
-import { useApprovals, useConnections, useThread, useMainThread } from '@/lib/queries';
+import { useApprovals, useConnections, useMainThread, usePeople, useThread } from '@/lib/queries';
+import { personNameOf } from '@/lib/today';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
 import { bubblePalette, answeredText } from './util';
@@ -105,6 +106,7 @@ export function ApprovalCard({
 }) {
   const c = useColors();
   const { data: approvals } = useApprovals();
+  const { data: people = [] } = usePeople();
   const a = approvals?.find((x) => x.id === approvalId);
   const service = useServiceName(a?.toolName);
   const decide = useAnswer(approvalId);
@@ -141,6 +143,8 @@ export function ApprovalCard({
   if (a.kind === 'login' && a.status === 'pending') return <LoginCard a={a} />;
   if (a.status !== 'pending') return <AnsweredLine text={answeredText(a, botName, locale, service)} />;
   const action = describeAction(a.toolName, a.input, { bot: botName, locale, service });
+  // A step that needs two people's yes, and has the first: it waits for the second.
+  const waitingSecond = !!a.needsSecond && !!a.firstAt;
   return (
     <View style={[styles.card, { borderColor: `${c.amber}66`, backgroundColor: c.amberSoft }]}>
       <View style={styles.cardHead}>
@@ -173,20 +177,32 @@ export function ApprovalCard({
               {t(`approval.outside.${outside}`)}
             </Text>
           ) : null}
+          {a.needsSecond ? (
+            <Text style={[styles.small, { color: c.mutedForeground }]}>
+              {waitingSecond
+                ? t('approval.waitingSecond', {
+                    name: personNameOf(people, a.firstApprover, t('people.owner'), t('common.someone')),
+                  })
+                : t('approval.needsSecond')}
+            </Text>
+          ) : null}
           {action.detail ? <Detail text={action.detail} /> : null}
         </View>
       </View>
       <View style={styles.buttons}>
-        <PillButton
-          label={t('approval.allowOnce')}
-          icon="check"
-          variant="primary"
-          disabled={decide.isPending}
-          onPress={() => decide.mutate({ decision: 'allow' })}
-        />
+        {/* After the first yes the second must come from someone else: no button for it here. */}
+        {waitingSecond ? null : (
+          <PillButton
+            label={t('approval.allowOnce')}
+            icon="check"
+            variant="primary"
+            disabled={decide.isPending}
+            onPress={() => decide.mutate({ decision: 'allow' })}
+          />
+        )}
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && !resembles && !noAlways ? (
+        {!heldBy && !askRule && !outside && !resembles && !noAlways && !a.needsSecond ? (
           <PillButton
             label={t('approval.allowAlways')}
             disabled={decide.isPending}

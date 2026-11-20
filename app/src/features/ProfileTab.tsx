@@ -2,6 +2,7 @@ import { PROFILE_FOCUS, PROFILE_HELP, type ProfileFocus } from '@yumakbot/shared
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
 import { useSettings } from '@/lib/queries';
@@ -105,6 +106,18 @@ export function ProfileTab() {
               <p className="text-xs text-muted-foreground">{t('profile.aboutHint')}</p>
             </div>
           </Card>
+          {/* A server older than the suggestions does not offer them. */}
+          {settings.routineSuggestions !== undefined && (
+            <Card title={t('routineSuggest.setting.title')}>
+              <Row label={t('routineSuggest.setting.on')} hint={t('routineSuggest.setting.hint')}>
+                <Switch
+                  checked={settings.routineSuggestions}
+                  aria-label={t('routineSuggest.setting.on')}
+                  onCheckedChange={(routineSuggestions) => save.mutate({ routineSuggestions })}
+                />
+              </Row>
+            </Card>
+          )}
         </>
       )}
       <SlackLinkCard />

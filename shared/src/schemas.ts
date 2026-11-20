@@ -3,6 +3,7 @@ import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
 import { internalHost } from './ai-endpoints';
 import { luhn } from './secret-shapes';
+import { Schedule } from './schedule';
 
 /**
  * The app's own green, a darker shade of its icon's so white text on it reads well: the accent of the
@@ -243,7 +244,7 @@ export const GroupMove = z.object({ beforeId: Id.nullable() });
 export type GroupMove = z.infer<typeof GroupMove>;
 
 /** `api`: messages sent to the bot from a script or another app through its API. */
-export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team']);
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team', 'rehearsal']);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
 export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);
@@ -533,10 +534,41 @@ export const Approval = z.object({
   answer: z.string().nullable(),
   /** Allowed with "Hep izin ver": the bot now goes ahead by itself (full access). */
   remembered: z.boolean(),
+  /**
+   * An "always ask" rule wants two different people's yes. Once the first said yes the card stays
+   * pending, `firstApprover` and `firstAt` say who and when, and it waits for the second. Missing
+   * from older servers.
+   */
+  needsSecond: z.boolean().optional(),
+  firstApprover: Id.nullable().optional(),
+  firstAt: z.string().nullable().optional(),
   createdAt: z.string(),
   decidedAt: z.string().nullable(),
 });
 export type Approval = z.infer<typeof Approval>;
+
+/**
+ * A step that waits for a second person's yes, as that person sees it: what it is and who said
+ * yes first, without the conversation it comes from. People are given by id.
+ */
+export const SecondYes = z.object({
+  id: Id,
+  botId: Id,
+  /** Whose request it is; null for the bot's own work (a routine, a hook). */
+  askedBy: Id.nullable(),
+  /** The card's words, and the step and its details as the card shows them under "What?". */
+  summary: z.string(),
+  step: z.string(),
+  detail: z.string().nullable(),
+  firstApprover: Id.nullable(),
+  firstAt: z.string(),
+  createdAt: z.string(),
+});
+export type SecondYes = z.infer<typeof SecondYes>;
+
+/** A person who could give a second yes on a bot's steps. */
+export const Approver = z.object({ id: Id, name: z.string() });
+export type Approver = z.infer<typeof Approver>;
 
 /**
  * A step that changes something which a bot was let through, and what let it: `card` the person,
@@ -552,6 +584,8 @@ export const BotAction = z.object({
   summary: z.string(),
   how: BotActionHow,
   rule: z.string().nullable(),
+  /** The people whose yes let the step through (two when it needed a second person). Missing from older servers. */
+  approvedBy: z.array(Id).optional(),
   outside: z.boolean(),
   createdAt: z.string(),
 });
@@ -867,6 +901,12 @@ export const PermissionRule = z.object({
    */
   field: z.string().nullable().optional(),
   limit: z.number().nullable().optional(),
+  /**
+   * An ask rule's step runs only after two different people said yes; `secondUserId` names the
+   * second one, or anyone but the first who may change the bot when null. Missing from older servers.
+   */
+  secondPerson: z.boolean().optional(),
+  secondUserId: Id.nullable().optional(),
   createdAt: z.string(),
 });
 export type PermissionRule = z.infer<typeof PermissionRule>;
@@ -880,10 +920,20 @@ export const PermissionRuleCreate = z
     botId: Id.nullable().optional(),
     field: z.string().trim().max(100).regex(LIMIT_FIELD, 'validation.limitField').optional(),
     limit: z.number().finite().nonnegative().optional(),
+    secondPerson: z.boolean().optional(),
+    secondUserId: Id.nullable().optional(),
   })
   .refine((r) => (r.field === undefined) === (r.limit === undefined), {
     message: 'validation.limitBoth',
     path: ['limit'],
+  })
+  .refine((r) => !r.secondPerson || r.list === 'ask', {
+    message: 'validation.secondAsk',
+    path: ['secondPerson'],
+  })
+  .refine((r) => !r.secondUserId || r.secondPerson, {
+    message: 'validation.secondNamed',
+    path: ['secondUserId'],
   });
 
 /** `room`: a note about a place (a chat app channel, or a room), read only where it was written. */
@@ -913,6 +963,8 @@ export const Memory = z.object({
   place: z.string().nullable().optional(),
   /** The person asked for the note to go into every prompt that reaches it. Missing from older servers. */
   pinned: z.boolean().optional(),
+  /** Until when the note is true, as an ISO time; past it the note reaches no bot. Null: no end. Missing from older servers. */
+  validUntil: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -947,6 +999,8 @@ export interface MemoryChange {
   threadId: string | null;
   /** The page the bot said the fact came from. */
   sourceUrl: string | null;
+  /** Until when the bot said the fact is true. Missing on older servers. */
+  validUntil?: string | null;
   createdAt: string;
 }
 /** One thing that happened to a memory note, as `GET /api/memory-history` lists it (oldest first). */
@@ -982,19 +1036,23 @@ export const MemoryCreate = z.object({
   content: z.string().trim().min(1).max(2000),
   /** The site a note is about (`example.com`), when it is a site note. */
   site: z.string().trim().max(253).nullable().optional(),
+  /** Until when the note is true (an ISO time); left out for a note with no end. */
+  validUntil: z.string().datetime({ offset: true }).nullable().optional(),
 });
 export const MemoryUpdate = z
   .object({
     content: z.string().trim().min(1).max(2000).optional(),
     /** Pin the note (it goes into the prompt first, before the rest) or let it go. */
     pinned: z.boolean().optional(),
+    /** Until when the note is true (an ISO time); null clears it. */
+    validUntil: z.string().datetime({ offset: true }).nullable().optional(),
     /**
      * The `updatedAt` of the note as the person began editing it. When the note has changed since,
      * the save is refused instead of overwriting the newer words. Older clients leave it out.
      */
     updatedAt: z.string().optional(),
   })
-  .refine((u) => u.content !== undefined || u.pinned !== undefined, {
+  .refine((u) => u.content !== undefined || u.pinned !== undefined || u.validUntil !== undefined, {
     message: 'validation.memoryUpdateEmpty',
   });
 export type MemoryUpdate = z.infer<typeof MemoryUpdate>;
@@ -1399,6 +1457,10 @@ export const UsageReport = z.object({
   ),
   /** What each routine's runs cost, costliest first; missing on older servers. */
   routines: z.array(UsageTotals.extend({ routineId: Id, name: z.string(), botId: Id.nullable() })).optional(),
+  /** What rehearsals of each routine cost, costliest first; left out when there were none. */
+  rehearsals: z
+    .array(UsageTotals.extend({ routineId: Id, name: z.string(), botId: Id.nullable() }))
+    .optional(),
   /** One entry per day in the bot owner's time zone, oldest first, quiet days included. */
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
@@ -1428,8 +1490,37 @@ export const UsageReport = z.object({
       skipped: z.number().int(),
     })
     .optional(),
+  /** The promise safety net over the period, when it looked at any reply: its looks, what they cost, the promises found. */
+  promises: z.object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() }).optional(),
+  /** The routine suggestions' looks at groups of requests over the period, when there were any: looks, cost, suggestions made. */
+  suggestions: z
+    .object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() })
+    .optional(),
 });
 export type UsageReport = z.infer<typeof UsageReport>;
+
+/**
+ * A trip-wire that caught a bot steered by text it read: the bot repeated the private line of its
+ * prompt (`prompt`) or touched a trap key (`key`). The bot was stopped and moved to "Ask".
+ */
+export const CanaryAlarm = z.object({
+  id: Id,
+  wire: z.enum(['prompt', 'key']),
+  botId: Id,
+  botName: z.string(),
+  threadId: Id.nullable(),
+  /** The tool that was refused, or `reply` for an answer that carried the private line. */
+  tool: z.string(),
+  /** For a trap key: its name. */
+  keyName: z.string().nullable(),
+  /** What the turn had read from outside before the trip (pages, mail, apps). */
+  sources: z.array(z.string()),
+  /** The level the bot had before it was moved to "Ask"; null when it was not changed. */
+  movedFrom: z.string().nullable(),
+  createdAt: z.string(),
+  seenAt: z.string().nullable(),
+});
+export type CanaryAlarm = z.infer<typeof CanaryAlarm>;
 
 /** What happened today, in the bot owner's time zone: what each bot did and what its routines ran. */
 export const TodayReport = z.object({
@@ -1458,12 +1549,120 @@ export const TodayReport = z.object({
   ),
   /** Memory notes no bot uses any more, waiting for the user to keep or delete them. Missing from older servers. */
   staleMemory: z.number().int().optional(),
+  /** Memory notes whose "true until" date has passed, kept for the user to delete or give a new date; not counted in `staleMemory`. Missing from older servers. */
+  expiredMemory: z.number().int().optional(),
   /** Memory changes asked for while nobody watched, waiting for the user's yes. Missing from older servers. */
   pendingMemory: z.number().int().optional(),
   /** Changes bots found for skills the user owns, waiting for the user's review. Missing from older servers. */
   pendingSkills: z.number().int().optional(),
+  /** Trip-wire alarms the user has not marked seen. Missing from older servers. */
+  canaryAlarms: z.array(CanaryAlarm).optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
+
+/**
+ * Something said it would be done later: a bot's promise to the person (`bot`) or the person's own
+ * to someone else (`person`). Only the person it belongs to sees it.
+ */
+export const Pledge = z.object({
+  id: Id,
+  botId: Id,
+  threadId: Id.nullable(),
+  madeBy: z.enum(['bot', 'person']),
+  text: z.string(),
+  /** For the person's own promise: who it was made to. */
+  toWhom: z.string(),
+  /** When it falls due, or null; `dueHasTime` says whether that is a time of day or the end of a day. */
+  dueAt: z.string().nullable(),
+  dueHasTime: z.boolean(),
+  /** What it waits for instead of a time; empty when none. */
+  condition: z.string(),
+  /** Whether a one-time routine is set to keep it. */
+  scheduled: z.boolean(),
+  status: z.enum(['open', 'done', 'dropped']),
+  /** Open and past its time. */
+  overdue: z.boolean(),
+  createdAt: z.string(),
+});
+export type Pledge = z.infer<typeof Pledge>;
+
+/** What a turn changed that can be put back, by the kind of thing it was. */
+export const TURN_CHANGE_KINDS = [
+  'file',
+  'table_row',
+  'ticket',
+  'routine',
+  'skill',
+  'bot',
+  'memory',
+] as const;
+export type TurnChangeKind = (typeof TURN_CHANGE_KINDS)[number];
+
+/** What became of a change when its turn was taken back. */
+export const TurnChangeOutcome = z.enum(['restored', 'later', 'needsOwner', 'notUndoable', 'failed']);
+export type TurnChangeOutcome = z.infer<typeof TurnChangeOutcome>;
+
+/** One change a turn made, as the person sees it before and after taking the turn back. */
+export const TurnChangeItem = z.object({
+  id: Id,
+  kind: z.enum(TURN_CHANGE_KINDS),
+  op: z.enum(['create', 'update', 'delete']),
+  /** A file name, a table and row, a routine's name. */
+  label: z.string(),
+  /** Why it cannot be put back, when it cannot (too large to keep, or deleted words that are not kept). */
+  reason: z.enum(['tooBig', 'deleted']).nullable(),
+  /** The person may not change what it belongs to; its owner has to put it back. */
+  needsOwner: z.boolean(),
+  /** After the turn was taken back: what became of it; null before. */
+  outcome: TurnChangeOutcome.nullable(),
+});
+export type TurnChangeItem = z.infer<typeof TurnChangeItem>;
+
+/** A step of the turn that reached outside and so cannot be taken back. */
+export const TurnOutsideStep = z.object({ summary: z.string(), at: z.string() });
+export type TurnOutsideStep = z.infer<typeof TurnOutsideStep>;
+
+/** What taking a turn back would put back, and what no one can. */
+export const TurnChanges = z.object({
+  turnId: Id,
+  /** The turn is still working: it cannot be taken back yet. */
+  running: z.boolean(),
+  /** The turn was already taken back. */
+  undone: z.boolean(),
+  items: z.array(TurnChangeItem),
+  outside: z.array(TurnOutsideStep),
+});
+export type TurnChanges = z.infer<typeof TurnChanges>;
+
+/**
+ * A routine proposed because the person keeps asking a bot for the same thing by hand. Only the
+ * person it was written from sees it.
+ */
+export const RoutineSuggestion = z.object({
+  id: Id,
+  botId: Id,
+  name: z.string(),
+  /** What the routine would do; the person may change it before creating the routine. */
+  instructions: z.string(),
+  /** The rhythm the requests had, or null when they had none and the person picks. */
+  schedule: Schedule.nullable(),
+  timezone: z.string(),
+  /** How many requests it was made from, and the local days (YYYY-MM-DD) they were made on. */
+  requests: z.number().int(),
+  days: z.array(z.string()),
+  /** Whether the person may change the bot, which a routine of it needs. */
+  canCreate: z.boolean(),
+  createdAt: z.string(),
+});
+export type RoutineSuggestion = z.infer<typeof RoutineSuggestion>;
+
+/** What the person settled on when creating the routine from a suggestion. */
+export const RoutineSuggestionAccept = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  instructions: z.string().trim().min(1).max(20_000).optional(),
+  schedule: Schedule.optional(),
+});
+export type RoutineSuggestionAccept = z.infer<typeof RoutineSuggestionAccept>;
 
 /** A skill's name: what the bot asks for it by, in lower case with dashes (`weekly-report`). */
 export const SkillName = z
@@ -1668,11 +1867,25 @@ export const ApiCredential = z.object({
    * Missing on older servers, where every key was the team's.
    */
   userId: z.string().nullable().optional(),
+  /** A trap key (see `TrapKeyCreate`). Missing on older servers, where there were none. */
+  trap: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
 });
 export type ApiCredential = z.infer<typeof ApiCredential>;
+
+/**
+ * A trap key: a name for a key that does not exist. It is offered to the bots like a real one, and
+ * a bot that touches it is being steered by something it read, since nothing the person asks for
+ * would use it. The server makes up its address.
+ */
+export const TrapKeyCreate = z.object({
+  name: ApiCredentialName,
+  /** The bots it is shown to; null shows it to every bot the person has. */
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type TrapKeyCreate = z.input<typeof TrapKeyCreate>;
 
 export const ApiCredentialCreate = z.object({
   name: ApiCredentialName,

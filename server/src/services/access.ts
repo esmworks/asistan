@@ -163,7 +163,11 @@ export class AccessService {
 
   /** What a bot reads of its other conversations while it works in one: that person's, and its own work. */
   seenFrom(person: string): SQL {
-    return or(eq(schema.threads.userId, person), isNull(schema.threads.userId))!;
+    // A rehearsal's conversation is not one of its other conversations.
+    return and(
+      or(eq(schema.threads.userId, person), isNull(schema.threads.userId)),
+      ne(schema.threads.kind, 'rehearsal'),
+    )!;
   }
 
   private async people(): Promise<Viewer[]> {
