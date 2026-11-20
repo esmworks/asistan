@@ -157,6 +157,9 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   // instructions open next, to be filled with what anyone may know.
   const makeDoor = useMutation({
     mutationFn: async () => {
+      // The form is saved first, so a number it cannot take stops here and leaves no bot behind
+      // that no door points to.
+      await api.setWhatsapp(form());
       const bot = await api.createBot({
         name: t('whatsapp.doorBot.name'),
         description: t('whatsapp.doorBot.description'),
