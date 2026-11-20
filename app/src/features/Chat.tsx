@@ -1227,7 +1227,8 @@ function Composer({
   const dictation = useDictation({
     locale,
     onText: (spoken) => setText((now) => (now && !/\s$/.test(now) ? `${now} ${spoken}` : `${now}${spoken}`)),
-    onError: (message) => toast.error(t('chat.dictationFailed', { message })),
+    onError: (error) =>
+      toast.error(t('chat.dictationFailed', { message: error.key ? t(error.key) : error.message })),
   });
 
   // Typing `$` lists the bot's skills; the picked one is named in the message for the bot to read.

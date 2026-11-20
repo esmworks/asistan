@@ -209,6 +209,31 @@
 .prose-chat ul {
   @apply my-1 list-disc pl-5;
 }
+/*
+ * A task list item is one block: its checkbox stands where the bullet would, the text is indented
+ * past it so wrapped lines line up, and there is no bullet next to the box.
+ */
+.prose-chat ul.contains-task-list {
+  @apply list-none pl-0;
+}
+.prose-chat li.task-list-item {
+  @apply relative list-none pl-6;
+}
+.prose-chat li.task-list-item > input[type='checkbox'],
+.prose-chat li.task-list-item > p:first-child > input[type='checkbox'] {
+  @apply absolute left-0 top-[0.35em] m-0 h-4 w-4;
+  /* The box takes the text's colour, so a ticked one reads in the light and the dark theme. */
+  accent-color: currentColor;
+  opacity: 1;
+}
+/* A list inside a task item keeps its own indent under the text. */
+.prose-chat li.task-list-item ul.contains-task-list {
+  @apply pl-0;
+}
+.prose-chat li.task-list-item > ul:not(.contains-task-list),
+.prose-chat li.task-list-item > ol {
+  @apply pl-5;
+}
 .prose-chat ol {
   @apply my-1 list-decimal pl-5;
 }

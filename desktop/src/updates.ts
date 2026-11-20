@@ -15,6 +15,11 @@ export interface UpdateOptions {
   updater: Updater;
   /** Asks whether to restart into the downloaded version now. */
   ask: (version: string) => Promise<boolean>;
+  /**
+   * Whether installing may go ahead now. With bots at work the restart would cut them off, so the
+   * person is asked; saying no leaves the version waiting for the next quit or a later try.
+   */
+  confirmInstall?: () => Promise<boolean>;
   /** Stops what the app runs (the server) so the installer finds nothing holding its files. */
   beforeInstall: () => Promise<void>;
   /** A version is downloaded and waits to be installed, so the menu can offer it. */
@@ -46,6 +51,10 @@ export function startUpdates(options: UpdateOptions): Updates {
   const install = async () => {
     if (!ready || installing) return;
     installing = true;
+    if (options.confirmInstall && !(await options.confirmInstall().catch(() => true))) {
+      installing = false;
+      return;
+    }
     try {
       await options.beforeInstall();
     } finally {
