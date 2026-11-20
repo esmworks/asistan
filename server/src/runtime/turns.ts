@@ -271,7 +271,7 @@ export class TurnManager {
       .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
       .where(eq(schema.turns.status, 'running'))
       .returning();
-    await this.endLeft(stale, t);
+    await this.endLeft(stale, t, true);
     await this.services.approvals.expireAllPending();
     await this.resumeRetries();
     this.schedule();
@@ -658,7 +658,8 @@ export class TurnManager {
   }
 
   /** Turns marked running that nothing runs: said in their conversations, and their hooks run. */
-  private async endLeft(rows: TurnRow[], t: T) {
+  /** `restarted`: the server stopped under them, rather than the turns being found stuck while it ran. */
+  private async endLeft(rows: TurnRow[], t: T, restarted: boolean) {
     for (const turn of rows) {
       await this.services.threads.addMessage({
         threadId: turn.threadId,
@@ -671,7 +672,7 @@ export class TurnManager {
         turnId: turn.id,
       });
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.serverRestarted'), { restarted: true }));
+      await this.runHooks(turn, interrupted(t('turn.serverRestarted'), { restarted }));
     }
   }
 
@@ -694,7 +695,7 @@ export class TurnManager {
       .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
       .where(and(inArray(schema.turns.id, left), eq(schema.turns.status, 'running')))
       .returning();
-    await this.endLeft(stale, t);
+    await this.endLeft(stale, t, false);
     return stale.length;
   }
 
@@ -1467,6 +1468,9 @@ export class TurnManager {
         )
         .map(toolPermName),
     );
+    /** The tools that only read; every other one let through marks the turn as `changed`. */
+    const readingTools = new Set(tools.filter((x) => x.readOnly).map(toolPermName));
+    let changed = false;
     // With the internet on, searching and reading pages are reads like opening one in the browser.
     if (bot.internet && !turn.guest) for (const name of WEB_READS) readOnlyTools.add(name);
     // Apps the bot counts on that are not connected now: it says so instead of guessing why their
@@ -2016,6 +2020,23 @@ export class TurnManager {
             !readOnlyTools.has(ask.toolName)
           )
             acted = true;
+          // Any step but a read, the app's own tools included (a bot made, a note written, a
+          // reaction left), is kept on the turn: after a server stop, a routine run cut short is run
+          // again from the start only when it did none.
+          if (
+            answer.behavior === 'allow' &&
+            !changed &&
+            !READ_ONLY_TOOLS.has(ask.toolName) &&
+            !WEB_READS.includes(ask.toolName) &&
+            !readingTools.has(ask.toolName)
+          ) {
+            changed = true;
+            await this.ctx.db
+              .update(schema.turns)
+              .set({ changed: true })
+              .where(eq(schema.turns.id, turn.id))
+              .catch((err: unknown) => console.warn(`Could not mark a turn as changing: ${String(err)}`));
+          }
           return answer;
         },
         onReach: (host) => {

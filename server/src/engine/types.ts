@@ -342,11 +342,12 @@ export const OVERLOADED =
 const CUT =
   /stream ended without finish_reason|premature close|other side closed|\bECONNRESET\b|^(TypeError:\s*)?terminated$/i;
 /**
- * A model the provider retired or never had, as providers word it: a 410 status, a 404 that names
- * the model, a not-found error code, or the model said to be missing, retired or unknown.
+ * A model the provider retired or never had, as providers word it: a 410 status, a not-found
+ * error that names the model, or the model said to be missing, retired or unknown. A bare 404 is
+ * left out: a wrong address answers with one too.
  */
 export const MODEL_GONE =
-  /(?:^|api error|status(?: code)?|\bcode|\bhttp(?:\/[\d.]+)?)\W{0,3}410\b|\b404\b[^\n]{0,200}\bmodel|\bmodel[^\n]{0,200}\b404\b|not_found_error|model_not_found|\bmodels?\b[^\n]{0,80}?\b(?:not found|does not exist|doesn't exist|no longer (?:available|supported|offered)|(?:has been|was|is) (?:deprecated|retired|removed|decommissioned)|is unknown)|unknown model|invalid model(?: name| id)?\b|not a valid model|no endpoints found for|issue with the selected model/i;
+  /(?:^|api error|status(?: code)?|\bcode|\bhttp(?:\/[\d.]+)?)\W{0,3}410\b|not_found_error[^\n]{0,200}\bmodel\b|model_not_found|\bmodels?\b[^\n]{0,80}?\b(?:not found|does not exist|doesn't exist|no longer (?:available|supported|offered)|(?:has been|was|is) (?:deprecated|retired|removed|decommissioned)|is unknown)|unknown model|invalid model(?: name| id)?\b|not a valid model|no endpoints found for|issue with the selected model/i;
 
 /**
  * A provider's error in words the person can act on: a refused key, an empty balance, a rate

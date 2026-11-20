@@ -1653,6 +1653,9 @@ describe('sağlayıcı hataları', () => {
       'max_tokens: 4100 is too large',
       'The model hit an unknown error',
       '404 page not found at https://example.com',
+      // A mistyped address answers 404 whatever the model.
+      '404 Not Found for model my-model',
+      'not_found_error: file_abc was not found',
       'This model does not support image input',
     ]) {
       expect(providerTrouble(raw, 'openai', t).modelGone, raw).toBeUndefined();

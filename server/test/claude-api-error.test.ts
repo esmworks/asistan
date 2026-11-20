@@ -127,6 +127,13 @@ describe('Claude API hatası', () => {
     if (!out.ok) expect(out.message).toContain('artık sunmuyor');
   });
 
+  it('CLI kullanamadığı modeli yalnız sonuç metninde söylese de yedeğe geçilebilir diye işaretlenir', async () => {
+    const said =
+      "There's an issue with the selected model (claude-old). It may not exist or you may not have access to it.";
+    frames.current = [{ type: 'result', subtype: 'success', is_error: true, result: said }];
+    expect(await run()).toMatchObject({ ok: false, kind: 'engine', modelGone: true });
+  });
+
   it('ek kullanımla süren reddedilmiş olay planın sınırı sayılmaz', async () => {
     const rejected = (extra: object) => ({
       type: 'rate_limit_event',

@@ -39,6 +39,7 @@ import {
   subagentAnswer,
   type TurnOutcome,
   type TurnRequest,
+  MODEL_GONE,
   OVERLOADED,
   providerTrouble,
   runCost,
@@ -794,7 +795,8 @@ export class ClaudeEngine implements Engine {
     if (errorMessage || !finished) {
       // An API failure in words the person can act on: an empty balance, an overloaded server.
       const cause = errorMessage ?? apiError;
-      const said = apiError && cause ? providerTrouble(cause, 'Claude', t) : null;
+      // The CLI words a model it cannot use on its own, with no API error before it.
+      const said = cause && (apiError || MODEL_GONE.test(cause)) ? providerTrouble(cause, 'Claude', t) : null;
       const billing = billingFailed || said?.billing === true;
       // The CLI's own words for a crash: its process exited or was killed, with nothing from the API.
       const crashed = !apiError && !!cause && CLI_CRASH.test(cause);

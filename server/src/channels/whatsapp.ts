@@ -394,13 +394,13 @@ export function isAssociatedChild(m: WaMessage): boolean {
   return !!link?.parentMessageKey && HD_ASSOCIATIONS.has(Number(link.associationType));
 }
 
+/** Baileys' `proto.WebMessageInfo.StubType.CIPHERTEXT`: a message that could not be decrypted yet. */
+const CIPHERTEXT_STUB = 2;
+
 /**
  * The text and the kind of file a WhatsApp message carries, whether it was forwarded, and the
  * message it answers when the person replied to one.
  */
-/** Baileys' `proto.WebMessageInfo.StubType.CIPHERTEXT`: a message that could not be decrypted yet. */
-const CIPHERTEXT_STUB = 2;
-
 export function contentOf(m: WaMessage): {
   text: string;
   media: WaMedia | null;

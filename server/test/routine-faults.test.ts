@@ -202,15 +202,21 @@ describe('rutin aksaklıkları', () => {
   });
 
   /** A scheduled run whose turn was running when the server stopped, with or without a step it let through. */
-  const cutRun = async (r: Routine, botId: string, acted: boolean) => {
+  const cutRun = async (
+    r: Routine,
+    botId: string,
+    acted: boolean,
+    occurrence = '2026-11-16T06:00:00.000Z',
+  ) => {
     const thread = await t.services.threads.routineThread(botId, r.name, null, OWNER_ID);
     const runId = newId();
     const turnId = newId();
     await t.db.db.insert(schema.routineRuns).values({
       id: runId,
       routineId: r.id,
-      occurrence: '2026-11-16T06:00:00.000Z',
+      occurrence,
       status: 'running',
+      scheduled: true,
       threadId: thread.id,
       promptSnapshot: r.prompt,
     });
@@ -222,18 +228,8 @@ describe('rutin aksaklıkları', () => {
       status: 'running',
       prompt: r.prompt,
       routineRunId: runId,
+      changed: acted,
     });
-    if (acted) {
-      await t.db.db.insert(schema.botActions).values({
-        id: newId(),
-        botId,
-        threadId: thread.id,
-        turnId,
-        toolName: 'Bash',
-        summary: 'Posta gönderdi',
-        how: 'level',
-      });
-    }
     return runId;
   };
 
@@ -268,7 +264,7 @@ describe('rutin aksaklıkları', () => {
     await t.services.routines.recover();
     expect((await runs(clean.id))[0]).toMatchObject({ status: 'error', reason: 'Sunucu yeniden başladı' });
     expect(await routine(clean.id)).toMatchObject({ enabled: true, nextRunAt: '2026-11-16T06:05:30.000Z' });
-    // A run that already sent something is not run again from the start.
+    // A run that already changed something is not run again from the start.
     expect(await routine(acted.id)).toMatchObject({ enabled: false, nextRunAt: null });
     // Nor is one whose earlier turn handed work to other bots: only its last turn was cut short.
     expect(await routine(handed.id)).toMatchObject({ enabled: false, nextRunAt: null });
@@ -276,5 +272,79 @@ describe('rutin aksaklıkları', () => {
     await t.services.routines.tick();
     await t.services.turns.idle();
     expect((await runs(clean.id)).map((x) => x.status)).toEqual(['done', 'error']);
+  });
+
+  it('çalışırken takılı bulunup kapatılan tur yeniden başlatma sayılmaz, rutin yeniden denenmez', async () => {
+    const bot = await t.bot();
+    const r = await make(bot.id, 'Takılı', { schedule: { type: 'once', date: '2026-11-16', time: '09:00' } });
+    t.now.value = new Date('2026-11-16T06:00:30.000Z');
+    await t.db.db
+      .update(schema.routines)
+      .set({ enabled: false, nextRunAt: null })
+      .where(eq(schema.routines.id, r.id));
+    const runId = await cutRun(r, bot.id, false);
+    const [turn] = await t.db.db.select().from(schema.turns).where(eq(schema.turns.routineRunId, runId));
+    expect(await t.services.turns.endStuck([turn!.id])).toBe(1);
+    expect(await routine(r.id)).toMatchObject({ enabled: false, nextRunAt: null });
+  });
+
+  /** Ends the routine's run as if its turn finished before `tick` moved the routine past its slot. */
+  const endsEarly = async (r: Routine, botId: string) => {
+    const runId = await cutRun(r, botId, false, r.nextRunAt!);
+    const [turn] = await t.db.db
+      .update(schema.turns)
+      .set({ status: 'error' })
+      .where(eq(schema.turns.routineRunId, runId))
+      .returning();
+    await t.services.routines.onTurnFinished(turn!, {
+      ok: false,
+      kind: 'engine',
+      message: 'overloaded_error',
+      text: '',
+      sessionId: null,
+      transient: true,
+    });
+    // What `tick` then does with the row it read before firing.
+    const [row] = await t.db.db.select().from(schema.routines).where(eq(schema.routines.id, r.id));
+    const advance = (t.services.routines as unknown as { advance(x: unknown): Promise<void> }).advance;
+    await advance.call(t.services.routines, { ...row, nextRunAt: new Date(r.nextRunAt!), resumeAt: null });
+  };
+
+  it('tur, rutin kendi zamanından ilerlemeden biterse de yeniden deneme kaybolmaz', async () => {
+    const bot = await t.bot();
+    const once = await make(bot.id, 'Bir kez erken', {
+      schedule: { type: 'once', date: '2026-11-16', time: '09:00' },
+    });
+    const hourly = await make(bot.id, 'Saatlik erken', { schedule: { type: 'interval', minutes: 60 } });
+    expect([once.nextRunAt, hourly.nextRunAt]).toEqual([
+      '2026-11-16T06:00:00.000Z',
+      '2026-11-16T06:00:00.000Z',
+    ]);
+    t.now.value = new Date('2026-11-16T06:00:30.000Z');
+    await endsEarly(once, bot.id);
+    await endsEarly(hourly, bot.id);
+    expect(await routine(once.id)).toMatchObject({ enabled: true, nextRunAt: '2026-11-16T06:05:30.000Z' });
+    expect(await routine(hourly.id)).toMatchObject({ enabled: true, nextRunAt: '2026-11-16T06:05:30.000Z' });
+    // After the retry the hourly one goes on from its own next slot.
+    t.now.value = new Date('2026-11-16T06:06:00.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await routine(hourly.id)).nextRunAt).toBe('2026-11-16T07:00:00.000Z');
+    expect(await routine(once.id)).toMatchObject({ enabled: false, nextRunAt: null });
+  });
+
+  it('botun kendi aracını kullanan tur değiştiren tur sayılır; yalnız okuyan sayılmaz', async () => {
+    const bot = await t.bot();
+    const thread = (await t.api<{ id: string }>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    await t.send(thread.id, '[araç:memory_write {"content":"Pazartesi toplantı var","scope":"user"}]');
+    await t.services.turns.idle();
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    const turns = await t.db.db
+      .select({ prompt: schema.turns.prompt, changed: schema.turns.changed })
+      .from(schema.turns)
+      .where(eq(schema.turns.threadId, thread.id));
+    expect(turns.find((x) => x.prompt.includes('memory_write'))!.changed).toBe(true);
+    expect(turns.find((x) => x.prompt.includes('merhaba'))!.changed).toBe(false);
   });
 });

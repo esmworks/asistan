@@ -294,6 +294,11 @@ export const turns = pgTable(
     prompt: sealedText('prompt').notNull(),
     jobId: text('job_id'),
     routineRunId: text('routine_run_id'),
+    /**
+     * The turn let through a step that is not a read, the app's own tools included: running it again
+     * from the start would repeat what it did. Kept so that this is known after a server stop too.
+     */
+    changed: boolean('changed').notNull().default(false),
     /** The rehearsal this turn is: its steps that change something are recorded, not done. */
     rehearsalId: text('rehearsal_id'),
     error: text('error'),
@@ -622,6 +627,8 @@ export const routineRuns = pgTable(
      * answer); null for a scheduled or manual run. Such a run may change nothing without a card.
      */
     trigger: text('trigger', { enum: OUTSIDE_TRIGGERS }),
+    /** Started by the routine's own schedule, not by hand, a mail, a webhook or the server's start. */
+    scheduled: boolean('scheduled').notNull().default(false),
     /**
      * The routine's steps after its instruction as they were when the run started, so a routine
      * changed meanwhile does not change a run under way; null for a routine with none.
