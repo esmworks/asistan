@@ -1091,6 +1091,10 @@ export class RoutineService {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
     if (!bot || bot.archivedAt) return this.record(routine, occurrence, 'skipped', t('routine.botMissing'));
+    // A paused bot does no work; its slot passes, with why, and the schedule goes on.
+    if (await this.services.bots.isPaused(bot)) {
+      return this.record(routine, occurrence, 'skipped', t('routine.botPaused'));
+    }
     const thread = threadId
       ? await this.services.threads.row(threadId)
       : await this.threadFor(routine, bot.id);

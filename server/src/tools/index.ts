@@ -1142,10 +1142,11 @@ export class ToolFactory {
           const shared = await reachable('chat');
           const peers = all.filter((b) => s.bots.canMessage(bot, b) && shared.has(b.id));
           if (!peers.length) return t('tool.noPeers');
+          const paused = await s.bots.pausedIds();
           return peers
             .map(
               (b) =>
-                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${b.description ? `: ${b.description}` : ''}`,
+                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${paused.has(b.id) ? t('bot.pausedTag') : ''}${b.description ? `: ${b.description}` : ''}`,
             )
             .join('\n');
         },
@@ -1198,6 +1199,8 @@ export class ToolFactory {
         },
         async ({ bot: ref, message, expect_reply, approval_id }) => {
           const to = await reachBot(ref, 'chat');
+          // A paused bot takes no work; the asking bot hears so and can tell its person.
+          if (await s.bots.isPaused(to)) return t('tool.botPaused', { name: to.name });
           const job = await s.jobs.send({
             from: bot,
             fromThreadId: thread.id,

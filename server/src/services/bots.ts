@@ -10,7 +10,7 @@ import {
   type Group,
   type GroupMove,
 } from '@yumakbot/shared';
-import { and, asc, eq, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError, newId, notFound } from '../util';
@@ -261,6 +261,83 @@ export class BotService {
     this.ctx.bus.refresh({ scope: 'bots' });
     this.ctx.bus.refresh({ scope: 'vault' });
     this.ctx.bus.refresh({ scope: 'info' });
+  }
+
+  /** Pauses the bot, or lets it work again. Its running work is stopped by the caller. */
+  async setPaused(id: string, paused: boolean): Promise<Bot> {
+    await this.get(id);
+    const [row] = await this.ctx.db
+      .update(schema.bots)
+      .set({ pausedAt: paused ? new Date() : null, updatedAt: new Date() })
+      .where(eq(schema.bots.id, id))
+      .returning();
+    this.ctx.bus.refresh({ scope: 'bots' });
+    return toBot(row!);
+  }
+
+  /** Pauses every bot of a group, or lets them work again; the bots keep their own pause. */
+  async setGroupPaused(id: string, paused: boolean): Promise<Group> {
+    const [row] = await this.ctx.db
+      .update(schema.groups)
+      .set({ pausedAt: paused ? new Date() : null })
+      .where(eq(schema.groups.id, id))
+      .returning();
+    if (!row) throw notFound('group');
+    this.ctx.bus.refresh({ scope: 'groups' });
+    this.ctx.bus.refresh({ scope: 'bots' });
+    return toGroup(row);
+  }
+
+  /**
+   * Pauses every active bot, or lets every bot work again: on resume the groups' pauses are
+   * cleared too, so nothing stays held. Returns the bots it paused or let go.
+   */
+  async setAllPaused(paused: boolean): Promise<string[]> {
+    const now = new Date();
+    const rows = await this.ctx.db
+      .update(schema.bots)
+      .set({ pausedAt: paused ? now : null, updatedAt: now })
+      .where(
+        paused
+          ? and(isNull(schema.bots.archivedAt), isNull(schema.bots.pausedAt))
+          : isNotNull(schema.bots.pausedAt),
+      )
+      .returning({ id: schema.bots.id });
+    if (!paused) await this.ctx.db.update(schema.groups).set({ pausedAt: null });
+    this.ctx.bus.refresh({ scope: 'bots' });
+    this.ctx.bus.refresh({ scope: 'groups' });
+    return rows.map((r) => r.id);
+  }
+
+  /** The bots that start no work now: paused themselves, or in a paused group. */
+  async pausedIds(): Promise<Set<string>> {
+    const rows = await this.ctx.db
+      .select({ id: schema.bots.id })
+      .from(schema.bots)
+      .leftJoin(schema.groups, eq(schema.groups.id, schema.bots.groupId))
+      .where(or(isNotNull(schema.bots.pausedAt), isNotNull(schema.groups.pausedAt)));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /** Whether the bot starts no work now, paused itself or with its group. */
+  async isPaused(bot: Pick<Bot, 'id' | 'pausedAt' | 'groupId'>): Promise<boolean> {
+    if (bot.pausedAt) return true;
+    if (!bot.groupId) return false;
+    const [group] = await this.ctx.db
+      .select({ pausedAt: schema.groups.pausedAt })
+      .from(schema.groups)
+      .where(eq(schema.groups.id, bot.groupId))
+      .limit(1);
+    return !!group?.pausedAt;
+  }
+
+  /** The active bots of a group. */
+  async groupBotIds(id: string): Promise<string[]> {
+    const rows = await this.ctx.db
+      .select({ id: schema.bots.id })
+      .from(schema.bots)
+      .where(and(eq(schema.bots.groupId, id), isNull(schema.bots.archivedAt)));
+    return rows.map((r) => r.id);
   }
 
   /** Who may message whom: any bot any other active bot. Groups only share a folder. */

@@ -125,6 +125,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/instructions/decline': edit(),
   'POST /api/bots/:id/move': edit(),
   'POST /api/bots/:id/archive': edit(),
+  'POST /api/bots/:id/pause': edit(),
+  'POST /api/bots/pause-all': 'admin',
   'POST /api/bots/:id/restore': edit(),
   'DELETE /api/bots/:id': edit(),
   'POST /api/bots/:id/browser/window': edit(),
@@ -196,6 +198,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/groups': 'admin',
   'PATCH /api/groups/:id': 'admin',
   'POST /api/groups/:id/move': 'admin',
+  'POST /api/groups/:id/pause': 'admin',
   'DELETE /api/groups/:id': 'admin',
 
   // Conversations.

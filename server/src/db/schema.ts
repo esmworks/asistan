@@ -28,6 +28,8 @@ export const groups = pgTable('groups', {
   name: text('name').notNull(),
   /** Order of the groups in the sidebar. */
   position: integer('position').notNull().default(0),
+  /** Set while every bot of the group is paused: none of them starts work until it is cleared. */
+  pausedAt: ts('paused_at'),
   createdAt: created(),
 });
 
@@ -75,6 +77,11 @@ export const bots = pgTable('bots', {
   /** Why the document could not be read the last time; null when it was. */
   instructionsError: text('instructions_error'),
   archivedAt: ts('archived_at'),
+  /**
+   * Set while the bot is paused: it starts no work (a person's message waits, a routine is
+   * skipped, another bot's request is refused) until it is cleared.
+   */
+  pausedAt: ts('paused_at'),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
   /** The person who made the bot, or was handed it; they may always change and share it. */

@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A bot, a group or every bot at once can be paused from the sidebar's menus. A paused bot's running work stops and
+  says why; what the person writes to it waits and is answered once it is resumed; its routines are skipped with the
+  reason; and another bot that asks it for help is told it is paused. A pause mark shows on its avatar and a bar above
+  the message box resumes it. Only admins pause a group or every bot.
 - A bot that finds a better way to do a skill's task while working for someone who may not change that skill now
   suggests the change to the skill's owner instead of changing it for every bot that has it. The suggestion carries
   the bot's reason; Settings → Skills shows it as a comparison with the skill as it is now, to accept or reject, and

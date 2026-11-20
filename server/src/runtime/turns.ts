@@ -151,6 +151,9 @@ const interrupted = (message: string): TurnOutcome => ({
 /** A message stopped by the usage limit runs again this long after the limit resets. */
 export const LIMIT_RETRY_DELAY_MS = 30_000;
 
+/** Why a turn was stopped when its bot was paused, as its controller's abort reason. */
+const PAUSED = 'paused';
+
 /** The longest a stop waits for the turns it stopped to end before it goes on. */
 const SETTLE_MS = 10_000;
 /**
@@ -556,6 +559,30 @@ export class TurnManager {
     clearTimeout(timer);
   }
 
+  /**
+   * Stops the running turns of bots that were just paused, saying so in their conversations. What
+   * waits for them is left to `fill`: a person's message waits for the resume, the rest ends.
+   */
+  async stopBots(botIds: Iterable<string>): Promise<void> {
+    const ids = new Set(botIds);
+    const ends: Promise<void>[] = [];
+    for (const r of this.running.values()) {
+      if (!ids.has(r.turn.botId)) continue;
+      r.controller.abort(PAUSED);
+      ends.push(r.done);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled(ends),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, SETTLE_MS);
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+    this.schedule();
+  }
+
   isRunning(threadId: string) {
     return [...this.running.values()].some((r) => r.turn.threadId === threadId);
   }
@@ -613,10 +640,11 @@ export class TurnManager {
       (a, b) => PRIORITY[a.source] - PRIORITY[b.source] || a.createdAt.getTime() - b.createdAt.getTime(),
     );
     const busy = new Set([...this.running.values()].map((r) => r.turn.threadId));
+    const held = await this.holdPaused(queued);
     let slots = free;
     for (const t of queued) {
       if (slots <= 0 || this.stopped) break;
-      if (busy.has(t.threadId)) continue;
+      if (held.has(t.id) || busy.has(t.threadId)) continue;
       busy.add(t.threadId);
       try {
         const [started] = await this.ctx.db
@@ -633,6 +661,53 @@ export class TurnManager {
         if (!isUniqueViolation(err)) throw err;
       }
     }
+  }
+
+  /**
+   * The queued turns of paused bots, which do not start now. A person's own message in one of the
+   * bot's conversations waits for the resume; any other work (a routine, another bot's request, a
+   * room's round) ends at once, so nothing that waits on it hangs.
+   */
+  private async holdPaused(queued: TurnRow[]): Promise<Set<string>> {
+    if (!queued.length) return new Set();
+    const paused = await this.services.bots.pausedIds();
+    const theirs = queued.filter((q) => paused.has(q.botId));
+    if (!theirs.length) return new Set();
+    const rooms = new Set(
+      (
+        await this.ctx.db
+          .select({ id: schema.threads.id })
+          .from(schema.threads)
+          .where(
+            and(
+              inArray(schema.threads.id, [...new Set(theirs.map((q) => q.threadId))]),
+              eq(schema.threads.kind, 'room'),
+            ),
+          )
+      ).map((r) => r.id),
+    );
+    const ending = theirs.filter((q) => !attended(q.source) || rooms.has(q.threadId));
+    if (ending.length) {
+      const t = await this.services.settings.translator();
+      const ended = await this.ctx.db
+        .update(schema.turns)
+        .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.botPaused') })
+        .where(
+          and(
+            inArray(
+              schema.turns.id,
+              ending.map((q) => q.id),
+            ),
+            eq(schema.turns.status, 'queued'),
+          ),
+        )
+        .returning();
+      for (const turn of ended) {
+        this.emitState(turn.threadId, turn.botId);
+        await this.runHooks(turn, interrupted(t('turn.botPaused')));
+      }
+    }
+    return new Set(theirs.map((q) => q.id));
   }
 
   private launch(turn: TurnRow) {
@@ -1556,6 +1631,9 @@ export class TurnManager {
     } finally {
       watchdog.stop();
     }
+    if (controller.signal.reason === PAUSED && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.botPaused'), paused: true };
+    }
     if (watchdog.stalled && !outcome.ok && outcome.kind === 'interrupted') {
       outcome = { ...outcome, kind: 'stalled', message: stallText(watchdog.stalled, t) };
     }
@@ -1640,7 +1718,9 @@ export class TurnManager {
               ? readableError(outcome.message)
               : await this.limitText(outcome.resetsAt ?? null)
             : outcome.kind === 'interrupted'
-              ? t('turn.stopped')
+              ? outcome.paused
+                ? t('turn.botPaused')
+                : t('turn.stopped')
               : outcome.kind === 'stalled'
                 ? outcome.message
                 : contextFull(outcome)

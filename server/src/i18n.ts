@@ -351,6 +351,7 @@ const tr = {
   'turn.serverRestarted': 'Sunucu yeniden başladı',
   'turn.interruptedByRestart': 'Sunucu yeniden başladığı için bu tur yarıda kaldı.',
   'turn.stoppedByUser': 'Kullanıcı durdurdu',
+  'turn.botPaused': 'Bot duraklatıldı; sürdürülünce yeniden çalışır',
   'turn.readOnly': 'Bu bot salt okunur kipte; bu işlem yapılamaz.',
   'turn.refusedLately':
     'Kullanıcı tam bu adımı az önce reddetti; yeni bir şey yazana kadar tekrar sorma. Başka bir yol dene ya da durumu ona anlat.',
@@ -445,6 +446,7 @@ const tr = {
 
   // Routines
   'routine.botMissing': 'Bot arşivli ya da yok',
+  'routine.botPaused': 'Bot duraklatılmış',
   'routine.postEmpty': '"{name}" webhook\'u boş bir çağrı aldı.',
   'routine.staleWait': 'Beklemeyi bıraktı: bu rutinin sıradaki çalışması onun yerine başladı.',
   'routine.webhookEvent': 'Olay: {event}',
@@ -618,6 +620,7 @@ const tr = {
   'prompt.reactionHint':
     'Bu yalnızca bir tepki, bir istek değil; cevap vermek zorunda değilsin. Söylenecek bir şey yoksa (teşekkür, onay gibi) yalnızca {silent} yaz, başka hiçbir şey yazma. Tepki mesajı beğenmediğini, bir şeyin yanlış ya da belirsiz olduğunu düşündürüyorsa kısaca neyi değiştirmen gerektiğini sorabilir ya da düzeltmeyi önerebilirsin. Kendiliğinden bir işe başlama.',
   'bot.managerTag': ' (yönetici)',
+  'bot.pausedTag': ' (duraklatıldı, iş almıyor)',
 
   // App tools: descriptions
   'tool.ask_user':
@@ -1163,6 +1166,8 @@ const tr = {
   'tool.deleted': 'Silindi.',
   'tool.memoryForgotOther': '{bot} botunun notu silindi. {bot} bu bilgiyi artık hiçbir yerden göremez.',
   'tool.noPeers': 'Yazabileceğin bot yok.',
+  'tool.botPaused':
+    '{name} duraklatılmış ve iş almıyor. Kişiye söyle; isterse onu sürdürür ya da işi başka bir bota verirsin.',
   'tool.sent': '{to} adlı bota gönderildi (iş {id}). Cevap gelince sana iletilecek.',
   'tool.notified': '{to} adlı bota bildirildi (iş {id}). Cevap beklenmiyor.',
   'tool.busy': '{name} çalışıyor ({count} bekleyen iş).',
@@ -1781,6 +1786,7 @@ const en: Catalog<ServerKey> = {
   'turn.serverRestarted': 'Server restarted',
   'turn.interruptedByRestart': 'This turn was cut short because the server restarted.',
   'turn.stoppedByUser': 'Stopped by the user',
+  'turn.botPaused': 'The bot is paused; it works again once resumed',
   'turn.readOnly': 'This bot is in read-only mode; this action is not allowed.',
   'turn.refusedLately':
     'The user refused this very step a moment ago; do not ask again until they write something new. Try another way, or tell them where things stand.',
@@ -1872,6 +1878,7 @@ const en: Catalog<ServerKey> = {
     '{to} replied ({status}):\n\n{reply}\n\n(This is a bot message. Summarize it for the user if needed.)',
 
   'routine.botMissing': 'The bot is archived or missing',
+  'routine.botPaused': 'The bot is paused',
   'routine.postEmpty': 'The "{name}" webhook got an empty call.',
   'routine.staleWait': 'Stopped waiting: the next run of this routine started instead.',
   'routine.webhookEvent': 'Event: {event}',
@@ -2043,6 +2050,7 @@ const en: Catalog<ServerKey> = {
   'prompt.reactionHint':
     'This is only a reaction, not a request; you do not have to answer. If there is nothing worth saying (thanks, approval), write only {silent} and nothing else. If the reaction suggests the user did not like the message, or that something is wrong or unclear, you may briefly ask what to change or offer to fix it. Do not start any work on your own.',
   'bot.managerTag': ' (manager)',
+  'bot.pausedTag': ' (paused, takes no work)',
 
   'tool.ask_user':
     'Ask the user a question and wait for the answer. Ask several related questions (at most 6) on one card with a short title: the questions list. If you give options, the card shows them as buttons; the user can also write their own answer. For a question whose answer must stay private (an API key, an access code, a one-time code), give that question secret: true: the user types the answer into a hidden field, the answer reaches only you and does not show on the card or in the chat history. For website passwords use browser_login instead. Do not use it for yes/no permission; the system asks for permissions itself.',
@@ -2591,6 +2599,8 @@ const en: Catalog<ServerKey> = {
   'tool.deleted': 'Deleted.',
   'tool.memoryForgotOther': "{bot}'s note is deleted. {bot} can no longer see this from anywhere.",
   'tool.noPeers': 'There are no bots you can write to.',
+  'tool.botPaused':
+    '{name} is paused and takes no work. Tell the person; they may resume it, or you can hand the work to another bot.',
   'tool.sent': 'Sent to {to} (job {id}). The reply will be passed to you when it arrives.',
   'tool.notified': 'Told {to} (job {id}). No reply is expected.',
   'tool.busy': '{name} is working ({count} pending jobs).',

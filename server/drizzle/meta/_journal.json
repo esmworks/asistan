@@ -526,6 +526,13 @@
       "when": 1795127663412,
       "tag": "0074_skill_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795188437195,
+      "tag": "0075_bot_pause",
+      "breakpoints": true
     }
   ]
 }

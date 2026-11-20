@@ -15,7 +15,9 @@ import {
   MessageSquarePlus,
   PanelRight,
   Paperclip,
+  Pause,
   Pencil,
+  Play,
   AlarmClock,
   Link2,
   Pin,
@@ -68,6 +70,7 @@ import {
   useApprovals,
   useBots,
   useMainThread,
+  useManagesServer,
   useMessages,
   useRooms,
   useSettings,
@@ -76,6 +79,7 @@ import {
   useThreads,
 } from '@/lib/queries';
 import { useLayout } from '@/lib/layout';
+import { usePaused, usePauseActions } from '@/lib/paused';
 import { PHONE } from '@/lib/media';
 import { useUi } from '@/lib/store';
 import { replyElsewhere, useSeen, useThreadSeen } from '@/lib/unread';
@@ -1067,6 +1071,7 @@ function Conversation({
         />
       )}
       {elsewhere}
+      <PausedBar bot={bot} />
       <Composer
         key={threadId}
         bot={bot}
@@ -1764,6 +1769,41 @@ function ReplyAnnouncer({ messages, bots }: { messages: Message[]; bots: Map<str
 }
 
 /** What the conversation is for, above its messages, with a button that clears it. */
+/**
+ * Says the bot is paused, above the message box: what the person writes waits until it is
+ * resumed, and the button resumes it (or its group) at once.
+ */
+function PausedBar({ bot }: { bot: Bot }) {
+  const t = useT();
+  const { paused, group } = usePaused(bot);
+  const manages = useManagesServer();
+  const pause = usePauseActions();
+  const [busy, setBusy] = useState(false);
+  if (!paused) return null;
+  const may = group ? manages : bot.yourLevel !== 'chat';
+  const resume = () => {
+    setBusy(true);
+    (group ? pause.group(group.id, false) : pause.bot(bot.id, false))
+      .catch((e: Error) => toast.error(e.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 rounded-2xl border bg-muted/60 px-3 py-2 text-sm">
+      <Pause className="size-4 shrink-0 fill-current text-muted-foreground" />
+      <span className="min-w-0 flex-1">
+        {group
+          ? t('pause.barGroup', { name: bot.name, group: group.name })
+          : t('pause.bar', { name: bot.name })}
+      </span>
+      {may && (
+        <Button size="sm" variant="outline" className="shrink-0 rounded-xl" disabled={busy} onClick={resume}>
+          <Play className="size-3.5" /> {group ? t('pause.resumeGroup') : t('pause.resume')}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function GoalBar({ threadId, botId, goal }: { threadId: string; botId: string; goal: string }) {
   const t = useT();
   const qc = useQueryClient();

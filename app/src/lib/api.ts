@@ -379,6 +379,8 @@ export const api = {
   /** Moves every active bot to what new bots start with; says how many changed. */
   moveBotsToNewEngine: () => http.post<{ changed: number }>('/api/bots/engine'),
   archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
+  pauseBot: (id: string, paused: boolean) => http.post<Bot>(`/api/bots/${id}/pause`, { paused }),
+  pauseAllBots: (paused: boolean) => http.post<{ count: number }>('/api/bots/pause-all', { paused }),
   today: () => http.get<TodayReport>('/api/today'),
   /** Pins a message above its conversation; null takes the pin away. */
   pinMessage: (threadId: string, messageId: string | null) =>
@@ -444,6 +446,7 @@ export const api = {
   renameGroup: (id: string, name: string) => http.patch<Group>(`/api/groups/${id}`, { name }),
   moveGroup: (id: string, to: GroupMove) => http.post<Group>(`/api/groups/${id}/move`, to),
   deleteGroup: (id: string) => http.del<{ ok: true }>(`/api/groups/${id}`),
+  pauseGroup: (id: string, paused: boolean) => http.post<Group>(`/api/groups/${id}/pause`, { paused }),
 
   threads: (botId: string) => http.get<Thread[]>(`/api/bots/${botId}/threads`),
   mainThread: (botId: string) => http.get<Thread>(`/api/bots/${botId}/main-thread`),

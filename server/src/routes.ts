@@ -172,6 +172,8 @@ interface Deps {
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
+/** Pauses (true) or resumes (false) a bot, a group or every bot. */
+const PauseBody = z.object({ paused: z.boolean() });
 
 /** Library files the page may show as pictures. */
 /** What the page may show in place: raster images, and PDFs in the browser's own viewer. */
@@ -650,6 +652,22 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.bots.move(id, body);
   });
   app.post('/api/bots/:id/archive', async (req) => s.bots.archive(IdParams.parse(req.params).id));
+  // A paused bot's running work stops at once; a person's waiting message starts on the resume.
+  app.post('/api/bots/:id/pause', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const { paused } = PauseBody.parse(req.body);
+    const bot = await s.bots.setPaused(id, paused);
+    if (paused) await s.turns.stopBots([id]);
+    else s.turns.schedule();
+    return bot;
+  });
+  app.post('/api/bots/pause-all', async (req) => {
+    const { paused } = PauseBody.parse(req.body);
+    const ids = await s.bots.setAllPaused(paused);
+    if (paused) await s.turns.stopBots(ids);
+    else s.turns.schedule();
+    return { count: ids.length };
+  });
   app.post('/api/bots/:id/restore', async (req) => s.bots.restore(IdParams.parse(req.params).id));
   app.delete('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -998,6 +1016,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/groups/:id/move', async (req) =>
     s.bots.moveGroup(IdParams.parse(req.params).id, GroupMove.parse(req.body)),
   );
+  app.post('/api/groups/:id/pause', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const { paused } = PauseBody.parse(req.body);
+    const group = await s.bots.setGroupPaused(id, paused);
+    if (paused) await s.turns.stopBots(await s.bots.groupBotIds(id));
+    else s.turns.schedule();
+    return group;
+  });
   app.delete('/api/groups/:id', async (req) => {
     await s.bots.deleteGroup(IdParams.parse(req.params).id);
     return { ok: true };

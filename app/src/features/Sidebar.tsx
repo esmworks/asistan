@@ -6,6 +6,7 @@ import {
   Plus,
   Search,
   Settings2,
+  Pause,
   ShieldCheck,
   X,
   BellOff,
@@ -28,6 +29,7 @@ import { botShortcut, botStep, sidebarOrder } from '@/lib/botOrder';
 import { SIDEBAR, useUi } from '@/lib/store';
 import { useDensity } from '@/lib/density';
 import { isUnread, useSeen } from '@/lib/unread';
+import { usePaused } from '@/lib/paused';
 import { cn } from '@/lib/utils';
 
 export function Sidebar() {
@@ -615,7 +617,25 @@ function Badges({ bot, summary }: { bot: Bot; summary?: BotSummary }) {
         </span>
       )}
       <StateDot summary={summary} />
+      <PausedBadge bot={bot} />
     </>
+  );
+}
+
+/** A pause mark on a bot that starts no work now, itself or with its group. */
+function PausedBadge({ bot }: { bot: Bot }) {
+  const t = useT();
+  const { paused } = usePaused(bot);
+  if (!paused) return null;
+  return (
+    <span
+      role="img"
+      aria-label={t('pause.badge')}
+      title={t('pause.badge')}
+      className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-full bg-background ring-1 ring-border"
+    >
+      <Pause className="size-3 fill-current text-muted-foreground" />
+    </span>
   );
 }
 

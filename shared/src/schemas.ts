@@ -58,6 +58,8 @@ export type PermissionMode = z.infer<typeof PermissionMode>;
 export const Group = z.object({
   id: Id,
   name: z.string(),
+  /** Set while every bot of the group is paused. Missing from older servers. */
+  pausedAt: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type Group = z.infer<typeof Group>;
@@ -111,6 +113,11 @@ export const Bot = z.object({
   /** Why the document could not be read the last time it was looked at. */
   instructionsError: z.string().nullable().optional(),
   archivedAt: z.string().nullable(),
+  /**
+   * Set while the bot itself is paused; it also starts no work while its group is. Missing from
+   * older servers.
+   */
+  pausedAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /** The person who made the bot (or was given it). Missing from older servers. */

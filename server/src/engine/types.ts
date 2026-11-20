@@ -285,6 +285,8 @@ export type TurnOutcome = (
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */
       stepLimit?: boolean;
+      /** It was stopped because its bot was paused, not by the person's Stop. */
+      paused?: boolean;
       /**
        * The conversation no longer fits the model's context window, as the engine itself tells: a
        * new session may carry on with the recent exchange.
