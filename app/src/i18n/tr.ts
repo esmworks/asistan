@@ -2148,7 +2148,7 @@ export const tr = {
   'whatsapp.state.error': 'Bağlantı durdu',
   'whatsapp.error.expired': 'QR kodu zamanında okutulmadı. Yeniden bağlayıp yeni bir kod alın.',
   'whatsapp.error.ownNumber':
-    'Bağlanan hesap, "Botlara yazacağınız numara" ile aynı. Bu modda ikisi farklı olmalı: QR kodunu bot olacak numarayla okutun, alana da botlara yazacağınız başka bir numarayı girin. Botlara aynı numaradan yazmak istiyorsanız "Kendi numaram"ı seçin.',
+    'Bağlanan hesap, "Sizin numaranız" alanındaki numarayla aynı. QR kodunu bot olacak numarayla (ör. şirket hattı) okutun; alana o numarayı değil, botlara yazacağınız kendi telefonunuzun numarasını girin.',
   'whatsapp.error.loggedOut': 'WhatsApp bu cihazın bağlantısını kaldırdı. Yeniden bağlayıp QR kodunu okutun.',
   'whatsapp.error.forbidden':
     'WhatsApp bu bağlantıyı reddetti; numara engellenmiş olabilir. WhatsApp uygulamasından hesabın durumuna bakın.',
@@ -2163,9 +2163,10 @@ export const tr = {
     'Önerilen. Bot olacak ikinci bir numara (ör. bir şirket hattı) bağlanır; siz ona başka bir numaradan yazarsınız.',
   'whatsapp.mode.own': 'Kendi numaram',
   'whatsapp.modeHint.own': 'Kendi hesabınız bağlanır; botlara "Kendine mesaj" sohbetinden yazarsınız.',
-  'whatsapp.phone': 'Botlara yazacağınız numara',
+  'whatsapp.phone.separate': 'Sizin numaranız',
+  'whatsapp.phone.own': 'Bağlanacak hesabın numarası',
   'whatsapp.phoneHint.separate':
-    'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız bot numarasından farklı olmalı; yalnızca bu numaradan gelenler botlara komut olarak gider.',
+    'Botlara yazacağınız kendi telefonunuzun numarası (ör. kişisel hattınız); ülke koduyla, yalnızca rakam. Bot numarası buraya yazılmaz; yalnızca bu numaradan gelenler botlara iş olarak gider.',
   'whatsapp.phoneHint.own':
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız hesabın numarası; botlara onun "Kendine mesaj" sohbetinden yazarsınız.',
   'whatsapp.bot': 'Size cevap veren bot',
@@ -2201,7 +2202,7 @@ export const tr = {
   'whatsapp.routeRemove': 'Kaldır',
   'whatsapp.routeNoBot': 'Verilen her sohbet için bir numara ya da grup ve bir bot seçin.',
   'whatsapp.doorOwn':
-    'Kendi numaranızda size yazan herkes tanıdığınız biri olabilir; karşılama botu yalnızca botlara ayrı bir numara bağlandığında cevap verir. Burada sohbetleri tek tek bir bota verin.',
+    'Kendi numaranızda karşılama botu yalnızca rehberinizde kayıtlı olmayan kişilere cevap verir; cevabı sizin numaranızdan gideceği için her zaman önce kartla onayınıza gelir.',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
@@ -2215,7 +2216,7 @@ export const tr = {
   'whatsapp.scan':
     "Bağlanacak hesabın telefonunda WhatsApp → Ayarlar → Bağlı cihazlar → Cihaz bağla'ya dokunun ve bu kodu okutun. Kod kendiliğinden yenilenir; kurulum 5 dakika içinde tamamlanmalı.",
   'whatsapp.howTo.separate':
-    'Botlara yazacağınız numaradan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+    'Kendi numaranızdan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
   'whatsapp.howTo.own':
     'WhatsApp\'ta "Kendine mesaj" sohbetine yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
   'whatsapp.risk':

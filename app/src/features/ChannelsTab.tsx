@@ -69,18 +69,25 @@ const lockedDown = (b: Bot) => b.permissionMode === 'readonly' && !b.internet &&
 function ReplyModeSelect({
   value,
   onChange,
+  cardsOnly = false,
 }: {
   value: WhatsAppReplyMode;
   onChange: (m: WhatsAppReplyMode) => void;
+  /** Answers always wait on a card: no automatic sending to offer. */
+  cardsOnly?: boolean;
 }) {
   const t = useT();
+  const modes = cardsOnly ? (['off', 'draft'] as const) : (['off', 'draft', 'auto'] as const);
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as WhatsAppReplyMode)}>
+    <Select
+      value={cardsOnly && value === 'auto' ? 'draft' : value}
+      onValueChange={(v) => onChange(v as WhatsAppReplyMode)}
+    >
       <SelectTrigger className="w-36 rounded-xl" aria-label={t('whatsapp.reply')}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {(['off', 'draft', 'auto'] as const).map((m) => (
+        {modes.map((m) => (
           <SelectItem key={m} value={m}>
             {t(`whatsapp.reply.${m}`)}
           </SelectItem>
@@ -248,7 +255,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           ))}
         </div>
         <label className="block space-y-1">
-          <span className="text-sm font-medium">{t('whatsapp.phone')}</span>
+          <span className="text-sm font-medium">{t(`whatsapp.phone.${mode}`)}</span>
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -300,7 +307,6 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           <span className="block text-sm font-medium">{t('whatsapp.door')}</span>
           <div className="flex flex-wrap gap-2">
             <Select
-              disabled={mode === 'own'}
               value={door?.botId ?? NONE}
               onValueChange={(v) => setDoor(v === NONE ? null : { botId: v, mode: door?.mode ?? 'draft' })}
             >
@@ -316,14 +322,18 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
                 ))}
               </SelectContent>
             </Select>
-            {door && mode !== 'own' && (
-              <ReplyModeSelect value={door.mode} onChange={(m) => setDoor({ ...door, mode: m })} />
+            {door && (
+              <ReplyModeSelect
+                value={door.mode}
+                onChange={(m) => setDoor({ ...door, mode: m })}
+                cardsOnly={mode === 'own'}
+              />
             )}
           </div>
           {mode === 'own' && (
             <span className="block text-xs text-muted-foreground">{t('whatsapp.doorOwn')}</span>
           )}
-          {mode !== 'own' && !doorBot && (
+          {!doorBot && (
             <Button
               type="button"
               variant="secondary"

@@ -296,6 +296,22 @@ describe('WhatsApp', () => {
     expect(s.error).toBe('ownNumber');
   });
 
+  it('bağlı bot numarası kişinin numarası diye kaydedilmez; bağlantı kopmaz', async () => {
+    const { asistan } = await setUp('separate');
+    const refused = await t.api<{ error: string }>('PUT', '/api/whatsapp', {
+      mode: 'separate',
+      phone: BOT_NUMBER,
+      botId: asistan.id,
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain(`+${BOT_NUMBER} bağlı bot numarası`);
+    const st = (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body;
+    expect(st).toMatchObject({ state: 'connected', phone: PERSON, mode: 'separate' });
+    // On the account's own number the two are the same, as they should be.
+    const own = await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: BOT_NUMBER, botId: asistan.id });
+    expect(own.status).toBe(200);
+  });
+
   it('botun yanıtına verilen yanıt o mesaja bağlanır; bilinmeyen mesajın metni ve dosyası gelir', async () => {
     const { wa, asistan } = await setUp();
     const thread = await main(asistan.id);
@@ -1713,20 +1729,28 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect(requestsIn(thread)).toHaveLength(1);
   });
 
-  it('kendi numarasında karşılama botu kimseye cevap vermez; silinen botun sohbeti ve kapısı kaydı bozmaz', async () => {
+  it('kendi numarasında karşılama botu yalnızca rehberde olmayana, hep kartla cevap verir; silinen botun sohbeti ve kapısı kaydı bozmaz', async () => {
     const { wa, asistan } = await setUp();
-    const kapi = await t.bot({ name: 'Kapı' });
+    const kapi = await t.bot({ name: 'Kapı', permissionMode: 'auto' });
     const satis = await t.bot({ name: 'Satış' });
+    const MOM = '905008887766@s.whatsapp.net';
     const STRANGER = `${CUSTOMER}@s.whatsapp.net`;
     await answerers(asistan.id, {
-      door: { botId: kapi.id },
+      door: { botId: kapi.id, mode: 'auto' },
       routes: [{ chat: '905004445566', botId: satis.id }],
     });
-    // On the person's own number whoever writes may be someone they know: not even kept.
-    wa.chat(STRANGER, { conversation: 'Akşam geliyor musun?' }, {}, 'Annem');
-    await new Promise((r) => setTimeout(r, 150));
+    wa.socket().emit('contacts.upsert', [{ id: MOM, name: 'Annem' }]);
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappSavedNames)).length === 1);
+    // Someone in the phone book is someone the person knows: nothing of theirs is even kept.
+    wa.chat(MOM, { conversation: 'Akşam geliyor musun?' }, {}, 'Anne');
+    // A stranger is answered, and on the person's own number the answer waits on a card.
+    wa.chat(STRANGER, { conversation: 'Fiyat alabilir miyim?' }, {}, 'Ahmet');
+    const door = await contactThread(STRANGER, `door:${kapi.id}`);
+    await waitFor(async () => (await cards()).length === 1);
     await t.services.turns.idle();
-    expect(await t.db.db.select().from(schema.whatsappChats)).toEqual([]);
+    expect((await cards())[0]!.threadId).toBe(door);
+    expect(wa.sent.filter((x) => x.jid === STRANGER)).toHaveLength(0);
+    expect((await t.db.db.select().from(schema.whatsappChats)).find((c) => c.jid === MOM)).toBeUndefined();
     expect(t.engine.requests.filter((r) => r.prompt.includes('Akşam geliyor musun?'))).toHaveLength(0);
 
     // A bot gone for good leaves the settings shown without it, and what they show saves.

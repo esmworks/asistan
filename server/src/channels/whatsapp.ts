@@ -534,6 +534,8 @@ export class WhatsAppChannel {
   private routes = new Map<string, WhatsAppRoute>();
   /** The front door, when one is set. */
   private door: WhatsAppDoor | null = null;
+  /** Whether the account is the person's own number, not one of the bots' own. */
+  private ownNumber = false;
   /** Conversations known to be, or not to be, a chat's own (`contactOf`). */
   private contacts = new Map<string, Contact | null>();
   /** Front-door answers are settled one refresh at a time. */
@@ -685,6 +687,10 @@ export class WhatsAppChannel {
     if (input.door) await this.services.bots.get(input.door.botId);
     const row = await this.row();
     const now = (row?.settings ?? {}) as Settings;
+    // The bot's own number as the person's would cut the link the moment it opens: said here.
+    const linked = (row?.account as { number?: string } | undefined)?.number;
+    if (input.mode === 'separate' && linked && linked === input.phone)
+      throw new HttpError(400, 'error.whatsappPhoneIsBot', { number: linked });
     // One bot per chat: the last one named wins.
     const routes = input.routes && [...new Map(input.routes.map((r) => [r.chat, r])).values()];
     const settings: Settings = {
@@ -1125,7 +1131,7 @@ export class WhatsAppChannel {
       // may read every chat, the chat is given to a bot, or a front door answers people.
       if (!this.people && !this.allChats && !this.door && !this.routes.size) return;
       const chat = await this.personChat(socket, m, settings);
-      if (chat && (this.people || this.allChats || this.door || this.routes.has(chat)))
+      if (chat && (this.people || this.allChats || this.routes.has(chat) || (await this.atDoor(chat))))
         await this.chatMessage(socket, m, chat, 'person');
       return;
     }
@@ -1352,9 +1358,8 @@ export class WhatsAppChannel {
 
   private loadRoutes(settings: Settings) {
     this.routes = new Map((settings.routes ?? []).map((r) => [routeChat(r.chat), r]));
-    // On the person's own number everyone who writes is someone they know: the front door answers
-    // only on a number of the bots' own.
-    this.door = settings.mode === 'own' ? null : (settings.door ?? null);
+    this.door = settings.door ?? null;
+    this.ownNumber = settings.mode === 'own';
   }
 
   /** The routes and the door as the settings show them: only those whose bot is still here. */
@@ -1398,11 +1403,23 @@ export class WhatsAppChannel {
   }
 
   /** Who answers a chat now: the bot it is given to, else the front door for a person. */
-  private contactTarget(chat: string, kind: 'person' | 'group') {
+  private async contactTarget(chat: string, kind: 'person' | 'group') {
     const route = this.routes.get(chat);
     if (route) return { role: 'route' as const, botId: route.botId, mode: route.mode };
-    if (kind === 'person' && this.door) return { role: 'door' as const, ...this.door };
-    return null;
+    if (kind !== 'person' || !(await this.atDoor(chat))) return null;
+    const door = this.door!;
+    // On the person's own number its answers go out as them: always on a card first.
+    const mode: WhatsAppReplyMode = this.ownNumber && door.mode === 'auto' ? 'draft' : door.mode;
+    return { role: 'door' as const, botId: door.botId, mode };
+  }
+
+  /**
+   * Whether the front door answers a person's chat. On the person's own number everyone who
+   * writes may be someone they know: there only a number not in their phone book is a stranger.
+   */
+  private async atDoor(chat: string): Promise<boolean> {
+    if (!this.door) return false;
+    return !this.ownNumber || !(await this.savedNameOf(chat));
   }
 
   /** Holds a message for the chat's own bot, or the front door; it goes when the chat is quiet. */
@@ -1412,7 +1429,7 @@ export class WhatsAppChannel {
     line: string,
     seq: number,
   ): Promise<boolean> {
-    const target = this.contactTarget(chat, kind);
+    const target = await this.contactTarget(chat, kind);
     if (!target || target.mode === 'off') return false;
     await this.markAwaiting([seq], true);
     const open = this.contactWaits.get(chat) ?? {
@@ -1460,7 +1477,7 @@ export class WhatsAppChannel {
     chat: string,
     wait: { kind: 'person' | 'group'; lines: string[]; firstSeq: number; firstId: string },
   ) {
-    const target = this.contactTarget(chat, wait.kind);
+    const target = await this.contactTarget(chat, wait.kind);
     const owner = await this.ownerId();
     if (!target || target.mode === 'off' || !owner) return;
     const bot = await this.services.bots.get(target.botId).catch(() => null);
@@ -1642,7 +1659,7 @@ export class WhatsAppChannel {
       .limit(1);
     if (!started) return;
     // The mode as it is now: a route taken away or a door changed since asks first.
-    const target = this.contactTarget(contact.chat, contact.kind);
+    const target = await this.contactTarget(contact.chat, contact.kind);
     const mode: WhatsAppReplyMode =
       target && target.role === contact.role && target.botId === contact.botId ? target.mode : 'draft';
     if (mode === 'off') return;
