@@ -118,6 +118,22 @@ const SEALED: Sealed[] = [
     id: schema.ticketComments.id,
     columns: [['text', schema.ticketComments.text, 'text']],
   },
+  {
+    // A promise is lifted from the conversation's words, so it is sealed with them.
+    table: schema.promises,
+    id: schema.promises.id,
+    columns: [
+      ['text', schema.promises.text, 'text'],
+      ['toWhom', schema.promises.toWhom, 'text'],
+      ['condition', schema.promises.condition, 'text'],
+    ],
+  },
+  {
+    // The sites a turn had read before a trip-wire; they say where the person has been.
+    table: schema.canaryAlarms,
+    id: schema.canaryAlarms.id,
+    columns: [['sources', schema.canaryAlarms.sources, 'json']],
+  },
 ];
 
 export interface SealStatus {
