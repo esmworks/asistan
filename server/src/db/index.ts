@@ -54,7 +54,19 @@ export async function openDb(opts: {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     client = new PGlite(dir);
   }
-  const db = drizzle(client, { schema });
+  const db = drizzle(client, { schema, logger: process.env.VITEST ? rawDateGuard : undefined });
   await migrate(db, { migrationsFolder });
   return { db: db as unknown as Db, kind: 'pglite', close: () => client.close() };
 }
+
+/**
+ * Tests run on PGlite, which takes a Date anywhere; on PostgreSQL drizzle hands a Date it did not
+ * map through a column straight to the driver, and the query fails there. Refusing it under test
+ * makes such a query fail where it is written instead of on the server.
+ */
+const rawDateGuard = {
+  logQuery(query: string, params: unknown[]) {
+    if (params.some((p) => p instanceof Date))
+      throw new Error(`A Date was passed into raw SQL; pass it as text with ::timestamptz.\n${query}`);
+  },
+};
