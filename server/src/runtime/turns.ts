@@ -1939,13 +1939,15 @@ export class TurnManager {
       const backup = settings.backupModel;
       // A turn that already changed something is never run again from the start: the backup would
       // repeat what was done (a sent mail, a written file). It ends with its error instead. A spent
-      // limit, a model that is down and a sign-in that no longer works all leave the backup to it.
+      // limit, a model that is down or gone and a sign-in that no longer works all leave the backup
+      // to it.
       const blocked =
         !outcome.ok &&
         (outcome.kind === 'limit' ||
           outcome.kind === 'auth' ||
           outcome.transient === true ||
-          outcome.billing === true) &&
+          outcome.billing === true ||
+          outcome.modelGone === true) &&
         !acted;
       // The sign-in is expired whoever carries the turn next: the account status must say so.
       if (!outcome.ok && outcome.kind === 'auth') for (const hook of this.signedOutHooks) hook();
@@ -1963,7 +1965,9 @@ export class TurnManager {
                 ? 'turn.backupAuth'
                 : outcome.billing
                   ? 'turn.backupBilling'
-                  : 'turn.backupBusy',
+                  : outcome.modelGone
+                    ? 'turn.backupGone'
+                    : 'turn.backupBusy',
             { model: backup },
           ),
           props: { kind: 'backupModel' },

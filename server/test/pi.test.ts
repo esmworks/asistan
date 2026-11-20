@@ -1599,4 +1599,34 @@ describe('sağlayıcı hataları', () => {
     expect(providerTrouble('process terminated by signal', 'openai', t).cut).toBeUndefined();
     expect(providerTrouble('strange', 'x', t)).toEqual({ kind: 'engine', message: 'strange' });
   });
+
+  it('kaldırılmış ya da adı bilinmeyen modeli yedeğe geçilebilir diye işaretler', () => {
+    const gone = [
+      'API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-old"}}',
+      'HTTP 410 Gone',
+      'The model `gpt-old` does not exist or you do not have access to it.',
+      'Error code: model_not_found',
+      'models/gemini-old is not found for API version v1beta',
+      'gpt-old is not a valid model ID',
+      'No endpoints found for openai/gpt-old.',
+      'The model gpt-old has been deprecated',
+      "There's an issue with the selected model (claude-old). It may not exist or you may not have access to it.",
+    ];
+    for (const raw of gone) {
+      expect(providerTrouble(raw, 'openai', t), raw).toMatchObject({
+        kind: 'engine',
+        modelGone: true,
+        message: expect.stringContaining('artık sunmuyor'),
+      });
+    }
+    // Other errors that only share a number or a word with it.
+    for (const raw of [
+      'max_tokens: 4100 is too large',
+      'The model hit an unknown error',
+      '404 page not found at https://example.com',
+      'This model does not support image input',
+    ]) {
+      expect(providerTrouble(raw, 'openai', t).modelGone, raw).toBeUndefined();
+    }
+  });
 });

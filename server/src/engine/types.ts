@@ -295,6 +295,11 @@ export type TurnOutcome = (
       crashed?: boolean;
       /** The provider's balance is spent or its billing failed: another provider's model may carry the turn. */
       billing?: boolean;
+      /**
+       * The provider no longer offers the model or does not know its name: it will not come back by
+       * waiting, and another model may carry the turn.
+       */
+      modelGone?: boolean;
       /** For `interrupted`: the person stopped it, an ending they chose rather than a failure. */
       byPerson?: boolean;
       /** What the turn spent before it failed, when the engine knows: it counts toward the limit. */
@@ -328,6 +333,12 @@ export const OVERLOADED =
 /** A reply the provider closed before its end, as the client libraries word it. */
 const CUT =
   /stream ended without finish_reason|premature close|other side closed|\bECONNRESET\b|^(TypeError:\s*)?terminated$/i;
+/**
+ * A model the provider retired or never had, as providers word it: a 410 status, a 404 that names
+ * the model, a not-found error code, or the model said to be missing, retired or unknown.
+ */
+export const MODEL_GONE =
+  /(?:^|api error|status(?: code)?|\bcode|\bhttp(?:\/[\d.]+)?)\W{0,3}410\b|\b404\b[^\n]{0,200}\bmodel|\bmodel[^\n]{0,200}\b404\b|not_found_error|model_not_found|\bmodels?\b[^\n]{0,80}?\b(?:not found|does not exist|doesn't exist|no longer (?:available|supported|offered)|(?:has been|was|is) (?:deprecated|retired|removed|decommissioned)|is unknown)|unknown model|invalid model(?: name| id)?\b|not a valid model|no endpoints found for|issue with the selected model/i;
 
 /**
  * A provider's error in words the person can act on: a refused key, an empty balance, a rate
@@ -337,7 +348,14 @@ export function providerTrouble(
   raw: string,
   provider: string,
   t: T,
-): { kind: 'limit' | 'engine'; message: string; transient?: boolean; cut?: boolean; billing?: boolean } {
+): {
+  kind: 'limit' | 'engine';
+  message: string;
+  transient?: boolean;
+  cut?: boolean;
+  billing?: boolean;
+  modelGone?: boolean;
+} {
   const detail = readableError(raw.trim(), 300);
   const said = (key: Parameters<T>[0]) => `${t(key, { provider })} (${detail})`;
   if (/\b401\b|unauthori[sz]ed|invalid.{0,20}(api[ _-]?)?key|incorrect api key|authentication/i.test(raw)) {
@@ -347,6 +365,9 @@ export function providerTrouble(
     /\b402\b|insufficient (credits|balance|funds|quota)|billing|payment required|credit balance/i.test(raw)
   ) {
     return { kind: 'engine', message: said('engine.providerBilling'), billing: true };
+  }
+  if (MODEL_GONE.test(raw)) {
+    return { kind: 'engine', message: said('engine.providerModelGone'), modelGone: true };
   }
   if (/\b413\b|(request|payload|entity) too large/i.test(raw)) {
     return { kind: 'engine', message: said('engine.providerTooLarge') };

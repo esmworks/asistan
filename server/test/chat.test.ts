@@ -1147,6 +1147,18 @@ describe('sohbet', () => {
     expect(msgs.some((m) => m.role === 'error')).toBe(false);
   });
 
+  it('modeli artık sunulmayan botun işini yedek model sürdürür ve model seçmeyi söyler', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.api('PATCH', '/api/settings', { backupModel: 'openrouter/yedek' });
+    await t.send(thread.id, '[model-yok] bak');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.model).toBe('openrouter/yedek');
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.kind === 'backupModel')!.text).toContain('artık sunulmuyor');
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
+  });
+
   it('bakiye bitince yedek model yoksa tur hatayla biter', async () => {
     const bot = await t.bot();
     const thread = await main(bot.id);

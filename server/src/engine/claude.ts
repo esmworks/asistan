@@ -797,6 +797,7 @@ export class ClaudeEngine implements Engine {
         ...(((cause && OVERLOADED.test(cause)) || said?.transient || crashed) && { transient: true }),
         ...(crashed && { crashed: true }),
         ...(billing && { billing: true }),
+        ...(said?.modelGone && { modelGone: true }),
         ...(outOfSteps && { stepLimit: true }),
         costUsd,
         sessionCostUsd,

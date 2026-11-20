@@ -420,6 +420,8 @@ const tr = {
     'Sağlayıcının bakiyesi bitti; bu iş yedek model {model} ile sürüyor. Bakiyeyi sağlayıcının hesabından yükle.',
   'turn.retryCrash': 'Claude Code işlemi beklenmedik biçimde kapandı; aynı modelle bir kez daha deneniyor.',
   'turn.backupBusy': 'Model şu an yanıt veremiyor; bu iş yedek model {model} ile sürüyor.',
+  'turn.backupGone':
+    'Botun modeli artık sunulmuyor ya da adı tanınmıyor; bu iş yedek model {model} ile sürüyor. Botun ayarlarından başka bir model seç.',
   'turn.backupAuth':
     'Claude girişi artık geçerli değil; bu iş yedek model {model} ile sürüyor. Ayarlar → Bağlantı → Claude bölümünden yeniden giriş yap.',
   'turn.retryCut': 'Yanıt yarıda kesildi; aynı modelle bir kez daha deneniyor.',
@@ -450,6 +452,7 @@ const tr = {
   'engine.providerBilling': '{provider} hesabında bakiye ya da ödeme sorunu var',
   'engine.providerLimit': '{provider} hız ya da kota sınırına takıldı; biraz sonra yeniden dene',
   'engine.providerBusy': '{provider} şu an aşırı yüklü ya da kısa süreliğine kapalı',
+  'engine.providerModelGone': '{provider} bu modeli artık sunmuyor ya da modelin adını tanımıyor',
   'engine.providerCut': '{provider} yanıtı bitirmeden kesti',
   'engine.providerTooLarge':
     'İstek {provider} için çok büyük; yeni bir sohbet aç ya da daha çok şey alan bir model seç',
@@ -2002,6 +2005,8 @@ const en: Catalog<ServerKey> = {
     "The provider's balance is used up; this work goes on with the backup model {model}. Add credit in the provider's account.",
   'turn.retryCrash': 'The Claude Code process stopped unexpectedly; trying the same model once more.',
   'turn.backupBusy': 'The model cannot answer right now; this work goes on with the backup model {model}.',
+  'turn.backupGone':
+    "The bot's model is no longer offered or its name is not known; this work goes on with the backup model {model}. Pick another model in the bot's settings.",
   'turn.backupAuth':
     'The Claude sign-in no longer works; this work goes on with the backup model {model}. Sign in again in Settings → Connection → Claude.',
   'turn.retryCut': 'The reply was cut off midway; trying the same model once more.',
@@ -2031,6 +2036,7 @@ const en: Catalog<ServerKey> = {
   'engine.providerBilling': 'The {provider} account has a balance or payment problem',
   'engine.providerLimit': '{provider} hit a rate or quota limit; try again in a while',
   'engine.providerBusy': '{provider} is overloaded or briefly down',
+  'engine.providerModelGone': '{provider} no longer offers this model or does not know its name',
   'engine.providerCut': '{provider} cut the reply off before it ended',
   'engine.providerTooLarge':
     'The request is too large for {provider}; start a new chat or pick a model that takes more',

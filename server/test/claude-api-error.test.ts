@@ -115,6 +115,18 @@ describe('Claude API hatası', () => {
     if (!out.ok) expect(out.message).toContain('bakiye');
   });
 
+  it('kaldırılmış model yedeğe geçilebilir diye işaretlenir', async () => {
+    const said =
+      'API Error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-old"}}';
+    frames.current = [
+      apiError('invalid_request', said),
+      { type: 'result', subtype: 'success', is_error: true, result: said },
+    ];
+    const out = await run();
+    expect(out).toMatchObject({ ok: false, kind: 'engine', modelGone: true });
+    if (!out.ok) expect(out.message).toContain('artık sunmuyor');
+  });
+
   it('ek kullanımla süren reddedilmiş olay planın sınırı sayılmaz', async () => {
     const rejected = (extra: object) => ({
       type: 'rate_limit_event',

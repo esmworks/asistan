@@ -832,6 +832,7 @@ export class PiEngine implements Engine {
         ...(why.transient && { transient: true }),
         ...(why.cut && { cut: true }),
         ...(why.billing && { billing: true }),
+        ...(why.modelGone && { modelGone: true }),
         // Only this run's own failed reply tells: an earlier one, or a reply that went through, does not.
         // With the summary of what came before, which the new session that carries on is handed.
         ...(failed &&

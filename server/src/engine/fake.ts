@@ -183,6 +183,17 @@ export class FakeEngine implements Engine {
         billing: true,
       };
     }
+    // A model the provider retired; a backup (`provider/model`) is still offered.
+    if (req.prompt.includes('[model-yok]') && !req.model.includes('/')) {
+      return {
+        ok: false,
+        kind: 'engine',
+        message: 'not_found_error: model',
+        text: '',
+        sessionId,
+        modelGone: true,
+      };
+    }
     if (req.prompt.includes('[giriş-yok]') && !req.model.includes('/')) {
       return { ok: false, kind: 'auth', message: 'Not logged in', text: '', sessionId };
     }
