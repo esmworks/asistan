@@ -119,6 +119,20 @@ export function headerNameAllowed(name: string, auth: ConnectionAuth): boolean {
 }
 
 /**
+ * The headers a new connection's form sends: those added, and a name and value typed but not yet
+ * added, so a header filled in is not lost by connecting straight away. A later name replaces an
+ * earlier one, as names are not told apart by case.
+ */
+export function formHeaders(
+  added: { name: string; value: string }[],
+  typed: { name: string; value: string },
+): { name: string; value: string }[] {
+  const all = [...added, { name: typed.name.trim(), value: typed.value }].filter((h) => h.name && h.value);
+  const byName = new Map(all.map((h) => [h.name.toLowerCase(), h]));
+  return [...byName.values()];
+}
+
+/**
  * A request header for a server. An empty value in an update keeps the one saved under that name,
  * since values never come back to be shown again.
  */

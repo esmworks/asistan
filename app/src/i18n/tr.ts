@@ -1950,6 +1950,7 @@ export const tr = {
   'apps.headerValue': 'Değer',
   'apps.headerAdd': 'Başlık ekle',
   'apps.headerSaved': 'kayıtlı',
+  'apps.headerNameBlocked': 'Bu başlık uygulamanın kendisi tarafından ayarlanır, değiştirilemez.',
   'apps.tokenHint': 'Authorization: Bearer başlığıyla gönderilir; bir daha gösterilmez.',
   'apps.tokenHelp': '{name} anahtarını oluştur',
   'apps.clientNeeded':
