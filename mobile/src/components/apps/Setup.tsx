@@ -178,6 +178,8 @@ function SetupForm({
   const [ownSwitch, setOwnSwitch] = useState(false);
   const [headers, setHeaders] = useState<HeaderDraft[]>([]);
   const [typed, setTyped] = useState<HeaderDraft>({ name: '', value: '' });
+  // A catalog service rarely needs headers of its own: they stay behind a link until asked for.
+  const [showHeaders, setShowHeaders] = useState(!entry);
   const sentHeaders = formHeaders(headers, typed);
   // A service that needs a registered app always asks for one; any other only when switched on.
   const ownApp = !reusing && (!!entry?.client || ownSwitch);
@@ -380,6 +382,15 @@ function SetupForm({
             </>
           ) : null}
         </View>
+      ) : null}
+      {entry ? (
+        showHeaders ? (
+          <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
+        ) : (
+          <Pressable accessibilityRole="button" onPress={() => setShowHeaders(true)}>
+            <Text style={[styles.link, { color: c.mutedForeground }]}>{t('apps.headerAdd')}</Text>
+          </Pressable>
+        )
       ) : null}
       {another && auth === 'oauth' ? (
         <View style={[styles.callout, { backgroundColor: c.muted }]}>
