@@ -53,6 +53,8 @@ import { OWNER_ID } from '../users';
 
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
+/** What folding an idle conversation came to; `skipped` when it could not be tried now. */
+export type FoldResult = 'skipped' | 'folded' | 'failed';
 
 const PRIORITY: Record<TurnSource, number> = {
   user: 0,
@@ -185,6 +187,10 @@ const IDLE_AFTER_MS = 30 * 60_000;
 /** How often quiet conversations are looked for, and how many are folded at each look. */
 const SWEEP_MS = 5 * 60_000;
 const SWEEP_MAX = 3;
+/** Conversations looked at for each sweep, past those that cannot be folded now. */
+const SWEEP_LOOK = 50;
+/** A fold the engine has not finished by then is stopped, so the conversation is not held. */
+const FOLD_MS = 5 * 60_000;
 /** Conversations a person talks in; the bot's own work and rooms are left to fold as they run. */
 const FOLDED_KINDS = ['user', 'team'] as const;
 /**
@@ -687,45 +693,56 @@ export class TurnManager {
    * next message does not first wait for the fold the engine would make at the limit. A message
    * that comes meanwhile waits for the fold and then runs on the folded session. Nothing is done
    * for a conversation with work running or waiting, a paused or archived bot, a bot past its
-   * spending limit, or an engine that cannot fold. Whether it folded.
+   * spending limit, or an engine that cannot fold. A fold the engine does not finish in a few
+   * minutes is stopped.
    */
-  async foldIdle(threadId: string): Promise<boolean> {
-    if (this.stopped || this.folding.has(threadId) || this.isRunning(threadId)) return false;
+  async foldIdle(threadId: string): Promise<FoldResult> {
+    if (this.stopped || this.folding.has(threadId) || this.isRunning(threadId)) return 'skipped';
     const controller = new AbortController();
     let release!: () => void;
     const hold = { botId: null as string | null, controller, done: new Promise<void>((r) => (release = r)) };
     // Held before anything is read: a turn queued from now on waits for the fold.
     this.folding.set(threadId, hold);
+    const timer = setTimeout(() => controller.abort(), FOLD_MS);
+    timer.unref?.();
     try {
       return await this.fold(threadId, hold);
     } catch (err) {
       console.warn(`Folding conversation ${threadId} failed: ${(err as Error).message}`);
-      return false;
+      return 'failed';
     } finally {
+      clearTimeout(timer);
       this.folding.delete(threadId);
       release();
+      if (hold.botId) this.emitState(threadId, hold.botId);
       this.schedule();
     }
   }
 
-  private async fold(threadId: string, hold: { botId: string | null; controller: AbortController }) {
+  private async fold(
+    threadId: string,
+    hold: { botId: string | null; controller: AbortController },
+  ): Promise<FoldResult> {
     const { threads, bots, settings } = this.services;
     const thread = await threads.row(threadId).catch(() => null);
-    if (!thread?.engineSessionId || !(FOLDED_KINDS as readonly string[]).includes(thread.kind)) return false;
+    if (!thread?.engineSessionId || !(FOLDED_KINDS as readonly string[]).includes(thread.kind))
+      return 'skipped';
     const bot = await bots.get(thread.botId).catch(() => null);
-    if (!bot || bot.archivedAt) return false;
-    hold.botId = bot.id;
-    if (await bots.isPaused(bot)) return false;
-    if (await this.services.usage.reached(bot)) return false;
+    if (!bot || bot.archivedAt) return 'skipped';
+    if (await bots.isPaused(bot)) return 'skipped';
+    if (await this.services.usage.reached(bot)) return 'skipped';
     const engine = this.engineFor(bot);
-    if (!engine.compact) return false;
+    if (!engine.compact) return 'skipped';
     // Work queued or started before the hold goes first; the fold waits for another quiet spell.
     const [waiting] = await this.ctx.db
       .select({ id: schema.turns.id })
       .from(schema.turns)
       .where(and(eq(schema.turns.threadId, threadId), inArray(schema.turns.status, ['queued', 'running'])))
       .limit(1);
-    if (waiting || this.isRunning(threadId) || hold.controller.signal.aborted) return false;
+    if (waiting || this.isRunning(threadId) || hold.controller.signal.aborted) return 'skipped';
+    // Shown as at work, with its stop, while it holds the conversation.
+    hold.botId = bot.id;
+    this.emitState(threadId, bot.id);
 
     const all = await settings.all();
     const model =
@@ -736,7 +753,7 @@ export class TurnManager {
       internet: bot.internet,
       readOnly: bot.permissionMode === 'readonly',
     });
-    const locale = await settings.locale();
+    const locale = (await settings.all(thread.userId ?? undefined)).language ?? (await settings.locale());
     const startedAt = new Date();
     const outcome = await engine.compact({
       threadId,
@@ -763,7 +780,7 @@ export class TurnManager {
       threadId: thread.id,
       botId: bot.id,
       source: 'upkeep',
-      status: outcome.ok ? 'done' : 'error',
+      status: outcome.ok ? 'done' : hold.controller.signal.aborted ? 'interrupted' : 'error',
       prompt: '/compact',
       error: outcome.ok ? null : outcome.message,
       costUsd: outcome.costUsd,
@@ -775,7 +792,7 @@ export class TurnManager {
     });
     if (!outcome.ok) {
       console.warn(`Folding conversation ${threadId} failed: ${outcome.message}`);
-      return false;
+      return 'failed';
     }
     await threads.addMessage({
       threadId: thread.id,
@@ -786,7 +803,7 @@ export class TurnManager {
       turnId,
       quiet: true,
     });
-    return true;
+    return 'folded';
   }
 
   /**
@@ -812,14 +829,23 @@ export class TurnManager {
             // Quiet: no turn waiting, running, or finished since.
             sql`not exists (select 1 from ${schema.turns} where ${schema.turns.threadId} = ${schema.threads.id}
               and (${schema.turns.status} in ('queued', 'running') or ${schema.turns.finishedAt} > ${quietSince}))`,
+            // Folded once since the last turn, whether it worked: a fold that fails is not paid for
+            // again on every sweep, only after the conversation has moved on.
+            sql`coalesce((select ${schema.turns.source} from ${schema.turns}
+              where ${schema.turns.threadId} = ${schema.threads.id}
+              order by ${schema.turns.createdAt} desc limit 1), '') <> 'upkeep'`,
           ),
         )
         .orderBy(desc(schema.threads.engineSessionTokens))
-        .limit(SWEEP_MAX);
+        .limit(SWEEP_LOOK);
       let folded = 0;
+      let tried = 0;
+      // Those that cannot be folded now (a paused bot, say) do not take the turn of the others.
       for (const r of rows) {
-        if (this.stopped) break;
-        if (await this.foldIdle(r.id)) folded++;
+        if (this.stopped || tried >= SWEEP_MAX) break;
+        const result = await this.foldIdle(r.id);
+        if (result !== 'skipped') tried++;
+        if (result === 'folded') folded++;
       }
       return folded;
     } finally {
@@ -2118,7 +2144,8 @@ export class TurnManager {
       .state(threadId)
       .then((state) => {
         // A running entry may not be persisted as visible state yet.
-        const live = this.isRunning(threadId) && state === 'idle' ? 'running' : state;
+        const live =
+          (this.isRunning(threadId) || this.folding.has(threadId)) && state === 'idle' ? 'running' : state;
         this.ctx.bus.turn({ threadId, botId, state: live });
       })
       .catch((err) => {

@@ -128,8 +128,35 @@ describe('boştaki uzun sohbet önceden özetlenir', () => {
     await t.services.turns.interrupt(th.id);
     open();
     expect(await sweep).toBe(0);
-    expect((await upkeep(th.id))[0]?.status).toBe('error');
+    expect((await upkeep(th.id))[0]?.status).toBe('interrupted');
     expect((await t.messages(th.id)).some((m) => m.props.kind === 'compacted')).toBe(false);
     expect((await row(th.id)).engineSessionTokens).toBe(180_000);
+  });
+
+  it('başarısız özetleme her taramada yeniden denenmez; sohbet ilerleyince denenir', async () => {
+    const bot = await t.bot();
+    const th = await full(bot);
+    t.engine.compactFails = true;
+    expect(await t.services.turns.sweepIdle(later())).toBe(0);
+    expect(t.engine.compactions).toHaveLength(1);
+    expect((await upkeep(th.id))[0]).toMatchObject({ status: 'error', costUsd: 0.02 });
+    expect(await t.services.turns.sweepIdle(later())).toBe(0);
+    expect(t.engine.compactions).toHaveLength(1);
+
+    t.engine.compactFails = false;
+    await t.send(th.id, '[bağlam:185000] devam');
+    await t.services.turns.idle();
+    expect(await t.services.turns.sweepIdle(later())).toBe(1);
+    expect(t.engine.compactions).toHaveLength(2);
+  });
+
+  it('özetlenemeyen sohbetler sıradakilerin önünü kesmez', async () => {
+    const paused = await t.bot({ name: 'Duran' });
+    for (let i = 0; i < 4; i++) await full(paused, 190_000);
+    await t.api('POST', `/api/bots/${paused.id}/pause`, { paused: true });
+    const bot = await t.bot({ name: 'Çalışan' });
+    const th = await full(bot, 150_000);
+    expect(await t.services.turns.sweepIdle(later())).toBe(1);
+    expect(t.engine.compactions.map((c) => c.threadId)).toEqual([th.id]);
   });
 });

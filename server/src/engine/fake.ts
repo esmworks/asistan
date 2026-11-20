@@ -348,11 +348,14 @@ export class FakeEngine implements Engine {
   /** Sessions folded by `compact`; a test may hold a fold open with `compactGate`. */
   public compactions: CompactRequest[] = [];
   public compactGate: Promise<void> | null = null;
+  /** A fold that fails after it was paid for. */
+  public compactFails = false;
 
   async compact(req: CompactRequest): Promise<CompactOutcome> {
     this.compactions.push(req);
     if (this.compactGate) await this.compactGate;
     if (req.signal.aborted) return { ok: false, message: 'Durduruldu', costUsd: 0, sessionCostUsd: null };
+    if (this.compactFails) return { ok: false, message: 'Özetlenemedi', costUsd: 0.02, sessionCostUsd: null };
     return { ok: true, sessionId: req.sessionId, contextTokens: 20_000, costUsd: 0.05, sessionCostUsd: null };
   }
 
