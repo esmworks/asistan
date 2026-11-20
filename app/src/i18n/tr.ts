@@ -2166,12 +2166,46 @@ export const tr = {
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız bot numarasından farklı olmalı; yalnızca bu numaradan gelenler botlara komut olarak gider.',
   'whatsapp.phoneHint.own':
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız hesabın numarası; botlara onun "Kendine mesaj" sohbetinden yazarsınız.',
-  'whatsapp.bot': 'Mesajların gittiği bot',
+  'whatsapp.bot': 'Size cevap veren bot',
   'whatsapp.botPick': 'Bir bot seçin',
-  'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
+  'whatsapp.botHint':
+    'Sizin WhatsApp’tan yazdıklarınızı bu bot cevaplar; "/bot <ad>" yazarak başka bota geçebilirsiniz. Başkalarının mesajları bu bota gitmez.',
+  'whatsapp.door': 'Karşılama botu',
+  'whatsapp.doorNone': 'Yok: hiçbir bota verilmemiş sohbetlere kimse cevap vermez',
+  'whatsapp.doorHint':
+    'Hiçbir bota verilmemiş bir sohbetten yazan herkese bu bot cevap verir. Araç kullanamaz; notlarınızı, profilinizi ve bağlantılarınızı görmez. Tek yapabildiği, sohbetin hangi bota verilmesi gerektiğini size kartla önermektir.',
+  'whatsapp.doorRisk':
+    'Botun talimatlarındaki ve hafızasındaki her şeyi yazan herkes sorabilir; bu yüzden başka işte kullandığınız bir botu seçmeyin.',
+  'whatsapp.doorBot.create': 'Güvenli karşılama botu oluştur',
+  'whatsapp.doorBot.created':
+    'Karşılama botu oluşturuldu. Talimatlarına yalnızca herkesin bilebileceği bilgileri yazın.',
+  'whatsapp.doorBot.loose':
+    'Bu bot tam kilitli değil: salt okunur değil, interneti ya da hafızası açık ya da proje klasörü var. Karşılama için ayrı bir bot önerilir.',
+  'whatsapp.doorBot.name': 'Karşılama',
+  'whatsapp.doorBot.description': 'WhatsApp’ta henüz bir bota verilmemiş kişilere ilk cevabı verir.',
+  'whatsapp.doorBot.instructions':
+    'WhatsApp’ta yazanları karşılarsın. Kısa, nazik ve yazanın dilinde cevap ver.\n\nHerkesin bilebileceği bilgiler (doldurun; müşteri, fiyat, şifre ya da şirket içi bilgi yazmayın):\n- Firma:\n- Çalışma saatleri:\n- Adres:\n- Verilen hizmetler:\n- İletişim:\n\nBu bilgilerde olmayan bir şey sorulursa uydurma; ilgili kişinin en kısa sürede dönüş yapacağını söyle.',
+  'whatsapp.reply': 'Cevap',
+  'whatsapp.reply.off': 'Kapalı',
+  'whatsapp.reply.draft': 'Taslak',
+  'whatsapp.reply.auto': 'Otomatik',
+  'whatsapp.routes': 'Botlara verilen sohbetler',
+  'whatsapp.routesHint':
+    'Bir kişiyi ya da grubu bir bota verin; o sohbete artık o bot, ona ait ayrı bir konuşmada cevap verir. Burada bot sizin kişisel verilerinizi ve WhatsApp’ınızı görmez, cevap dışındaki her iş için onay ister. Taslak: cevap önce onayınıza gelir. Otomatik: hemen gider; siz o sohbete elle yazdıysanız ya da sohbete saatte 5’ten fazla giderse yine kartla sorulur. Gruplarda bot yalnızca hesap etiketlenince ya da mesajına yanıt verilince çalışır ve gruba hiç yazmaz, size anlatır. Bir botun son 3 günde mesaj gönderdiği kişinin yanıtı ise o bota gider.',
+  'whatsapp.routeNumber': 'Telefon numarası',
+  'whatsapp.routeGroup': 'Grup',
+  'whatsapp.routeAdd': 'Numara ekle',
+  'whatsapp.routeGroupAdd': 'Grup ekle',
+  'whatsapp.routeRemove': 'Kaldır',
+  'whatsapp.routeNoBot': 'Verilen her sohbet için bir numara ya da grup ve bir bot seçin.',
+  'whatsapp.doorOwn':
+    'Kendi numaranızda size yazan herkes tanıdığınız biri olabilir; karşılama botu yalnızca botlara ayrı bir numara bağlandığında cevap verir. Burada sohbetleri tek tek bir bota verin.',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
+  'whatsapp.autoSend': 'Botlar onay sormadan gönderebilsin',
+  'whatsapp.autoSendHint':
+    'Tam erişimdeki bir bot, sizin istediğiniz işte mesajı kart açmadan gönderir. Yazdığı kişinin yanıtıyla uyandığında yalnızca o sohbete, siz oraya elle yazmadıysanız, kartsız cevap verir; bu yüzden yazdığı kişilerin sorularına sizin görmediğiniz cevaplar verebilir. Giden her mesaj konuşmaya yazılır. Dosya eklenen, daha önce yazışılmamış bir numaraya giden ya da bir sohbete saatte 5’ten fazla giden mesajlar yine kartla sorulur.',
   'whatsapp.chatsHint':
     'İstediğinizde botlarınız bu hesabın kişi ve grup sohbetlerini okur, mesaj taslağı hazırlar; mesaj ancak siz onaylayınca gider. Mesajlar açıldığı andan itibaren 30 gün şifreli saklanır.',
   'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',

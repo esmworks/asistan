@@ -94,6 +94,8 @@ export class MemoryReviewService {
     if (!bot?.memory || bot.archivedAt) return;
     const thread = await this.services.threads.row(turn.threadId).catch(() => null);
     if (!thread || !REVIEWED_KINDS.includes(thread.kind)) return;
+    // A WhatsApp chat a bot answers is someone else's words: nothing of it goes into notes.
+    if (await this.services.whatsapp.contactOf(thread.id)) return;
     if ((await this.unreviewed(thread.id)) >= every) this.enqueue(thread.id, bot.id);
   }
 
@@ -110,6 +112,7 @@ export class MemoryReviewService {
     if (!every) return;
     const thread = await this.services.threads.row(threadId).catch(() => null);
     if (!thread || !REVIEWED_KINDS.includes(thread.kind)) return;
+    if (await this.services.whatsapp.contactOf(thread.id)) return;
     const bot = await this.services.bots.get(thread.botId).catch(() => null);
     if (!bot?.memory || bot.archivedAt) return;
     if ((await this.unreviewed(thread.id)) >= RESET_MIN_TURNS) this.enqueue(thread.id, bot.id);

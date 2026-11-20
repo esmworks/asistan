@@ -750,7 +750,12 @@ export class TurnManager {
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
     // A team conversation (a Slack channel's) works for who asked, with their level and cards, but
     // uses only what the team shares: no one's profile, own notes, apps or sign-ins.
-    const own = thread.kind === 'team' ? null : person;
+    // A WhatsApp chat a bot answers for the person (one given to it, or the front door) is someone
+    // else's words, written by someone with no account here: like a team conversation it uses no
+    // one's own data, and the front door has no tool but suggesting a bot for the chat.
+    const contact = thread.kind === 'user' ? await this.services.whatsapp.contactOf(thread.id) : null;
+    const door = contact?.role === 'door';
+    const own = thread.kind === 'team' || contact ? null : person;
     // Only the person whose WhatsApp is linked gets its tools; nobody else's turn looks further.
     const whatsappOwner = await this.services.whatsapp.ownerId();
     // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
@@ -774,9 +779,9 @@ export class TurnManager {
     // The person's own language; the server's until they choose one.
     const locale = settings.language ?? (await this.services.settings.locale());
     const t = translator(locale);
-    const skills = await this.services.skills.forBot(bot.id);
-    const email = await this.services.email.addressOf(bot.id);
-    const apiSources = await this.services.apiSources.forBot(bot.id);
+    const skills = door ? [] : await this.services.skills.forBot(bot.id);
+    const email = door ? null : await this.services.email.addressOf(bot.id);
+    const apiSources = door ? [] : await this.services.apiSources.forBot(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
     // Only a turn the person's own message or emoji started has them there to answer a card. A
@@ -841,7 +846,9 @@ export class TurnManager {
       await persist().catch((err) => console.warn('outside mark', err));
     };
     // The bot's tool selection narrows what it is given; the rest never reaches the model.
-    const pickTool = toolPicker(bot.toolSelection);
+    const pickTool = door
+      ? (name: string) => name === toolPermName({ name: 'whatsapp_suggest_route' })
+      : toolPicker(bot.toolSelection);
     // Whether it can look earlier talk up, which the prompts point it to.
     const recall = pickTool(toolPermName({ name: 'conversations_search' }));
     const systemPrompt = buildSystemPrompt({
@@ -863,10 +870,11 @@ export class TurnManager {
       peers,
       timezone,
       locale,
-      browser: this.ctx.browser.available && bot.internet,
+      browser: !door && this.ctx.browser.available && bot.internet,
       onUserComputer: this.ctx.config.onUserComputer,
       routines: own ? await this.services.routines.list(bot.isManager ? undefined : bot.id) : [],
       team: !own,
+      contact: contact?.role,
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
@@ -889,6 +897,7 @@ export class TurnManager {
         readOutside,
         whatsappOwner,
         whatsappReader: whatsappOwner === person && (await this.services.routines.whatsappBots()).has(bot.id),
+        contact: contact?.role,
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
@@ -1242,8 +1251,8 @@ export class TurnManager {
     const asked = tagged.length
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
-    // Webhook posts and routine reports land in the conversation without a turn, so a live session
-    // never saw them; the ones since the bot last ran here come with this message. A handoff
+    // Webhook posts, routine reports and what became of a WhatsApp draft land in the conversation
+    // without a turn, so a live session never saw them; the ones since the bot last ran here come with this message. A handoff
     // carries them already.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
@@ -1256,7 +1265,7 @@ export class TurnManager {
         .filter((m) => {
           const at = new Date(m.createdAt);
           return (
-            (m.props.posted || m.props.routineReport) &&
+            (m.props.posted || m.props.routineReport || m.props.whatsappDraft) &&
             at <= turn.createdAt &&
             (!before || at > before.createdAt)
           );
@@ -1405,7 +1414,7 @@ export class TurnManager {
         sandbox,
         shell,
         tools,
-        ...(selectsTools(bot.toolSelection) && { pickTool }),
+        ...((door || selectsTools(bot.toolSelection)) && { pickTool }),
         canUseTool: async (ask) => {
           const { let: letThrough, ...answer } = await canUseTool(ask);
           // A step that changes something goes into the bot's list, with what let it through.
