@@ -1255,6 +1255,21 @@ describe('sohbet', () => {
     expect(after.props.retryAt).toBeUndefined();
   });
 
+  it('yedek model seçilmemişse sınırda başka modele geçilmez; iş sıfırlanmayı bekler', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    expect((await t.api<{ backupModel: string }>('GET', '/api/settings')).body.backupModel).toBe('');
+    await t.send(thread.id, '[sınır] rapor');
+    await t.services.turns.idle();
+    expect(new Set(t.engine.requests.map((r) => r.model)).size).toBe(1);
+    expect(t.engine.requests.some((r) => r.model.includes('/'))).toBe(false);
+    const msgs = await t.messages(thread.id);
+    expect(msgs.some((m) => m.props.kind === 'backupModel')).toBe(false);
+    const note = msgs.find((m) => m.role === 'error')!;
+    expect(note.props.kind).toBe('limit');
+    expect(note.props.retryAt).toBeTruthy();
+  });
+
   it('bir şeyi değiştirdikten sonra sınıra takılan tur kendiliğinden yeniden gönderilmez', async () => {
     const bot = await t.bot({ permissionMode: 'auto' });
     const thread = await main(bot.id);

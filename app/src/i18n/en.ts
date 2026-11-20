@@ -1971,7 +1971,7 @@ export const en: Catalog<MessageKey> = {
   'model.compactRecommended': '{size} (recommended)',
   'model.backup': 'Backup model',
   'model.backupHint':
-    'When the usage limit is used up, the work goes on with this model instead of waiting; it gets the recent conversation.',
+    'When the usage limit is used up or the model cannot answer, the work goes on with this model instead of waiting; it gets the recent conversation. While this is off no other model is used: the work waits and is sent again by itself once the limit resets.',
   'onboarding.noAi':
     'No AI is connected yet. The bots are created but cannot answer until you connect one under Settings → Connection.',
   'apps.open': 'Apps',

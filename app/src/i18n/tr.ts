@@ -1963,7 +1963,7 @@ export const tr = {
   'model.compactRecommended': '{size} (önerilen)',
   'model.backup': 'Yedek model',
   'model.backupHint':
-    'Kullanım sınırı dolunca iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır.',
+    'Kullanım sınırı dolunca ya da model yanıt veremeyince iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır. Kapalıyken başka modele geçilmez: iş bekler ve sınır sıfırlanınca kendiliğinden yeniden gönderilir.',
   'onboarding.noAi':
     'Henüz bir yapay zekâ bağlı değil. Botlar oluşturulur ama Ayarlar → Bağlantı bölümünden bağlayana kadar cevap veremez.',
   'apps.open': 'Uygulamalar',
