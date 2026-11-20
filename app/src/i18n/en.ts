@@ -2169,9 +2169,37 @@ export const en: Catalog<MessageKey> = {
     'With the country code, digits only. It must differ from the bot number you scan the QR code with; only messages from this number reach the bots as requests.',
   'whatsapp.phoneHint.own':
     'With the country code, digits only. The number of the account you scan the QR code with; you write to the bots in its "Message yourself" chat.',
-  'whatsapp.bot': 'The bot messages go to',
+  'whatsapp.bot': 'The bot that answers you',
   'whatsapp.botPick': 'Choose a bot',
-  'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
+  'whatsapp.botHint':
+    'This bot answers what you write on WhatsApp; write "/bot <name>" to switch to another bot. Other people’s messages do not go to it.',
+  'whatsapp.door': 'Front-door bot',
+  'whatsapp.doorNone': 'None: nobody answers chats not given to a bot',
+  'whatsapp.doorHint':
+    'This bot answers everyone writing from a chat that is not given to a bot. It has no tools, files, internet or access to your data; all it can do is suggest to you, on a card, which bot the chat should go to.',
+  'whatsapp.doorSafety.title': 'To set the front-door bot up safely',
+  'whatsapp.doorSafety.own': 'Create a separate bot for this; do not pick a bot you use for other work.',
+  'whatsapp.doorSafety.level':
+    'Set its permission level to the lowest ("Read-only") and turn its internet off.',
+  'whatsapp.doorSafety.links': 'Do not give it apps, skills, a project folder or a mail address.',
+  'whatsapp.doorSafety.instructions':
+    'Put only what anyone may know in its instructions (opening hours, address, general services). No customers, prices, passwords or internal information: anyone who writes can ask for them.',
+  'whatsapp.doorSafety.memory': 'Turn its memory off, or keep anything personal or confidential out of it.',
+  'whatsapp.doorSafety.mode': 'Keep its answers on "Draft" until you have seen it answer well for a while.',
+  'whatsapp.doorSafety.enforced':
+    'The system itself makes sure the front-door bot uses no tools, does not see your notes, profile or apps, answers only the chat of whoever wrote, and that nothing from these chats goes into its memory. The points above are in your hands.',
+  'whatsapp.reply': 'Answers',
+  'whatsapp.reply.off': 'Off',
+  'whatsapp.reply.draft': 'Draft',
+  'whatsapp.reply.auto': 'Automatic',
+  'whatsapp.routes': 'Chats given to bots',
+  'whatsapp.routesHint':
+    'Give a person or a group to a bot; that bot then answers the chat, in a conversation of its own for it. There the bot sees none of your personal data or your WhatsApp, and asks before anything but answering. Draft: the answer comes to you for approval first. Automatic: it goes at once, but asks on a card when you wrote in the chat by hand or more than 5 an hour would go to it. In a group the bot works only when the account is mentioned or answered, and never writes to the group; it tells you. The answer of someone a bot sent a message to in the last 3 days goes to that bot.',
+  'whatsapp.routeNumber': 'Phone number',
+  'whatsapp.routeGroup': 'Group',
+  'whatsapp.routeAdd': 'Add a number',
+  'whatsapp.routeGroupAdd': 'Add a group',
+  'whatsapp.routeRemove': 'Remove',
   'whatsapp.notices': 'Also tell me about other conversations',
   'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
   'whatsapp.chats': 'Let the bots look at my chats',

@@ -2166,9 +2166,38 @@ export const tr = {
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız bot numarasından farklı olmalı; yalnızca bu numaradan gelenler botlara komut olarak gider.',
   'whatsapp.phoneHint.own':
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız hesabın numarası; botlara onun "Kendine mesaj" sohbetinden yazarsınız.',
-  'whatsapp.bot': 'Mesajların gittiği bot',
+  'whatsapp.bot': 'Size cevap veren bot',
   'whatsapp.botPick': 'Bir bot seçin',
-  'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
+  'whatsapp.botHint':
+    'Sizin WhatsApp’tan yazdıklarınızı bu bot cevaplar; "/bot <ad>" yazarak başka bota geçebilirsiniz. Başkalarının mesajları bu bota gitmez.',
+  'whatsapp.door': 'Karşılama botu',
+  'whatsapp.doorNone': 'Yok: hiçbir bota verilmemiş sohbetlere kimse cevap vermez',
+  'whatsapp.doorHint':
+    'Hiçbir bota verilmemiş bir sohbetten yazan herkese bu bot cevap verir. Aracı, dosyası, interneti ve sizin verilerinize erişimi yoktur; tek yapabildiği, sohbetin hangi bota verilmesi gerektiğini size kartla önermektir.',
+  'whatsapp.doorSafety.title': 'Karşılama botunu güvenli kurmak için',
+  'whatsapp.doorSafety.own':
+    'Bu iş için ayrı bir bot oluşturun; başka işlerde kullandığınız bir botu seçmeyin.',
+  'whatsapp.doorSafety.level': 'İzin düzeyini en düşüğe ("Salt okunur") alın ve internetini kapatın.',
+  'whatsapp.doorSafety.links': 'Ona bağlantı, beceri, proje klasörü ya da e-posta adresi eklemeyin.',
+  'whatsapp.doorSafety.instructions':
+    'Talimatlarına yalnızca herkesin bilebileceği bilgileri yazın (çalışma saatleri, adres, genel hizmetler). Müşteri, fiyat, şifre ya da şirket içi bilgi yazmayın: yazan herkes bunları sorabilir.',
+  'whatsapp.doorSafety.memory': 'Hafızasını kapatın ya da içine kişisel ve gizli bilgi koymayın.',
+  'whatsapp.doorSafety.mode':
+    'Cevap modunu, botun doğru cevap verdiğini bir süre görene kadar "Taslak" bırakın.',
+  'whatsapp.doorSafety.enforced':
+    'Sistemin kendisi sağlar: karşılama botu hiçbir araç kullanamaz, notlarınızı, profilinizi ve bağlantılarınızı görmez, yalnızca yazan kişinin sohbetine cevap verir ve bu sohbetlerden hafızasına bir şey yazılmaz. Yukarıdakiler ise sizin elinizde.',
+  'whatsapp.reply': 'Cevap',
+  'whatsapp.reply.off': 'Kapalı',
+  'whatsapp.reply.draft': 'Taslak',
+  'whatsapp.reply.auto': 'Otomatik',
+  'whatsapp.routes': 'Botlara verilen sohbetler',
+  'whatsapp.routesHint':
+    'Bir kişiyi ya da grubu bir bota verin; o sohbete artık o bot, ona ait ayrı bir konuşmada cevap verir. Burada bot sizin kişisel verilerinizi ve WhatsApp’ınızı görmez, cevap dışındaki her iş için onay ister. Taslak: cevap önce onayınıza gelir. Otomatik: hemen gider; siz o sohbete elle yazdıysanız ya da sohbete saatte 5’ten fazla giderse yine kartla sorulur. Gruplarda bot yalnızca hesap etiketlenince ya da mesajına yanıt verilince çalışır ve gruba hiç yazmaz, size anlatır. Bir botun son 3 günde mesaj gönderdiği kişinin yanıtı ise o bota gider.',
+  'whatsapp.routeNumber': 'Telefon numarası',
+  'whatsapp.routeGroup': 'Grup',
+  'whatsapp.routeAdd': 'Numara ekle',
+  'whatsapp.routeGroupAdd': 'Grup ekle',
+  'whatsapp.routeRemove': 'Kaldır',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
