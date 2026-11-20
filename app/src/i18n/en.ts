@@ -1972,6 +1972,9 @@ export const en: Catalog<MessageKey> = {
   'model.compactMillion': '{count} million tokens',
   'model.compactAuto': "Claude's own size",
   'model.compactRecommended': '{size} (recommended)',
+  'model.idleCompact': 'Summarise ahead while idle',
+  'model.idleCompactHint':
+    'When a long conversation nears this size and has been quiet for half an hour, the bot summarises it while nobody waits, so the next message is answered without waiting for a summary. Summarising uses the model and counts toward spending; it starts off because after a pause the model reads the conversation again without its cache.',
   'model.backup': 'Backup model',
   'model.backupHint':
     'When the usage limit is used up or the model cannot answer, the work goes on with this model instead of waiting; it gets the recent conversation. While this is off no other model is used: the work waits and is sent again by itself once the limit resets.',

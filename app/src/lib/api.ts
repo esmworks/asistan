@@ -264,6 +264,8 @@ export interface Settings {
   backupModel?: string;
   /** Tokens at which a Claude bot folds the conversation into a summary; 0 leaves it to Claude. Missing on older servers. */
   claudeCompactWindow?: number;
+  /** Long conversations are summarised while idle, before the size above is reached. Missing on older servers. */
+  idleCompact?: boolean;
   /** The most the bots may spend in a day, in US dollars; 0 for none. Missing on older servers. */
   dailyLimitUsd?: number;
   timezone: string;

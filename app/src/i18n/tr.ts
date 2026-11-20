@@ -1964,6 +1964,9 @@ export const tr = {
   'model.compactMillion': '{count} milyon token',
   'model.compactAuto': "Claude'un kendi değeri",
   'model.compactRecommended': '{size} (önerilen)',
+  'model.idleCompact': 'Boştayken önceden özetle',
+  'model.idleCompactHint':
+    'Uzun bir sohbet bu sınıra yaklaştıysa ve yarım saattir sessizse, bot onu beklerken özetler; bir sonraki mesaj özetlemeyi beklemeden cevaplanır. Özetleme modeli kullanır ve harcamaya sayılır; ara verdikten sonra model sohbeti önbelleksiz okuduğu için kapalı başlar.',
   'model.backup': 'Yedek model',
   'model.backupHint':
     'Kullanım sınırı dolunca ya da model yanıt veremeyince iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır. Kapalıyken başka modele geçilmez: iş bekler ve sınır sıfırlanınca kendiliğinden yeniden gönderilir.',

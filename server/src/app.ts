@@ -718,6 +718,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     app.log.warn({ err }, 'marker recount failed');
   });
   services.routines.start();
+  services.turns.startUpkeep();
   await services.meetings.start();
   // In the background: model lists work from the engine's own until the catalog is in.
   await services.modelCatalog.start();

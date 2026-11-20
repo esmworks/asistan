@@ -7,6 +7,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A long conversation can be summarised while it is idle, before the size at which a Claude bot would summarise it
+  in the middle of the next message (Settings → Model). Once a conversation is at least 70% of that size and has been
+  quiet for half an hour, the server folds its session and marks the place in the chat; a message that comes
+  meanwhile waits for the fold. Off by default, as after a pause the model reads the conversation again without its
+  cache; the fold counts toward spending, and a paused bot or one past its limit is left alone. Bots on another
+  model provider fold as they run.
 - A conversation is named by the bot's model once its first answer is in: a few words on what it is about, in place
   of the first message's opening words. A title the person gives is never changed, a bot that is paused or past its
   spending limit is not asked, and it can be turned off (Settings → General).

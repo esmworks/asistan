@@ -927,6 +927,15 @@ function ModelCard({ onAddProvider }: { onAddProvider(): void }) {
         )}
       </div>
       {!folded && settings.claudeCompactWindow !== undefined && <CompactWindow />}
+      {!folded && settings.idleCompact !== undefined && !!settings.claudeCompactWindow && (
+        <Row label={t('model.idleCompact')} hint={t('model.idleCompactHint')}>
+          <Switch
+            checked={settings.idleCompact}
+            onCheckedChange={(v) => save.mutate({ idleCompact: v })}
+            aria-label={t('model.idleCompact')}
+          />
+        </Row>
+      )}
       {settings.backupModel !== undefined && <BackupModel onAddProvider={onAddProvider} />}
     </Card>
   );

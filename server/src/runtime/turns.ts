@@ -54,7 +54,14 @@ import { OWNER_ID } from '../users';
 export type TurnRow = typeof schema.turns.$inferSelect;
 export type TurnSource = TurnRow['source'];
 
-const PRIORITY: Record<TurnSource, number> = { user: 0, reaction: 1, routine: 1, ticket: 1, bot: 2 };
+const PRIORITY: Record<TurnSource, number> = {
+  user: 0,
+  reaction: 1,
+  routine: 1,
+  ticket: 1,
+  bot: 2,
+  upkeep: 3,
+};
 
 /** What let a step that changes something through, for the bot's list of what it did. */
 type LetThrough = { how: BotActionHow; rule?: string; approvalId?: string };
@@ -170,6 +177,15 @@ const PAUSED = 'paused';
 
 /** The longest a stop waits for the turns it stopped to end before it goes on. */
 const SETTLE_MS = 10_000;
+/** How full a session must be, of the fold window, before it is folded while idle. */
+const IDLE_FULL = 0.7;
+/** How long a conversation must have been quiet before it is folded. */
+const IDLE_AFTER_MS = 30 * 60_000;
+/** How often quiet conversations are looked for, and how many are folded at each look. */
+const SWEEP_MS = 5 * 60_000;
+const SWEEP_MAX = 3;
+/** Conversations a person talks in; the bot's own work and rooms are left to fold as they run. */
+const FOLDED_KINDS = ['user', 'team'] as const;
 /**
  * Keeps a connection's answer that is too long for the model in the conversation's folder, under
  * tool-results/, where the bot can read or search it with its own tools.
@@ -196,6 +212,13 @@ const GUEST_READS: ReadonlySet<string> = new Set([
 
 export class TurnManager {
   private running = new Map<string, Running>();
+  /** Conversations being folded while idle, by id; a turn there waits until the fold is over. */
+  private folding = new Map<
+    string,
+    { botId: string | null; controller: AbortController; done: Promise<void> }
+  >();
+  private upkeep: ReturnType<typeof setInterval> | null = null;
+  private sweeping = false;
   private hooks: TurnFinishedHook[] = [];
   private scheduling: Promise<void> = Promise.resolve();
   private stopped = false;
@@ -526,6 +549,7 @@ export class TurnManager {
         found = true;
       }
     }
+    this.folding.get(threadId)?.controller.abort();
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
     for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
@@ -572,6 +596,11 @@ export class TurnManager {
       if (!ids.has(r.turn.botId)) continue;
       r.controller.abort(PAUSED);
       ends.push(r.done);
+    }
+    for (const f of this.folding.values()) {
+      if (!f.botId || !ids.has(f.botId)) continue;
+      f.controller.abort(PAUSED);
+      ends.push(f.done);
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
@@ -635,16 +664,176 @@ export class TurnManager {
     return [...this.running.values()].some((r) => r.turn.botId === botId);
   }
 
+  /**
+   * Folds the conversation's engine session into a summary now, while nobody waits on it, so the
+   * next message does not first wait for the fold the engine would make at the limit. A message
+   * that comes meanwhile waits for the fold and then runs on the folded session. Nothing is done
+   * for a conversation with work running or waiting, a paused or archived bot, a bot past its
+   * spending limit, or an engine that cannot fold. Whether it folded.
+   */
+  async foldIdle(threadId: string): Promise<boolean> {
+    if (this.stopped || this.folding.has(threadId) || this.isRunning(threadId)) return false;
+    const controller = new AbortController();
+    let release!: () => void;
+    const hold = { botId: null as string | null, controller, done: new Promise<void>((r) => (release = r)) };
+    // Held before anything is read: a turn queued from now on waits for the fold.
+    this.folding.set(threadId, hold);
+    try {
+      return await this.fold(threadId, hold);
+    } catch (err) {
+      console.warn(`Folding conversation ${threadId} failed: ${(err as Error).message}`);
+      return false;
+    } finally {
+      this.folding.delete(threadId);
+      release();
+      this.schedule();
+    }
+  }
+
+  private async fold(threadId: string, hold: { botId: string | null; controller: AbortController }) {
+    const { threads, bots, settings } = this.services;
+    const thread = await threads.row(threadId).catch(() => null);
+    if (!thread?.engineSessionId || !(FOLDED_KINDS as readonly string[]).includes(thread.kind)) return false;
+    const bot = await bots.get(thread.botId).catch(() => null);
+    if (!bot || bot.archivedAt) return false;
+    hold.botId = bot.id;
+    if (await bots.isPaused(bot)) return false;
+    if (await this.services.usage.reached(bot)) return false;
+    const engine = this.engineFor(bot);
+    if (!engine.compact) return false;
+    // Work queued or started before the hold goes first; the fold waits for another quiet spell.
+    const [waiting] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(and(eq(schema.turns.threadId, threadId), inArray(schema.turns.status, ['queued', 'running'])))
+      .limit(1);
+    if (waiting || this.isRunning(threadId) || hold.controller.signal.aborted) return false;
+
+    const all = await settings.all();
+    const model =
+      bot.model || (bot.engine === 'claude' ? all.defaultModel : '') || this.ctx.config.claudeModel;
+    const paths = workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, bot.groupId);
+    const sandbox = sandboxFor(paths, {
+      projectDir: bot.projectDir,
+      internet: bot.internet,
+      readOnly: bot.permissionMode === 'readonly',
+    });
+    const locale = await settings.locale();
+    const startedAt = new Date();
+    const outcome = await engine.compact({
+      threadId,
+      botId: bot.id,
+      model,
+      sessionId: thread.engineSessionId,
+      sessionCostUsd: thread.engineSessionCostUsd,
+      compactWindow: all.claudeCompactWindow,
+      sandbox,
+      locale,
+      signal: hold.controller.signal,
+    });
+    if (outcome.sessionCostUsd != null) await threads.setSessionCost(thread.id, outcome.sessionCostUsd);
+    if (outcome.ok) {
+      if (outcome.sessionId !== thread.engineSessionId)
+        await threads.setSession(thread.id, outcome.sessionId);
+      await threads.setSessionTokens(thread.id, outcome.contextTokens);
+    }
+    // Kept as a finished turn of its own, so the fold counts toward the bot's spending.
+    const t = translator(locale);
+    const turnId = newId();
+    await this.ctx.db.insert(schema.turns).values({
+      id: turnId,
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'upkeep',
+      status: outcome.ok ? 'done' : 'error',
+      prompt: '/compact',
+      error: outcome.ok ? null : outcome.message,
+      costUsd: outcome.costUsd,
+      engine: bot.engine,
+      model,
+      createdAt: startedAt,
+      startedAt,
+      finishedAt: new Date(),
+    });
+    if (!outcome.ok) {
+      console.warn(`Folding conversation ${threadId} failed: ${outcome.message}`);
+      return false;
+    }
+    await threads.addMessage({
+      threadId: thread.id,
+      role: 'system',
+      author: 'system',
+      text: t('turn.compactedIdle'),
+      props: { kind: 'compacted' },
+      turnId,
+      quiet: true,
+    });
+    return true;
+  }
+
+  /**
+   * Folds the quiet conversations whose session is near the fold window, a few at a time and one
+   * after another; on when the setting is.
+   */
+  async sweepIdle(now = new Date()): Promise<number> {
+    if (this.stopped || this.sweeping) return 0;
+    const all = await this.services.settings.all();
+    if (!all.idleCompact || all.claudeCompactWindow <= 0) return 0;
+    this.sweeping = true;
+    try {
+      const full = Math.floor(all.claudeCompactWindow * IDLE_FULL);
+      const quietSince = new Date(now.getTime() - IDLE_AFTER_MS);
+      const rows = await this.ctx.db
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(
+          and(
+            inArray(schema.threads.kind, [...FOLDED_KINDS]),
+            sql`${schema.threads.engineSessionId} is not null`,
+            sql`${schema.threads.engineSessionTokens} >= ${full}`,
+            // Quiet: no turn waiting, running, or finished since.
+            sql`not exists (select 1 from ${schema.turns} where ${schema.turns.threadId} = ${schema.threads.id}
+              and (${schema.turns.status} in ('queued', 'running') or ${schema.turns.finishedAt} > ${quietSince}))`,
+          ),
+        )
+        .orderBy(desc(schema.threads.engineSessionTokens))
+        .limit(SWEEP_MAX);
+      let folded = 0;
+      for (const r of rows) {
+        if (this.stopped) break;
+        if (await this.foldIdle(r.id)) folded++;
+      }
+      return folded;
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  /** Looks for quiet conversations to fold every few minutes until shutdown. */
+  startUpkeep() {
+    if (this.upkeep || this.stopped) return;
+    this.upkeep = setInterval(() => {
+      void this.sweepIdle().catch((err: unknown) => console.warn(`Idle fold: ${String(err)}`));
+    }, SWEEP_MS);
+    this.upkeep.unref?.();
+  }
+
   private emits = new Set<Promise<void>>();
 
   async shutdown() {
     this.stopped = true;
+    if (this.upkeep) clearInterval(this.upkeep);
+    this.upkeep = null;
     for (const timer of this.retries.values()) clearTimeout(timer);
     this.retries.clear();
+    for (const f of this.folding.values()) f.controller.abort();
     // A fill already under way may still start a turn; let it, so the abort below reaches it.
     await this.scheduling;
     for (const r of this.running.values()) r.controller.abort();
-    await Promise.allSettled([...this.running.values()].map((r) => r.done));
+    await Promise.allSettled([
+      ...[...this.running.values()].map((r) => r.done),
+      ...[...this.folding.values()].map((f) => f.done),
+    ]);
     await Promise.allSettled([...this.emits]);
   }
 
@@ -663,7 +852,7 @@ export class TurnManager {
         .from(schema.turns)
         .where(inArray(schema.turns.status, ['queued', 'running']))
         .limit(1);
-      if (!queued.length && this.running.size === 0) return;
+      if (!queued.length && this.running.size === 0 && this.folding.size === 0) return;
       if (Date.now() - start > timeoutMs) throw new Error('Turns did not finish in time');
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -687,7 +876,7 @@ export class TurnManager {
     queued.sort(
       (a, b) => PRIORITY[a.source] - PRIORITY[b.source] || a.createdAt.getTime() - b.createdAt.getTime(),
     );
-    const busy = new Set([...this.running.values()].map((r) => r.turn.threadId));
+    const busy = new Set([...[...this.running.values()].map((r) => r.turn.threadId), ...this.folding.keys()]);
     const held = await this.holdPaused(queued);
     let slots = free;
     for (const t of queued) {
@@ -1576,6 +1765,10 @@ export class TurnManager {
         },
         signal: controller.signal,
       });
+      // How full the session is now: a long one is folded while idle (see `foldIdle`).
+      if (!backup && !inRoom && outcome.ok && outcome.contextTokens !== undefined) {
+        await threads.setSessionTokens(thread.id, outcome.contextTokens);
+      }
       // A run that said nothing of its cost leaves the total as it was: the next run counts it.
       if (!backup && outcome.sessionCostUsd != null) {
         sessionCost = outcome.sessionCostUsd;

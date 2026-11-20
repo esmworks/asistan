@@ -568,6 +568,13 @@
       "when": 1795190795952,
       "tag": "0080_thread_title_auto",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795191732488,
+      "tag": "0081_idle_compact",
+      "breakpoints": true
     }
   ]
 }

@@ -258,7 +258,14 @@ export function runCost(total: number | null, before: number | null | undefined)
 
 /** `sessionCostUsd`: the session's running total after this run, when the engine keeps one. */
 export type TurnOutcome = (
-  | { ok: true; text: string; sessionId: string | null; costUsd: number | null }
+  | {
+      ok: true;
+      text: string;
+      sessionId: string | null;
+      costUsd: number | null;
+      /** How much of the model's context the session fills after this run, in tokens, when known. */
+      contextTokens?: number | null;
+    }
   | {
       ok: false;
       /**
@@ -404,6 +411,32 @@ export interface Completion {
   costUsd: number | null;
 }
 
+/** Folding a session's conversation into a summary while nobody waits on it. */
+export interface CompactRequest {
+  threadId: string;
+  botId: string;
+  model: string;
+  sessionId: string;
+  /** What the session had cost by its last run, so this run is priced as what it adds. */
+  sessionCostUsd: number | null;
+  compactWindow?: number;
+  /** The same folders the session's turns run in: a session is found by where it ran. */
+  sandbox: Sandbox;
+  locale: Locale;
+  signal: AbortSignal;
+}
+
+export type CompactOutcome =
+  | {
+      ok: true;
+      sessionId: string;
+      /** The session's size once folded, when the engine says. */
+      contextTokens: number | null;
+      costUsd: number | null;
+      sessionCostUsd: number | null;
+    }
+  | { ok: false; message: string; costUsd: number | null; sessionCostUsd: number | null };
+
 export interface Engine {
   readonly kind: string;
   run(req: TurnRequest): Promise<TurnOutcome>;
@@ -417,6 +450,8 @@ export interface Engine {
   gate?(req: GateRequest): Promise<GateVerdict>;
   /** One answer without tools or a session; throws when the model cannot answer. */
   complete?(req: CompleteRequest): Promise<Completion>;
+  /** Folds the session into a summary now, so the next message does not wait for it. */
+  compact?(req: CompactRequest): Promise<CompactOutcome>;
 }
 
 export type ModelTest = { ok: true } | { ok: false; detail: string };

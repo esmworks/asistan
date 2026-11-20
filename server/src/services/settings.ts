@@ -95,6 +95,12 @@ export const Settings = z.object({
     .refine((n) => (MEMORY_REVIEW_STEPS as readonly number[]).includes(n))
     .default(20),
   /**
+   * A long conversation is folded into a summary while it is idle, before it reaches the size where
+   * the next message would wait for the fold. Off by default: after a pause the model reads the
+   * whole conversation again without its cache, which costs.
+   */
+  idleCompact: z.boolean().default(false),
+  /**
    * A conversation's title is written by the bot's model once its first answer is in, instead of
    * staying the first message's opening words.
    */

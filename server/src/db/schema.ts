@@ -127,6 +127,8 @@ export const threads = pgTable(
     engineSessionId: text('engine_session_id'),
     /** What the engine session had cost by its last run; the next run's cost is what it adds. */
     engineSessionCostUsd: doublePrecision('engine_session_cost_usd'),
+    /** How full the engine session's context was after its last run, in tokens; null when unknown. */
+    engineSessionTokens: integer('engine_session_tokens'),
     /**
      * Outside text the engine session has read (a mail, a webhook's body or post, a watched page,
      * or a report written from one); null when it has read none. A turn nobody watches that goes
@@ -279,7 +281,9 @@ export const turns = pgTable(
       .references(() => bots.id, { onDelete: 'cascade' }),
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
     // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
-    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
+    // `upkeep`: the server's own work on a conversation (folding it while idle), kept for its cost;
+    // it is written once done and never queued.
+    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket', 'upkeep'] }).notNull(),
     /** The person the turn works for: who wrote, or whose request a bot passed on; null when nobody asked. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status', {

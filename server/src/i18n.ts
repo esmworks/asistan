@@ -320,6 +320,8 @@ const tr = {
   'thread.forkTitle': '{title} (dal)',
   'thread.untitled': 'Sohbet',
   'turn.compacted': 'Sohbet buraya kadar özetlendi; bot öncesini bu özetten hatırlıyor.',
+  'turn.compactedIdle':
+    'Sohbet boşta beklerken buraya kadar özetlendi; bot öncesini bu özetten hatırlıyor ve bir sonraki mesaj özetlemeyi beklemez.',
   'turn.toolOff': 'Bu araç bu botta kapalı (botun ayarları → Araçlar).',
   'turn.safetyFloor':
     'Bu komut hiçbir izinle çalıştırılmaz: bir diski ya da bütün ev klasörünü silebilir, bilgisayarı kapatabilir. Daha dar bir hedefle (belirli bir klasör ya da dosya) yeniden dene.',
@@ -1794,6 +1796,8 @@ const en: Catalog<ServerKey> = {
   'thread.forkTitle': '{title} (branch)',
   'thread.untitled': 'Conversation',
   'turn.compacted': 'The conversation up to here was summarised; the bot remembers it from that summary.',
+  'turn.compactedIdle':
+    'While the conversation was idle it was summarised up to here; the bot remembers it from that summary, and the next message does not wait for a summary.',
   'turn.toolOff': "This tool is off for this bot (the bot's settings → Tools).",
   'turn.safetyFloor':
     'This command is never run, whatever is allowed: it could wipe a disk or a whole home folder, or stop the machine. Try again with a narrower target (a particular folder or file).',
