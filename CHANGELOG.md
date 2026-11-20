@@ -7,6 +7,9 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A bot that hands work to another bot can send files with it (`bot_send` takes `files`): the other bot gets its own
+  copies under `received/<sender>/` in its conversation folder and reads where they are. The bot answering can send
+  files back with its answer (`reply_files`), and the asking bot reads where the copies landed.
 - A daily spending limit for the whole server beside the monthly one (Settings → Usage), and daily and monthly limits
   for each bot in its advanced settings, with what it spent today and this month. A turn that would go past one does
   not start and says which limit stopped it and where to change it. Another bot cannot set a bot's limits.

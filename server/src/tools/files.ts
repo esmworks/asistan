@@ -1,7 +1,7 @@
 import { constants, realpathSync, statSync } from 'node:fs';
-import { copyFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { Bot, MessageFile, Thread } from '@yumakbot/shared';
+import { MAX_UPLOAD_BYTES, type Bot, type MessageFile, type Thread } from '@yumakbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
@@ -84,6 +84,60 @@ export async function shareableFile(
     }
   }
   return { name: basename(file), size, path: relative(workspaces, file) };
+}
+
+/** Files one bot handed another: as the receiver's messages show them, and where it finds them. */
+export interface HandedFiles {
+  files: MessageFile[];
+  /** Each copy as the receiver names it: relative to its working folder, or absolute when that is a project folder. */
+  shown: string[];
+}
+
+/**
+ * Copies files from one bot's folders into another bot's conversation folder, under
+ * `received/<sender>/`, so the receiver works on its own copies and the sender's later edits do
+ * not change what was handed over. Each file must be one the sender may send.
+ */
+export async function handFiles(opts: {
+  dataDir: string;
+  from: Pick<Bot, 'id' | 'name' | 'groupId' | 'projectDir'>;
+  fromThreadId: string;
+  to: Pick<Bot, 'id' | 'groupId' | 'projectDir'>;
+  toThreadId: string;
+  paths: string[];
+  t: T;
+}): Promise<HandedFiles> {
+  const { dataDir, from, to, t } = opts;
+  const sources = opts.paths.map((p) => botFile(dataDir, from, opts.fromThreadId, p, t));
+  const big = sources.find((s) => s.size > MAX_UPLOAD_BYTES);
+  if (big)
+    throw new Error(t('tool.handFileTooBig', { name: basename(big.full), mb: MAX_UPLOAD_BYTES / 1_048_576 }));
+  const threadDir = real(workspacePaths(dataDir, to.id, opts.toThreadId, to.groupId).threadDir)!;
+  const dir = join(threadDir, 'received', safeFileName(from.name) || from.id);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const workspaces = real(resolve(dataDir, 'workspaces'))!;
+  const out: HandedFiles = { files: [], shown: [] };
+  for (const { full, size } of sources) {
+    const target = await copyFree(full, dir);
+    out.files.push({ name: basename(target), size, path: relative(workspaces, target) });
+    out.shown.push(to.projectDir ? target : relative(threadDir, target));
+  }
+  return out;
+}
+
+/** Copies a file into `dir` under its own name, or `name (2).ext` and on when that is taken. */
+async function copyFree(file: string, dir: string): Promise<string> {
+  const base = safeFileName(basename(file));
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : base.replace(/(\.[^.]*)?$/, ` (${n})$1`);
+    const target = join(dir, name);
+    try {
+      await copyFile(file, target, constants.COPYFILE_EXCL);
+      return target;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || n >= 1000) throw err;
+    }
+  }
 }
 
 /** What a card's conversation needs to be known by. */

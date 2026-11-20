@@ -619,6 +619,11 @@ export const jobs = pgTable(
     finishedAt: ts('finished_at'),
     /** When the reply was handed to the sender; replies wait for the others of their turn. */
     deliveredAt: ts('delivered_at'),
+    /**
+     * Files the target handed back with its answer, as the sender finds them: copies in the
+     * sender's conversation folder.
+     */
+    replyFiles: jsonb('reply_files').$type<string[]>().notNull().default([]),
   },
   (t) => [
     index('jobs_root_idx').on(t.rootId),

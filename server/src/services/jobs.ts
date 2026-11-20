@@ -7,6 +7,9 @@ import type { TurnOutcome } from '../engine/types';
 import type { TurnRow } from '../runtime/turns';
 import { HttpError, newId, notFound, truncate } from '../util';
 import type { Services } from '.';
+import { handFiles, type HandedFiles } from '../tools/files';
+import type { T } from '../i18n';
+import { basename } from 'node:path';
 import { toMessage } from './mappers';
 import { serverTranslator } from './settings';
 
@@ -47,6 +50,8 @@ export class JobService {
      * turn counts as having read them too.
      */
     outside?: OutsideTrigger | null;
+    /** Hands files to the target's conversation once it is known; they go with the request. */
+    attach?: (toThreadId: string) => Promise<HandedFiles>;
   }): Promise<JobRow> {
     const { from, to } = opts;
     if (!this.services.bots.canMessage(from, to)) {
@@ -85,6 +90,8 @@ export class JobService {
       : [];
     const person = fromTurn?.userId ?? (await this.services.access.botOwner(from.id));
     const toThread = await this.services.threads.peerThread(to.id, from.id, person);
+    // Copied before anything is recorded: a file that cannot go stops the request, not half of it.
+    const handed = opts.attach ? await opts.attach(toThread.id) : null;
     const job: JobRow = {
       id: newId(),
       rootId,
@@ -102,6 +109,7 @@ export class JobService {
       createdAt: new Date(),
       finishedAt: null,
       deliveredAt: null,
+      replyFiles: [],
     };
     await this.ctx.db.insert(schema.jobs).values(job);
     await this.services.threads.addMessage({
@@ -109,7 +117,11 @@ export class JobService {
       role: 'user',
       author: `bot:${from.id}`,
       text: opts.text,
-      props: { jobId: job.id, ...(opts.outside && { outside: opts.outside }) },
+      props: {
+        jobId: job.id,
+        ...(opts.outside && { outside: opts.outside }),
+        ...(handed?.files.length && { files: handed.files }),
+      },
     });
     // One-line marker in the sender's thread; expands to the bot conversation.
     await this.services.threads.addMessage({
@@ -119,10 +131,13 @@ export class JobService {
       text: t('job.marker', { to: to.name }),
       props: { jobId: job.id, peerBotId: to.id, peerThreadId: toThread.id, count: 1, direction: 'out' },
     });
+    const filesNote = handed?.shown.length
+      ? `\n\n${t('job.files', { files: handed.shown.map((f) => `- ${f}`).join('\n') })}`
+      : '';
     const prompt = t(opts.kind === 'notify' ? 'job.notice' : 'job.request', {
       from: from.name,
       text: opts.text,
-      note: approvalNote,
+      note: approvalNote + filesNote,
     });
     await this.services.turns.enqueue({
       threadId: toThread.id,
@@ -133,6 +148,33 @@ export class JobService {
       outside: opts.outside ?? null,
     });
     return job;
+  }
+
+  /**
+   * Hands files back with the answer to a request the bot is working on: copies land in the
+   * sender's conversation folder, and the sender reads where with the answer.
+   */
+  async replyFiles(jobId: string, by: Bot, byThreadId: string, paths: string[], t: T): Promise<string[]> {
+    const job = await this.get(jobId);
+    if (job.toBotId !== by.id || job.toThreadId !== byThreadId || job.kind === 'notify') {
+      throw new HttpError(409, 'error.notAnswering');
+    }
+    if (job.status !== 'pending') throw new HttpError(409, 'error.jobAnswered');
+    const from = await this.services.bots.get(job.fromBotId);
+    const handed = await handFiles({
+      dataDir: this.ctx.config.dataDir,
+      from: by,
+      fromThreadId: byThreadId,
+      to: from,
+      toThreadId: job.fromThreadId,
+      paths,
+      t,
+    });
+    await this.ctx.db
+      .update(schema.jobs)
+      .set({ replyFiles: sql`${schema.jobs.replyFiles} || ${JSON.stringify(handed.shown)}::jsonb` })
+      .where(eq(schema.jobs.id, job.id));
+    return handed.shown.map((f) => basename(f));
   }
 
   /** Turn hook: when a job's target turn ends, deliver the reply to the sender. */
@@ -289,11 +331,14 @@ export class JobService {
     const parts: string[] = [];
     for (const j of claimed) {
       const to = await this.services.bots.get(j.toBotId).catch(() => null);
+      const files = j.replyFiles.length
+        ? `\n\n${t('job.replyFiles', { files: j.replyFiles.map((f) => `- ${f}`).join('\n') })}`
+        : '';
       parts.push(
         t('job.reply', {
           to: to?.name ?? '?',
           status: t(j.status === 'done' ? 'job.done' : 'job.failed'),
-          reply: j.reply ?? '',
+          reply: (j.reply ?? '') + files,
         }),
       );
     }

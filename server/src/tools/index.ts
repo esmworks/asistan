@@ -36,7 +36,7 @@ import { isServerKey, type T } from '../i18n';
 import { errorText, HttpError, newId, notFound, truncate } from '../util';
 import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
-import { pageImageTool, sendFileTool, showPageTool } from './files';
+import { handFiles, pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
@@ -241,6 +241,7 @@ export type ToolName =
   | 'bot_send'
   | 'bot_status'
   | 'bot_stop'
+  | 'reply_files'
   | 'bot_conversations_read'
   | 'bot_create'
   | 'models_list'
@@ -1196,12 +1197,18 @@ export class ToolFactory {
           message: z.string().min(1).max(20_000),
           expect_reply: z.boolean().default(true),
           approval_id: z.string().optional(),
+          files: z.array(z.string().max(2000)).max(10).optional(),
         },
-        async ({ bot: ref, message, expect_reply, approval_id }) => {
+        async ({ bot: ref, message, expect_reply, approval_id, files }) => {
           const to = await reachBot(ref, 'chat');
           // A paused bot takes no work; the asking bot hears so and can tell its person.
           if (await s.bots.isPaused(to)) return t('tool.botPaused', { name: to.name });
+          const dataDir = this.ctx.config.dataDir;
           const job = await s.jobs.send({
+            ...(files?.length && {
+              attach: (toThreadId: string) =>
+                handFiles({ dataDir, from: bot, fromThreadId: thread.id, to, toThreadId, paths: files, t }),
+            }),
             from: bot,
             fromThreadId: thread.id,
             fromTurnId: turn.id,
@@ -1236,6 +1243,20 @@ export class ToolFactory {
         },
         'read',
       ),
+      // Answering another bot's request: files go back with the answer, to the bot that asked.
+      ...(turn.jobId && thread.kind === 'bot'
+        ? [
+            def(
+              'reply_files',
+              { paths: z.array(z.string().max(2000)).min(1).max(10) },
+              async ({ paths }) => {
+                const names = await s.jobs.replyFiles(turn.jobId!, bot, thread.id, paths, t);
+                return t('tool.replyFilesAdded', { names: names.join(', ') });
+              },
+              'internal',
+            ),
+          ]
+        : []),
       def(
         'bot_stop',
         { job_id: z.string() },

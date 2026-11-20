@@ -297,6 +297,8 @@ const tr = {
   'discord.answered': '{result} ({name})',
   'discord.cardInApp': 'Bu adımı Yumak Bot uygulamasında botu değiştirebilen biri onaylar.',
   'error.cannotMessage': '{from}, {to} adlı bota yazamaz (kendisi ya da arşivlenmiş bir bot)',
+  'error.notAnswering': 'Bu sohbette cevapladığın bir iş yok',
+  'error.jobAnswered': 'Bu iş zaten cevaplandı',
   'error.chainTooDeep': 'Zincir çok derin ({depth}); döngü olabilir, iş gönderilmedi',
   'error.chainBudget': 'Bu iş zincirinin bütçesi doldu; daha fazla bot mesajı gönderilemez',
   'error.approvalNotVerified': 'Onay kaydı bulunamadı ya da kullanıcı onaylamamış',
@@ -443,6 +445,8 @@ const tr = {
     '{from} sana yazdı:\n\n{text}{note}\n\n(Bu bir bot mesajı. Cevabın {from} adlı bota otomatik iletilecek.)',
   'job.notice':
     '{from} sana bilgi verdi:\n\n{text}{note}\n\n(Bu bir bot mesajı. Cevap beklenmiyor ve yazdığın {from} adlı bota iletilmez; bir şey yapman gerekmiyorsa yalnızca NO_REPLY yaz.)',
+  'job.files': 'Bu işle gelen dosyaların kopyaları:\n{files}',
+  'job.replyFiles': 'Cevapla gelen dosyaların kopyaları:\n{files}',
   'job.emptyReply': '(boş cevap)',
   'job.failedReply': '(cevap verilemedi: {message})',
   'job.done': 'tamamlandı',
@@ -877,7 +881,9 @@ const tr = {
   'thread.openedNote': 'Bot yeni bir sohbet açtı: {title}',
   'prompt.openedBySelf': 'Bu sohbeti başka bir konuşmadan sen açtın, şu işi burada yapmak için:\n\n{message}',
   'tool.bot_send':
-    'Başka bir bota mesaj/iş gönder. O bot bu sohbeti görmez: mesaj işi yapması için gereken her şeyi (bağlam, adlar, dosya yolları, beklenen sonuç) kendi içinde taşımalı. Hemen döner; cevap sana yeni bir mesaj olarak gelir. Yalnızca bilgi veriyorsan ve cevap gerekmiyorsa expect_reply: false ver; o zaman cevap gelmez. Kullanıcının verdiği bir onayı iletmek için approval_id ver (sunucu doğrular).',
+    'Başka bir bota mesaj/iş gönder. O bot bu sohbeti görmez: mesaj işi yapması için gereken her şeyi (bağlam, adlar, dosya yolları, beklenen sonuç) kendi içinde taşımalı. Hemen döner; cevap sana yeni bir mesaj olarak gelir. Yalnızca bilgi veriyorsan ve cevap gerekmiyorsa expect_reply: false ver; o zaman cevap gelmez. Kullanıcının verdiği bir onayı iletmek için approval_id ver (sunucu doğrular). files: işle birlikte gidecek dosyalar (klasörlerindeki yollar, en çok 10); o bot kendi kopyalarını alır ve nerede olduklarını görür.',
+  'tool.reply_files':
+    'Sana iş veren bota cevabınla birlikte dosya gönder: paths klasörlerindeki dosyalar (en çok 10). Kopyaları o botun sohbet klasörüne gider; cevabını yine yazı olarak ver.',
   'tool.bot_status': 'Bir botun şu an çalışıp çalışmadığını gör.',
   'tool.bot_stop': 'Gönderdiğin bir işi durdur.',
   'tool.bot_conversations_read': 'Bir botun son yazışmalarını oku (yönetici).',
@@ -1172,6 +1178,8 @@ const tr = {
   'tool.deleted': 'Silindi.',
   'tool.memoryForgotOther': '{bot} botunun notu silindi. {bot} bu bilgiyi artık hiçbir yerden göremez.',
   'tool.noPeers': 'Yazabileceğin bot yok.',
+  'tool.replyFilesAdded': 'Cevabınla gidecek: {names}. Cevabını yazı olarak vermeyi sürdür.',
+  'tool.handFileTooBig': '{name} çok büyük; bir bota en çok {mb} MB dosya verilebilir.',
   'tool.botPaused':
     '{name} duraklatılmış ve iş almıyor. Kişiye söyle; isterse onu sürdürür ya da işi başka bir bota verirsin.',
   'tool.sent': '{to} adlı bota gönderildi (iş {id}). Cevap gelince sana iletilecek.',
@@ -1738,6 +1746,8 @@ const en: Catalog<ServerKey> = {
   'discord.answered': '{result} ({name})',
   'discord.cardInApp': 'Someone who may change the bot approves this step in the Yumak Bot app.',
   'error.cannotMessage': '{from} cannot write to {to} (it is itself or an archived bot)',
+  'error.notAnswering': 'There is no work you are answering in this conversation',
+  'error.jobAnswered': 'This work is already answered',
   'error.chainTooDeep': 'Chain too deep ({depth}); it may be a loop, the job was not sent',
   'error.chainBudget': "This job chain's budget is used up; no more bot messages can be sent",
   'error.approvalNotVerified': 'Approval record not found, or the user has not approved it',
@@ -1882,6 +1892,8 @@ const en: Catalog<ServerKey> = {
     '{from} wrote to you:\n\n{text}{note}\n\n(This is a bot message. Your reply will be passed to {from} automatically.)',
   'job.notice':
     '{from} let you know:\n\n{text}{note}\n\n(This is a bot message. No reply is due, and what you write is not passed to {from}; if nothing needs doing, write only NO_REPLY.)',
+  'job.files': 'Copies of the files that came with this work:\n{files}',
+  'job.replyFiles': 'Copies of the files that came with the answer:\n{files}',
   'job.emptyReply': '(empty reply)',
   'job.failedReply': '(no reply: {message})',
   'job.done': 'done',
@@ -2312,7 +2324,9 @@ const en: Catalog<ServerKey> = {
   'thread.openedNote': 'The bot opened a new conversation: {title}',
   'prompt.openedBySelf': 'You opened this conversation from another one, to do this here:\n\n{message}',
   'tool.bot_send':
-    'Send a message/task to another bot. That bot does not see this chat: the message must carry everything it needs for the work (context, names, file paths, the result you expect). Returns at once; the reply comes to you as a new message. When you only pass on information and need no answer, set expect_reply: false; then no reply comes back. To pass on an approval the user gave, include approval_id (the server verifies it).',
+    'Send a message/task to another bot. That bot does not see this chat: the message must carry everything it needs for the work (context, names, file paths, the result you expect). Returns at once; the reply comes to you as a new message. When you only pass on information and need no answer, set expect_reply: false; then no reply comes back. To pass on an approval the user gave, include approval_id (the server verifies it). files: files to go with the work (paths in your folders, up to 10); that bot gets its own copies and sees where they are.',
+  'tool.reply_files':
+    "Send files back with your answer to the bot that gave you this work: paths are files in your folders (up to 10). Copies go to that bot's conversation folder; still give your answer as text.",
   'tool.bot_status': 'See whether a bot is working right now.',
   'tool.bot_stop': 'Stop a job you sent.',
   'tool.bot_conversations_read': "Read a bot's recent conversations (manager).",
@@ -2611,6 +2625,8 @@ const en: Catalog<ServerKey> = {
   'tool.deleted': 'Deleted.',
   'tool.memoryForgotOther': "{bot}'s note is deleted. {bot} can no longer see this from anywhere.",
   'tool.noPeers': 'There are no bots you can write to.',
+  'tool.replyFilesAdded': 'Going with your answer: {names}. Still give your answer as text.',
+  'tool.handFileTooBig': '{name} is too big; a bot can be handed files of up to {mb} MB.',
   'tool.botPaused':
     '{name} is paused and takes no work. Tell the person; they may resume it, or you can hand the work to another bot.',
   'tool.sent': 'Sent to {to} (job {id}). The reply will be passed to you when it arrives.',
