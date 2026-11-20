@@ -2153,6 +2153,9 @@ export const tr = {
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
+  'whatsapp.autoSend': 'Botlar onay sormadan gönderebilsin',
+  'whatsapp.autoSendHint':
+    'Tam erişimdeki bir bot, sizin istediğiniz işte ya da kendisine gelen bir yanıta cevap verirken mesajı kart açmadan gönderir; giden her mesaj konuşmaya yazılır. Dosya eklenen, başka bir sohbete giden ya da bir sohbete saatte 5’ten fazla giden mesajlar yine kartla sorulur.',
   'whatsapp.chatsHint':
     'İstediğinizde botlarınız bu hesabın kişi ve grup sohbetlerini okur, mesaj taslağı hazırlar; mesaj ancak siz onaylayınca gider. Mesajlar açıldığı andan itibaren 30 gün şifreli saklanır.',
   'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',

@@ -1129,6 +1129,7 @@ export const whatsappMessages = pgTable(
  */
 export const whatsappDrafts = pgTable('whatsapp_drafts', {
   id: text('id').primaryKey(),
+  /** Its card; empty for a message a bot sent at once, which the person let go without one. */
   approvalId: text('approval_id').notNull(),
   botId: text('bot_id')
     .notNull()

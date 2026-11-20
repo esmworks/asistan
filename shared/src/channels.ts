@@ -55,6 +55,11 @@ export const WhatsAppSet = z.object({
    * stays as it is.
    */
   chats: z.boolean().optional(),
+  /**
+   * Whether a bot at full access may send a message without its card: when the person asked for
+   * the work, or as the answer to the chat whose reply woke it. Left out, it stays as it is.
+   */
+  autoSend: z.boolean().optional(),
 });
 export type WhatsAppSet = z.infer<typeof WhatsAppSet>;
 
@@ -67,6 +72,8 @@ export interface WhatsAppStatus {
   notices: boolean;
   /** Whether the bots may read the account's chats and draft messages in a conversation. */
   chats: boolean;
+  /** Whether a bot at full access may send a message without its card. */
+  autoSend: boolean;
   /** The linked account's number, once linked. */
   linked: string | null;
   /** The QR code to scan while linking, as a PNG data URL. */

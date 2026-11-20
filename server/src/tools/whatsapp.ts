@@ -69,6 +69,14 @@ export function whatsappTools(opts: {
     return every;
   };
 
+  /** Whether a message to `chat` goes at once, without a card. */
+  const sendsAtOnce = async (chat: string) => {
+    if (bot.permissionMode !== 'auto' && bot.permissionMode !== 'review') return false;
+    if (!(await wa.autoSendOn())) return false;
+    if (await opts.asked()) return true;
+    return (await opts.woken()) === chat;
+  };
+
   /** A file the bot names, when it is inside one of its own folders. */
   const ownFile = async (name: string): Promise<string | null> => {
     const full = realPath(isAbsolute(name) ? name : resolve(cwd, name));
@@ -205,6 +213,14 @@ export function whatsappTools(opts: {
         if (!text.trim() && !path) return t('tool.whatsappEmpty');
         const number = chat.replace(/@.*$/, '');
         const to = known.name ? `${known.name} (${number})` : `+${number}`;
+        // Without a card only when the person let the bots send so, the bot is at full access, no
+        // file goes along, and it is the person's own work or the answer to the chat that woke it.
+        if (!path && (await sendsAtOnce(chat))) {
+          const thread = await s.threads.main(bot.id, person);
+          const sent = await wa.sendNow({ botId: bot.id, threadId: thread.id, chat, text: text.trim() });
+          if (sent === 'sent') return t('tool.whatsappSentNow', { to });
+          if (sent !== 'card') return t('whatsapp.draftFailed', { message: sent.failed });
+        }
         const summary = [
           t('whatsapp.draftCard', { to, text: text.trim() }),
           ...(path ? ['', t('whatsapp.draftCardFile', { name: basename(path) })] : []),

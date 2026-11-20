@@ -52,7 +52,7 @@ function WhatsAppCard() {
   // The form starts again from what is saved whenever that changes (saved, or disconnected).
   return (
     <WhatsAppForm
-      key={`${status.mode}:${status.phone}:${status.botId}:${status.chats}`}
+      key={`${status.mode}:${status.phone}:${status.botId}:${status.chats}:${status.autoSend}`}
       status={status}
       bots={bots}
     />
@@ -68,9 +68,10 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const [botId, setBotId] = useState(status.botId ?? live.find((b) => b.isManager)?.id ?? live[0]?.id ?? '');
   const [notices, setNotices] = useState(status.notices);
   const [chats, setChats] = useState(status.chats);
+  const [autoSend, setAutoSend] = useState(status.autoSend);
   const put = (s: WhatsAppStatus) => qc.setQueryData(['whatsapp'], s);
   const save = useMutation({
-    mutationFn: () => api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats }),
+    mutationFn: () => api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats, autoSend }),
     onSuccess: (s) => {
       put(s);
       toast.success(t('whatsapp.saved'));
@@ -80,7 +81,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const link = useMutation({
     mutationFn: async () => {
       // What is in the form is what the new link is for.
-      await api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats });
+      await api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats, autoSend });
       return api.linkWhatsapp();
     },
     onSuccess: put,
@@ -169,6 +170,13 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
             <span className="block text-xs text-muted-foreground">{t('whatsapp.chatsHint')}</span>
           </span>
           <Switch checked={chats} onCheckedChange={setChats} />
+        </label>
+        <label className="flex items-center justify-between gap-4">
+          <span>
+            <span className="block text-sm">{t('whatsapp.autoSend')}</span>
+            <span className="block text-xs text-muted-foreground">{t('whatsapp.autoSendHint')}</span>
+          </span>
+          <Switch checked={autoSend} onCheckedChange={setAutoSend} />
         </label>
 
         {state === 'linking' && (

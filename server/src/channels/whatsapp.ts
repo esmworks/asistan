@@ -63,6 +63,8 @@ type Settings = {
   notices?: boolean;
   /** Whether the bots may read every chat and draft messages in a conversation. */
   chats?: boolean;
+  /** Whether a bot at full access may send a message without its card. */
+  autoSend?: boolean;
   threadId?: string;
   /** When the newest message read here was written, in seconds: older ones handed again are not new. */
   seenAt?: number;
@@ -90,6 +92,11 @@ const CHAT_KEEP_MS = 30 * 24 * 3600_000;
  * reads the chat: the answer to what it asked comes back to it.
  */
 const REPLY_WAKE_MS = 7 * 24 * 3600_000;
+/**
+ * Messages bots may send to one chat in an hour without a card: two bots answering each other's
+ * automatic replies stop here, and the next one waits on a card.
+ */
+const AUTO_SEND_MAX = 5;
 /** How often what is older than that is dropped. */
 const PRUNE_EVERY_MS = 6 * 3600_000;
 /** Where a Status post goes. */
@@ -526,6 +533,7 @@ export class WhatsAppChannel {
       botId: row?.botId ?? null,
       notices: s.notices !== false,
       chats: s.chats === true,
+      autoSend: s.autoSend === true,
       linked: (row?.account as { number?: string } | undefined)?.number ?? null,
       qr: this.state === 'linking' && this.qr ? await qrImage(this.qr) : null,
       error: row?.error ?? null,
@@ -543,6 +551,7 @@ export class WhatsAppChannel {
       phone: input.phone,
       notices: input.notices,
       chats: input.chats ?? now.chats === true,
+      autoSend: input.autoSend ?? now.autoSend === true,
     };
     if (row) {
       await this.ctx.db
@@ -1008,6 +1017,60 @@ export class WhatsAppChannel {
     await this.saveSettings(row, { chats: on });
     this.allChats = on;
     this.changed();
+  }
+
+  /** Whether a bot at full access may send a message without its card. */
+  async autoSendOn(): Promise<boolean> {
+    return ((await this.row())?.settings as Settings | undefined)?.autoSend === true;
+  }
+
+  /**
+   * Sends a bot's message at once, without a card, and notes in the conversation what went out:
+   * the person's record of it. `card` when it should go on a card after all: not connected, or
+   * the chat had its share of messages without one this hour.
+   */
+  async sendNow(d: { botId: string; threadId: string; chat: string; text: string }) {
+    if (this.state !== 'connected' || !this.socket) return 'card' as const;
+    const [{ n }] = (await this.ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.whatsappDrafts)
+      .where(
+        and(
+          eq(schema.whatsappDrafts.chat, d.chat),
+          eq(schema.whatsappDrafts.approvalId, ''),
+          gt(schema.whatsappDrafts.createdAt, new Date(Date.now() - 3600_000)),
+        ),
+      )) as [{ n: number }];
+    if (n >= AUTO_SEND_MAX) return 'card' as const;
+    const [draft] = await this.ctx.db
+      .insert(schema.whatsappDrafts)
+      .values({
+        id: newId(),
+        approvalId: '',
+        botId: d.botId,
+        threadId: d.threadId,
+        kind: 'message',
+        chat: d.chat,
+        text: d.text,
+        approve: '',
+        status: 'sent',
+      })
+      .returning();
+    const t = await this.services.settings.translator();
+    try {
+      await this.sendDraft(draft!, t);
+    } catch (err) {
+      await this.ctx.db
+        .update(schema.whatsappDrafts)
+        .set({ status: 'failed' })
+        .where(eq(schema.whatsappDrafts.id, draft!.id));
+      await this.draftNote(draft!, 'failed', errorText(err));
+      return { failed: errorText(err) };
+    }
+    await this.draftNote(draft!, 'sent').catch((err: unknown) =>
+      console.warn('whatsapp sent note', errorText(err)),
+    );
+    return 'sent' as const;
   }
 
   /**
