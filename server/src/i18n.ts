@@ -376,6 +376,9 @@ const tr = {
   'turn.backupModel': 'Kullanım sınırı doldu; bu iş yedek model {model} ile sürüyor.',
   'turn.contextHandoff':
     'Sohbet modelin bağlamına sığmıyor; son konuşma yeni bir oturuma aktarılıp devam ediliyor.',
+  'turn.backupBilling':
+    'Sağlayıcının bakiyesi bitti; bu iş yedek model {model} ile sürüyor. Bakiyeyi sağlayıcının hesabından yükle.',
+  'turn.retryCrash': 'Claude Code işlemi beklenmedik biçimde kapandı; aynı modelle bir kez daha deneniyor.',
   'turn.backupBusy': 'Model şu an yanıt veremiyor; bu iş yedek model {model} ile sürüyor.',
   'turn.backupAuth':
     'Claude girişi artık geçerli değil; bu iş yedek model {model} ile sürüyor. Ayarlar → Bağlantı → Claude bölümünden yeniden giriş yap.',
@@ -1805,6 +1808,9 @@ const en: Catalog<ServerKey> = {
   'turn.backupModel': 'The usage limit is used up; this work goes on with the backup model {model}.',
   'turn.contextHandoff':
     "The conversation no longer fits the model's context; the recent exchange moves to a new session and the work goes on.",
+  'turn.backupBilling':
+    "The provider's balance is used up; this work goes on with the backup model {model}. Add credit in the provider's account.",
+  'turn.retryCrash': 'The Claude Code process stopped unexpectedly; trying the same model once more.',
   'turn.backupBusy': 'The model cannot answer right now; this work goes on with the backup model {model}.',
   'turn.backupAuth':
     'The Claude sign-in no longer works; this work goes on with the backup model {model}. Sign in again in Settings → Connection → Claude.',

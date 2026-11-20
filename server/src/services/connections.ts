@@ -147,6 +147,58 @@ const strings = (v: unknown): string[] =>
  * every field they name; a field is required when `allOf` or every alternative requires it.
  */
 export function modelSchema(raw: Record<string, unknown>): Record<string, unknown> {
+  return plainSubschemas(flattenTopLevel(raw));
+}
+
+/**
+ * Keywords whose value is one subschema, and those holding a list of them. `true` and `false` are
+ * valid JSON Schema in their place, but a model API that expects objects there (Gemini's among
+ * them) rejects the whole tool list for one such value.
+ */
+const ONE_SUBSCHEMA = ['items', 'contains', 'propertyNames', 'not', 'if', 'then', 'else'];
+const MANY_SUBSCHEMAS = ['anyOf', 'oneOf', 'allOf', 'prefixItems'];
+const NAMED_SUBSCHEMAS = ['properties', 'patternProperties', '$defs', 'definitions'];
+
+/**
+ * A schema with `true`/`false` subschemas written as objects: `true` (anything) becomes `{}`, and
+ * `false` (nothing) drops the property, alternative or keyword it stood for, since a field that
+ * can never be given is no field. Everything else stays as it came.
+ */
+export function plainSubschemas(schema: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...schema };
+  const plain = (v: unknown): unknown => (isRecord(v) ? plainSubschemas(v) : v);
+  for (const key of ONE_SUBSCHEMA) {
+    if (!(key in out)) continue;
+    const v = out[key];
+    if (v === true && ['items', 'contains', 'propertyNames'].includes(key)) out[key] = {};
+    else if (typeof v === 'boolean') delete out[key];
+    else out[key] = plain(v);
+  }
+  for (const key of MANY_SUBSCHEMAS) {
+    if (!Array.isArray(out[key])) continue;
+    const list = (out[key] as unknown[]).filter((v) => v !== false).map((v) => (v === true ? {} : plain(v)));
+    if (list.length) out[key] = list;
+    else delete out[key];
+  }
+  const dropped = new Set<string>();
+  for (const key of NAMED_SUBSCHEMAS) {
+    if (!isRecord(out[key])) continue;
+    const named: Record<string, unknown> = {};
+    for (const [name, v] of Object.entries(out[key] as Record<string, unknown>)) {
+      if (v === false) {
+        if (key === 'properties') dropped.add(name);
+      } else named[name] = v === true ? {} : plain(v);
+    }
+    out[key] = named;
+  }
+  if (dropped.size && Array.isArray(out.required)) {
+    out.required = (out.required as unknown[]).filter((n) => typeof n !== 'string' || !dropped.has(n));
+    if (!(out.required as unknown[]).length) delete out.required;
+  }
+  return out;
+}
+
+function flattenTopLevel(raw: Record<string, unknown>): Record<string, unknown> {
   const COMBINED = ['$schema', 'anyOf', 'oneOf', 'allOf'];
   const top = Object.fromEntries(Object.entries(raw).filter(([k]) => !COMBINED.includes(k)));
   // A branch may name a definition of the same schema; one named elsewhere cannot be merged.

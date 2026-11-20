@@ -530,7 +530,7 @@ export class ProviderKeyService {
     return {
       id,
       name: id,
-      api: 'openai-completions',
+      ...endpointApi(e.baseUrl),
       provider: e.id,
       baseUrl: e.baseUrl,
       reasoning: false,
@@ -544,6 +544,31 @@ export class ProviderKeyService {
       ),
     };
   }
+}
+
+/**
+ * How a model on a custom endpoint is reached. OpenAI's own server takes the Responses API, which
+ * its newer models need. Any other server is only known to speak chat completions, and the
+ * client's guesses for OpenAI-only fields are turned off for it: a stricter server answers an
+ * unknown `store` or the `developer` role with an error and the turn fails at once.
+ */
+export function endpointApi(baseUrl: string): Pick<Model<string>, 'api' | 'compat'> {
+  let host = '';
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    // An address that does not parse is treated like any other server.
+  }
+  if (host === 'api.openai.com') return { api: 'openai-responses' };
+  return {
+    api: 'openai-completions',
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      maxTokensField: 'max_tokens',
+    },
+  };
 }
 
 /**

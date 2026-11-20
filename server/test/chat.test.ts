@@ -1131,6 +1131,60 @@ describe('sohbet', () => {
     const msgs = await t.messages(thread.id);
     expect(msgs.find((m) => m.props.kind === 'backupModel')!.text).toContain('yeniden giriş');
     expect(msgs.some((m) => m.role === 'error')).toBe(false);
+    // The backup carried the turn, yet the account is still shown as signed out.
+    expect(t.info().claude.status).toBe('logged-out');
+  });
+
+  it('bakiyesi biten sağlayıcıda yedek model işi sürdürür ve bakiyeyi söyler', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.api('PATCH', '/api/settings', { backupModel: 'openrouter/yedek' });
+    await t.send(thread.id, '[bakiye] bak');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.model).toBe('openrouter/yedek');
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.kind === 'backupModel')!.text).toContain('bakiyesi bitti');
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
+  });
+
+  it('bakiye bitince yedek model yoksa tur hatayla biter', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[bakiye] bak');
+    await t.services.turns.idle();
+    const msgs = await t.messages(thread.id);
+    expect(msgs.some((m) => m.props.kind === 'backupModel')).toBe(false);
+    expect(msgs.at(-1)!.role).toBe('error');
+  });
+
+  it('Claude Code işlemi çökerse aynı model bir kez daha denenir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    await t.send(thread.id, '[çöktü] dükkan nasıl');
+    await t.services.turns.idle();
+    const [first, second] = t.engine.requests.slice(-2);
+    expect(second!.turnId).toBe(first!.turnId);
+    expect(second!.model).toBe(first!.model);
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.kind === 'retryCut')!.text).toContain('beklenmedik');
+    expect(msgs.some((m) => m.role === 'error')).toBe(false);
+  });
+
+  it('işlem iki kez çökerse yedek modele geçilir; bir şey değiştirmiş tur yeniden denenmez', async () => {
+    const bot = await t.bot({ permissionMode: 'auto' });
+    const thread = await main(bot.id);
+    await t.api('PATCH', '/api/settings', { backupModel: 'openrouter/yedek' });
+    await t.send(thread.id, '[çöktü-hep] bak');
+    await t.services.turns.idle();
+    const turnId = t.engine.requests.at(-1)!.turnId;
+    const models = t.engine.requests.filter((r) => r.turnId === turnId).map((r) => r.model);
+    expect(models).toHaveLength(3);
+    expect(models[2]).toBe('openrouter/yedek');
+
+    await t.send(thread.id, '[izin:Write {"file_path":"a"}] [çöktü-hep]');
+    await t.services.turns.idle();
+    const acted = t.engine.requests.at(-1)!.turnId;
+    expect(t.engine.requests.filter((r) => r.turnId === acted)).toHaveLength(1);
   });
 
   it('botun başlattığı alt ajan sohbette tek bir kartta izlenir', async () => {

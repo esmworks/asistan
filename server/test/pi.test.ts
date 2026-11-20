@@ -49,7 +49,7 @@ import {
 } from '../src/engine/pi-context';
 import { translator } from '../src/i18n';
 import { CONTEXT_FULL } from '../src/runtime/turns';
-import { endpointUrl, keySafeAt, unlistedModel } from '../src/services/keys';
+import { endpointApi, endpointUrl, keySafeAt, unlistedModel } from '../src/services/keys';
 import { getModels } from '@earendil-works/pi-ai/compat';
 import type { AppTool, PermissionAsk, PermissionAnswer, TurnRequest } from '../src/engine/types';
 import { testServer, type TestServer } from './helpers';
@@ -1380,6 +1380,8 @@ describe('sağlayıcı anahtarları', () => {
       expect(models.body).toEqual(['llama3', 'qwen3']);
       expect(await t.services.keys.customModel('custom-evdeki-ollama', 'qwen3')).toMatchObject({
         api: 'openai-completions',
+        // A server that is not OpenAI's gets none of the OpenAI-only request fields.
+        compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' },
         baseUrl: base,
         provider: 'custom-evdeki-ollama',
         contextWindow: 32_768,
@@ -1561,6 +1563,10 @@ describe('katalogda olmayan model', () => {
       cost: { input: 0, output: 0 },
     });
     expect(unlistedModel(listed, 'claude-opus-6')).toMatchObject({ api: 'anthropic-messages' });
+    expect(endpointApi('https://api.openai.com/v1')).toEqual({ api: 'openai-responses' });
+    expect(endpointApi('https://API.OPENAI.com/v1/').api).toBe('openai-responses');
+    expect(endpointApi('https://api.openai.com.evil.example/v1').api).toBe('openai-completions');
+    expect(endpointApi('http://127.0.0.1:11434/v1').compat).toMatchObject({ supportsStore: false });
     // Nothing alike: the first listed model stands in.
     expect(unlistedModel(listed, 'zzz')?.api).toBe('anthropic-messages');
     expect(unlistedModel([], 'gpt-6.2')).toBeUndefined();
