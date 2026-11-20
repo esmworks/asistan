@@ -90,6 +90,17 @@ export const Settings = z.object({
     .refine((n) => (MEMORY_REVIEW_STEPS as readonly number[]).includes(n))
     .default(20),
   /**
+   * The promise safety net: after a reply that sounds like a promise of later action ("I'll tell
+   * you tomorrow") with no routine set, a small model is asked, and a promise with a time gets a
+   * one-time routine. Off stops the extra call.
+   */
+  promiseKeeper: z.boolean().default(true),
+  /** The time of day, in the person's time zone, that a reminder of their own promise arrives. */
+  promiseRemindAt: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'validation.time')
+    .default('09:00'),
+  /**
    * How many turns may run at the same time across every bot; 0 leaves it to the server's
    * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
    */
@@ -138,6 +149,7 @@ export const PERSONAL_SETTINGS = [
   'helpWith',
   'aboutMe',
   'onboarded',
+  'promiseRemindAt',
   // The language the app and the bots speak with the person.
   'language',
 ] as const satisfies readonly (keyof Settings)[];
@@ -150,6 +162,7 @@ const Profile = Settings.pick({
   helpWith: true,
   aboutMe: true,
   onboarded: true,
+  promiseRemindAt: true,
   language: true,
 });
 

@@ -1,5 +1,6 @@
 import type {
   BotAction,
+  Pledge,
   PermissionSuggestions,
   BotTable,
   RowValues,
@@ -271,6 +272,10 @@ export interface Settings {
   maxTurns?: number;
   /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
   memoryReviewEvery?: number;
+  /** The promise safety net after a bot's reply; missing on older servers. */
+  promiseKeeper?: boolean;
+  /** The time of day a reminder of the person's own promise arrives (HH:MM); missing on older servers. */
+  promiseRemindAt?: string;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
@@ -703,6 +708,9 @@ export const api = {
     http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
   removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
   addTrapKey: (input: TrapKeyCreate) => http.post<ApiCredential>('/api/api-keys/trap', input),
+  promises: () => http.get<Pledge[]>('/api/promises'),
+  promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
+  promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),
   canaryAlarmSeen: (id: string) => http.post<{ ok: true }>(`/api/canary-alarms/${id}/seen`, {}),
   importApiKeys: (input: ApiKeyImport) => http.post<ApiKeyImportResult>('/api/api-keys/import', input),
   /** The page opened on its own, with the print dialog, to save it as a PDF. */

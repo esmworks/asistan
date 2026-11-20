@@ -7,6 +7,18 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Promises are kept. Bots say "I'll let you know tomorrow" and nothing made it happen, so the prompt now tells a bot
+  to set up a one-time routine in the same turn it promises something later. As a safety net, when a reply in a
+  person's own conversation or room sounds like such a promise and the turn set up no routine, a short list of Turkish
+  and English phrasings decides whether one small request on the bot's own account reads it. A promise with a time
+  gets a one-time routine that does it then and tells the person in the same conversation, and a line under the
+  reply ("Promise kept on the calendar: tomorrow 09:00 · Cancel") takes it back; a promise that waits for something
+  ("when the price drops") is only listed, with no time made up. Bots also record promises the person made to
+  others with a new `promise_track` tool, from the chat or from the person's own sent WhatsApp messages and mails
+  they read in a routine, and remind the person on the due day at a time they pick (09:00 by default). Open
+  promises, overdue first, are on the Today page with "Done" and "Drop", which also remove a routine still waiting;
+  each person sees only their own. The safety net can be turned off on the usage page, where its cost shows beside
+  the routine pre-check's.
 - A step can need two people. An "always ask" rule (with or without its amount limit) can now ask for a second
   person's yes, for things like a card filled above 1,000 or a `git push` that one person alone should not decide.
   The first yes works as before, from the app or a chat app; the card then waits as "waiting for a second person"

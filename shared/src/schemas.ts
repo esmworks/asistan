@@ -1466,6 +1466,8 @@ export const UsageReport = z.object({
       skipped: z.number().int(),
     })
     .optional(),
+  /** The promise safety net over the period, when it looked at any reply: its looks, what they cost, the promises found. */
+  promises: z.object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() }).optional(),
 });
 export type UsageReport = z.infer<typeof UsageReport>;
 
@@ -1529,6 +1531,32 @@ export const TodayReport = z.object({
   canaryAlarms: z.array(CanaryAlarm).optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
+
+/**
+ * Something said it would be done later: a bot's promise to the person (`bot`) or the person's own
+ * to someone else (`person`). Only the person it belongs to sees it.
+ */
+export const Pledge = z.object({
+  id: Id,
+  botId: Id,
+  threadId: Id.nullable(),
+  madeBy: z.enum(['bot', 'person']),
+  text: z.string(),
+  /** For the person's own promise: who it was made to. */
+  toWhom: z.string(),
+  /** When it falls due, or null; `dueHasTime` says whether that is a time of day or the end of a day. */
+  dueAt: z.string().nullable(),
+  dueHasTime: z.boolean(),
+  /** What it waits for instead of a time; empty when none. */
+  condition: z.string(),
+  /** Whether a one-time routine is set to keep it. */
+  scheduled: z.boolean(),
+  status: z.enum(['open', 'done', 'dropped']),
+  /** Open and past its time. */
+  overdue: z.boolean(),
+  createdAt: z.string(),
+});
+export type Pledge = z.infer<typeof Pledge>;
 
 /** A skill's name: what the bot asks for it by, in lower case with dashes (`weekly-report`). */
 export const SkillName = z

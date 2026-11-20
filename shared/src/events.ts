@@ -10,6 +10,7 @@ export type RefreshScope =
   | { scope: 'approvals' }
   | { scope: 'memory' }
   | { scope: 'routines' }
+  | { scope: 'promises' }
   | { scope: 'rules' }
   | { scope: 'vault' }
   | { scope: 'connections' }

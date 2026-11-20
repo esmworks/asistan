@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BotAvatar } from '@/components/BotAvatar';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useT } from '@/i18n';
 import { useFormat } from '@/lib/format';
@@ -82,6 +83,7 @@ export function UsageTab() {
       <PlanUsage plan={data?.plan} />
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
+      <PromiseNet net={data?.promises} />
       <Parallel parallel={data?.parallel} />
       <Storage />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
@@ -183,6 +185,33 @@ function RoutineGate({ gate }: { gate?: UsageReport['gate'] }) {
             </div>
           )}
           {gate.skipped > 0 && <div>{t('usage.gate.skipped', { count: gate.skipped })}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** The promise safety net: on or off, and over the period what its looks at replies cost. */
+function PromiseNet({ net }: { net?: UsageReport['promises'] }) {
+  const t = useT();
+  const f = useFormat();
+  const { data: settings } = useSettings();
+  const save = useSaveSettings();
+  const on = settings?.promiseKeeper;
+  // A server older than the net does not offer it.
+  if (on === undefined) return null;
+  return (
+    <Card title={t('usage.promises')}>
+      <Row label={t('usage.promises.on')} hint={t('usage.promises.hint')}>
+        <Switch
+          checked={on}
+          aria-label={t('usage.promises.on')}
+          onCheckedChange={(v) => save.mutate({ promiseKeeper: v })}
+        />
+      </Row>
+      {net && (
+        <div className="px-4 pb-4 text-sm text-muted-foreground tabular-nums">
+          {t('usage.promises.checks', { count: net.checks, cost: f.usd(net.costUsd), found: net.found })}
         </div>
       )}
     </Card>

@@ -63,6 +63,7 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { BotAvatar } from '@/components/BotAvatar';
 import { MessageFiles } from './Attachments';
+import { PromiseLine } from './Promises';
 import { Markdown } from '@/components/Markdown';
 import { copyText } from '@/lib/clipboard';
 import { Button } from '@/components/ui/button';
@@ -190,6 +191,7 @@ export function MessageItem({
           ) : (
             <AssistantCard text={m.text} turnId={m.turnId} partial={!!m.props.partial} messageId={m.id} />
           )}
+          {typeof m.props.promiseId === 'string' && <PromiseLine id={m.props.promiseId} />}
           {!pending && <MessageActions m={m} onReply={onReply} />}
         </div>
       );

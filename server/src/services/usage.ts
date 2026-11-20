@@ -286,6 +286,7 @@ export class UsageService {
         .sort((a, b) => b.costUsd - a.costUsd || b.turns - a.turns),
       daily: keys.map((date) => ({ date, ...perDay.get(date)! })),
       gate: await this.gate(since, new Set(keys), timezone, botId),
+      promises: await this.promiseNet(since, new Set(keys), timezone, botId),
     };
   }
 
@@ -330,6 +331,36 @@ export class UsageService {
         sum.skippable++;
         sum.skippableCostUsd += Number(r.turnCostUsd ?? 0);
       }
+    }
+    return sum.checks ? sum : undefined;
+  }
+
+  /** The promise safety net over the period: its looks at replies, what they cost and the promises found. */
+  private async promiseNet(
+    since: Date,
+    days: Set<string>,
+    timezone: string,
+    botId?: string,
+  ): Promise<UsageReport['promises']> {
+    const rows = await this.ctx.db
+      .select({
+        at: schema.promiseChecks.createdAt,
+        costUsd: schema.promiseChecks.costUsd,
+        found: schema.promiseChecks.found,
+      })
+      .from(schema.promiseChecks)
+      .where(
+        and(
+          gte(schema.promiseChecks.createdAt, since),
+          botId ? eq(schema.promiseChecks.botId, botId) : undefined,
+        ),
+      );
+    const sum = { checks: 0, costUsd: 0, found: 0 };
+    for (const r of rows) {
+      if (!days.has(dayKey(r.at, timezone))) continue;
+      sum.checks++;
+      sum.costUsd += r.costUsd ?? 0;
+      if (r.found) sum.found++;
     }
     return sum.checks ? sum : undefined;
   }

@@ -160,6 +160,10 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/summaries': 'self',
   'GET /api/search': 'self',
   'GET /api/today': 'self',
+  // A person's own promises; the handler keeps each person to theirs, admins included.
+  'GET /api/promises': 'self',
+  'POST /api/promises/:id/done': 'self',
+  'POST /api/promises/:id/drop': 'self',
   'GET /api/turns/:id/result': read('turn'),
   // How much work stopping the whole server would stop: for those who look after it.
   'GET /api/turns/running': 'admin',

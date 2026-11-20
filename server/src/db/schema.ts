@@ -1505,3 +1505,60 @@ export const canaryAlarms = pgTable(
   },
   (t) => [index('canary_alarms_open_idx').on(t.seenAt, t.createdAt)],
 );
+
+/**
+ * What someone said they would do later, kept where it cannot be forgotten: a promise a bot made in
+ * a reply ("I'll tell you tomorrow") or one the person made to someone else that a bot noticed.
+ * Only the person it belongs to sees it, admins included. Due promises have a one-time routine
+ * that does the bot's part or reminds the person; it is removed with the promise.
+ */
+export const promises = pgTable(
+  'promises',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    /** Who promised: the bot (to the person) or the person (to someone else). */
+    madeBy: text('made_by', { enum: ['bot', 'person'] }).notNull(),
+    text: sealedText('text').notNull(),
+    /** For the person's own promise, who it was made to. */
+    toWhom: sealedText('to_whom').notNull().default(''),
+    /** When it falls due; a promise with only a day is due at the end of that day. */
+    dueAt: ts('due_at'),
+    /** Whether `dueAt` is a time of day the promise named, or only the end of a day. */
+    dueHasTime: boolean('due_has_time').notNull().default(false),
+    /** What it waits for instead of a time ("when the price drops"); empty when it has none. */
+    condition: sealedText('condition').notNull().default(''),
+    /** The one-time routine that keeps it; null when none was set (no time, or it could not be). */
+    routineId: text('routine_id').references(() => routines.id, { onDelete: 'set null' }),
+    status: text('status', { enum: ['open', 'done', 'dropped'] })
+      .notNull()
+      .default('open'),
+    createdAt: created(),
+    closedAt: ts('closed_at'),
+  },
+  (t) => [index('promises_user_status_idx').on(t.userId, t.status)],
+);
+
+/**
+ * One look of the promise safety net at a bot's reply: what the small-model call cost, and whether
+ * it found a promise. It lets the usage page show the net's cost beside the routine pre-check's.
+ */
+export const promiseChecks = pgTable(
+  'promise_checks',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    costUsd: real('cost_usd'),
+    found: boolean('found').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('promise_checks_created_idx').on(t.createdAt)],
+);

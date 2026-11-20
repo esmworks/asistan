@@ -665,6 +665,8 @@ const tr = {
     '- Kullanıcı adına bir şey göndereceksen (e-posta, mesaj, paylaşım) önce taslağı göster ve onayını al; rutinin talimatı göndermeni açıkça istiyorsa gönder. Bir ödemeden önce ürünü, fiyatı ve toplamı söyleyip onay iste.',
   'prompt.ruleMemory':
     '- Kalıcı bir bilgi ya da tercih öğrenince `memory_write` ile kaydet. Kullanıcı hakkında bir şeyi bilmediğini söylemeden önce `memory_search` ile hafızana bak. Hafızanı sen tutarsın: değişen bir bilgiyi yeni not eklemek yerine `memory_update` ile düzelt; eskimiş, yanlış ya da tekrarlanan notu `memory_forget` ile sil. Notun başındaki tarih en son ne zaman yazıldığıdır; çelişen iki nottan yenisine güven. Bilginin kendisi geçiciyse ("bu hafta", "cumaya kadar", "yarın", "gezi boyunca") `until` ver: her mesajla gelen güncel tarih ve saatten ve kullanıcının saat diliminden hesapla; süresi dolan not artık hafızanda görünmez. Notun başındaki "(… tarihine kadar geçerli)" o bilginin geçici olduğunu söyler. Şifre, anahtar ya da kod gibi gizli değerleri hafızaya yazma.',
+  'prompt.rulePromises':
+    '- Sonra yapacağını söylediğin bir şeyi kurmadan söz verme ("yarın bakıp haber veririm", "fiyat düşünce söylerim"): sözü verdiğin turda, aynı anda, bir kerelik rutin (`routine_create`, schedule `once`) ya da bir koşul için izleme rutini kur; kuramıyorsan söz verme, ne yapabileceğini söyle. Kullanıcının başkasına verdiği bir sözü fark edersen (sohbette söylerse, ya da bir rutinde okuduğun kendi gönderdiği WhatsApp mesajlarında ya da e-postalarında görürsen) `promise_track` ile kaydet.',
   'prompt.ruleRecall':
     '- Uzun bir sohbetin önceki kısmı sana yalnızca özet olarak gelebilir ya da hiç gelmeyebilir. Daha önce konuşulan bir şeyin tam ifadesi, bir sayı, bir kimlik ya da verilmiş bir karar gerekirse tahmin etme: `conversations_search` ile ara, `message_read` ile oku.',
   'prompt.ruleTryFirst':
@@ -933,6 +935,20 @@ const tr = {
     'Hafızadaki bir kaydın metnini değiştir: kendi notun, kullanıcının ortak hafızası ya da bu yerin notu (kimliğini memory_search verir). Yeni bilgiyi bir sayfada okuduysan adresini from olarak ver. Bilgi yalnızca bir süre doğruysa until olarak ISO tarih ya da tarih-saat ver; boş dize ("") notun mevcut bitiş tarihini kaldırır.',
   'tool.memory_forget':
     'Hafızadan bir kaydı sil: kendi notun, kullanıcının ortak hafızası ya da bu yerin notu (kimliğini memory_search verir).',
+  'tool.promise_track':
+    'Kullanıcının BAŞKASINA verdiği bir sözü kaydet (senin kendi sözlerin değil; onlar için rutin kur). what: söz verilen şey, to: kime, due: vade günü YYYY-MM-DD (kullanıcının saat diliminde; yoksa boş bırak). Kullanıcı bunu sohbette söylediğinde ya da bir rutinde okuduğun kendi gönderdiği WhatsApp mesajlarında ya da e-postalarında gördüğünde kullan. Vadesi olan söz, o gün kullanıcının seçtiği saatte sana hatırlatma olarak gelir; kullanıcı sözleri Bugün sayfasında görür ve kapatır.',
+  'tool.promiseTracked':
+    'Söz kaydedildi: "{what}". Vadesi ya da hatırlatması yok; kullanıcı Bugün sayfasında görür.',
+  'tool.promiseTrackedRemind': 'Söz kaydedildi: "{what}". Vade günü ({day}) sana bir hatırlatma gelecek.',
+  'tool.promiseBadDue': '"{due}" bir gün değil; vadeyi YYYY-MM-DD olarak ver ya da boş bırak.',
+  'promise.routineName': 'Söz: {what}',
+  'promise.routinePrompt':
+    'Kullanıcıya daha önce şu sözü verdin: "{what}" (koşul: {condition}). Şimdi sözünü tut: gerekeni kontrol et ya da yap ve sonucu bu sohbette kullanıcıya bildir. Koşul gerçekleşmediyse ya da yapamadıysan bunu nedeniyle söyle.',
+  'promise.reminderName': 'Söz hatırlatması: {what}',
+  'promise.reminderPrompt':
+    'Kullanıcının başkasına verdiği bir söz var (kime: {to}): "{what}". Vadesi: {day}. Bunu kullanıcıya bu sohbette kısaca hatırlat ve yapıp yapmadığını sor; yaptıysa ya da vazgeçtiyse Bugün sayfasından kapatabileceğini söyle.',
+  'promise.someone': 'biri',
+  'error.notFound.promise': 'Söz bulunamadı',
   'tool.bots_list': 'Yazabileceğin botları listele.',
   'tool.open_conversation':
     'İşin bir parçasını kendi adına yeni bir sohbette başlat: başlık ve ilk mesaj ver. O sohbette ayrı bir turda çalışırsın, bu konuşma beklemez; kullanıcı yeni sohbeti listesinde görür. Bir turda en çok 5 sohbet.',
@@ -2217,6 +2233,8 @@ const en: Catalog<ServerKey> = {
     "- Before you send something for the user (an email, a message, a post), show the draft and get their approval; send right away only when a routine's instruction says to. Before a payment, read back the item, price and total and ask to confirm.",
   'prompt.ruleMemory':
     '- When you learn a lasting fact or preference, save it with `memory_write`. Before you say you don\'t know something about the user, look in your memory with `memory_search`. You keep your memory: when a fact changes, correct the note with `memory_update` rather than adding another; delete an outdated, wrong or repeated note with `memory_forget`. The date before a note is when it was last written; of two notes that disagree, trust the newer. When the fact itself is temporary ("this week", "until Friday", "tomorrow", "for the trip"), give `until`: work it out from the current date and time that comes with each message and the user\'s time zone; a note whose time has passed no longer shows in your memory. A "(true until …)" before a note says the fact is temporary. Never write secrets such as passwords, keys or codes to memory.',
+  'prompt.rulePromises':
+    '- Never promise to do something later without setting it up ("I\'ll check tomorrow and tell you", "I\'ll say when the price drops"): in the same turn you make the promise, create a one-time routine (`routine_create`, schedule `once`), or a watch routine for a condition; if you cannot set it up, do not promise, say what you can do. When you notice a promise the user made to someone else (they say so in the chat, or you see it in their own sent WhatsApp messages or mails that you read in a routine), record it with `promise_track`.',
   'prompt.ruleRecall':
     '- The earlier part of a long conversation may reach you only as a summary, or not at all. When you need the exact wording of something said before, a number, an id or a decision already made, do not guess: find it with `conversations_search` and read it with `message_read`.',
   'prompt.ruleTryFirst':
@@ -2484,6 +2502,21 @@ const en: Catalog<ServerKey> = {
     "Change the text of a memory entry: your own note, the user's shared memory or this place's note (memory_search gives its id). If you read the new fact on a page, give its address as from. When the fact is only true for a while, give until as an ISO date or date-time; an empty string (\"\") takes the note's end date away.",
   'tool.memory_forget':
     "Delete a memory entry: your own note, the user's shared memory or this place's note (memory_search gives its id).",
+  'tool.promise_track':
+    "Record a promise the user made to SOMEONE ELSE (not your own promises; for those set up a routine). what: what was promised, to: to whom, due: the day it is due as YYYY-MM-DD in the user's time zone (leave it out when there is none). Use it when the user says so in the chat, or when you see it in their own sent WhatsApp messages or mails that you read in a routine. A promise with a due day comes back to you as a reminder on that day at the time the user picked; the user sees and closes promises on the Today page.",
+  'tool.promiseTracked':
+    'Promise recorded: "{what}". It has no due day or reminder; the user sees it on the Today page.',
+  'tool.promiseTrackedRemind':
+    'Promise recorded: "{what}". A reminder will come to you on its due day ({day}).',
+  'tool.promiseBadDue': '"{due}" is not a day; give the due day as YYYY-MM-DD or leave it out.',
+  'promise.routineName': 'Promise: {what}',
+  'promise.routinePrompt':
+    'You earlier promised the user: "{what}" (condition: {condition}). Keep it now: check or do what is needed and tell the user the result in this conversation. If the condition did not come about, or you could not do it, say so and why.',
+  'promise.reminderName': 'Promise reminder: {what}',
+  'promise.reminderPrompt':
+    'The user made a promise to someone else (to: {to}): "{what}". It is due {day}. Remind the user of it briefly in this conversation and ask whether it is done; if they did it or gave it up, tell them they can close it on the Today page.',
+  'promise.someone': 'someone',
+  'error.notFound.promise': 'Promise not found',
   'tool.bots_list': 'List the bots you can write to.',
   'tool.open_conversation':
     'Start part of the work in a new conversation of your own: give a title and the first message. You work there in a separate turn, and this conversation does not wait; the user sees the new one in their list. At most 5 per turn.',

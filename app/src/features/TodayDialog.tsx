@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useBots, useSummaries } from '@/lib/queries';
 import { useUi } from '@/lib/store';
+import { PromisesSection } from './Promises';
 import { SecondYesSection } from './SecondYes';
 import { cn } from '@/lib/utils';
 
@@ -91,6 +92,8 @@ export function TodayDialog() {
             ) : null}
             {/* Steps that need this person's second yes; they do not see the conversation. */}
             <SecondYesSection enabled={open} />
+            {/* What bots said they would do and what the person promised others, overdue first. */}
+            <PromisesSection enabled={open} onOpen={(p) => go(p.botId, p.threadId)} />
             <Section
               title={t('today.waiting')}
               empty={t('today.waitingNone')}

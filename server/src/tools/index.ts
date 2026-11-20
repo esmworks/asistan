@@ -128,6 +128,8 @@ const TEAM_OFF = new Set<string>([
   'routine_create',
   'routine_update',
   'routine_delete',
+  // The person's own promises to others: a team or a chat app's stranger has none to keep here.
+  'promise_track',
   'my_activity',
   'conversations_search',
   'message_read',
@@ -142,7 +144,13 @@ const TEAM_OFF = new Set<string>([
  * Tools a turn asked by someone with no account here does without: each starts work that later
  * goes on for the person the turn acts for, with all they may do.
  */
-const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save', 'browser_card']);
+const GUEST_OFF = new Set<string>([
+  'ticket_create',
+  'ticket_update',
+  'skill_save',
+  'browser_card',
+  'promise_track',
+]);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -254,6 +262,7 @@ export type ToolName =
   | 'routine_create'
   | 'routine_update'
   | 'routine_delete'
+  | 'promise_track'
   | 'routine_failed'
   | 'routine_stop'
   | 'app_suggest'
@@ -752,6 +761,8 @@ export class ToolFactory {
             },
             person,
           );
+          // What the bot promised is now set up: the promise safety net leaves this turn's reply alone.
+          s.promises.routineTouched(turn.id);
           const made = t('tool.routineCreated', {
             name: r.name,
             when: describeSchedule(r.schedule, await s.settings.locale()),
@@ -833,6 +844,7 @@ export class ToolFactory {
             routines.find((x) => x.id !== r.id && x.botId === r.botId && x.name.toLowerCase() === rename);
           if (taken) return t('tool.routineExists', { name: taken.name });
           const updated = await s.routines.update(r.id, patch, person);
+          s.promises.routineTouched(turn.id);
           return t('tool.routineUpdated', {
             name: updated.name,
             when: describeSchedule(updated.schedule, await s.settings.locale()),
@@ -841,6 +853,39 @@ export class ToolFactory {
           });
         },
         // The person sees which routine changes, and how, on a card first.
+      ),
+      def(
+        'promise_track',
+        {
+          what: z.string().trim().min(1).max(300),
+          to: z.string().trim().max(100).default(''),
+          /** The day it is due, YYYY-MM-DD in the person's time zone; left out when it has none. */
+          due: z.string().trim().max(20).optional(),
+        },
+        async ({ what, to, due }) => {
+          // The turn dealt with a promise itself: the safety net has nothing to add to its reply.
+          s.promises.routineTouched(turn.id);
+          const day = due?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+          if (due && (!day || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day))
+            return t('tool.promiseBadDue', { due });
+          const row = await s.promises.track({
+            person,
+            bot,
+            threadId: thread.id,
+            what,
+            toWhom: to,
+            day,
+            schedule: await mayChange(),
+            t,
+          });
+          return t(row.routineId ? 'tool.promiseTrackedRemind' : 'tool.promiseTracked', {
+            what: row.text,
+            day: day ?? '-',
+          });
+        },
+        // The person sees and closes every promise on their Today page, and a reminder is a routine
+        // they can cancel there, so the bot notes it without a card.
+        'internal',
       ),
       def(
         'routine_delete',

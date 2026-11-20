@@ -123,6 +123,9 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('routine-revisions');
       inv('summaries');
       break;
+    case 'promises':
+      inv('promises');
+      break;
     case 'rules':
       inv('rules');
       inv('suggestions');

@@ -1673,6 +1673,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await s.canary.seen(IdParams.parse(req.params).id, me(req).userId);
     return { ok: true };
   });
+  // Promises made to the person by a bot, or by the person to others: their own, never anyone else's.
+  app.get('/api/promises', async (req) => s.promises.list(me(req).userId));
+  app.post('/api/promises/:id/done', async (req) =>
+    s.promises.close(IdParams.parse(req.params).id, me(req).userId, 'done'),
+  );
+  app.post('/api/promises/:id/drop', async (req) =>
+    s.promises.close(IdParams.parse(req.params).id, me(req).userId, 'dropped'),
+  );
   app.post('/api/api-keys/import', async (req) => {
     const { team, ...body } = ApiKeyImport.parse(req.body);
     const owner = ownerFor(req, team ?? managesServer(me(req).role));

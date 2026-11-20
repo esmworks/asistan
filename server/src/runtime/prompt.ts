@@ -201,6 +201,7 @@ export function buildSystemPrompt(opts: {
     t('prompt.ruleApproval'),
     t('prompt.ruleAsk'),
     t('prompt.ruleMemory'),
+    t('prompt.rulePromises'),
     ...(opts.recall === false ? [] : [t('prompt.ruleRecall')]),
     t('prompt.ruleTryFirst'),
     t('prompt.rulePersist'),
