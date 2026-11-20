@@ -367,8 +367,9 @@ export class FakeEngine implements Engine {
     if (!parts.length) parts.push(`Yankı: ${req.prompt}`);
     parts.push(`(oturum ${n}. tur)`);
     const text = parts.join('\n');
+    let late = this.textAfterAbort;
     for (const chunk of text.match(/.{1,12}/gs) ?? []) {
-      if (req.signal.aborted) {
+      if (req.signal.aborted && late-- <= 0) {
         return { ok: false, kind: 'interrupted', message: 'Durduruldu', text: '', sessionId };
       }
       req.onText(chunk);
@@ -383,6 +384,8 @@ export class FakeEngine implements Engine {
   public compactGate: Promise<void> | null = null;
   /** A fold that fails after it was paid for. */
   public compactFails = false;
+  /** Pieces of the answer still sent after a stop, as a real engine may while the stop takes hold. */
+  public textAfterAbort = 0;
 
   async compact(req: CompactRequest): Promise<CompactOutcome> {
     this.compactions.push(req);

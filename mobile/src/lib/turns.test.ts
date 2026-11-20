@@ -52,6 +52,7 @@ describe('rehearsal helpers', () => {
     expect(startedBySomething(none as never)).toBe(false);
     expect(startedBySomething({ ...none, webhookToken: 'abc' } as never)).toBe(true);
     expect(startedBySomething({ ...none, emailTrigger: true } as never)).toBe(true);
+    expect(startedBySomething({ ...none, slackReaction: 'eyes' } as never)).toBe(true);
   });
 
   it('times a rehearsal once it has finished', () => {

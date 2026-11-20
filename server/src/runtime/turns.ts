@@ -2033,6 +2033,9 @@ export class TurnManager {
         onText: (delta) => {
           watchdog.activity();
           streamed += delta;
+          // Once a wire tripped nothing more is shown: the engine may still send text while the
+          // stop takes hold, and showing it would also show the token the earlier part held back.
+          if (tripped) return;
           // The start of an answer that may still be the silent reply is held back until it is not.
           if (maybeSilentReply(streamed)) return;
           // So is an end that may become the private token, which is never shown.

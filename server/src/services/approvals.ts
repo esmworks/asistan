@@ -513,6 +513,14 @@ interface Waiter {
 /** The tools whose cards hold a WhatsApp draft; see `expireAllPending`. */
 export const WHATSAPP_DRAFT_TOOLS = ['whatsapp_send', 'whatsapp_status'] as const;
 
+/** A person who may sign in, as `approvers` reads them. */
+interface SignedIn {
+  id: string;
+  role: (typeof schema.users.$inferSelect)['role'];
+  displayName: string | null;
+  username: string | null;
+}
+
 export class ApprovalService {
   private waiters = new Map<string, Waiter>();
 
@@ -835,17 +843,8 @@ export class ApprovalService {
    * shared with to talk with only does not), or, for a rule on every bot, those who look after
    * the server. Not people who may no longer sign in.
    */
-  async approvers(botId: string | null): Promise<Approver[]> {
-    const people = await this.ctx.db
-      .select({
-        id: schema.users.id,
-        role: schema.users.role,
-        displayName: schema.users.displayName,
-        username: schema.users.username,
-      })
-      .from(schema.users)
-      .where(isNull(schema.users.disabledAt))
-      .orderBy(asc(schema.users.createdAt));
+  async approvers(botId: string | null, people?: SignedIn[]): Promise<Approver[]> {
+    people ??= await this.signedIn();
     const [bot] = botId
       ? await this.ctx.db
           .select({ ownerUserId: schema.bots.ownerUserId, access: schema.bots.access })
@@ -860,14 +859,32 @@ export class ApprovalService {
       .map((u) => ({ id: u.id, name: u.displayName || u.username || '' }));
   }
 
+  /** The people who may sign in, oldest first: those `approvers` picks from. */
+  private signedIn(): Promise<SignedIn[]> {
+    return this.ctx.db
+      .select({
+        id: schema.users.id,
+        role: schema.users.role,
+        displayName: schema.users.displayName,
+        username: schema.users.username,
+      })
+      .from(schema.users)
+      .where(isNull(schema.users.disabledAt))
+      .orderBy(asc(schema.users.createdAt));
+  }
+
   /** Whether anyone could give a card's second yes at all: someone who may change the bot, or the one named. */
   async hasSecond(botId: string, named: string | null): Promise<boolean> {
     return (await this.secondApprovers(botId, named)).length > 0;
   }
 
   /** Who may give the second yes of a card: the person its rule named, or any of `approvers`. */
-  private async secondApprovers(botId: string, named: string | null): Promise<Approver[]> {
-    const all = await this.approvers(botId);
+  private async secondApprovers(
+    botId: string,
+    named: string | null,
+    people?: SignedIn[],
+  ): Promise<Approver[]> {
+    const all = await this.approvers(botId, people);
     return named ? all.filter((p) => p.id === named) : all;
   }
 
@@ -966,10 +983,15 @@ export class ApprovalService {
       .orderBy(desc(schema.approvals.createdAt))
       .limit(200);
     const out: { card: Approval; askedBy: string | null }[] = [];
+    // Read once for the whole list, and each bot's pool once: many cards share a bot.
+    const people = await this.signedIn();
+    const pools = new Map<string, Promise<Approver[]>>();
     for (const r of rows) {
       if (!this.waiters.has(r.approval.id) || r.approval.firstByUserId === who) continue;
-      if (!(await this.secondApprovers(r.approval.botId, r.approval.secondUserId)).some((p) => p.id === who))
-        continue;
+      const key = `${r.approval.botId}\n${r.approval.secondUserId ?? ''}`;
+      if (!pools.has(key))
+        pools.set(key, this.secondApprovers(r.approval.botId, r.approval.secondUserId, people));
+      if (!(await pools.get(key)!).some((p) => p.id === who)) continue;
       out.push({ card: toApproval(r.approval), askedBy: r.askedBy });
     }
     return out;
@@ -993,8 +1015,9 @@ export class ApprovalService {
       );
     if (!rows.length) return;
     const t = await serverTranslator(this.ctx);
+    const people = await this.signedIn();
     for (const r of rows) {
-      const pool = (await this.secondApprovers(r.botId, r.secondUserId)).filter(
+      const pool = (await this.secondApprovers(r.botId, r.secondUserId, people)).filter(
         (p) => p.id !== r.firstByUserId,
       );
       if (pool.length) continue;

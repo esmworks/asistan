@@ -371,6 +371,40 @@ describe('öneri: her gün bir kere bakma', () => {
     expect((await t.api('POST', `/api/routine-suggestions/${s!.id}/accept`, {})).status).toBe(404);
   });
 
+  it('aynı anda iki kez kabul edilen öneri tek rutin kurar', async () => {
+    const bot = await t.bot();
+    await salesOn((await main(t, bot.id)).id);
+    await runOwner();
+    const [s] = await open();
+    // Making the routine takes a moment, as it may on a busy server: both taps arrive meanwhile.
+    const routines = t.services.routines;
+    const create = routines.create.bind(routines);
+    routines.create = async (...a: Parameters<typeof create>) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return create(...a);
+    };
+    const both = await Promise.all([
+      t.api('POST', `/api/routine-suggestions/${s!.id}/accept`, {}),
+      t.api('POST', `/api/routine-suggestions/${s!.id}/accept`, {}),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual([200, 404]);
+    expect(await t.services.routines.list(bot.id)).toHaveLength(1);
+  });
+
+  it('rutin kurulamazsa öneri yeniden açık kalır', async () => {
+    const bot = await t.bot();
+    await salesOn((await main(t, bot.id)).id);
+    await runOwner();
+    const [s] = await open();
+    // A once routine in the past cannot be made.
+    const refused = await t.api('POST', `/api/routine-suggestions/${s!.id}/accept`, {
+      schedule: { type: 'once', date: '2001-01-01', time: '09:00' },
+    });
+    expect(refused.status).toBe(400);
+    expect((await open()).map((x) => x.id)).toEqual([s!.id]);
+    expect(await t.services.routines.list(bot.id)).toHaveLength(0);
+  });
+
   it('ritmi olmayan öneride kişi zamanı seçer; seçmeden oluşmaz', async () => {
     const bot = await t.bot();
     const th = await main(t, bot.id);

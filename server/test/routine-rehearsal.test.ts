@@ -364,4 +364,21 @@ describe('rehearsing a routine', () => {
     expect((await t.api('POST', `/api/routines/${routine.id}/rehearse`, {})).status).toBe(409);
     await t.services.turns.idle();
   });
+
+  it('starts one rehearsal when two are asked for at once', async () => {
+    const { routine } = await make('[uzun-araç:2000] bitti');
+    // Its conversation takes a moment to make, as it may on a busy server: both asks arrive meanwhile.
+    const threads = t.services.threads;
+    const open = threads.rehearsalThread.bind(threads);
+    threads.rehearsalThread = async (...a: Parameters<typeof open>) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return open(...a);
+    };
+    const both = await Promise.all([
+      t.api('POST', `/api/routines/${routine.id}/rehearse`, {}),
+      t.api('POST', `/api/routines/${routine.id}/rehearse`, {}),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+    await t.services.turns.idle();
+  });
 });

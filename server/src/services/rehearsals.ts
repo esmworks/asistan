@@ -29,6 +29,11 @@ export class RehearsalService {
   /** Each running rehearsal's steps; written to its row as they come, in order. */
   private steps = new Map<string, RehearsalStep[]>();
   private writes = new Map<string, Promise<void>>();
+  /**
+   * Routines whose rehearsal is being started: the check for one already running and the row it
+   * writes are two queries, so two quick starts would both pass it.
+   */
+  private starting = new Set<string>();
 
   constructor(
     private ctx: Ctx,
@@ -68,6 +73,16 @@ export class RehearsalService {
    * saved ones; `replayRunId` hands the bot what started one of the routine's last runs.
    */
   async start(routineId: string, userId: string, input: RehearsalStart): Promise<Rehearsal> {
+    if (this.starting.has(routineId)) throw new HttpError(409, 'error.rehearsalRunning');
+    this.starting.add(routineId);
+    try {
+      return await this.begin(routineId, userId, input);
+    } finally {
+      this.starting.delete(routineId);
+    }
+  }
+
+  private async begin(routineId: string, userId: string, input: RehearsalStart): Promise<Rehearsal> {
     const t = await this.services.settings.translator();
     const routine = await this.services.routines.get(routineId);
     const bot = await this.services.bots.get(routine.botId);

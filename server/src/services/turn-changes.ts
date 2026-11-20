@@ -569,9 +569,14 @@ export class TurnChangeService {
 /** The fields people may change, as each kind's fingerprint takes them. */
 const pick = (o: Json, keys: string[]) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]));
 
+/**
+ * Every field a routine is made from (`RoutineCreate` but the bot), so a deleted one comes back
+ * whole and a later change to any of them is seen.
+ */
 export const ROUTINE_KEYS = [
   'name',
   'prompt',
+  'steps',
   'schedule',
   'timezone',
   'enabled',
@@ -579,6 +584,7 @@ export const ROUTINE_KEYS = [
   'carryReport',
   'inMain',
   'slackChannel',
+  'slackReaction',
   'onStartup',
   'watchUrl',
   'check',
