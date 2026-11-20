@@ -93,6 +93,8 @@ const tr = {
   'table.badUrl': '"{column}" sütunu bir web adresi bekliyor.',
   'table.tooLong': '"{column}" sütunundaki değer çok uzun (en çok 2000 karakter).',
   'error.teachNoBrowser': 'Bu sunucuda botların tarayıcısı yok',
+  'error.notTaught': 'Bu beceri tarayıcıda gösterilerek öğretilmedi; yeniden oynatılacak adımı yok',
+  'error.botPaused': '{bot} duraklatılmış; önce sürdür',
   'error.teachNothing': 'Kaydedilen bir adım yok: kontrol sende iken tarayıcıda işi göster',
   'teach.defaultGoal': 'Gösterilen işi yap',
   'teach.intro':
@@ -812,6 +814,17 @@ const tr = {
     '{from} bir web adresi değil; from için http:// ya da https:// ile başlayan sayfa adresini ver.',
   'tool.memorySource': 'kaynak: {url}',
   'tool.skill_read': 'Becerilerinden birinin tam talimatlarını adıyla oku.',
+  'tool.skill_replay':
+    'Kullanıcının tarayıcıda gösterdiği bir beceriyi adıyla, model olmadan adım adım yeniden yap: hızlı ve ücretsizdir, gösterilmiş bir iş için önce bunu dene. Bir adım sayfaya uymazsa durur; nerede ve neden durduğunu ve kalan adımları okursun, işi oradan kendi tarayıcı araçlarınla bitir. from ile belirli bir adımdan başlatabilirsin.',
+  'tool.noTaught': 'Tarayıcıda gösterilmiş {name} adında bir becerin yok. Gösterilmiş becerilerin: {names}',
+  'replay.noLabel': 'Bu adımın {what} için bir adı yok; sayfada bulunamıyor.',
+  'replay.notFound': 'Sayfada {target} bulunamadı; sayfa gösterildiğinden farklı.',
+  'replay.secret': 'Bu adım bir şifre giriyor; şifre adımlarla saklanmaz.',
+  'replay.failed': 'Adım yapılamadı: {message}',
+  'replay.done':
+    'Gösterilen {total} adımın hepsi yapıldı. Sonucun beklendiği gibi olduğunu sayfaya bakıp doğrula.',
+  'replay.stopped':
+    '{total} adımın {step}. adımında durdu: {reason}\nSayfaya bak ve işi aşağıdaki kalan adımlardan kendi tarayıcı araçlarınla bitir (şifre gerekiyorsa browser_login).',
   'tool.skill_save':
     'Bir işi nasıl yapacağını beceri olarak kaydet ya da sende olan bir beceriyi düzelt: kullanıcı bir yöntemi düzelttiğinde ya da tekrar edecek bir yöntem işe yaradığında. Kullanıcı kartta onaylar. Beceri kullanıcının değiştiremeyeceği biri ise düzeltmen becerinin sahibine öneri olarak gider; reason ile neyi neden değiştirdiğini kısaca yaz, sahibi bunu okuyup karar verir.',
   'tool.skillBadName': 'Beceri adı harf ya da rakam içermeli.',
@@ -1540,6 +1553,8 @@ const en: Catalog<ServerKey> = {
   'table.badUrl': 'The column "{column}" takes a web address.',
   'table.tooLong': 'The value in the column "{column}" is too long (2000 characters at most).',
   'error.teachNoBrowser': 'Bots have no browser on this server',
+  'error.notTaught': 'This skill was not taught by showing it in the browser; it has no steps to replay',
+  'error.botPaused': '{bot} is paused; resume it first',
   'error.teachNothing': 'No steps were recorded: show the task in the browser while you have control',
   'teach.defaultGoal': 'Do the task that was shown',
   'teach.intro':
@@ -2256,6 +2271,16 @@ const en: Catalog<ServerKey> = {
     '{from} is not a web address; give from as the page address, starting with http:// or https://.',
   'tool.memorySource': 'source: {url}',
   'tool.skill_read': 'Read the full instructions of one of your skills, by its name.',
+  'tool.skill_replay':
+    'Redo a skill the user showed in the browser, by its name, step by step without the model: it is quick and free, so try it first for a task that was shown. It stops at a step that does not fit the page; you read where and why it stopped and the steps left, and finish from there with your own browser tools. from starts it at a given step.',
+  'tool.noTaught': 'You have no skill named {name} that was shown in the browser. Your shown skills: {names}',
+  'replay.noLabel': "This step's {what} has no name, so it cannot be found on the page.",
+  'replay.notFound': '{target} is not on the page; the page differs from when it was shown.',
+  'replay.secret': 'This step enters a password; passwords are not kept with the steps.',
+  'replay.failed': 'The step could not be done: {message}',
+  'replay.done': 'All {total} steps shown were done. Look at the page to check the result is as expected.',
+  'replay.stopped':
+    'Stopped at step {step} of {total}: {reason}\nLook at the page and finish the task from the steps left below with your own browser tools (browser_login if a password is needed).',
   'tool.skill_save':
     'Save how to do a task as a skill, or fix a skill you have: when the user corrects a method, or a method worth repeating worked. The user approves on a card. When the skill is one the user may not change, your fix goes to its owner as a suggestion; say in reason, briefly, what you changed and why, for the owner to decide on.',
   'tool.skillBadName': 'A skill name needs letters or digits.',

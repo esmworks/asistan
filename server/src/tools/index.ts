@@ -34,6 +34,7 @@ import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
 import { errorText, HttpError, newId, notFound, truncate } from '../util';
+import { replayHandOver, replaySteps } from '../browser/replay';
 import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { handFiles, pageImageTool, sendFileTool, showPageTool } from './files';
@@ -222,6 +223,7 @@ export type ToolName =
   | 'conversations_search'
   | 'message_read'
   | 'skill_read'
+  | 'skill_replay'
   | 'my_activity'
   | 'skill_save'
   | 'routine_create'
@@ -1531,6 +1533,35 @@ export class ToolFactory {
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
         }),
       );
+      const taught = skills.filter((k) => k.steps?.length);
+      if (taught.length) {
+        tools.push(
+          def(
+            'skill_replay',
+            { name: z.string().min(1).max(100), from: z.number().int().min(1).max(200).optional() },
+            async ({ name, from }) => {
+              const skill = taught.find((k) => k.name === name.trim().toLowerCase());
+              if (!skill) return t('tool.noTaught', { name, names: taught.map((k) => k.name).join(', ') });
+              await s.skills.markUsed(skill.id);
+              const steps = skill.steps!.slice((from ?? 1) - 1);
+              // The replay names step kinds by key, as the lesson's own text does.
+              const loose = t as unknown as Parameters<typeof replaySteps>[3];
+              const result = await replaySteps(this.ctx.browser, bot.id, steps, loose);
+              // Counted on the whole lesson, so the step numbers match the skill's own.
+              const skipped = (from ?? 1) - 1;
+              const whole = {
+                ...result,
+                done: result.done + skipped,
+                total: result.total + skipped,
+                ...(result.failedAt && {
+                  failedAt: { ...result.failedAt, step: result.failedAt.step + skipped },
+                }),
+              };
+              return replayHandOver(whole, skill.steps!, loose);
+            },
+          ),
+        );
+      }
     }
     if (this.ctx.computer && bot.internet) {
       // Commands run in the thread's own work folder, which the desktop sees at the same path.

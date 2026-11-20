@@ -547,6 +547,13 @@
       "when": 1795189133330,
       "tag": "0077_job_reply_files",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795189540306,
+      "tag": "0078_skill_steps",
+      "breakpoints": true
     }
   ]
 }

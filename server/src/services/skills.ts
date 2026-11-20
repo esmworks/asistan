@@ -12,6 +12,7 @@ const toSkill = (r: Row, botIds: string[]): Skill => ({
   name: r.name,
   description: r.description,
   body: r.body,
+  steps: r.steps ?? null,
   botIds,
   uses: r.uses,
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
@@ -65,6 +66,7 @@ export class SkillService {
         name: input.name,
         description: input.description,
         body: input.body ?? '',
+        steps: input.steps ?? null,
         createdByUserId: userId,
       });
     } catch (err) {

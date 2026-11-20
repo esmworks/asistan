@@ -1,5 +1,7 @@
 import type {
   BotAction,
+  ReplayResult,
+  TaughtStep,
   PermissionSuggestions,
   BotTable,
   RowValues,
@@ -429,6 +431,9 @@ export const api = {
   createSkill: (input: SkillCreate) => http.post<Skill>('/api/skills', input),
   updateSkill: (id: string, patch: SkillUpdate) => http.patch<Skill>(`/api/skills/${id}`, patch),
   removeSkill: (id: string) => http.del<{ ok: true }>(`/api/skills/${id}`),
+  /** Does a taught skill again in the bot's browser without the model. */
+  replaySkill: (botId: string, skillId: string) =>
+    http.post<ReplayResult>(`/api/bots/${botId}/skills/${skillId}/replay`),
   setSkillBot: (id: string, botId: string, on: boolean) =>
     http.put<Skill>(`/api/skills/${id}/bots/${botId}`, { on }),
   skillChanges: () => http.get<SkillChange[]>('/api/skill-changes'),
@@ -619,7 +624,7 @@ export const api = {
   teachStatus: (botId: string) => http.get<{ steps: number | null }>(`/api/bots/${botId}/teach`),
   startTeaching: (botId: string) => http.post<{ steps: number }>(`/api/bots/${botId}/teach`),
   stopTeaching: (botId: string, goal: string) =>
-    http.post<{ name: string; description: string; body: string; steps: number }>(
+    http.post<{ name: string; description: string; body: string; steps: number; taught: TaughtStep[] }>(
       `/api/bots/${botId}/teach/stop`,
       {
         goal,

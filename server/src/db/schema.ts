@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess } from '@yumakbot/shared';
+import type { BotAccess, TaughtStep } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -878,6 +878,8 @@ export const skills = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     body: text('body').notNull().default(''),
+    /** The steps a person showed in the browser, when the skill was taught; replayed without the model. */
+    steps: jsonb('steps').$type<TaughtStep[]>(),
     /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
     createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** How many times a bot read it for a task, so the library shows which methods carry the work. */

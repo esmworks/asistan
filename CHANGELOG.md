@@ -7,6 +7,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A task taught by showing it in the browser keeps its steps with the skill, and can be done again without the model:
+  from the play button by the skill in the bot's panel, or by the bot itself with `skill_replay`, which it tries
+  first for a shown task. Each step finds what it acts on by the words the person saw. The replay stops at the first
+  step that no longer fits the page, or that needs a password, and says which; the person can hand the rest to the
+  bot, and the bot reads the steps left and finishes with its own browser tools.
 - A bot that hands work to another bot can send files with it (`bot_send` takes `files`): the other bot gets its own
   copies under `received/<sender>/` in its conversation folder and reads where they are. The bot answering can send
   files back with its answer (`reply_files`), and the asking bot reads where the copies landed.

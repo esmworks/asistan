@@ -130,6 +130,7 @@ import { atLeast, managesServer } from './services/access';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
+import { replaySteps } from './browser/replay';
 import { stepsText } from './browser/teach';
 import { findLinkedFile, workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
@@ -865,7 +866,24 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         '\n',
       ),
       steps: steps.length,
+      // Kept with the skill, so the task can be replayed without the model.
+      taught: steps,
     };
+  });
+  // Does a taught skill again in the bot's browser without the model; the answer says where it
+  // stopped, if it did, so the person can hand the rest to the bot.
+  app.post('/api/bots/:id/skills/:skillId/replay', async (req) => {
+    const p = z.object({ id: z.string().min(1), skillId: z.string().min(1) }).parse(req.params);
+    const bot = await s.bots.get(p.id);
+    const skill = await s.skills.get(p.skillId);
+    if (!skill.botIds.includes(bot.id)) throw notFound('skill');
+    if (!skill.steps?.length) throw new HttpError(409, 'error.notTaught');
+    if (!d.services.ctx.browser.available) throw new HttpError(409, 'error.teachNoBrowser');
+    if (await s.bots.isPaused(bot)) throw new HttpError(409, 'error.botPaused', { bot: bot.name });
+    const t = await s.settings.translator();
+    const tr = t as unknown as (key: string, params?: Record<string, string | number>) => string;
+    await s.skills.markUsed(skill.id);
+    return replaySteps(d.services.ctx.browser, bot.id, skill.steps, tr);
   });
 
   // Bots' tables: the person reads, corrects and clears what a bot keeps there.

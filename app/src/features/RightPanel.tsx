@@ -6,7 +6,9 @@ import {
   type Bot,
   type BotUpdate,
   type PermissionMode,
+  type ReplayResult,
   type Routine,
+  type Skill,
 } from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -34,7 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { useBotActivityById } from '@/lib/botActivity';
-import { useFormat } from '@/lib/format';
+import { newClientId, useFormat } from '@/lib/format';
 import {
   useBots,
   useConnections,
@@ -421,6 +423,38 @@ function BotSkills({ bot }: { bot: Bot }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
     onError: (e) => toast.error((e as Error).message),
   });
+  // A taught skill runs again in the bot's browser without the model; one that stops partway can
+  // be handed to the bot to finish, in the chat the person is in.
+  const replayable = useBrowserAvailable() && bot.internet !== false;
+  const openThread = useUi((s) => s.threadId);
+  const finish = async (skill: Skill, r: ReplayResult) => {
+    const threadId = openThread ?? (await api.mainThread(bot.id)).id;
+    await api.send(
+      threadId,
+      newClientId(),
+      t('replay.askBot', { name: skill.name, step: r.failedAt!.step, reason: r.failedAt!.reason }),
+    );
+  };
+  const replay = useMutation({
+    mutationFn: (skill: Skill) => api.replaySkill(bot.id, skill.id),
+    onMutate: (skill) => toast(t('replay.running', { name: skill.name })),
+    onSuccess: (r, skill) => {
+      void qc.invalidateQueries({ queryKey: ['skills'] });
+      if (r.ok) {
+        toast.success(t('replay.done', { name: skill.name, total: r.total }));
+        return;
+      }
+      toast.error(t('replay.stopped', { step: r.failedAt!.step, total: r.total }), {
+        description: r.failedAt!.reason,
+        duration: 20_000,
+        action: {
+          label: t('replay.askBotButton', { bot: bot.name }),
+          onClick: () => void finish(skill, r).catch((e: Error) => toast.error(e.message)),
+        },
+      });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
@@ -452,6 +486,19 @@ function BotSkills({ bot }: { bot: Bot }) {
                 {k.description}
               </div>
             </div>
+            {replayable && k.steps?.length && k.botIds.includes(bot.id) ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0 rounded-full"
+                disabled={replay.isPending}
+                onClick={() => replay.mutate(k)}
+                title={t('replay.run')}
+                aria-label={t('replay.runNamed', { name: k.name })}
+              >
+                <Play />
+              </Button>
+            ) : null}
             <Switch
               checked={k.botIds.includes(bot.id)}
               disabled={toggle.isPending}

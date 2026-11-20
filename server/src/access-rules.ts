@@ -137,6 +137,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/teach': edit(),
   'GET /api/bots/:id/teach': edit(),
   'POST /api/bots/:id/teach/stop': edit(),
+  'POST /api/bots/:id/skills/:skillId/replay': edit(),
   'GET /api/bots/:id/conversations': edit(),
   'GET /api/bots/:id/actions': edit(),
   'GET /api/bots/:id/suggestions': edit(),

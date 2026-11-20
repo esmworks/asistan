@@ -1473,12 +1473,55 @@ export const SkillName = z
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'validation.skillName');
 
+/** What a taught step was done to, as a person would name it (a button's words, a field's label). */
+export const TaughtTarget = z.object({
+  what: z.enum(['button', 'link', 'field', 'checkbox', 'menu', 'option', 'element']),
+  label: z.string().max(200),
+  secret: z.boolean(),
+});
+/**
+ * One step of a task a person showed a bot in its browser. Kept with the skill written from it, so
+ * the task can be done again step by step without the model; a step that no longer fits the page
+ * is where the bot takes over.
+ */
+export const TaughtStep = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('open'), url: z.string().max(4000) }),
+  z.object({ kind: z.literal('click'), target: TaughtTarget, url: z.string().max(4000) }),
+  z.object({
+    kind: z.literal('type'),
+    target: TaughtTarget,
+    text: z.string().max(10_000),
+    secret: z.boolean(),
+    url: z.string().max(4000),
+  }),
+  z.object({ kind: z.literal('key'), key: z.string().max(40), url: z.string().max(4000) }),
+  z.object({
+    kind: z.literal('nav'),
+    action: z.enum(['back', 'forward', 'reload']),
+    url: z.string().max(4000),
+  }),
+]);
+export type TaughtStep = z.infer<typeof TaughtStep>;
+export const TaughtSteps = z.array(TaughtStep).max(200);
+
+/** How a replay of taught steps went: how far it got, and the step that did not fit if it stopped. */
+export const ReplayResult = z.object({
+  ok: z.boolean(),
+  done: z.number().int(),
+  total: z.number().int(),
+  /** The step it stopped at (from 1) and why, in the server's language. */
+  failedAt: z.object({ step: z.number().int(), reason: z.string() }).optional(),
+});
+export type ReplayResult = z.infer<typeof ReplayResult>;
+
 export const Skill = z.object({
   id: Id,
   name: z.string(),
   /** When the skill applies; the bot sees this before it decides to read the rest. */
   description: z.string(),
   body: z.string(),
+  /** The steps a person showed, when the skill was taught in the browser; they can be replayed. */
+  steps: TaughtSteps.nullable().optional(),
   /** Bots that have it on. */
   botIds: z.array(Id),
   /** How many times a bot read it for a task, and when it last did. */
@@ -1516,6 +1559,7 @@ export const SkillCreate = z.object({
   name: SkillName,
   description: z.string().trim().min(1).max(1024),
   body: z.string().max(50_000).default(''),
+  steps: TaughtSteps.nullable().optional(),
   /** Bots to turn it on for at once. */
   botIds: z.array(Id).max(500).optional(),
 });
