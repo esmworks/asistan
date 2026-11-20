@@ -414,16 +414,24 @@ function Report({
           })
         )}
       </Card>
-      {!!data.routines?.length && (
+      {!!(data.routines?.length || data.rehearsals?.length) && (
         <Card title={t('usage.routines')}>
-          {data.routines.map((r) => {
+          {[
+            ...(data.routines ?? []).map((r) => ({ ...r, key: r.routineId, label: r.name })),
+            // A rehearsal's cost is real, and shown apart from the routine's own runs.
+            ...(data.rehearsals ?? []).map((r) => ({
+              ...r,
+              key: `rehearsal-${r.routineId}`,
+              label: t('usage.rehearsalOf', { name: r.name }),
+            })),
+          ].map((r) => {
             const share = data.total.costUsd > 0 ? r.costUsd / data.total.costUsd : 0;
             const bot = r.botId ? byId.get(r.botId) : undefined;
             return (
-              <div key={r.routineId} className="flex items-center gap-3 px-4 py-3">
+              <div key={r.key} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 text-sm">
-                    <span className="truncate">{r.name}</span>
+                    <span className="truncate">{r.label}</span>
                     {bot && !filtered && (
                       <span className="shrink-0 text-xs text-muted-foreground">{bot.name}</span>
                     )}

@@ -250,7 +250,7 @@ export class RoutineService {
   }
 
   /** Whom a routine's runs work for: whoever set it up, or the bot's owner for one from before people. */
-  private async personOf(routine: Pick<Routine, 'botId' | 'createdByUserId'>): Promise<string> {
+  async personOf(routine: Pick<Routine, 'botId' | 'createdByUserId'>): Promise<string> {
     return routine.createdByUserId ?? (await this.services.access.botOwner(routine.botId));
   }
 
@@ -1107,6 +1107,7 @@ export class RoutineService {
           promptSnapshot: routine.prompt,
           // Text from outside starts it: its turns change nothing without a card.
           trigger: check?.trigger ?? null,
+          triggerInput: keptInput(payload),
         })
         .returning()) as [typeof schema.routineRuns.$inferSelect];
     } catch (err) {
@@ -1262,6 +1263,7 @@ export class RoutineService {
           promptSnapshot: routine.prompt,
           trigger,
           payload: payload ?? null,
+          triggerInput: keptInput(payload),
         })
         .returning();
       this.ctx.bus.refresh({ scope: 'routines' });
@@ -1431,15 +1433,11 @@ export class RoutineService {
         ...(outside ? { outside } : {}),
       },
     });
-    const base = t('routine.prompt', { name: routine.name, prompt: routine.prompt, silent: SILENT_REPLY });
-    const prompt = report
-      ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
-      : base;
     await this.services.turns.enqueue({
       threadId,
       botId,
       source: 'routine',
-      prompt: payload ? `${prompt}\n\n${t('routine.payload', { payload })}` : prompt,
+      prompt: routinePrompt(t, routine.name, routine.prompt, payload, report),
       routineRunId: run.id,
       // Its runs work for whoever set it up; one from before people came in, for the bot's owner.
       ...(routine.createdByUserId && { userId: routine.createdByUserId }),
@@ -1763,6 +1761,32 @@ export class RoutineService {
     this.ctx.bus.refresh({ scope: 'routines' });
     if (run) await this.startQueued(run.routineId);
   }
+}
+
+/** The most of what started a run that is kept beside it, so a rehearsal can replay it. */
+export const INPUT_MAX = 20_000;
+
+/** What starts a run, as it is kept with the run: cut to size; null when nothing was handed in. */
+const keptInput = (payload: string | undefined): string | null =>
+  payload?.trim() ? cutAt(payload, INPUT_MAX) : null;
+
+/**
+ * What a routine's turn is asked: the instruction, the report of the run before when the routine
+ * carries it, and what started the run (a mail, a changed page), the last two as data. A run and
+ * its rehearsal are asked the same.
+ */
+export function routinePrompt(
+  t: T,
+  name: string,
+  prompt: string,
+  payload: string | undefined,
+  report: { text: string; at: string } | null,
+): string {
+  const base = t('routine.prompt', { name, prompt, silent: SILENT_REPLY });
+  const full = report
+    ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
+    : base;
+  return payload ? `${full}\n\n${t('routine.payload', { payload })}` : full;
 }
 
 /** A run waiting this long on a card nobody answered gives way to the routine's next run. */

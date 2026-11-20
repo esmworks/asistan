@@ -38,6 +38,7 @@ import { PromiseService } from './promises';
 import { RoutineSuggestionService } from './routine-suggestions';
 import { PushService } from './push';
 import { RoutineService } from './routines';
+import { RehearsalService } from './rehearsals';
 import { SubscriptionService } from './subscriptions';
 import { ProviderKeyService } from './keys';
 import { ModelCatalogService } from './model-catalog';
@@ -81,6 +82,7 @@ export class Services {
   readonly skills: SkillService;
   readonly jobs: JobService;
   readonly routines: RoutineService;
+  readonly rehearsals: RehearsalService;
   readonly subscriptions: SubscriptionService;
   readonly tools: ToolFactory;
   readonly turns: TurnManager;
@@ -143,6 +145,8 @@ export class Services {
     this.turns = new TurnManager(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.jobs.onTurnFinished(t, o));
     this.turns.onFinished((t, o) => this.routines.onTurnFinished(t, o));
+    this.rehearsals = new RehearsalService(ctx, this, clock);
+    this.turns.onRehearsalFinished((t, o) => this.rehearsals.onTurnFinished(t, o));
     this.turns.onFinished((t, o) => this.rooms.onTurnFinished(t, o));
     this.reactions = new ReactionNotifier(ctx, this);
     this.usage = new UsageService(ctx, this.settings, clock);

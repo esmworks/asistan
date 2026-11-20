@@ -46,6 +46,8 @@ export type NotFoundKind =
   | 'meeting'
   | 'promise'
   | 'routineSuggestion'
+  | 'routineRun'
+  | 'rehearsal'
   | 'turn';
 export const notFound = (what: NotFoundKind) => new HttpError(404, `error.notFound.${what}`);
 

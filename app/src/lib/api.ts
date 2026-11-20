@@ -57,6 +57,9 @@ import type {
   SkillCreate,
   SkillUpdate,
   RoutineRevision,
+  Rehearsal,
+  RehearsalStart,
+  ReplayableRun,
   RoutineRun,
   SearchHit,
   ServerInfo,
@@ -631,6 +634,10 @@ export const api = {
   routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
   routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
   routineRevisions: (id: string) => http.get<RoutineRevision[]>(`/api/routines/${id}/revisions`),
+  rehearseRoutine: (id: string, body: RehearsalStart) =>
+    http.post<Rehearsal>(`/api/routines/${id}/rehearse`, body),
+  routineRehearsals: (id: string) => http.get<Rehearsal[]>(`/api/routines/${id}/rehearsals`),
+  routineReplayable: (id: string) => http.get<ReplayableRun[]>(`/api/routines/${id}/replayable`),
 
   library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),
   /** `inline`: an image to show on the page rather than a download. */

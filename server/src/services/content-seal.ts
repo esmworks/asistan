@@ -95,7 +95,21 @@ const SEALED: Sealed[] = [
   {
     table: schema.routineRuns,
     id: schema.routineRuns.id,
-    columns: [['payload', schema.routineRuns.payload, 'text']],
+    columns: [
+      ['payload', schema.routineRuns.payload, 'text'],
+      ['triggerInput', schema.routineRuns.triggerInput, 'text'],
+    ],
+  },
+  {
+    // A rehearsal holds the instruction as tried, what the bot wrote and the steps it would take.
+    table: schema.routineRehearsals,
+    id: schema.routineRehearsals.id,
+    columns: [
+      ['prompt', schema.routineRehearsals.prompt, 'text'],
+      ['report', schema.routineRehearsals.report, 'text'],
+      ['steps', schema.routineRehearsals.steps, 'json'],
+      ['error', schema.routineRehearsals.error, 'text'],
+    ],
   },
   {
     table: schema.emails,

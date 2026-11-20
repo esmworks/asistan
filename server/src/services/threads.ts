@@ -156,6 +156,8 @@ export class ThreadService {
         and(
           eq(schema.threads.botId, botId),
           ne(schema.threads.kind, 'room'),
+          // A rehearsal's conversation is shown from its routine, not in the list.
+          ne(schema.threads.kind, 'rehearsal'),
           scope &&
             (scope.botWork
               ? or(eq(schema.threads.userId, scope.userId), isNull(schema.threads.userId))
@@ -276,6 +278,18 @@ export class ThreadService {
       .limit(1);
     if (row) return this.get(row.id);
     return this.create(botId, { userId });
+  }
+
+  /**
+   * The conversation a rehearsal of a routine works in, `userId`'s own and in no list: a new one
+   * each time, removed after a week with the rehearsal.
+   */
+  async rehearsalThread(botId: string, title: string, userId: string): Promise<ThreadRow> {
+    const [row] = await this.ctx.db
+      .insert(schema.threads)
+      .values({ id: newId(), botId, userId, kind: 'rehearsal', title })
+      .returning();
+    return row!;
   }
 
   /** The thread in `botId` where messages from `peerBotId` land; one per pair and person. */
@@ -576,6 +590,8 @@ export class ThreadService {
           and(
             inArray(schema.messages.role, ['user', 'assistant']),
             isNull(schema.bots.archivedAt),
+            // What a rehearsal wrote is not something the person said or was told.
+            ne(schema.threads.kind, 'rehearsal'),
             opts.threadId ? eq(schema.messages.threadId, opts.threadId) : undefined,
             opts.botId ? eq(schema.threads.botId, opts.botId) : undefined,
             opts.seen,

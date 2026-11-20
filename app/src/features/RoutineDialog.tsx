@@ -30,6 +30,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
+import { RoutineRehearsal } from './RoutineRehearsal';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -262,6 +263,7 @@ export function RoutineDialog({
                   }
                 />
               )}
+              {routine && <RoutineRehearsal routine={routine} prompt={values.prompt ?? ''} />}
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('routine.when')}>

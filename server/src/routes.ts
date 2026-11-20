@@ -54,6 +54,7 @@ import {
   RoutineCreate,
   RoutineSuggestionAccept,
   RoutineUpdate,
+  RehearsalStart,
   RoomCreate,
   RoomSend,
   MeetingAnswer,
@@ -2123,6 +2124,22 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   app.get('/api/routines/:id/runs', async (req) => s.routines.runs(IdParams.parse(req.params).id));
   app.get('/api/routines/:id/revisions', async (req) => s.routines.revisions(IdParams.parse(req.params).id));
+  // Trying a routine without doing anything; each person sees only the rehearsals they asked for.
+  app.post('/api/routines/:id/rehearse', async (req) =>
+    s.rehearsals.start(IdParams.parse(req.params).id, me(req).userId, RehearsalStart.parse(req.body ?? {})),
+  );
+  app.get('/api/routines/:id/rehearsals', async (req) =>
+    s.rehearsals.list(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.get('/api/routines/:id/rehearsals/:rehearsalId', async (req) => {
+    const p = z
+      .object({ id: z.string().min(1).max(64), rehearsalId: z.string().min(1).max(64) })
+      .parse(req.params);
+    return s.rehearsals.get(p.id, p.rehearsalId, me(req).userId);
+  });
+  app.get('/api/routines/:id/replayable', async (req) =>
+    s.rehearsals.replayable(IdParams.parse(req.params).id, me(req).userId),
+  );
 
   // Library: files in the bot's folders (read-only listing and download).
   const libraryRoots = async (botId: string) => {

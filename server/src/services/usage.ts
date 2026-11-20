@@ -8,6 +8,7 @@ import {
 } from '@yumakbot/shared';
 import { z } from 'zod';
 import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { SettingsService } from './settings';
@@ -203,6 +204,7 @@ export class UsageService {
   async report(days: UsageRange, botId?: string): Promise<UsageReport> {
     const timezone = (await this.settings.all()).timezone;
     const now = this.clock();
+    const rehearsed = alias(schema.routines, 'rehearsed');
     const keys = lastDays(now, days, timezone);
     // A day and a half more than asked: the first local day starts somewhere in there.
     const since = new Date(now.getTime() - (days + 1.5) * 86_400_000);
@@ -215,10 +217,15 @@ export class UsageService {
         model: schema.turns.model,
         routineId: schema.routineRuns.routineId,
         routineName: schema.routines.name,
+        rehearsedId: schema.routineRehearsals.routineId,
+        rehearsedName: rehearsed.name,
       })
       .from(schema.turns)
       .leftJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.turns.routineRunId))
       .leftJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      // A rehearsal's turn counts in the totals like any other, and is named for its routine.
+      .leftJoin(schema.routineRehearsals, eq(schema.routineRehearsals.id, schema.turns.rehearsalId))
+      .leftJoin(rehearsed, eq(rehearsed.id, schema.routineRehearsals.routineId))
       .where(
         and(
           isNotNull(schema.turns.finishedAt),
@@ -239,6 +246,7 @@ export class UsageService {
       ReturnType<typeof empty> & Pick<(typeof rows)[number], 'engine' | 'model'>
     >();
     const perRoutine = new Map<string, ReturnType<typeof empty> & { name: string; botId: string }>();
+    const perRehearsal = new Map<string, ReturnType<typeof empty> & { name: string; botId: string }>();
     const perDay = new Map(keys.map((k) => [k, { costUsd: 0, turns: 0 }]));
     for (const r of rows) {
       const day = perDay.get(dayKey(r.finishedAt!, timezone));
@@ -254,7 +262,18 @@ export class UsageService {
           ? (perRoutine.get(r.routineId) ?? { ...empty(), name: r.routineName, botId: r.botId })
           : null;
       if (routine) perRoutine.set(r.routineId!, routine);
-      for (const sum of [total, bot, model, ...(routine ? [routine] : [])]) {
+      const rehearsal =
+        r.rehearsedId && r.rehearsedName
+          ? (perRehearsal.get(r.rehearsedId) ?? { ...empty(), name: r.rehearsedName, botId: r.botId })
+          : null;
+      if (rehearsal) perRehearsal.set(r.rehearsedId!, rehearsal);
+      for (const sum of [
+        total,
+        bot,
+        model,
+        ...(routine ? [routine] : []),
+        ...(rehearsal ? [rehearsal] : []),
+      ]) {
         sum.turns++;
         if (r.costUsd === null) sum.unpriced++;
         else sum.costUsd += r.costUsd;
@@ -284,6 +303,11 @@ export class UsageService {
       routines: [...perRoutine.entries()]
         .map(([routineId, sum]) => ({ routineId, ...sum }))
         .sort((a, b) => b.costUsd - a.costUsd || b.turns - a.turns),
+      ...(perRehearsal.size && {
+        rehearsals: [...perRehearsal.entries()]
+          .map(([routineId, sum]) => ({ routineId, ...sum }))
+          .sort((a, b) => b.costUsd - a.costUsd || b.turns - a.turns),
+      }),
       daily: keys.map((date) => ({ date, ...perDay.get(date)! })),
       gate: await this.gate(since, new Set(keys), timezone, botId),
       promises: await this.promiseNet(since, new Set(keys), timezone, botId),

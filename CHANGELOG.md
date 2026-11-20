@@ -7,6 +7,20 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A routine can be rehearsed before it runs for real. A new or changed routine runs unattended and the person only
+  learned what it does from what it already did, so "Rehearse" in the routine's dialog runs it once, with the
+  instruction as typed (saved or not) and, for a routine something else starts, with what started one of its last
+  five runs, shown beside what that run actually reported (that input is now kept, sealed and cut to 20,000
+  characters, as long as the run is; older runs cannot be replayed). The bot works for the person who set the
+  routine up, in a conversation of its own that is in no list and goes after 7 days. Steps that only read (pages,
+  searches, files, mail and WhatsApp history, a connected app's read-only tools, commands that read the bot's own
+  folders) are really done; every other step is not done, the bot is told so and to go on as if it had been, and it
+  is listed as "would do" in the words the approval card uses. No card is ever asked, whatever the level or the
+  rules, and the private line still stops the turn. The result shows the report, those steps in order, the reads
+  that ran, how long it took and what it cost, which counts in usage as a rehearsal of that routine. Nothing of the
+  routine changes (schedule, last run, carried report, failure marks), nothing is posted to the bot's main
+  conversation or its Slack channel, and no promise look or undo line follows. Someone who may change the bot can
+  rehearse instructions they typed; the saved routine is rehearsed only by the person it works for.
 - A turn can be taken back. A bot's step can be wrong, and the person had to find and undo each change by hand, so
   every turn now keeps, for 30 days, what its file tools wrote or edited, the table rows, tickets, routines, skills
   and bot settings it changed, and the notes it wrote or changed, each with how it was before (the words of a note it forgot are never kept). A bot's reply

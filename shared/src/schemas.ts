@@ -227,7 +227,7 @@ export const GroupMove = z.object({ beforeId: Id.nullable() });
 export type GroupMove = z.infer<typeof GroupMove>;
 
 /** `api`: messages sent to the bot from a script or another app through its API. */
-export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team']);
+export const ThreadKind = z.enum(['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team', 'rehearsal']);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
 export const TurnState = z.enum(['idle', 'queued', 'running', 'waiting']);
@@ -1440,6 +1440,10 @@ export const UsageReport = z.object({
   ),
   /** What each routine's runs cost, costliest first; missing on older servers. */
   routines: z.array(UsageTotals.extend({ routineId: Id, name: z.string(), botId: Id.nullable() })).optional(),
+  /** What rehearsals of each routine cost, costliest first; left out when there were none. */
+  rehearsals: z
+    .array(UsageTotals.extend({ routineId: Id, name: z.string(), botId: Id.nullable() }))
+    .optional(),
   /** One entry per day in the bot owner's time zone, oldest first, quiet days included. */
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */

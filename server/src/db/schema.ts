@@ -98,7 +98,9 @@ export const threads = pgTable(
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the
     // bot sees it, and its turns use only what the team shares, never one person's own data.
-    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team'] })
+    // `rehearsal`: where a routine is tried without doing anything; in no list, shown from the
+    // routine, and removed after a week.
+    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team', 'rehearsal'] })
       .notNull()
       .default('user'),
     /**
@@ -272,6 +274,8 @@ export const turns = pgTable(
     prompt: sealedText('prompt').notNull(),
     jobId: text('job_id'),
     routineRunId: text('routine_run_id'),
+    /** The rehearsal this turn is: its steps that change something are recorded, not done. */
+    rehearsalId: text('rehearsal_id'),
     error: text('error'),
     costUsd: real('cost_usd'),
     /** The engine and model the turn ran on, for the usage report; null until it starts. */
@@ -561,6 +565,13 @@ export const routineRuns = pgTable(
     threadId: text('thread_id'),
     /** What a queued run carries in, kept until it starts. */
     payload: sealedText('payload'),
+    /**
+     * What started the run, as the bot was handed it (a mail, a webhook's body, what a page or an
+     * app's answer changed, WhatsApp messages), cut short and kept as long as the run is, so a
+     * rehearsal can replay it. Null for a run with nothing handed in, and for runs from before it
+     * was kept.
+     */
+    triggerInput: sealedText('trigger_input'),
     promptSnapshot: text('prompt_snapshot').notNull(),
     /** The bot itself said the run could not do its task. */
     failedByBot: boolean('failed_by_bot').notNull().default(false),
@@ -1668,4 +1679,46 @@ export const turnChanges = pgTable(
     index('turn_changes_turn_idx').on(t.turnId, t.createdAt),
     index('turn_changes_created_idx').on(t.createdAt),
   ],
+);
+
+/**
+ * A routine tried once without doing anything: what the bot would have done is written down, what
+ * only reads is done. It works in a conversation of its own (kind `rehearsal`), which goes after a
+ * week with its row. Only the person who asked sees it.
+ */
+export const routineRehearsals = pgTable(
+  'routine_rehearsals',
+  {
+    id: text('id').primaryKey(),
+    routineId: text('routine_id')
+      .notNull()
+      .references(() => routines.id, { onDelete: 'cascade' }),
+    /** Who asked, and whom the rehearsal worked for. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'cascade' }),
+    turnId: text('turn_id'),
+    /** The instruction was the one typed in the dialog, not the saved one. */
+    draft: boolean('draft').notNull().default(false),
+    /** The run whose input was replayed; null when none was. */
+    replayRunId: text('replay_run_id'),
+    /** The instruction as it was rehearsed. */
+    prompt: sealedText('prompt').notNull(),
+    status: text('status', { enum: ['running', 'done', 'error', 'stopped'] })
+      .notNull()
+      .default('running'),
+    /** What the bot wrote at the end. */
+    report: sealedText('report').notNull().default(''),
+    /** Each step in order: one that only read and was done, or one that would have changed something. */
+    steps: sealedJson('steps')
+      .$type<{ kind: 'ran' | 'would'; tool: string; summary: string; at: string }[]>()
+      .notNull()
+      .default([]),
+    error: sealedText('error'),
+    costUsd: real('cost_usd'),
+    startedAt: created(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [index('routine_rehearsals_routine_idx').on(t.routineId, t.startedAt)],
 );

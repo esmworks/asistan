@@ -48,6 +48,7 @@ import { placeOf } from '../services/memory';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
 import { catastrophic, readsOnlyLine } from './safety';
 import { ownBoxStep } from './own-box';
+import { isRehearsalRead } from './rehearsal';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
 import { OWNER_ID } from '../users';
@@ -183,6 +184,8 @@ const GUEST_READS: ReadonlySet<string> = new Set([
 export class TurnManager {
   private running = new Map<string, Running>();
   private hooks: TurnFinishedHook[] = [];
+  /** What hears of a rehearsal's turn ending; the other hooks never see one. */
+  private rehearsalHooks: TurnFinishedHook[] = [];
   private signedOutHooks: (() => void)[] = [];
   private scheduling: Promise<void> = Promise.resolve();
   private stopped = false;
@@ -192,6 +195,10 @@ export class TurnManager {
     private services: Services,
     private engineFor: (bot: Bot) => Engine,
   ) {}
+
+  onRehearsalFinished(hook: TurnFinishedHook) {
+    this.rehearsalHooks.push(hook);
+  }
 
   onFinished(hook: TurnFinishedHook) {
     this.hooks.push(hook);
@@ -343,6 +350,8 @@ export class TurnManager {
     prompt: string;
     jobId?: string | null;
     routineRunId?: string | null;
+    /** The rehearsal this turn is; see the `rehearsalId` column. */
+    rehearsalId?: string | null;
     /** Outside text the turn that starts this one had read; this one starts with it read. */
     outside?: OutsideTrigger | null;
     /** The freest level the turn may act at, when a stricter bot starts it. */
@@ -365,6 +374,7 @@ export class TurnManager {
         prompt: t.prompt,
         jobId: t.jobId ?? null,
         routineRunId: t.routineRunId ?? null,
+        rehearsalId: t.rehearsalId ?? null,
         outside: t.outside ?? null,
         modeCap: t.modeCap ?? null,
         userId,
@@ -740,7 +750,17 @@ export class TurnManager {
         t('turn.spendLimit', { spent: month.costUsd.toFixed(2), limit: month.limitUsd.toFixed(2) }),
       );
     }
-    const thread = await threads.row(turn.threadId);
+    // A rehearsal works as the routine's real run would: with its model and, for a routine that
+    // reports to a Slack channel, as a team conversation that uses only what the team shares.
+    const [rehearsing] = turn.rehearsalId
+      ? await this.ctx.db
+          .select({ model: schema.routines.model, slackChannel: schema.routines.slackChannel })
+          .from(schema.routineRehearsals)
+          .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRehearsals.routineId))
+          .where(eq(schema.routineRehearsals.id, turn.rehearsalId))
+      : [];
+    const threadRow = await threads.row(turn.threadId);
+    const thread = rehearsing?.slackChannel ? { ...threadRow, kind: 'team' as const } : threadRow;
     const bot = await bots.get(turn.botId);
     const paths = workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, bot.groupId);
     const sandbox = sandboxFor(paths, {
@@ -790,13 +810,15 @@ export class TurnManager {
     // room member another bot named, or a new round of the room, is the bots' doing.
     const present = attended(turn.source);
     // The turn's routine run: what outside text started it, and the model the routine names.
-    const [routineRun] = turn.routineRunId
-      ? await this.ctx.db
-          .select({ trigger: schema.routineRuns.trigger, model: schema.routines.model })
-          .from(schema.routineRuns)
-          .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
-          .where(eq(schema.routineRuns.id, turn.routineRunId))
-      : [];
+    const [routineRun] = rehearsing
+      ? [{ trigger: null, model: rehearsing.model }]
+      : turn.routineRunId
+        ? await this.ctx.db
+            .select({ trigger: schema.routineRuns.trigger, model: schema.routines.model })
+            .from(schema.routineRuns)
+            .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+            .where(eq(schema.routineRuns.id, turn.routineRunId))
+        : [];
     // Outside text the turn reads (a mail, a webhook's body or post, a watched page, an app's new
     // answer, a report written from one): its run's, what the prompt hands over below, and what
     // the session it goes on in has read. The session keeps the mark, and the text reaches the bot
@@ -912,6 +934,8 @@ export class TurnManager {
         async (form, connection) => {
           const items = elicitQuestions(form, [t('elicit.yes'), t('elicit.no')]);
           if (!items.length) return { action: 'accept', content: {} };
+          // A rehearsal asks no one anything.
+          if (turn.rehearsalId) return { action: 'cancel' };
           const r = await askPerson(this.services, {
             bot,
             thread,
@@ -1009,11 +1033,14 @@ export class TurnManager {
     };
     // The files this turn's file tools change, looked at just before each step and once more when the
     // turn ends, so the person can take the turn back.
-    const files = await this.services.changes.watch(
-      { turnId: turn.id, threadId: thread.id, botId: bot.id, userId: person },
-      sandbox.cwd,
-      sandbox.writable,
-    );
+    // A rehearsal changes nothing, so it leaves nothing to take back.
+    const files = turn.rehearsalId
+      ? { before: async () => undefined, finish: async () => undefined }
+      : await this.services.changes.watch(
+          { turnId: turn.id, threadId: thread.id, botId: bot.id, userId: person },
+          sandbox.cwd,
+          sandbox.writable,
+        );
     /** The reason to refuse a step when it trips a wire (or one already did); null to go on. */
     const screen = async (ask: { toolName: string; input: Record<string, unknown> }) => {
       if (tripped) return t('turn.canaryRefused');
@@ -1107,8 +1134,8 @@ export class TurnManager {
       // A block rule refuses the call in every mode, before any other rule or card.
       const blocked = blockRuleFor(await approvals.rules(bot.id), ask.toolName, ask.input);
       if (blocked) return { behavior: 'deny', message: t('turn.blocked', { rule: blocked.pattern }) };
-      // ask_user handles its own card.
-      if (ask.toolName === 'mcp__yumakbot__ask_user') return { behavior: 'allow' };
+      // ask_user handles its own card; a rehearsal asks no one, so it is only written down below.
+      if (ask.toolName === 'mcp__yumakbot__ask_user' && !turn.rehearsalId) return { behavior: 'allow' };
       // A sandboxed command reaching a host: the internet switch decides, never a card. This
       // computer and the private network stay closed either way.
       if (ask.toolName === SANDBOX_NETWORK) {
@@ -1173,6 +1200,51 @@ export class TurnManager {
       if (copied) {
         free = new Set(free);
         free.delete(ask.toolName);
+      }
+      // A rehearsal does what only reads and writes down every other step as one it would take.
+      // No card is asked, whatever the level or the rules: a step that would need one is a step
+      // it would take.
+      if (turn.rehearsalId) {
+        const plain = isRehearsalRead({
+          toolName: ask.toolName,
+          appTool,
+          free,
+          gated,
+          copied: !!copied,
+          asked: askRuleMatches(rules, ask.toolName, ask.input),
+          readingLine:
+            ask.toolName === 'Bash' &&
+            typeof ask.input.command === 'string' &&
+            readsOnlyLine(
+              ask.input.command,
+              sandbox.cwd,
+              [
+                sandbox.cwd,
+                paths.threadDir,
+                paths.botFiles,
+                paths.groupFiles,
+                dirname(dirname(paths.threadDir)),
+              ].filter((d): d is string => !!d),
+              [
+                join(dirname(dirname(paths.threadDir)), 'threads'),
+                join(dirname(dirname(paths.threadDir)), 'home'),
+              ],
+            ),
+        });
+        // A bot that may only read is refused such a step in a real run, so it is not a step it
+        // would take.
+        if (!plain && mode === 'readonly') return { behavior: 'deny', message: t('turn.readOnly') };
+        const said = describeAction(ask.toolName, ask.input, {
+          bot: bot.name,
+          locale,
+          service: appTool?.server ? connectionNames.get(appTool.server) : undefined,
+        });
+        await this.services.rehearsals.note(turn.rehearsalId, {
+          kind: plain ? 'ran' : 'would',
+          tool: ask.toolName.split('__').at(-1) ?? ask.toolName,
+          summary: said.want,
+        });
+        return plain ? { behavior: 'allow' } : { behavior: 'deny', message: t('turn.rehearsalSkipped') };
       }
       // A plain read of the bot's own folders needs no card, at any level: an unattended routine
       // must not wait on one to read its own notes. On its desktop too, which sees these folders
@@ -1765,7 +1837,7 @@ export class TurnManager {
     }
     // Bot-to-bot exchanges run on their own; the person hears of the ones that reach them. A
     // routine's report is heard from the main conversation it is copied to.
-    const heard = kind !== 'bot';
+    const heard = kind !== 'bot' && kind !== 'rehearsal';
     if (outcome.text.trim() && !isSilentReply(outcome.text)) {
       // A reply written after reading outside text says so, for whoever reads it later.
       const [read] = await this.ctx.db
@@ -1916,7 +1988,9 @@ export class TurnManager {
   }
 
   private async runHooks(turn: TurnRow, outcome: TurnOutcome) {
-    for (const hook of this.hooks) {
+    // What a rehearsal ends with touches nothing outside it: no routine run, report, promise or
+    // memory look follows.
+    for (const hook of turn.rehearsalId ? this.rehearsalHooks : this.hooks) {
       try {
         await hook(turn, outcome);
       } catch (err) {

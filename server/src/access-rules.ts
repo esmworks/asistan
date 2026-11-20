@@ -272,6 +272,11 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'DELETE /api/routines/:id/webhook': edit('routine'),
   'GET /api/routines/:id/runs': edit('routine'),
   'GET /api/routines/:id/revisions': edit('routine'),
+  // The service keeps each person to the rehearsals they asked for.
+  'POST /api/routines/:id/rehearse': edit('routine'),
+  'GET /api/routines/:id/rehearsals': edit('routine'),
+  'GET /api/routines/:id/rehearsals/:rehearsalId': edit('routine'),
+  'GET /api/routines/:id/replayable': edit('routine'),
 
   // Memory: each person's own notes, and those of the bots they may change (checked by the routes).
   'GET /api/memory': 'self',
