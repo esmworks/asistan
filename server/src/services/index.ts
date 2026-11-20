@@ -32,6 +32,7 @@ import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
 import { DoctorService } from './doctor';
 import { TitleService } from './titles';
+import { OfferService } from './offers';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { MeetingService } from './meetings';
@@ -107,6 +108,7 @@ export class Services {
   readonly contentSeal: ContentSealService;
   readonly doctor: DoctorService;
   readonly titles: TitleService;
+  readonly offers: OfferService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
@@ -176,6 +178,8 @@ export class Services {
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
     this.titles = new TitleService(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.titles.onTurnFinished(t, o));
+    this.offers = new OfferService(ctx, this, engineFor, clock);
+    this.turns.onFinished((t, o) => this.offers.onTurnFinished(t, o));
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.promises = new PromiseService(ctx, this, engineFor, clock);
     this.turns.onFinished((t, o) => this.promises.onTurnFinished(t, o));

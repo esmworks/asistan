@@ -7,6 +7,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Bots can offer work they notice (Settings → General, off by default). After answering a person, the bot's model
+  looks over the conversation once more and may offer one next piece of work it could take on, on a card: "Do it"
+  sends the task as the person's own message, "Not now" puts it away. It never offers to send, post, buy, book,
+  delete or change settings; a conversation is looked at at most every six hours and a person gets at most three
+  offers a day; and each look is counted under Work offers in usage.
 - A page that hides text from people but writes it to an AI agent ("ignore your previous instructions", "if you are an
   AI agent…") is now caught when a bot reads it: in its browser (text pushed off the page, see-through, a few
   pixels tall, clipped or drawn in the background's colour, and comments) and in a page fetched without a browser

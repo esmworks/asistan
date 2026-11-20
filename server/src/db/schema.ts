@@ -1709,6 +1709,21 @@ export const routineSuggestions = pgTable(
 );
 
 /** One look of the routine suggestions at a group of requests: what the small-model call cost. */
+/** Each look the work offers took at a conversation after an answer: what it cost and whether it offered. */
+export const workOfferChecks = pgTable(
+  'work_offer_checks',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    costUsd: real('cost_usd'),
+    found: boolean('found').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('work_offer_checks_created_idx').on(t.createdAt)],
+);
+
 export const routineSuggestionChecks = pgTable(
   'routine_suggestion_checks',
   {

@@ -375,6 +375,7 @@ export class UsageService {
       gate: await this.gate(since, new Set(keys), timezone, botId),
       promises: await this.promiseNet(since, new Set(keys), timezone, botId),
       suggestions: await this.suggestionNet(since, new Set(keys), timezone, botId),
+      offers: await this.offerNet(since, new Set(keys), timezone, botId),
     };
   }
 
@@ -471,6 +472,36 @@ export class UsageService {
         and(
           gte(schema.routineSuggestionChecks.createdAt, since),
           botId ? eq(schema.routineSuggestionChecks.botId, botId) : undefined,
+        ),
+      );
+    const sum = { checks: 0, costUsd: 0, found: 0 };
+    for (const r of rows) {
+      if (!days.has(dayKey(r.at, timezone))) continue;
+      sum.checks++;
+      sum.costUsd += r.costUsd ?? 0;
+      if (r.found) sum.found++;
+    }
+    return sum.checks ? sum : undefined;
+  }
+
+  /** The work offers over the period: their looks at conversations, what they cost and the offers made. */
+  private async offerNet(
+    since: Date,
+    days: Set<string>,
+    timezone: string,
+    botId?: string,
+  ): Promise<UsageReport['offers']> {
+    const rows = await this.ctx.db
+      .select({
+        at: schema.workOfferChecks.createdAt,
+        costUsd: schema.workOfferChecks.costUsd,
+        found: schema.workOfferChecks.found,
+      })
+      .from(schema.workOfferChecks)
+      .where(
+        and(
+          gte(schema.workOfferChecks.createdAt, since),
+          botId ? eq(schema.workOfferChecks.botId, botId) : undefined,
         ),
       );
     const sum = { checks: 0, costUsd: 0, found: 0 };

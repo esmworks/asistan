@@ -1496,6 +1496,8 @@ export const UsageReport = z.object({
   suggestions: z
     .object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() })
     .optional(),
+  /** The work offers' looks at conversations over the period, when there were any: looks, cost, offers made. */
+  offers: z.object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() }).optional(),
 });
 export type UsageReport = z.infer<typeof UsageReport>;
 

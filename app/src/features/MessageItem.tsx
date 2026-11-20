@@ -35,6 +35,7 @@ import {
   FileCode,
   GitBranch,
   KeyRound,
+  Lightbulb,
   Pin,
   LoaderCircle,
   PenLine,
@@ -275,6 +276,7 @@ export function MessageItem({
       }
       if (typeof m.props.suggestApp === 'string')
         return <AppSuggestion catalogId={m.props.suggestApp} reason={m.text} botId={botId} />;
+      if (m.props.kind === 'offer') return <OfferCard m={m} />;
       // A page hid instructions for agents: a warning the person should not scroll past.
       if (m.props.kind === 'planted')
         return (
@@ -340,6 +342,46 @@ function RetryButton({ messageId }: { messageId: string }) {
     >
       <RotateCcw className="size-3.5" /> {t('message.retry')}
     </Button>
+  );
+}
+
+/**
+ * A piece of work the bot noticed it could take on: "Do it" sends the task as the person's own
+ * message, "Not now" puts the card away. Answered once; then it says how.
+ */
+function OfferCard({ m }: { m: Message }) {
+  const t = useT();
+  const answer = useMutation({
+    mutationFn: (take: boolean) => api.answerOffer(m.id, take),
+    onError: (err: Error) => toast.error(err.message),
+  });
+  const answered = typeof m.props.answer === 'string' ? m.props.answer : null;
+  return (
+    <div className="flex max-w-(--bubble-width) items-start gap-3 rounded-2xl border bg-card/50 px-4 py-3 text-sm">
+      <Lightbulb className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+        <div>{m.text}</div>
+        {answered ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {answered === 'taken' ? t('offer.taken') : t('offer.declined')}
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" disabled={answer.isPending} onClick={() => answer.mutate(true)}>
+              {t('offer.take')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={answer.isPending}
+              onClick={() => answer.mutate(false)}
+            >
+              {t('offer.decline')}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

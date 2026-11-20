@@ -568,6 +568,13 @@
       "when": 1795203616186,
       "tag": "0080_routine_sign_in_wait",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795204457971,
+      "tag": "0081_work_offer_checks",
+      "breakpoints": true
     }
   ]
 }

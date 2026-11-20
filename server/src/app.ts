@@ -769,6 +769,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.promises.shutdown();
       await services.routineSuggestions.shutdown();
       await services.titles.shutdown();
+      await services.offers.shutdown();
       await services.meetings.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);

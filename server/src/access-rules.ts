@@ -228,6 +228,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PATCH /api/messages/:id': manage('message'),
   'POST /api/messages/:id/steer': write('message'),
   'POST /api/messages/:id/retry': write('message'),
+  'POST /api/messages/:id/offer': write('message'),
   'DELETE /api/messages/:id': manage('message'),
   'PUT /api/threads/:id/pin': manage(),
   'POST /api/messages/:id/fork': write('message'),

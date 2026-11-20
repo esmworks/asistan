@@ -1201,6 +1201,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.threads.message(m.id);
   });
 
+  // The person's answer on a work offer: taken sends its task as their message; or turned down.
+  app.post('/api/messages/:id/offer', async (req) => {
+    const { take } = z.object({ take: z.boolean() }).parse(req.body);
+    return s.offers.answer(IdParams.parse(req.params).id, take, me(req).userId);
+  });
+
   // Hand a waiting message to the turn running now, so the bot reads it at its next step.
   app.post('/api/messages/:id/steer', async (req) => {
     const m = await queuedMessage(IdParams.parse(req.params).id);

@@ -295,6 +295,7 @@ export interface Settings {
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
   modelTitles?: boolean;
+  workOffers?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
   emailDomain?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
@@ -518,6 +519,7 @@ export const api = {
   editMessage: (id: string, text: string) => http.patch<Message>(`/api/messages/${id}`, { text }),
   removeMessage: (id: string) => http.del<{ ok: true }>(`/api/messages/${id}`),
   retryMessage: (id: string) => http.post<{ ok: true; turnId: string }>(`/api/messages/${id}/retry`),
+  answerOffer: (id: string, take: boolean) => http.post<Message>(`/api/messages/${id}/offer`, { take }),
   /** A tool call an MCP app's view makes, through the server to its own connection. */
   appCall: (messageId: string, name: string, args: Record<string, unknown>) =>
     http.post<unknown>(`/api/apps/${messageId}/call`, { name, arguments: args }),

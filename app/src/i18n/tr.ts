@@ -296,6 +296,8 @@ export const tr = {
     'Günde bir kez, botlara son haftalarda yazdığın mesajlara bakılır; tekrar tekrar istediğin bir şey varsa Bugün sayfası bunu rutin yapmayı önerir. Rutini botun kendi hesabından kısa bir istek yazar. Mesajlarını ve önerileri başkası görmez.',
   'usage.suggestions': 'Rutin önerileri',
   'usage.suggestions.checks': '{count} istek rutine çevrildi; maliyeti {cost}; yapılan öneri: {found}',
+  'usage.offers': 'İş önerileri',
+  'usage.offers.checks': '{count} sohbete bakıldı; maliyeti {cost}; yapılan öneri: {found}',
   'usage.parallel': 'Aynı anda çalışan',
   'usage.plan': 'Claude planı',
   'usage.plan.five_hour': '5 saatlik pencere',
@@ -861,6 +863,10 @@ export const tr = {
   'chat.emptyHint': 'Bir mesaj yazarak başlayın.',
   'chat.toBottom': 'Son mesaja git',
   'chat.newMessages': '{count} yeni mesaj',
+  'offer.take': 'Yap',
+  'offer.decline': 'Şimdi değil',
+  'offer.taken': 'İstedin',
+  'offer.declined': 'Geri çevirdin',
   'chat.quote': 'Alıntıla',
   'chat.pastedName': 'yapistirilan-metin.txt',
   'chat.pastedAsFile': 'Uzun yapıştırma ({count} karakter) metin dosyası olarak eklendi.',
@@ -1673,6 +1679,9 @@ export const tr = {
   'general.modelTitles': 'Sohbetlere model ad versin',
   'general.modelTitlesHint':
     'İlk cevaptan sonra botun modeli sohbete neyle ilgili olduğunu söyleyen kısa bir başlık yazar. Kapalıyken başlık ilk mesajın başı kalır; kendi verdiğin başlık hiç değişmez.',
+  'general.workOffers': 'Botlar fark ettikleri işi önersin',
+  'general.workOffersHint':
+    'Sana cevap verdikten sonra bot konuşmaya bir kez daha bakar ve üstlenebileceği bir sonraki işi, kabul edip geri çevirebileceğin bir kartla önerebilir. Göndermeyi, satın almayı ya da silmeyi asla önermez. Her bakış bir model çağrısıdır ve harcamaya yazılır.',
   'general.timezone': 'Saat dilimi',
   'general.timezoneHint': 'Rutinlerin ve botların kullandığı saat.',
 

@@ -650,6 +650,15 @@ function General() {
               />
             </Row>
           )}
+          {settings?.workOffers !== undefined && (
+            <Row label={t('general.workOffers')} hint={t('general.workOffersHint')}>
+              <Switch
+                checked={settings.workOffers}
+                onCheckedChange={(v) => save.mutate({ workOffers: v })}
+                aria-label={t('general.workOffers')}
+              />
+            </Row>
+          )}
         </Card>
       )}
     </>

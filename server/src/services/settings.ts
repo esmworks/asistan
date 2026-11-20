@@ -123,6 +123,12 @@ export const Settings = z.object({
    */
   modelTitles: z.boolean().default(true),
   /**
+   * After a person's message is answered, the bot's model looks at the conversation once more and
+   * may offer one piece of follow-up work it could take on, on a card the person accepts or turns
+   * down. Off by default: each look is a model call, and most find nothing to offer.
+   */
+  workOffers: z.boolean().default(false),
+  /**
    * How many turns may run at the same time across every bot; 0 leaves it to the server's
    * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
    */

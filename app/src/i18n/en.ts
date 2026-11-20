@@ -306,6 +306,11 @@ export const en: Catalog<MessageKey> = {
     one: '1 request written into a routine; it cost {cost}; suggestions made: {found}',
     other: '{count} requests written into routines; they cost {cost}; suggestions made: {found}',
   },
+  'usage.offers': 'Work offers',
+  'usage.offers.checks': {
+    one: '1 look at a conversation; it cost {cost}; offers made: {found}',
+    other: '{count} looks at conversations; they cost {cost}; offers made: {found}',
+  },
   'usage.parallel': 'Working at once',
   'usage.plan': 'Claude plan',
   'usage.plan.five_hour': '5-hour window',
@@ -890,6 +895,10 @@ export const en: Catalog<MessageKey> = {
   'chat.toBottom': 'Go to the latest message',
   'chat.newMessages': { one: '1 new message', other: '{count} new messages' },
   'chat.quote': 'Quote',
+  'offer.take': 'Do it',
+  'offer.decline': 'Not now',
+  'offer.taken': 'You asked for it',
+  'offer.declined': 'You turned it down',
   'chat.pastedName': 'pasted-text.txt',
   'chat.pastedAsFile': {
     one: 'The long paste is attached as a text file.',
@@ -1694,6 +1703,9 @@ export const en: Catalog<MessageKey> = {
   'general.modelTitles': 'Let the model name conversations',
   'general.modelTitlesHint':
     "After the first answer, the bot's model writes a short title saying what the conversation is about. While this is off the title stays the first message's opening words; a title you give is never changed.",
+  'general.workOffers': 'Let bots offer work they notice',
+  'general.workOffersHint':
+    'After answering you, the bot looks over the conversation once more and may offer one next piece of work it could take on, on a card you accept or turn down. It never offers to send, buy or delete. Each look is a model call, counted in usage.',
   'general.timezone': 'Time zone',
   'general.timezoneHint': 'The clock routines and bots use.',
 
