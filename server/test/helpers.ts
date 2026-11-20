@@ -79,6 +79,9 @@ export async function testServer(overrides: Partial<Config> = {}): Promise<TestS
   const engine = new FakeEngine();
   const now = { value: new Date('2026-11-16T05:00:00.000Z') };
   const server = await createServer(config, { engine, clock: () => now.value });
+  // A model-written title would replace the first message's words that many tests read back; the
+  // naming's own tests turn it on.
+  await server.services.settings.update({ modelTitles: false });
   const api = async <T>(method: string, url: string, body?: unknown) => {
     const res = await server.app.inject({
       method: method as 'GET',

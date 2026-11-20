@@ -1,6 +1,8 @@
 import {
   addressKey,
   catalogEntry,
+  formHeaders,
+  headerNameAllowed,
   parseMcpSetup,
   sharesApp,
   type CatalogEntry,
@@ -30,6 +32,7 @@ import { t } from '@/i18n';
 import { useConnections } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
+import { NewHeaders, type HeaderDraft } from './RequestHeaders';
 import { openSignIn } from './shared';
 
 /** In the app choice of a further account: sign in through an app of its own, not another account's. */
@@ -173,6 +176,11 @@ function SetupForm({
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [ownSwitch, setOwnSwitch] = useState(false);
+  const [headers, setHeaders] = useState<HeaderDraft[]>([]);
+  const [typed, setTyped] = useState<HeaderDraft>({ name: '', value: '' });
+  // A catalog service rarely needs headers of its own: they stay behind a link until asked for.
+  const [showHeaders, setShowHeaders] = useState(!entry);
+  const sentHeaders = formHeaders(headers, typed);
   // A service that needs a registered app always asks for one; any other only when switched on.
   const ownApp = !reusing && (!!entry?.client || ownSwitch);
   // A new app next to the default is named, so later accounts find it in the list.
@@ -194,6 +202,7 @@ function SetupForm({
             }
           : {}),
         ...(reusing ? { sameAppAs: appFrom } : {}),
+        ...(sentHeaders.length ? { headers: sentHeaders } : {}),
       };
       const made = await api.addConnection(input);
       if (auth !== 'oauth') return { id: made.id, url: undefined };
@@ -216,7 +225,8 @@ function SetupForm({
     (auth !== 'token' || !!token.trim()) &&
     (!needsClient || !!clientId.trim()) &&
     (!ownApp || !!clientId.trim()) &&
-    (!namingApp || !!appName.trim());
+    (!namingApp || !!appName.trim()) &&
+    sentHeaders.every((h) => headerNameAllowed(h.name, auth));
 
   const appItems: SheetItem[] = [
     ...apps.map((a, i) => ({
@@ -280,6 +290,7 @@ function SetupForm({
               onPress={() => setAuthSheet(true)}
             />
           </View>
+          <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
         </>
       ) : null}
       {auth === 'token' ? (
@@ -371,6 +382,15 @@ function SetupForm({
             </>
           ) : null}
         </View>
+      ) : null}
+      {entry ? (
+        showHeaders ? (
+          <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
+        ) : (
+          <Pressable accessibilityRole="button" onPress={() => setShowHeaders(true)}>
+            <Text style={[styles.link, { color: c.mutedForeground }]}>{t('apps.headerAdd')}</Text>
+          </Pressable>
+        )
       ) : null}
       {another && auth === 'oauth' ? (
         <View style={[styles.callout, { backgroundColor: c.muted }]}>

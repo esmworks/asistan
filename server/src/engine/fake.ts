@@ -4,6 +4,8 @@ import {
   runCost,
   SILENT_REPLY,
   toolPermName,
+  type CompactOutcome,
+  type CompactRequest,
   type CompleteRequest,
   type Completion,
   type Engine,
@@ -37,6 +39,7 @@ import {
  *   [plan]               write a two-step plan, then move it on
  *   [sessiz]             answer with the silent reply
  *   [maliyet:0.42]       spend this much in US dollars on the turn
+ *   [bağlam:150000]      leave the session this many tokens full
  * Like Claude, it reports cost as the session's running total, which a resumed session goes on from.
  * Without directives it echoes the prompt. Each session counts its turns, so resume can be checked.
  * A session passed to `forget` is gone, as when its transcript was deleted.
@@ -338,7 +341,22 @@ export class FakeEngine implements Engine {
       req.onText(chunk);
       await Promise.resolve();
     }
-    return { ok: true, text, sessionId, costUsd: spent };
+    const full = /\[bağlam:(\d+)\]/.exec(req.prompt);
+    return { ok: true, text, sessionId, costUsd: spent, ...(full && { contextTokens: Number(full[1]) }) };
+  }
+
+  /** Sessions folded by `compact`; a test may hold a fold open with `compactGate`. */
+  public compactions: CompactRequest[] = [];
+  public compactGate: Promise<void> | null = null;
+  /** A fold that fails after it was paid for. */
+  public compactFails = false;
+
+  async compact(req: CompactRequest): Promise<CompactOutcome> {
+    this.compactions.push(req);
+    if (this.compactGate) await this.compactGate;
+    if (req.signal.aborted) return { ok: false, message: 'Durduruldu', costUsd: 0, sessionCostUsd: null };
+    if (this.compactFails) return { ok: false, message: 'Özetlenemedi', costUsd: 0.02, sessionCostUsd: null };
+    return { ok: true, sessionId: req.sessionId, contextTokens: 20_000, costUsd: 0.05, sessionCostUsd: null };
   }
 
   async account() {

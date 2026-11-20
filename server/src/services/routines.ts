@@ -1196,6 +1196,10 @@ export class RoutineService {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
     if (!bot || bot.archivedAt) return this.record(routine, occurrence, 'skipped', t('routine.botMissing'));
+    // A paused bot does no work; its slot passes, with why, and the schedule goes on.
+    if (await this.services.bots.isPaused(bot)) {
+      return this.record(routine, occurrence, 'skipped', t('routine.botPaused'));
+    }
     // A routine whose runs each get a conversation of their own makes it once the run is recorded:
     // a slot skipped as busy or a mail delivered twice leaves no empty conversation behind.
     const own = !threadId && holdsRuns(routine);
@@ -2146,6 +2150,9 @@ export class RoutineService {
     const now = this.clock();
     const bot = await this.services.bots.get(r.routine.botId).catch(() => null);
     if (!bot || bot.archivedAt || !run.threadId) return this.endHeldRun(r, 'error', t('routine.botMissing'));
+    // A paused bot does no work, and its next step's turn would end at once: the run stays held,
+    // with its answer or event kept, and goes on at a pass after the bot is let go.
+    if (await this.services.bots.isPaused(bot)) return;
     let resumed: RunRow | undefined;
     try {
       [resumed] = await this.ctx.db
@@ -2642,6 +2649,41 @@ export class RoutineService {
       )
       .limit(1);
     return !!next;
+  }
+
+  /**
+   * Ends the run of a turn that asked other bots, when the answer cannot reach it any more: its bot
+   * was archived while the request was open, so no turn will read the answer and write the report.
+   */
+  async abandonAsked(fromTurnId: string) {
+    const [turn] = await this.ctx.db
+      .select({ routineRunId: schema.turns.routineRunId })
+      .from(schema.turns)
+      .where(eq(schema.turns.id, fromTurnId));
+    if (!turn?.routineRunId) return;
+    const t = await this.services.settings.translator();
+    const [ended] = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status: 'error', reason: t('routine.botMissing'), finishedAt: this.clock() })
+      .where(
+        and(
+          eq(schema.routineRuns.id, turn.routineRunId),
+          inArray(schema.routineRuns.status, ['running', 'waiting']),
+          notExists(
+            this.ctx.db
+              .select({ id: schema.turns.id })
+              .from(schema.turns)
+              .where(
+                and(
+                  eq(schema.turns.routineRunId, schema.routineRuns.id),
+                  inArray(schema.turns.status, ['queued', 'running']),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: schema.routineRuns.id });
+    if (ended) this.ctx.bus.refresh({ scope: 'routines' });
   }
 
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {

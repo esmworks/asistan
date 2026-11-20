@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
@@ -134,47 +135,64 @@ function BotAddress({
     onSuccess: onChange,
     onError: (e) => toast.error((e as Error).message),
   });
+  const codes = useMutation({
+    mutationFn: (on: boolean) => api.setEmailCodes(bot.id, on),
+    onSuccess: onChange,
+    onError: (e) => toast.error((e as Error).message),
+  });
   return (
-    <Row label={bot.name} hint={own?.address ?? t('email.noAddress')}>
-      {own ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="rounded-full"
-          disabled={release.isPending}
-          onClick={() => {
-            if (confirm(t('email.releaseConfirm', { address: own.address ?? own.name }))) release.mutate();
-          }}
-        >
-          {t('email.release')}
-        </Button>
-      ) : (
-        <form
-          className="flex items-center gap-1"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) claim.mutate();
-          }}
-        >
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('email.namePlaceholder')}
-            aria-label={t('email.name', { bot: bot.name })}
-            className="h-8 w-36 rounded-full text-sm"
-          />
-          <span className="text-xs text-muted-foreground">@{email.domain}</span>
+    <>
+      <Row label={bot.name} hint={own?.address ?? t('email.noAddress')}>
+        {own ? (
           <Button
-            type="submit"
             size="sm"
-            variant="secondary"
+            variant="ghost"
             className="rounded-full"
-            disabled={claim.isPending}
+            disabled={release.isPending}
+            onClick={() => {
+              if (confirm(t('email.releaseConfirm', { address: own.address ?? own.name }))) release.mutate();
+            }}
           >
-            {t('email.claim')}
+            {t('email.release')}
           </Button>
-        </form>
+        ) : (
+          <form
+            className="flex items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim()) claim.mutate();
+            }}
+          >
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('email.namePlaceholder')}
+              aria-label={t('email.name', { bot: bot.name })}
+              className="h-8 w-36 rounded-full text-sm"
+            />
+            <span className="text-xs text-muted-foreground">@{email.domain}</span>
+            <Button
+              type="submit"
+              size="sm"
+              variant="secondary"
+              className="rounded-full"
+              disabled={claim.isPending}
+            >
+              {t('email.claim')}
+            </Button>
+          </form>
+        )}
+      </Row>
+      {own && (
+        <Row label={t('email.codes', { bot: bot.name })} hint={t('email.codesHint')}>
+          <Switch
+            checked={own.codes}
+            disabled={codes.isPending}
+            onCheckedChange={(on) => codes.mutate(on)}
+            aria-label={t('email.codes', { bot: bot.name })}
+          />
+        </Row>
       )}
-    </Row>
+    </>
   );
 }

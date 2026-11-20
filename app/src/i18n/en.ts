@@ -244,6 +244,9 @@ export const en: Catalog<MessageKey> = {
   'usage.month': 'This month',
   'usage.monthOf': 'of a {limit} limit; turns wait for next month once it is reached',
   'usage.noLimit': 'No monthly limit',
+  'usage.day': 'Today',
+  'usage.dayOf': 'of a {limit} limit; turns wait for tomorrow once it is reached',
+  'usage.noDayLimit': 'No daily limit',
   'usage.limit': 'Limit ($)',
   'usage.downloadCsv': 'Download every turn as CSV',
   'usage.gate': 'Routine pre-check',
@@ -320,6 +323,37 @@ export const en: Catalog<MessageKey> = {
   'general.chatWidth.normal': 'Reading width',
   'general.chatWidth.wide': 'Wide',
   'general.chatWidth.full': 'Whole window',
+  'doctor.title': 'Server upkeep',
+  'doctor.intro': "Check the server's data",
+  'doctor.run': 'Check',
+  'doctor.again': 'Check again',
+  'doctor.checkedAt': 'Last checked: {time}',
+  'doctor.status.ok': 'Fine',
+  'doctor.status.warn': 'Worth a look',
+  'doctor.status.error': 'Problem',
+  'doctor.stuckTurns.title': 'Work left hanging',
+  'doctor.stuckTurns.ok': 'No work left half done',
+  'doctor.stuckTurns.found':
+    '{count} pieces of work look under way but nothing runs them; a repair ends them as stopped.',
+  'doctor.staleApprovals.title': 'Cards no one will read',
+  'doctor.staleApprovals.ok': 'No card waits on work that stopped',
+  'doctor.staleApprovals.found':
+    '{count} cards wait on work that no longer runs; a repair marks them expired.',
+  'doctor.strayFolders.title': 'Folders left behind',
+  'doctor.strayFolders.ok': 'Every folder has its bot, conversation or group',
+  'doctor.strayFolders.found':
+    '{count} folders of deleted bots, conversations or groups are left ({size}). A repair does not delete them; it moves them to doctor-trash in the data folder.',
+  'doctor.unreadable.title': 'Sealed content that does not open',
+  'doctor.unreadable.ok': 'All sealed content opens',
+  'doctor.unreadable.found':
+    '{count} values are sealed with another key. This cannot be mended here; bring that key back or restore a backup.',
+  'doctor.disk.title': 'Disk space',
+  'doctor.diskHint': "Free on the data folder's disk: {free}",
+  'doctor.repairTitle': 'Safe repair',
+  'doctor.repairHint': 'Only repairs that lose nothing are made.',
+  'doctor.repair': 'Repair',
+  'doctor.repaired': 'Repaired',
+  'doctor.repairedMoved': 'Repaired; the folders left behind were moved to {path}',
   'about.logs': 'Logs',
   'about.logsHint': 'What the app and its server wrote while running; useful when reporting a problem.',
   'about.showLogs': 'Show the log file',
@@ -517,6 +551,14 @@ export const en: Catalog<MessageKey> = {
   'teach.skillWhen': 'When to use it',
   'teach.save': 'Save the skill',
   'teach.saved': 'Saved; {bot} has the skill now',
+  'replay.run': 'Run without AI: redo the steps that were shown',
+  'replay.runNamed': 'Run {name} without AI',
+  'replay.running': '{name} is running from the steps shown…',
+  'replay.done': '{name}: all {total} steps done',
+  'replay.stopped': 'Stopped at step {step} of {total}',
+  'replay.askBotButton': 'Let {bot} finish',
+  'replay.askBot':
+    'I replayed the “{name}” skill without AI; it stopped at step {step}: {reason} Look at the page and finish the task from there.',
   'board.title': 'Board',
   'board.description': 'Tickets you and your bots work from, in columns by status.',
   'board.new': 'New ticket',
@@ -667,6 +709,9 @@ export const en: Catalog<MessageKey> = {
   'email.namePlaceholder': 'name',
   'email.name': 'Address for {bot}',
   'email.claim': 'Give',
+  'email.codes': 'Let {bot} take sign-in codes from mail',
+  'email.codesHint':
+    "When a site sends a sign-in code to this address, the bot types it into that site's own field. Only unread mail from the open page's site, from the last 10 minutes, is used. You can forward code mails from your own mailbox to this address.",
   'email.release': 'Give up',
   'email.releaseConfirm':
     'Give up {address}? Mail to it will no longer reach the bot, and no other bot can take the name.',
@@ -689,6 +734,26 @@ export const en: Catalog<MessageKey> = {
   'sidebarMenu.settings': 'Bot settings',
   'sidebarMenu.archived': '{name} archived',
   'sidebarMenu.undo': 'Undo',
+  'pause.pause': 'Pause',
+  'pause.resume': 'Resume',
+  'pause.pauseGroup': 'Pause the group',
+  'pause.resumeGroup': 'Resume the group',
+  'pause.all': 'Pause every bot',
+  'pause.resumeAll': 'Resume every bot',
+  'pause.allConfirm':
+    'Pause every bot? Their running work stops and their routines are skipped; what you write waits until you resume them.',
+  'pause.allPaused': '{count} bots paused',
+  'pause.allResumed': '{count} bots resumed',
+  'pause.botPaused': '{name} paused',
+  'pause.botPausedHint':
+    'Its running work stopped and its routines are skipped; what you write starts once you resume it.',
+  'pause.botResumed': '{name} resumed',
+  'pause.groupPaused': 'The group {name} is paused',
+  'pause.groupResumed': 'The group {name} is resumed',
+  'pause.badge': 'Paused',
+  'pause.bar': '{name} is paused. What you write waits until you resume it.',
+  'pause.barGroup':
+    '{name} is paused with the group {group}. What you write waits until the group is resumed.',
   'sidebarMenu.rename': 'Rename',
   'sidebarMenu.renameGroup': 'Rename group',
   'sidebarMenu.moveUp': 'Move up',
@@ -815,6 +880,7 @@ export const en: Catalog<MessageKey> = {
   'message.readAloud': 'Read aloud',
   'message.stopReading': 'Stop reading',
   'message.signIn': 'Sign in',
+  'message.enterKey': 'Enter key',
   'message.delete': 'Delete',
   'message.confirmDelete':
     'Delete this message from the conversation? What the bot already read of it stays with the bot.',
@@ -1383,6 +1449,13 @@ export const en: Catalog<MessageKey> = {
   'bot.managerHint':
     'Can write to every bot and create and edit bots. Still asks you before loosening permissions.',
   'bot.archive': 'Archive',
+  'bot.spendLimits': 'Spending limit',
+  'bot.spendLimitsHint':
+    'Once this bot alone has spent this much, it starts no new work; empty or 0 means no limit. The server’s limits apply as well.',
+  'bot.dailyLimit': 'Daily ($)',
+  'bot.monthlyLimit': 'Monthly ($)',
+  'bot.spent': 'Spent {day} today, {month} this month',
+  'bot.limitInvalid': 'Enter an amount of 0 or more',
   'bot.advanced': 'Advanced settings',
   'bot.advancedHint': 'Permissions, project folder, internet access, manager bot, tools',
   'bot.create': 'Create',
@@ -1518,6 +1591,9 @@ export const en: Catalog<MessageKey> = {
     "The interface, the bots' prompt and the system messages in conversations use this language.",
   'general.bots': 'Bots',
   'general.useDeviceZone': "Use this device's: {zone}",
+  'general.modelTitles': 'Let the model name conversations',
+  'general.modelTitlesHint':
+    "After the first answer, the bot's model writes a short title saying what the conversation is about. While this is off the title stays the first message's opening words; a title you give is never changed.",
   'general.timezone': 'Time zone',
   'general.timezoneHint': 'The clock routines and bots use.',
 
@@ -1984,9 +2060,12 @@ export const en: Catalog<MessageKey> = {
   'model.compactMillion': '{count} million tokens',
   'model.compactAuto': "Claude's own size",
   'model.compactRecommended': '{size} (recommended)',
+  'model.idleCompact': 'Summarise ahead while idle',
+  'model.idleCompactHint':
+    'When a long conversation nears this size and has been quiet for half an hour, the bot summarises it while nobody waits, so the next message is answered without waiting for a summary. Summarising uses the model and counts toward spending; it starts off because after a pause the model reads the conversation again without its cache.',
   'model.backup': 'Backup model',
   'model.backupHint':
-    'When the usage limit is used up, the work goes on with this model instead of waiting; it gets the recent conversation.',
+    'When the usage limit is used up or the model cannot answer, the work goes on with this model instead of waiting; it gets the recent conversation. While this is off no other model is used: the work waits and is sent again by itself once the limit resets.',
   'onboarding.noAi':
     'No AI is connected yet. The bots are created but cannot answer until you connect one under Settings → Connection.',
   'apps.open': 'Apps',
@@ -2029,6 +2108,7 @@ export const en: Catalog<MessageKey> = {
   'apps.headerValue': 'Value',
   'apps.headerAdd': 'Add header',
   'apps.headerSaved': 'saved',
+  'apps.headerNameBlocked': 'This header is set by the app itself and cannot be changed.',
   'apps.tokenHint': 'Sent as an Authorization: Bearer header; never shown again.',
   'apps.tokenHelp': 'Create a {name} key',
   'apps.clientNeeded':
@@ -2224,7 +2304,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.state.error': 'The connection stopped',
   'whatsapp.error.expired': 'The QR code was not scanned in time. Link again to get a new code.',
   'whatsapp.error.ownNumber':
-    'The linked account is the same as "The number you write to the bots from". In this mode they must differ: scan the QR code with the number that will be the bot, and enter another number you will write from. To write to the bots from the same number, choose "My own number".',
+    'The linked account is the same as the number under "Your number". Scan the QR code with the number that will be the bot (e.g. a company line), and enter there not that number but your own phone’s, which you write to the bots from.',
   'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
   'whatsapp.error.forbidden':
     'WhatsApp refused this connection; the number may be banned. Check the account in the WhatsApp app.',
@@ -2239,17 +2319,52 @@ export const en: Catalog<MessageKey> = {
     'Recommended. A second number that will be the bot (e.g. a company line) is linked; you write to it from another number.',
   'whatsapp.mode.own': 'My own number',
   'whatsapp.modeHint.own': 'Your own account is linked; you write to the bots in "Message yourself".',
-  'whatsapp.phone': 'The number you write to the bots from',
+  'whatsapp.phone.separate': 'Your number',
+  'whatsapp.phone.own': 'The number of the account to link',
   'whatsapp.phoneHint.separate':
-    'With the country code, digits only. It must differ from the bot number you scan the QR code with; only messages from this number reach the bots as requests.',
+    'The number of your own phone, which you write to the bots from (e.g. your personal line); with the country code, digits only. Not the bot number: only messages from this number reach the bots as requests.',
   'whatsapp.phoneHint.own':
     'With the country code, digits only. The number of the account you scan the QR code with; you write to the bots in its "Message yourself" chat.',
-  'whatsapp.bot': 'The bot messages go to',
+  'whatsapp.bot': 'The bot that answers you',
   'whatsapp.botPick': 'Choose a bot',
-  'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
+  'whatsapp.botHint':
+    'This bot answers what you write on WhatsApp; write "/bot <name>" to switch to another bot. Other people’s messages do not go to it.',
+  'whatsapp.door': 'Front-door bot',
+  'whatsapp.doorNone': 'None: nobody answers chats not given to a bot',
+  'whatsapp.doorHint':
+    'This bot answers everyone writing from a chat not given to a bot. It uses no tools and does not see your notes, profile or apps. All it can do is suggest to you, on a card, which bot the chat should go to.',
+  'whatsapp.doorRisk':
+    'Anyone who writes can ask about whatever the bot’s instructions and memory hold, so do not pick a bot you use for other work.',
+  'whatsapp.doorBot.create': 'Create a safe front-door bot',
+  'whatsapp.doorBot.created': 'Front-door bot created. Put only what anyone may know in its instructions.',
+  'whatsapp.doorBot.loose':
+    'This bot is not locked down: it is not read-only, its internet or memory is on, or it has a project folder. A separate bot is advised for the front door.',
+  'whatsapp.doorBot.name': 'Front door',
+  'whatsapp.doorBot.description':
+    'Gives the first answer on WhatsApp to people whose chat is not given to a bot.',
+  'whatsapp.doorBot.instructions':
+    'You greet people who write on WhatsApp. Answer briefly and kindly, in the language they write in.\n\nWhat anyone may know (fill in; no customers, prices, passwords or internal information):\n- Company:\n- Opening hours:\n- Address:\n- Services:\n- Contact:\n\nIf asked something not in these facts, do not make it up; say the right person will get back to them soon.',
+  'whatsapp.reply': 'Answers',
+  'whatsapp.reply.off': 'Off',
+  'whatsapp.reply.draft': 'Draft',
+  'whatsapp.reply.auto': 'Automatic',
+  'whatsapp.routes': 'Chats given to bots',
+  'whatsapp.routesHint':
+    'Give a person or a group to a bot; that bot then answers the chat, in a conversation of its own for it. There the bot sees none of your personal data or your WhatsApp, and asks before anything but answering. Draft: the answer comes to you for approval first. Automatic: it goes at once, but asks on a card when you wrote in the chat by hand or more than 5 an hour would go to it. In a group the bot works only when the account is mentioned or answered, and never writes to the group; it tells you. The answer of someone a bot sent a message to in the last 3 days goes to that bot.',
+  'whatsapp.routeNumber': 'Phone number',
+  'whatsapp.routeGroup': 'Group',
+  'whatsapp.routeAdd': 'Add a number',
+  'whatsapp.routeGroupAdd': 'Add a group',
+  'whatsapp.routeRemove': 'Remove',
+  'whatsapp.routeNoBot': 'Choose a number or group and a bot for every chat given to a bot.',
+  'whatsapp.doorOwn':
+    'On your own number the front door answers only people not saved in your phone book, and since its answer goes out from your number, it always comes to you on a card first.',
   'whatsapp.notices': 'Also tell me about other conversations',
   'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
   'whatsapp.chats': 'Let the bots look at my chats',
+  'whatsapp.autoSend': 'Let the bots send without asking',
+  'whatsapp.autoSendHint':
+    'A bot at full access sends without a card in work you asked for. Woken by the reply of someone it wrote to, it answers only that chat without a card, unless you wrote there by hand; so it may answer their questions with words you did not see. Every message that goes is written in the conversation. Messages with a file, to a number never written to, or more than 5 an hour to one chat still ask on a card.',
   'whatsapp.chatsHint':
     "When you ask, your bots read this account's chats with people and groups and draft messages; a message goes only once you approve it. Messages are kept encrypted for 30 days from when this is on.",
   'whatsapp.qrAlt': 'QR code of the WhatsApp link',
@@ -2257,7 +2372,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.scan':
     'On the phone of the account you link, open WhatsApp → Settings → Linked devices → Link a device and scan this code. The code renews itself; setup must finish within 5 minutes.',
   'whatsapp.howTo.separate':
-    'Write to +{number} from the number you write to the bots from. /bot <name> switches to another bot, /stop stops work in progress.',
+    'Write to +{number} from your own number. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.howTo.own':
     'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.risk':

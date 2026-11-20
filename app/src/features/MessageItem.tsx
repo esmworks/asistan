@@ -377,7 +377,7 @@ function SignInCard({ connectionId, text, botId }: { connectionId: string; text:
           className="shrink-0 rounded-full"
           onClick={() => openApps({ botId: botId ?? null, connectionId })}
         >
-          {t('message.signIn')}
+          {t(c.auth === 'token' ? 'message.enterKey' : 'message.signIn')}
         </Button>
       )}
     </section>

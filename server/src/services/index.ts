@@ -28,6 +28,8 @@ import { ApiSourceService } from './api-sources';
 import { TicketService } from './tickets';
 import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
+import { DoctorService } from './doctor';
+import { TitleService } from './titles';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { MeetingService } from './meetings';
@@ -93,6 +95,8 @@ export class Services {
   readonly tickets: TicketService;
   readonly tables: TableService;
   readonly contentSeal: ContentSealService;
+  readonly doctor: DoctorService;
+  readonly titles: TitleService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
@@ -152,14 +156,18 @@ export class Services {
     this.tickets = new TicketService(ctx, this);
     this.tables = new TableService(ctx);
     this.contentSeal = new ContentSealService(ctx);
+    this.doctor = new DoctorService(ctx, this);
     this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
     this.memoryReview = new MemoryReviewService(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
+    this.titles = new TitleService(ctx, this, engineFor);
+    this.turns.onFinished((t, o) => this.titles.onTurnFinished(t, o));
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.meetings = new MeetingService(ctx, this, engineFor, clock);
     this.turns.onFinished((t) => this.meetings.onTurnFinished(t));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
+    this.turns.onFinished((t, o) => this.whatsapp.onTurnFinished(t, o));
     this.slack = new SlackChannel(ctx, this, this.vault);
     this.discord = new DiscordChannel(ctx, this, this.vault);
   }

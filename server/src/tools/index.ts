@@ -37,9 +37,10 @@ import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
 import { errorText, HttpError, newId, notFound, truncate } from '../util';
+import { replayHandOver, replaySteps } from '../browser/replay';
 import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
-import { pageImageTool, sendFileTool, showPageTool } from './files';
+import { handFiles, pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
 import { apiTools } from './api';
 import { emailTools } from './email';
@@ -121,7 +122,17 @@ const TEAM_OFF = new Set<string>([
  * Tools a turn asked by someone with no account here does without: each starts work that later
  * goes on for the person the turn acts for, with all they may do.
  */
-const GUEST_OFF = new Set<string>(['ticket_create', 'ticket_update', 'skill_save', 'browser_card']);
+const GUEST_OFF = new Set<string>([
+  'ticket_create',
+  'ticket_update',
+  'skill_save',
+  'browser_card',
+  // Signing in with the vault's password, its two-step code or a code mailed to the bot runs
+  // without a card: someone with no account here would get into the person's accounts by asking.
+  'browser_login',
+  'browser_code',
+  'browser_email_code',
+]);
 
 /** Tool builder for one turn: descriptions and results are written in the turn's language. */
 const definer =
@@ -201,6 +212,7 @@ export type ToolName =
   | 'whatsapp_send'
   | 'whatsapp_status'
   | 'whatsapp_follow'
+  | 'whatsapp_suggest_route'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -227,6 +239,8 @@ export type ToolName =
   | 'conversations_search'
   | 'message_read'
   | 'skill_read'
+  | 'skill_replay'
+  | 'browser_email_code'
   | 'my_activity'
   | 'skill_save'
   | 'routine_create'
@@ -248,6 +262,7 @@ export type ToolName =
   | 'bot_status'
   | 'bot_requests'
   | 'bot_stop'
+  | 'reply_files'
   | 'bot_conversations_read'
   | 'bot_create'
   | 'models_list'
@@ -321,6 +336,8 @@ export class ToolFactory {
     skills?: Skill[];
     /** The bot's mail address; with one, it gets its inbox. */
     email?: string | null;
+    /** Whether a person let the bot type sign-in codes from that mailbox into the site that sent them. */
+    emailCodes?: boolean;
     /** OpenAPI documents the bot may call operations of. */
     apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
@@ -335,6 +352,8 @@ export class ToolFactory {
     whatsappOwner?: string | null;
     /** Whether a routine of the bot reads WhatsApp chats. */
     whatsappReader?: boolean;
+    /** A WhatsApp chat the bot answers for the person: one given to it, or the front door. */
+    contact?: 'route' | 'door';
   }): AppTool[] {
     const { bot, thread, turn, signal, t, plan } = opts;
     const reads = () => opts.outside?.() ?? null;
@@ -350,8 +369,9 @@ export class ToolFactory {
     const s = this.services;
     // Whom the turn works for: who asked, else whose conversation it is, else the bot's owner.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
-    // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins.
-    const team = thread.kind === 'team';
+    // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins; so
+    // does a WhatsApp chat a bot answers for the person, where someone else writes.
+    const team = thread.kind === 'team' || !!opts.contact;
     const own = team ? null : person;
     // Asked by someone with no account here (a Discord member): the turn acts for the person it
     // works for, but may do no more with the bots than talk with them.
@@ -1189,10 +1209,11 @@ export class ToolFactory {
           const shared = await reachable('chat');
           const peers = all.filter((b) => s.bots.canMessage(bot, b) && shared.has(b.id));
           if (!peers.length) return t('tool.noPeers');
+          const paused = await s.bots.pausedIds();
           return peers
             .map(
               (b) =>
-                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${b.description ? `: ${b.description}` : ''}`,
+                `- ${b.name}${b.isManager ? t('bot.managerTag') : ''}${paused.has(b.id) ? t('bot.pausedTag') : ''}${b.description ? `: ${b.description}` : ''}`,
             )
             .join('\n');
         },
@@ -1242,10 +1263,18 @@ export class ToolFactory {
           message: z.string().min(1).max(20_000),
           expect_reply: z.boolean().default(true),
           approval_id: z.string().optional(),
+          files: z.array(z.string().max(2000)).max(10).optional(),
         },
-        async ({ bot: ref, message, expect_reply, approval_id }) => {
+        async ({ bot: ref, message, expect_reply, approval_id, files }) => {
           const to = await reachBot(ref, 'chat');
+          // A paused bot takes no work; the asking bot hears so and can tell its person.
+          if (await s.bots.isPaused(to)) return t('tool.botPaused', { name: to.name });
+          const dataDir = this.ctx.config.dataDir;
           const job = await s.jobs.send({
+            ...(files?.length && {
+              attach: (toThreadId: string) =>
+                handFiles({ dataDir, from: bot, fromThreadId: thread.id, to, toThreadId, paths: files, t }),
+            }),
             from: bot,
             fromThreadId: thread.id,
             fromTurnId: turn.id,
@@ -1280,6 +1309,20 @@ export class ToolFactory {
         },
         'read',
       ),
+      // Answering another bot's request: files go back with the answer, to the bot that asked.
+      ...(turn.jobId && thread.kind === 'bot'
+        ? [
+            def(
+              'reply_files',
+              { paths: z.array(z.string().max(2000)).min(1).max(10) },
+              async ({ paths }) => {
+                const names = await s.jobs.replyFiles(turn.jobId!, bot, thread.id, paths, t);
+                return t('tool.replyFilesAdded', { names: names.join(', ') });
+              },
+              'internal',
+            ),
+          ]
+        : []),
       def(
         'bot_requests',
         {},
@@ -1370,6 +1413,19 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    // The front door's one tool: the chat is its own, never one it names.
+    if (opts.contact === 'door') {
+      tools.push(
+        def(
+          'whatsapp_suggest_route',
+          { bot: z.string().min(1).max(200), reason: z.string().min(1).max(1000) },
+          async ({ bot: ref, reason }) =>
+            s.whatsapp.suggestRoute({ threadId: thread.id, botId: bot.id, ref, reason }, t),
+          'internal',
+        ),
+      );
+    }
+    let askedOnce: Promise<boolean> | null = null;
     // Someone's WhatsApp chats are theirs alone: not in a team conversation, nor for a guest.
     if (opts.whatsappOwner && opts.whatsappOwner === person && !team && !guest) {
       tools.push(
@@ -1384,7 +1440,17 @@ export class ToolFactory {
           reader: !!opts.whatsappReader,
           // Every chat is reached only for the person's own message or a routine they saved, not
           // for a run a mail, a webhook, a watched page or a WhatsApp chat started.
-          asked: async () => (await requestedBy(this.ctx, turn)) !== null,
+          // Read once: a run that reads a chat is marked as outside text from then on, which must
+          // not make the person's own work look like nobody asked for it.
+          // A contact's answer comes in as a message in the conversation, but is their words, not
+          // the person's.
+          asked: () =>
+            (askedOnce ??=
+              turn.outside === 'whatsapp'
+                ? Promise.resolve(false)
+                : requestedBy(this.ctx, turn).then((x) => x !== null)),
+          woken: () => s.whatsapp.wokenBy(turn),
+          unwatched: () => !attended(turn.source) && !!reads(),
           // Reading someone's chats starts only on the person's own word, whatever the bot's level.
           askOpen: async () => {
             const yes = t('tool.whatsappFollowYes');
@@ -1576,8 +1642,45 @@ export class ToolFactory {
               ? (await s.memory.forSite(bot.id, host, own, await place())).map((m) => m.content)
               : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
+          ...(opts.email &&
+            opts.emailCodes && {
+              mailCode: {
+                address: opts.email,
+                wait: (site: string, waitMs: number) => s.email.waitForCode(bot.id, site, waitMs, signal),
+                used: (id: string) => s.email.codeUsed(bot.id, id),
+              },
+            }),
         }),
       );
+      const taught = skills.filter((k) => k.steps?.length);
+      if (taught.length) {
+        tools.push(
+          def(
+            'skill_replay',
+            { name: z.string().min(1).max(100), from: z.number().int().min(1).max(200).optional() },
+            async ({ name, from }) => {
+              const skill = taught.find((k) => k.name === name.trim().toLowerCase());
+              if (!skill) return t('tool.noTaught', { name, names: taught.map((k) => k.name).join(', ') });
+              await s.skills.markUsed(skill.id);
+              const steps = skill.steps!.slice((from ?? 1) - 1);
+              // The replay names step kinds by key, as the lesson's own text does.
+              const loose = t as unknown as Parameters<typeof replaySteps>[3];
+              const result = await replaySteps(this.ctx.browser, bot.id, steps, loose);
+              // Counted on the whole lesson, so the step numbers match the skill's own.
+              const skipped = (from ?? 1) - 1;
+              const whole = {
+                ...result,
+                done: result.done + skipped,
+                total: result.total + skipped,
+                ...(result.failedAt && {
+                  failedAt: { ...result.failedAt, step: result.failedAt.step + skipped },
+                }),
+              };
+              return replayHandOver(whole, skill.steps!, loose);
+            },
+          ),
+        );
+      }
     }
     if (this.ctx.computer && bot.internet) {
       // Commands run in the thread's own work folder, which the desktop sees at the same path.
@@ -1733,6 +1836,9 @@ export class ToolFactory {
               effort: '',
               toolSelection: ALL_TOOLS,
               instructionsUrl: null,
+              // A bot's spending limits are the person's to set, never another bot's.
+              dailyLimitUsd: 0,
+              monthlyLimitUsd: 0,
             },
             // The bot is the person's the manager made it for.
             person,

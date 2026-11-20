@@ -86,7 +86,9 @@ import {
   ApiCredentialCreate,
   ApiKeyImport,
   ApiCredentialUpdate,
+  DoctorRepair,
   EmailClaim,
+  EmailCodes,
   AI_KINDS,
   AiEndpointSet,
   PluginInstall,
@@ -130,6 +132,7 @@ import { atLeast, managesServer } from './services/access';
 import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
+import { replaySteps } from './browser/replay';
 import { stepsText } from './browser/teach';
 import { findLinkedFile, workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
@@ -173,6 +176,8 @@ interface Deps {
 
 const IdParams = z.object({ id: z.string().min(1) });
 const RunParams = z.object({ id: z.string().min(1), runId: z.string().min(1) });
+/** Pauses (true) or resumes (false) a bot, a group or every bot. */
+const PauseBody = z.object({ paused: z.boolean() });
 
 /** Library files the page may show as pictures. */
 /** What the page may show in place: raster images, and PDFs in the browser's own viewer. */
@@ -651,6 +656,27 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.bots.move(id, body);
   });
   app.post('/api/bots/:id/archive', async (req) => s.bots.archive(IdParams.parse(req.params).id));
+  // A paused bot's running work stops at once; a person's waiting message starts on the resume.
+  app.post('/api/bots/:id/pause', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const { paused } = PauseBody.parse(req.body);
+    const bot = await s.bots.setPaused(id, paused);
+    if (paused) await s.turns.stopBots([id]);
+    else s.turns.schedule();
+    return bot;
+  });
+  app.get('/api/bots/:id/spend', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await s.bots.get(id);
+    return s.usage.botSpent(id);
+  });
+  app.post('/api/bots/pause-all', async (req) => {
+    const { paused } = PauseBody.parse(req.body);
+    const ids = await s.bots.setAllPaused(paused);
+    if (paused) await s.turns.stopBots(ids);
+    else s.turns.schedule();
+    return { count: ids.length };
+  });
   app.post('/api/bots/:id/restore', async (req) => s.bots.restore(IdParams.parse(req.params).id));
   app.delete('/api/bots/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -843,7 +869,28 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
         '\n',
       ),
       steps: steps.length,
+      // Kept with the skill, so the task can be replayed without the model.
+      taught: steps,
     };
+  });
+  // Does a taught skill again in the bot's browser without the model; the answer says where it
+  // stopped, if it did, so the person can hand the rest to the bot.
+  app.post('/api/bots/:id/skills/:skillId/replay', async (req) => {
+    const p = z.object({ id: z.string().min(1), skillId: z.string().min(1) }).parse(req.params);
+    const bot = await s.bots.get(p.id);
+    const skill = await s.skills.get(p.skillId);
+    if (!skill.botIds.includes(bot.id)) throw notFound('skill');
+    if (!skill.steps?.length) throw new HttpError(409, 'error.notTaught');
+    if (!d.services.ctx.browser.available) throw new HttpError(409, 'error.teachNoBrowser');
+    if (await s.bots.isPaused(bot)) throw new HttpError(409, 'error.botPaused', { bot: bot.name });
+    // The steps would cross the bot's own browser calls in a turn under way.
+    if (s.turns.botWorking(bot.id) || d.services.ctx.browser.state(bot.id).status === 'bot') {
+      throw new HttpError(409, 'browser.busy');
+    }
+    const t = await s.settings.translator();
+    const tr = t as unknown as (key: string, params?: Record<string, string | number>) => string;
+    await s.skills.markUsed(skill.id);
+    return replaySteps(d.services.ctx.browser, bot.id, skill.steps, tr);
   });
 
   // Bots' tables: the person reads, corrects and clears what a bot keeps there.
@@ -999,6 +1046,14 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/groups/:id/move', async (req) =>
     s.bots.moveGroup(IdParams.parse(req.params).id, GroupMove.parse(req.body)),
   );
+  app.post('/api/groups/:id/pause', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    const { paused } = PauseBody.parse(req.body);
+    const group = await s.bots.setGroupPaused(id, paused);
+    if (paused) await s.turns.stopBots(await s.bots.groupBotIds(id));
+    else s.turns.schedule();
+    return group;
+  });
   app.delete('/api/groups/:id', async (req) => {
     await s.bots.deleteGroup(IdParams.parse(req.params).id);
     return { ok: true };
@@ -2285,12 +2340,19 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const status = await s.email.receive(relayToken(req), to, Buffer.concat(chunks));
     return reply.code(200).send({ ok: true, status });
   });
+  // The server's own check of its data, and the repairs that lose nothing.
+  app.get('/api/doctor', () => s.doctor.check());
+  app.post('/api/doctor/repair', async (req) => s.doctor.repair(DoctorRepair.parse(req.body).checks));
   app.get('/api/email', () => s.email.settings());
   app.post('/api/email/secret', () => s.email.renewSecret());
   app.post('/api/bots/:id/email', async (req) => {
     if (!(await s.email.domain())) throw new HttpError(409, 'error.emailNoDomain');
     return s.email.claim(IdParams.parse(req.params).id, EmailClaim.parse(req.body).name);
   });
+  // Lets the bot type sign-in codes from its mail into the site that sent them, or stops it.
+  app.put('/api/bots/:id/email/codes', async (req) =>
+    s.email.setCodes(IdParams.parse(req.params).id, EmailCodes.parse(req.body).on),
+  );
   app.delete('/api/bots/:id/email', async (req) => {
     await s.email.release(IdParams.parse(req.params).id);
     return s.email.settings();

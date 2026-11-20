@@ -24,6 +24,7 @@ type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
 export const toGroup = (r: Row<typeof schema.groups>): Group => ({
   id: r.id,
   name: r.name,
+  pausedAt: iso(r.pausedAt),
   createdAt: r.createdAt.toISOString(),
 });
 
@@ -51,6 +52,9 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   instructionsCheckedAt: iso(r.instructionsCheckedAt),
   instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
+  pausedAt: iso(r.pausedAt),
+  dailyLimitUsd: r.dailyLimitUsd,
+  monthlyLimitUsd: r.monthlyLimitUsd,
   ownerUserId: r.ownerUserId,
   access: r.access,
   createdAt: r.createdAt.toISOString(),

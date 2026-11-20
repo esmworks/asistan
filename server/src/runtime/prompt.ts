@@ -77,6 +77,11 @@ export function buildSystemPrompt(opts: {
   email?: string | null;
   /** A team conversation: several people, and no one's own data. */
   team?: boolean;
+  /**
+   * A WhatsApp chat the bot answers for the person: one given to it (`route`) or at the front
+   * door (`door`). Like a team conversation it has no one's own data, but it is not the team's.
+   */
+  contact?: 'route' | 'door';
   /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
   recall?: boolean;
 }): string {
@@ -93,7 +98,9 @@ export function buildSystemPrompt(opts: {
       lines.push(`- ${m.name}${m.description ? `: ${listed(m.description)}` : ''}`);
     lines.push(t('prompt.roomHow', { silent: SILENT_REPLY }));
   }
-  if (opts.team) lines.push('', t('prompt.team'));
+  if (opts.contact)
+    lines.push('', t(opts.contact === 'door' ? 'prompt.whatsappDoor' : 'prompt.whatsappContact'));
+  else if (opts.team) lines.push('', t('prompt.team'));
 
   // The time itself comes with each message (see `nowLine`): here it would change the prompt on
   // every turn and void the model's cache of the whole conversation.
@@ -211,10 +218,15 @@ export const HANDOFF_CHARS = 30_000;
  * webhook post, fenced as data, or the report the bot itself wrote in one of its routine's runs.
  */
 export function postedText(
-  m: { text: string; props?: { routineName?: unknown; posted?: unknown; routineReport?: unknown } },
+  m: {
+    text: string;
+    props?: { routineName?: unknown; posted?: unknown; routineReport?: unknown; whatsappDraft?: unknown };
+  },
   t: T,
 ): string {
   const text = m.text.length > HANDOFF_MESSAGE_CHARS ? `${cutAt(m.text, HANDOFF_MESSAGE_CHARS)}…` : m.text;
+  // The server's own word on a draft the person answered on its card.
+  if (m.props?.whatsappDraft) return t('prompt.whatsappDraft', { text });
   const name = String(m.props?.routineName ?? '');
   return m.props?.routineReport && !m.props.posted
     ? t('prompt.routineReport', { name, text })

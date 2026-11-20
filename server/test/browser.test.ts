@@ -13,6 +13,7 @@ import {
   SCREEN,
   VIEWPORT,
   webUrl,
+  windowedHints,
   windowedUserAgent,
 } from '../src/browser/manager';
 import { browserErrorText } from '../src/browser/text';
@@ -63,6 +64,30 @@ describe('tarayıcı yardımcıları', () => {
       `${mac} Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0`,
     );
     expect(windowedUserAgent(`${mac} Chrome/157.0.0.0 Safari/537.36`)).toBeNull();
+  });
+
+  it('headless kabuğun istemci ipuçlarından "HeadlessChrome" markasını çıkarır', () => {
+    const seen = {
+      brands: [
+        { brand: 'HeadlessChrome', version: '153' },
+        { brand: 'Not_A Brand', version: '8' },
+        { brand: 'Chromium', version: '153' },
+      ],
+      fullVersionList: [
+        { brand: 'HeadlessChrome', version: '153.0.1.2' },
+        { brand: 'Chromium', version: '153.0.1.2' },
+      ],
+      mobile: false,
+      platform: 'macOS',
+      platformVersion: '26.1.0',
+      architecture: 'arm',
+      bitness: '64',
+    };
+    const hints = windowedHints(seen)!;
+    expect(hints.brands.map((b) => b.brand)).toEqual(['Not_A Brand', 'Chromium']);
+    expect(hints.fullVersionList.map((b) => b.brand)).toEqual(['Chromium']);
+    expect(hints).toMatchObject({ platform: 'macOS', architecture: 'arm', model: '' });
+    expect(windowedHints({ ...seen, brands: seen.brands.slice(1) })).toBeNull();
   });
 
   it('hides a vault secret in every form a page may show it', () => {

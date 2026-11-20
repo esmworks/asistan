@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess } from '@yumakbot/shared';
+import type { BotAccess, TaughtStep } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -28,6 +28,8 @@ export const groups = pgTable('groups', {
   name: text('name').notNull(),
   /** Order of the groups in the sidebar. */
   position: integer('position').notNull().default(0),
+  /** Set while every bot of the group is paused: none of them starts work until it is cleared. */
+  pausedAt: ts('paused_at'),
   createdAt: created(),
 });
 
@@ -75,6 +77,15 @@ export const bots = pgTable('bots', {
   /** Why the document could not be read the last time; null when it was. */
   instructionsError: text('instructions_error'),
   archivedAt: ts('archived_at'),
+  /**
+   * Set while the bot is paused: it starts no work (a person's message waits, a routine is
+   * skipped, another bot's request is refused) until it is cleared.
+   */
+  pausedAt: ts('paused_at'),
+  /** The most this bot may spend in a day of the server's time zone, in US dollars; 0 for no limit. */
+  dailyLimitUsd: doublePrecision('daily_limit_usd').notNull().default(0),
+  /** The most this bot may spend in a calendar month, in US dollars; 0 for no limit. */
+  monthlyLimitUsd: doublePrecision('monthly_limit_usd').notNull().default(0),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
   /** The person who made the bot, or was handed it; they may always change and share it. */
@@ -94,6 +105,11 @@ export const threads = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     title: sealedText('title').notNull().default(''),
+    /**
+     * The title was made from the opening words of the first message, not chosen by the person: once
+     * the first answer is in, a model may write a better one.
+     */
+    titleAuto: boolean('title_auto').notNull().default(false),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the
@@ -111,6 +127,8 @@ export const threads = pgTable(
     engineSessionId: text('engine_session_id'),
     /** What the engine session had cost by its last run; the next run's cost is what it adds. */
     engineSessionCostUsd: doublePrecision('engine_session_cost_usd'),
+    /** How full the engine session's context was after its last run, in tokens; null when unknown. */
+    engineSessionTokens: integer('engine_session_tokens'),
     /**
      * Outside text the engine session has read (a mail, a webhook's body or post, a watched page,
      * or a report written from one); null when it has read none. A turn nobody watches that goes
@@ -263,7 +281,9 @@ export const turns = pgTable(
       .references(() => bots.id, { onDelete: 'cascade' }),
     // `reaction`: the person left an emoji on a bot message and the bot is told of it.
     // `ticket`: work on a ticket of the board, started by its assignment or a comment on it.
-    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket'] }).notNull(),
+    // `upkeep`: the server's own work on a conversation (folding it while idle), kept for its cost;
+    // it is written once done and never queued.
+    source: text('source', { enum: ['user', 'reaction', 'routine', 'bot', 'ticket', 'upkeep'] }).notNull(),
     /** The person the turn works for: who wrote, or whose request a bot passed on; null when nobody asked. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status', {
@@ -666,6 +686,11 @@ export const jobs = pgTable(
     finishedAt: ts('finished_at'),
     /** When the reply was handed to the sender; replies wait for the others of their turn. */
     deliveredAt: ts('delivered_at'),
+    /**
+     * Files the target handed back with its answer, as the sender finds them: copies in the
+     * sender's conversation folder.
+     */
+    replyFiles: jsonb('reply_files').$type<string[]>().notNull().default([]),
   },
   (t) => [
     index('jobs_root_idx').on(t.rootId),
@@ -920,6 +945,8 @@ export const skills = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     body: text('body').notNull().default(''),
+    /** The steps a person showed in the browser, when the skill was taught; replayed without the model. */
+    steps: jsonb('steps').$type<TaughtStep[]>(),
     /** The person who added it; they may change it as well as the admins. Null when a bot or an import did. */
     createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** How many times a bot read it for a task, so the library shows which methods carry the work. */
@@ -1155,6 +1182,17 @@ export const whatsappChats = pgTable('whatsapp_chats', {
 });
 
 /**
+ * Names the person saved for contacts in their phone book, by chat address. WhatsApp tells them
+ * once, when the device is linked, and later only when one changes, so they are kept for chats that
+ * start long after.
+ */
+export const whatsappSavedNames = pgTable('whatsapp_saved_names', {
+  jid: text('jid').primaryKey(),
+  name: sealedText('name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Messages of the chats routines read, kept 30 days so a bot answering one sees what was said
  * before. Codes, passwords and sign-in links are never written here.
  */
@@ -1173,6 +1211,11 @@ export const whatsappMessages = pgTable(
     text: sealedText('text').notNull().default(''),
     /** A file that came with it, saved under this name in each following bot's folder. */
     file: jsonb('file').$type<{ name: string; size: number } | { failed: string }>(),
+    /**
+     * Waits for the chat to go quiet before it reaches the bot that wrote to the person, or the bot
+     * the chat is given to; kept here so a restart in between does not lose it.
+     */
+    awaiting: boolean('awaiting').notNull().default(false),
     at: timestamp('at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1189,6 +1232,7 @@ export const whatsappMessages = pgTable(
  */
 export const whatsappDrafts = pgTable('whatsapp_drafts', {
   id: text('id').primaryKey(),
+  /** Its card; empty for a message a bot sent at once, which the person let go without one. */
   approvalId: text('approval_id').notNull(),
   botId: text('bot_id')
     .notNull()
@@ -1331,6 +1375,11 @@ export const emailAddresses = pgTable('email_addresses', {
   name: text('name').primaryKey(),
   /** Null once its bot gave it up or was deleted; the name stays taken. */
   botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+  /**
+   * Whether the bot may take sign-in codes from mail to this address and type them into the site
+   * that sent them; off until a person allows it.
+   */
+  signInCodes: boolean('sign_in_codes').notNull().default(false),
   createdAt: created(),
 });
 

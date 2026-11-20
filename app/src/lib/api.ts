@@ -1,5 +1,9 @@
 import type {
   BotAction,
+  DoctorCheckId,
+  DoctorReport,
+  ReplayResult,
+  TaughtStep,
   PermissionSuggestions,
   BotTable,
   RowValues,
@@ -260,6 +264,10 @@ export interface Settings {
   backupModel?: string;
   /** Tokens at which a Claude bot folds the conversation into a summary; 0 leaves it to Claude. Missing on older servers. */
   claudeCompactWindow?: number;
+  /** Long conversations are summarised while idle, before the size above is reached. Missing on older servers. */
+  idleCompact?: boolean;
+  /** The most the bots may spend in a day, in US dollars; 0 for none. Missing on older servers. */
+  dailyLimitUsd?: number;
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;
@@ -270,6 +278,7 @@ export interface Settings {
   memoryReviewEvery?: number;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
+  modelTitles?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
   emailDomain?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
@@ -379,6 +388,9 @@ export const api = {
   /** Moves every active bot to what new bots start with; says how many changed. */
   moveBotsToNewEngine: () => http.post<{ changed: number }>('/api/bots/engine'),
   archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
+  botSpend: (id: string) => http.get<{ dayUsd: number; monthUsd: number }>(`/api/bots/${id}/spend`),
+  pauseBot: (id: string, paused: boolean) => http.post<Bot>(`/api/bots/${id}/pause`, { paused }),
+  pauseAllBots: (paused: boolean) => http.post<{ count: number }>('/api/bots/pause-all', { paused }),
   today: () => http.get<TodayReport>('/api/today'),
   /** Pins a message above its conversation; null takes the pin away. */
   pinMessage: (threadId: string, messageId: string | null) =>
@@ -424,6 +436,9 @@ export const api = {
   createSkill: (input: SkillCreate) => http.post<Skill>('/api/skills', input),
   updateSkill: (id: string, patch: SkillUpdate) => http.patch<Skill>(`/api/skills/${id}`, patch),
   removeSkill: (id: string) => http.del<{ ok: true }>(`/api/skills/${id}`),
+  /** Does a taught skill again in the bot's browser without the model. */
+  replaySkill: (botId: string, skillId: string) =>
+    http.post<ReplayResult>(`/api/bots/${botId}/skills/${skillId}/replay`),
   setSkillBot: (id: string, botId: string, on: boolean) =>
     http.put<Skill>(`/api/skills/${id}/bots/${botId}`, { on }),
   skillChanges: () => http.get<SkillChange[]>('/api/skill-changes'),
@@ -444,6 +459,7 @@ export const api = {
   renameGroup: (id: string, name: string) => http.patch<Group>(`/api/groups/${id}`, { name }),
   moveGroup: (id: string, to: GroupMove) => http.post<Group>(`/api/groups/${id}/move`, to),
   deleteGroup: (id: string) => http.del<{ ok: true }>(`/api/groups/${id}`),
+  pauseGroup: (id: string, paused: boolean) => http.post<Group>(`/api/groups/${id}/pause`, { paused }),
 
   threads: (botId: string) => http.get<Thread[]>(`/api/bots/${botId}/threads`),
   mainThread: (botId: string) => http.get<Thread>(`/api/bots/${botId}/main-thread`),
@@ -617,7 +633,7 @@ export const api = {
   teachStatus: (botId: string) => http.get<{ steps: number | null }>(`/api/bots/${botId}/teach`),
   startTeaching: (botId: string) => http.post<{ steps: number }>(`/api/bots/${botId}/teach`),
   stopTeaching: (botId: string, goal: string) =>
-    http.post<{ name: string; description: string; body: string; steps: number }>(
+    http.post<{ name: string; description: string; body: string; steps: number; taught: TaughtStep[] }>(
       `/api/bots/${botId}/teach/stop`,
       {
         goal,
@@ -682,6 +698,10 @@ export const api = {
   renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
   claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),
   releaseEmail: (botId: string) => http.del<EmailSettings>(`/api/bots/${botId}/email`),
+  doctor: () => http.get<DoctorReport>('/api/doctor'),
+  repairDoctor: (checks: DoctorCheckId[]) => http.post<DoctorReport>('/api/doctor/repair', { checks }),
+  setEmailCodes: (botId: string, on: boolean) =>
+    http.put<EmailSettings>(`/api/bots/${botId}/email/codes`, { on }),
   apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),
   addApiKey: (input: ApiCredentialCreate) => http.post<ApiCredential>('/api/api-keys', input),
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>

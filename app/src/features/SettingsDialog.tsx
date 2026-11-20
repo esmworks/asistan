@@ -125,6 +125,7 @@ import { AccountForm } from './AccountSetup';
 import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
 import { ApnsCard } from './PhoneSettings';
+import { DoctorCard } from './DoctorCard';
 import { Chip } from './onboarding/Chip';
 import {
   AddProviderForm,
@@ -639,6 +640,15 @@ function General() {
               onChange={(timezone) => save.mutate({ timezone })}
             />
           </Row>
+          {settings?.modelTitles !== undefined && (
+            <Row label={t('general.modelTitles')} hint={t('general.modelTitlesHint')}>
+              <Switch
+                checked={settings.modelTitles}
+                onCheckedChange={(v) => save.mutate({ modelTitles: v })}
+                aria-label={t('general.modelTitles')}
+              />
+            </Row>
+          )}
         </Card>
       )}
     </>
@@ -948,6 +958,15 @@ function ModelCard({ onAddProvider }: { onAddProvider(): void }) {
         )}
       </div>
       {!folded && settings.claudeCompactWindow !== undefined && <CompactWindow />}
+      {!folded && settings.idleCompact !== undefined && !!settings.claudeCompactWindow && (
+        <Row label={t('model.idleCompact')} hint={t('model.idleCompactHint')}>
+          <Switch
+            checked={settings.idleCompact}
+            onCheckedChange={(v) => save.mutate({ idleCompact: v })}
+            aria-label={t('model.idleCompact')}
+          />
+        </Row>
+      )}
       {settings.backupModel !== undefined && <BackupModel onAddProvider={onAddProvider} />}
     </Card>
   );
@@ -1844,6 +1863,7 @@ function issueUrl(version: string | undefined): string {
 function About() {
   const t = useT();
   const { data: info } = useInfo();
+  const managesServer = useManagesServer();
   const link = (href: string, label: string, hint = href.replace('https://', '')) => (
     <Row label={label} hint={hint}>
       <Button asChild variant="secondary" size="sm" className="rounded-full">
@@ -1877,6 +1897,7 @@ function About() {
         {link(`${REPO_URL}/blob/main/NOTICE`, t('about.notice'))}
         {link(issueUrl(info?.version), t('about.report'), t('about.reportHint'))}
       </Card>
+      {managesServer && <DoctorCard />}
       {desktop?.showLogs && (
         <Card title={t('about.logs')}>
           <Row label={t('about.logsHint')}>

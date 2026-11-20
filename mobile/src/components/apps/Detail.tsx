@@ -25,6 +25,7 @@ import { nav } from '@/lib/nav';
 import { useBots, useConnections } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
 import { useColors } from '@/lib/theme';
+import { RequestHeaders } from './RequestHeaders';
 import { openSignIn, openTo, STATUS_KEY, StatusLine, useConnectionBots, useToggleBot } from './shared';
 
 /** One connection: its status and sign-in, accounts, which bots may use it, and its tools. */
@@ -213,6 +214,7 @@ export function Detail({ id }: { id: string }) {
         </View>
       ) : null}
 
+      <RequestHeaders connection={conn} />
       <BotAccess connection={conn} />
       <AppViews connection={conn} />
       <Tools connection={conn} />

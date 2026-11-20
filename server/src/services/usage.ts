@@ -1,5 +1,6 @@
 import {
   PlanWindow,
+  type Bot,
   wallClock,
   zonedTime,
   type TodayReport,
@@ -34,6 +35,19 @@ export function lastDays(now: Date, days: number, tz: string): string[] {
 export function monthStart(now: Date, tz: string): Date {
   const w = wallClock(now, tz);
   return zonedTime(`${w.year}-${pad(w.month)}-01`, '00:00', tz);
+}
+
+/** Midnight of the day `now` is in, in the time zone. */
+export function dayStart(now: Date, tz: string): Date {
+  return zonedTime(dayKey(now, tz), '00:00', tz);
+}
+
+/** A spending limit a turn would go past: whose (the server's or the bot's) and over what period. */
+export interface SpendStop {
+  scope: 'server' | 'bot';
+  period: 'day' | 'month';
+  spentUsd: number;
+  limitUsd: number;
 }
 
 /** A value for one CSV cell: quoted when it holds a comma, quote or line break. */
@@ -164,16 +178,59 @@ export class UsageService {
   /** Spending since the start of this calendar month, and the limit set for it (0: none). */
   async month(): Promise<{ costUsd: number; limitUsd: number }> {
     const { timezone, monthlyLimitUsd } = await this.settings.all();
+    return { costUsd: await this.spentSince(monthStart(this.clock(), timezone)), limitUsd: monthlyLimitUsd };
+  }
+
+  /** Spending since midnight in the server's time zone, and the daily limit (0: none). */
+  async day(): Promise<{ costUsd: number; limitUsd: number }> {
+    const { timezone, dailyLimitUsd } = await this.settings.all();
+    return { costUsd: await this.spentSince(dayStart(this.clock(), timezone)), limitUsd: dailyLimitUsd };
+  }
+
+  /** What one bot spent today and this month. */
+  async botSpent(botId: string): Promise<{ dayUsd: number; monthUsd: number }> {
+    const { timezone } = await this.settings.all();
+    const now = this.clock();
+    return {
+      dayUsd: await this.spentSince(dayStart(now, timezone), botId),
+      monthUsd: await this.spentSince(monthStart(now, timezone), botId),
+    };
+  }
+
+  /**
+   * The first spending limit a turn of the bot would go past: the server's, then the bot's own,
+   * each the day's before the month's. Null when every limit still has room.
+   */
+  async reached(bot: Pick<Bot, 'id' | 'dailyLimitUsd' | 'monthlyLimitUsd'>): Promise<SpendStop | null> {
+    const { timezone, dailyLimitUsd, monthlyLimitUsd } = await this.settings.all();
+    const now = this.clock();
+    const checks: [SpendStop['scope'], SpendStop['period'], number, Date, string?][] = [
+      ['server', 'day', dailyLimitUsd, dayStart(now, timezone)],
+      ['server', 'month', monthlyLimitUsd, monthStart(now, timezone)],
+      ['bot', 'day', bot.dailyLimitUsd ?? 0, dayStart(now, timezone), bot.id],
+      ['bot', 'month', bot.monthlyLimitUsd ?? 0, monthStart(now, timezone), bot.id],
+    ];
+    for (const [scope, period, limitUsd, since, botId] of checks) {
+      if (!(limitUsd > 0)) continue;
+      const spentUsd = await this.spentSince(since, botId);
+      if (spentUsd >= limitUsd) return { scope, period, spentUsd, limitUsd };
+    }
+    return null;
+  }
+
+  /** What the finished turns since `since` cost; with `botId`, only that bot's. */
+  private async spentSince(since: Date, botId?: string): Promise<number> {
     const rows = await this.ctx.db
       .select({ costUsd: schema.turns.costUsd })
       .from(schema.turns)
       .where(
         and(
           isNotNull(schema.turns.finishedAt),
-          gte(schema.turns.finishedAt, monthStart(this.clock(), timezone)),
+          gte(schema.turns.finishedAt, since),
+          botId ? eq(schema.turns.botId, botId) : undefined,
         ),
       );
-    return { costUsd: rows.reduce((sum, r) => sum + (r.costUsd ?? 0), 0), limitUsd: monthlyLimitUsd };
+    return rows.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
   }
 
   /** Every finished turn of the last `days` days as CSV, one row each, oldest first. */
@@ -271,6 +328,7 @@ export class UsageService {
       days,
       timezone,
       month: await this.month(),
+      day: await this.day(),
       plan: await this.plan(),
       parallel: {
         max: (await this.settings.get('maxTurns')) ?? 0,

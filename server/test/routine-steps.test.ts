@@ -91,7 +91,8 @@ describe('a routine with steps', () => {
     expect(own()).toBe(1);
     const retried = await t.api<RoutineRun>('POST', `/api/routines/${r.id}/runs/${run!.id}/retry`);
     expect(retried.status).toBe(200);
-    expect(retried.body.status).toBe('running');
+    // It is going again: at work, or in line until its turn starts.
+    expect(['running', 'waiting']).toContain(retried.body.status);
     await t.services.turns.idle();
     [run] = await runs(r.id);
     expect(run!.status).toBe('done');

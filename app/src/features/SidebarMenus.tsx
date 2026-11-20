@@ -19,6 +19,8 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   MailOpen,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -40,7 +42,8 @@ import { useMoveBot } from '@/features/botDrag';
 import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { moveTo, PINNED, UNGROUPED } from '@/lib/botLayout';
-import { useBots, useGroups, useSummaries } from '@/lib/queries';
+import { usePauseActions } from '@/lib/paused';
+import { useBots, useGroups, useManagesServer, useSummaries } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { isUnread, useSeen } from '@/lib/unread';
 
@@ -128,6 +131,18 @@ export function BotMenu({ bot, children }: { bot: Bot; children: React.ReactElem
         },
       });
     }, fail);
+
+  const pause = usePauseActions();
+  const togglePause = () => {
+    const paused = !bot.pausedAt;
+    pause.bot(bot.id, paused).then(
+      () =>
+        toast.success(t(paused ? 'pause.botPaused' : 'pause.botResumed', { name: bot.name }), {
+          description: paused ? t('pause.botPausedHint') : undefined,
+        }),
+      fail,
+    );
+  };
 
   const current = bot.pinned ? PINNED : (bot.groupId ?? UNGROUPED);
   const sections = [
@@ -218,6 +233,12 @@ export function BotMenu({ bot, children }: { bot: Bot; children: React.ReactElem
           >
             <Settings2 /> {t('sidebarMenu.settings')}
           </ContextMenuItem>
+          {bot.yourLevel !== 'chat' && (
+            <ContextMenuItem onSelect={togglePause}>
+              {bot.pausedAt ? <Play /> : <Pause />}
+              {bot.pausedAt ? t('pause.resume') : t('pause.pause')}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onSelect={archive}>
             <Archive /> {t('bot.archive')}
@@ -258,6 +279,18 @@ export function GroupMenu({
   const fail = (e: Error) => {
     toast.error(e.message);
     void refresh();
+  };
+
+  const manages = useManagesServer();
+  const pause = usePauseActions();
+  const togglePause = () => {
+    const paused = !group.pausedAt;
+    pause
+      .group(group.id, paused)
+      .then(
+        () => toast.success(t(paused ? 'pause.groupPaused' : 'pause.groupResumed', { name: group.name })),
+        fail,
+      );
   };
 
   const after = (id: string) => groups[groups.findIndex((g) => g.id === id) + 1]?.id ?? null;
@@ -313,6 +346,12 @@ export function GroupMenu({
           <ContextMenuItem disabled={!nextId} onSelect={() => nextId && move(after(nextId))}>
             <ArrowDown /> {t('sidebarMenu.moveDown')}
           </ContextMenuItem>
+          {manages && (
+            <ContextMenuItem onSelect={togglePause}>
+              {group.pausedAt ? <Play /> : <Pause />}
+              {group.pausedAt ? t('pause.resumeGroup') : t('pause.pauseGroup')}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onSelect={remove}>
             <Trash2 /> {t('common.delete')}
@@ -333,6 +372,18 @@ export function SidebarMenu({ children }: { children: React.ReactElement }) {
   const openBotDialog = useUi((s) => s.openBotDialog);
   const [naming, setNaming] = useState<Naming>(null);
   const dialogNext = useRef(false);
+  const manages = useManagesServer();
+  const pause = usePauseActions();
+  const { data: bots = [] } = useBots();
+  const { data: groups = [] } = useGroups();
+  const anyPaused = bots.some((b) => b.pausedAt) || groups.some((g) => g.pausedAt);
+  const pauseAll = (paused: boolean) => {
+    if (paused && !confirm(t('pause.allConfirm'))) return;
+    pause.all(paused).then(
+      ({ count }) => toast.success(t(paused ? 'pause.allPaused' : 'pause.allResumed', { count })),
+      (e: Error) => toast.error(e.message),
+    );
+  };
   return (
     <>
       <ContextMenu>
@@ -366,6 +417,19 @@ export function SidebarMenu({ children }: { children: React.ReactElement }) {
           <ContextMenuItem disabled={!anyUnread} onSelect={() => useSeen.getState().markAllSeen(summaries)}>
             <MailOpen /> {t('sidebarMenu.markAllRead')}
           </ContextMenuItem>
+          {manages && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => pauseAll(true)}>
+                <Pause /> {t('pause.all')}
+              </ContextMenuItem>
+              {anyPaused && (
+                <ContextMenuItem onSelect={() => pauseAll(false)}>
+                  <Play /> {t('pause.resumeAll')}
+                </ContextMenuItem>
+              )}
+            </>
+          )}
         </ContextMenuContent>
       </ContextMenu>
       <NameDialog naming={naming} onClose={() => setNaming(null)} />

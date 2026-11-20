@@ -165,6 +165,26 @@ describe('an approval step of a routine', () => {
     expect(t.engine.requests.filter((q) => q.prompt.includes('taslak yaz'))).toHaveLength(2);
   });
 
+  it('keeps an approved run held while its bot is paused, and goes on once it is let go', async () => {
+    const bot = await t.bot();
+    const r = await make(bot.id, [
+      { id: 'onay', kind: 'approval', question: 'Gönderilsin mi?' },
+      { id: 'gonder', kind: 'agent', prompt: 'gönder' },
+    ]);
+    const asked = await card(await runOnce(r));
+    await t.api('POST', `/api/bots/${bot.id}/pause`, { paused: true });
+    await answer(asked.id, { decision: 'allow', answer: asked.options[0] });
+    let [run] = await runs(r.id);
+    expect(run!.status).toBe('waiting');
+    expect(t.engine.requests.some((q) => q.prompt.includes('gönder'))).toBe(false);
+
+    await t.api('POST', `/api/bots/${bot.id}/pause`, { paused: false });
+    await t.services.routines.settleSteps();
+    await t.services.turns.idle();
+    [run] = await runs(r.id);
+    expect(run!.status).toBe('done');
+  });
+
   it('turns away an approval step with no question', async () => {
     const bot = await t.bot();
     const res = await t.api('POST', '/api/routines', {

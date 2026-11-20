@@ -248,6 +248,9 @@ export const tr = {
   'usage.month': 'Bu ay',
   'usage.monthOf': '{limit} sınırından; sınıra ulaşılınca turlar gelecek ayı bekler',
   'usage.noLimit': 'Aylık sınır yok',
+  'usage.day': 'Bugün',
+  'usage.dayOf': '{limit} sınırından; sınıra ulaşılınca turlar yarını bekler',
+  'usage.noDayLimit': 'Günlük sınır yok',
   'usage.limit': 'Sınır ($)',
   'usage.downloadCsv': 'Bütün turları CSV olarak indir',
   'usage.gate': 'Rutin ön kontrolü',
@@ -319,6 +322,36 @@ export const tr = {
   'general.chatWidth.normal': 'Okuma genişliği',
   'general.chatWidth.wide': 'Geniş',
   'general.chatWidth.full': 'Bütün pencere',
+  'doctor.title': 'Sunucu bakımı',
+  'doctor.intro': 'Sunucunun verisini denetle',
+  'doctor.run': 'Denetle',
+  'doctor.again': 'Yeniden denetle',
+  'doctor.checkedAt': 'Son denetim: {time}',
+  'doctor.status.ok': 'Sorun yok',
+  'doctor.status.warn': 'Bakılmalı',
+  'doctor.status.error': 'Sorun var',
+  'doctor.stuckTurns.title': 'Takılı kalan işler',
+  'doctor.stuckTurns.ok': 'Yarım kalmış iş yok',
+  'doctor.stuckTurns.found': '{count} iş sürüyor görünüyor ama çalışmıyor; onarım onları durdurulmuş sayar.',
+  'doctor.staleApprovals.title': 'Cevapsız kalacak onay kartları',
+  'doctor.staleApprovals.ok': 'Bekleyen sahipsiz kart yok',
+  'doctor.staleApprovals.found':
+    '{count} kart artık çalışmayan bir işi bekliyor; onarım onları süresi dolmuş sayar.',
+  'doctor.strayFolders.title': 'Sahipsiz klasörler',
+  'doctor.strayFolders.ok': 'Her klasörün botu, sohbeti ya da grubu var',
+  'doctor.strayFolders.found':
+    'Silinmiş bot, sohbet ya da gruplardan {count} klasör kaldı ({size}). Onarım silmez; veri klasöründeki doctor-trash altına taşır.',
+  'doctor.unreadable.title': 'Açılamayan şifreli içerik',
+  'doctor.unreadable.ok': 'Bütün şifreli içerik açılabiliyor',
+  'doctor.unreadable.found':
+    '{count} değer başka bir anahtarla şifrelenmiş. Kendiliğinden onarılamaz; o anahtarı geri yükle ya da yedekten dön.',
+  'doctor.disk.title': 'Disk alanı',
+  'doctor.diskHint': 'Veri klasörünün diskinde boş: {free}',
+  'doctor.repairTitle': 'Güvenli onarım',
+  'doctor.repairHint': 'Yalnızca hiçbir şey kaybettirmeyen onarımlar yapılır.',
+  'doctor.repair': 'Onar',
+  'doctor.repaired': 'Onarıldı',
+  'doctor.repairedMoved': 'Onarıldı; sahipsiz klasörler şuraya taşındı: {path}',
   'about.logs': 'Günlükler',
   'about.logsHint': 'Uygulamanın ve sunucusunun çalışırken yazdıkları; bir sorunu bildirirken işe yarar.',
   'about.showLogs': 'Günlük dosyasını göster',
@@ -511,6 +544,14 @@ export const tr = {
   'teach.skillWhen': 'Ne zaman kullanılır',
   'teach.save': 'Beceriyi kaydet',
   'teach.saved': 'Kaydedildi; beceri artık {bot} botunda',
+  'replay.run': 'AI olmadan çalıştır: gösterilen adımları yeniden yap',
+  'replay.runNamed': '{name} becerisini AI olmadan çalıştır',
+  'replay.running': '{name} gösterilen adımlarla çalışıyor…',
+  'replay.done': '{name}: {total} adımın hepsi yapıldı',
+  'replay.stopped': '{total} adımın {step}. adımında durdu',
+  'replay.askBotButton': '{bot} bitirsin',
+  'replay.askBot':
+    '“{name}” becerisini AI olmadan yeniden oynattım; {step}. adımda durdu: {reason} Sayfaya bak ve işi oradan bitir.',
   'board.title': 'Pano',
   'board.description': 'Senin ve botlarının üzerinde çalıştığı görevler, durumlarına göre sütunlarda.',
   'board.new': 'Yeni görev',
@@ -661,6 +702,9 @@ export const tr = {
   'email.namePlaceholder': 'ad',
   'email.name': '{bot} için adres',
   'email.claim': 'Ver',
+  'email.codes': '{bot} giriş kodlarını postadan alsın',
+  'email.codesHint':
+    'Bir site giriş kodunu bu adrese gönderdiğinde bot kodu o sitenin kendi alanına yazar. Yalnızca açık sayfanın sitesinden gelen, son 10 dakikadaki okunmamış posta kullanılır. Kendi posta kutundan kod postalarını bu adrese yönlendirebilirsin.',
   'email.release': 'Bırak',
   'email.releaseConfirm':
     '{address} bırakılsın mı? Oraya gelen posta artık bota ulaşmaz ve bu adı başka bir bot da alamaz.',
@@ -683,6 +727,24 @@ export const tr = {
   'sidebarMenu.settings': 'Bot ayarları',
   'sidebarMenu.archived': '{name} arşivlendi',
   'sidebarMenu.undo': 'Geri al',
+  'pause.pause': 'Duraklat',
+  'pause.resume': 'Sürdür',
+  'pause.pauseGroup': 'Grubu duraklat',
+  'pause.resumeGroup': 'Grubu sürdür',
+  'pause.all': 'Bütün botları duraklat',
+  'pause.resumeAll': 'Bütün botları sürdür',
+  'pause.allConfirm':
+    'Bütün botlar duraklatılsın mı? Süren işleri durur, rutinleri atlanır; yazdıkların sürdürene kadar bekler.',
+  'pause.allPaused': '{count} bot duraklatıldı',
+  'pause.allResumed': '{count} bot sürdürüldü',
+  'pause.botPaused': '{name} duraklatıldı',
+  'pause.botPausedHint': 'Süren işi durdu, rutinleri atlanır; yazdıkların sürdürünce başlar.',
+  'pause.botResumed': '{name} sürdürüldü',
+  'pause.groupPaused': '{name} grubu duraklatıldı',
+  'pause.groupResumed': '{name} grubu sürdürüldü',
+  'pause.badge': 'Duraklatıldı',
+  'pause.bar': '{name} duraklatıldı. Yazdıkların, onu sürdürene kadar bekler.',
+  'pause.barGroup': '{name}, {group} grubuyla birlikte duraklatıldı. Yazdıkların, grup sürene kadar bekler.',
   'sidebarMenu.rename': 'Yeniden adlandır',
   'sidebarMenu.renameGroup': 'Grubu yeniden adlandır',
   'sidebarMenu.moveUp': 'Yukarı taşı',
@@ -800,6 +862,7 @@ export const tr = {
   'message.readAloud': 'Sesli oku',
   'message.stopReading': 'Okumayı durdur',
   'message.signIn': 'Oturum aç',
+  'message.enterKey': 'Anahtar gir',
   'message.delete': 'Sil',
   'message.confirmDelete': 'Bu mesaj sohbetten silinsin mi? Botun daha önce okuduğu kısmı botta kalır.',
   'message.openLinkTitle': 'Bu bağlantı açılsın mı?',
@@ -1377,6 +1440,13 @@ export const tr = {
   'bot.managerHint':
     'Bütün botlara yazabilir, bot oluşturup düzenleyebilir. İzin gevşetmek için yine size sorar.',
   'bot.archive': 'Arşivle',
+  'bot.spendLimits': 'Harcama sınırı',
+  'bot.spendLimitsHint':
+    'Bu bot yalnız kendi harcamasıyla buraya ulaşınca yeni iş başlatmaz; boş ya da 0 sınır yok demek. Sunucunun sınırları ayrıca geçerli.',
+  'bot.dailyLimit': 'Günlük ($)',
+  'bot.monthlyLimit': 'Aylık ($)',
+  'bot.spent': 'Bugün {day}, bu ay {month} harcadı',
+  'bot.limitInvalid': '0 ya da daha büyük bir tutar yaz',
   'bot.advanced': 'Gelişmiş ayarlar',
   'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot, araçlar',
   'bot.create': 'Oluştur',
@@ -1512,6 +1582,9 @@ export const tr = {
   'general.languageHint': 'Arayüz, botların istemi ve sohbete yazılan sistem mesajları bu dilde olur.',
   'general.bots': 'Botlar',
   'general.useDeviceZone': 'Bu cihazınkini kullan: {zone}',
+  'general.modelTitles': 'Sohbetlere model ad versin',
+  'general.modelTitlesHint':
+    'İlk cevaptan sonra botun modeli sohbete neyle ilgili olduğunu söyleyen kısa bir başlık yazar. Kapalıyken başlık ilk mesajın başı kalır; kendi verdiğin başlık hiç değişmez.',
   'general.timezone': 'Saat dilimi',
   'general.timezoneHint': 'Rutinlerin ve botların kullandığı saat.',
 
@@ -1980,9 +2053,12 @@ export const tr = {
   'model.compactMillion': '{count} milyon token',
   'model.compactAuto': "Claude'un kendi değeri",
   'model.compactRecommended': '{size} (önerilen)',
+  'model.idleCompact': 'Boştayken önceden özetle',
+  'model.idleCompactHint':
+    'Uzun bir sohbet bu sınıra yaklaştıysa ve yarım saattir sessizse, bot onu beklerken özetler; bir sonraki mesaj özetlemeyi beklemeden cevaplanır. Özetleme modeli kullanır ve harcamaya sayılır; ara verdikten sonra model sohbeti önbelleksiz okuduğu için kapalı başlar.',
   'model.backup': 'Yedek model',
   'model.backupHint':
-    'Kullanım sınırı dolunca iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır.',
+    'Kullanım sınırı dolunca ya da model yanıt veremeyince iş beklemek yerine bu modelle sürer; sohbetin geçmişi ona aktarılır. Kapalıyken başka modele geçilmez: iş bekler ve sınır sıfırlanınca kendiliğinden yeniden gönderilir.',
   'onboarding.noAi':
     'Henüz bir yapay zekâ bağlı değil. Botlar oluşturulur ama Ayarlar → Bağlantı bölümünden bağlayana kadar cevap veremez.',
   'apps.open': 'Uygulamalar',
@@ -2025,6 +2101,7 @@ export const tr = {
   'apps.headerValue': 'Değer',
   'apps.headerAdd': 'Başlık ekle',
   'apps.headerSaved': 'kayıtlı',
+  'apps.headerNameBlocked': 'Bu başlık uygulamanın kendisi tarafından ayarlanır, değiştirilemez.',
   'apps.tokenHint': 'Authorization: Bearer başlığıyla gönderilir; bir daha gösterilmez.',
   'apps.tokenHelp': '{name} anahtarını oluştur',
   'apps.clientNeeded':
@@ -2222,7 +2299,7 @@ export const tr = {
   'whatsapp.state.error': 'Bağlantı durdu',
   'whatsapp.error.expired': 'QR kodu zamanında okutulmadı. Yeniden bağlayıp yeni bir kod alın.',
   'whatsapp.error.ownNumber':
-    'Bağlanan hesap, "Botlara yazacağınız numara" ile aynı. Bu modda ikisi farklı olmalı: QR kodunu bot olacak numarayla okutun, alana da botlara yazacağınız başka bir numarayı girin. Botlara aynı numaradan yazmak istiyorsanız "Kendi numaram"ı seçin.',
+    'Bağlanan hesap, "Sizin numaranız" alanındaki numarayla aynı. QR kodunu bot olacak numarayla (ör. şirket hattı) okutun; alana o numarayı değil, botlara yazacağınız kendi telefonunuzun numarasını girin.',
   'whatsapp.error.loggedOut': 'WhatsApp bu cihazın bağlantısını kaldırdı. Yeniden bağlayıp QR kodunu okutun.',
   'whatsapp.error.forbidden':
     'WhatsApp bu bağlantıyı reddetti; numara engellenmiş olabilir. WhatsApp uygulamasından hesabın durumuna bakın.',
@@ -2237,17 +2314,52 @@ export const tr = {
     'Önerilen. Bot olacak ikinci bir numara (ör. bir şirket hattı) bağlanır; siz ona başka bir numaradan yazarsınız.',
   'whatsapp.mode.own': 'Kendi numaram',
   'whatsapp.modeHint.own': 'Kendi hesabınız bağlanır; botlara "Kendine mesaj" sohbetinden yazarsınız.',
-  'whatsapp.phone': 'Botlara yazacağınız numara',
+  'whatsapp.phone.separate': 'Sizin numaranız',
+  'whatsapp.phone.own': 'Bağlanacak hesabın numarası',
   'whatsapp.phoneHint.separate':
-    'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız bot numarasından farklı olmalı; yalnızca bu numaradan gelenler botlara komut olarak gider.',
+    'Botlara yazacağınız kendi telefonunuzun numarası (ör. kişisel hattınız); ülke koduyla, yalnızca rakam. Bot numarası buraya yazılmaz; yalnızca bu numaradan gelenler botlara iş olarak gider.',
   'whatsapp.phoneHint.own':
     'Ülke koduyla, yalnızca rakam. QR kodunu okutacağınız hesabın numarası; botlara onun "Kendine mesaj" sohbetinden yazarsınız.',
-  'whatsapp.bot': 'Mesajların gittiği bot',
+  'whatsapp.bot': 'Size cevap veren bot',
   'whatsapp.botPick': 'Bir bot seçin',
-  'whatsapp.botHint': 'WhatsApp\'tan "/bot <ad>" yazarak başka bota geçebilirsiniz.',
+  'whatsapp.botHint':
+    'Sizin WhatsApp’tan yazdıklarınızı bu bot cevaplar; "/bot <ad>" yazarak başka bota geçebilirsiniz. Başkalarının mesajları bu bota gitmez.',
+  'whatsapp.door': 'Karşılama botu',
+  'whatsapp.doorNone': 'Yok: hiçbir bota verilmemiş sohbetlere kimse cevap vermez',
+  'whatsapp.doorHint':
+    'Hiçbir bota verilmemiş bir sohbetten yazan herkese bu bot cevap verir. Araç kullanamaz; notlarınızı, profilinizi ve bağlantılarınızı görmez. Tek yapabildiği, sohbetin hangi bota verilmesi gerektiğini size kartla önermektir.',
+  'whatsapp.doorRisk':
+    'Botun talimatlarındaki ve hafızasındaki her şeyi yazan herkes sorabilir; bu yüzden başka işte kullandığınız bir botu seçmeyin.',
+  'whatsapp.doorBot.create': 'Güvenli karşılama botu oluştur',
+  'whatsapp.doorBot.created':
+    'Karşılama botu oluşturuldu. Talimatlarına yalnızca herkesin bilebileceği bilgileri yazın.',
+  'whatsapp.doorBot.loose':
+    'Bu bot tam kilitli değil: salt okunur değil, interneti ya da hafızası açık ya da proje klasörü var. Karşılama için ayrı bir bot önerilir.',
+  'whatsapp.doorBot.name': 'Karşılama',
+  'whatsapp.doorBot.description': 'WhatsApp’ta henüz bir bota verilmemiş kişilere ilk cevabı verir.',
+  'whatsapp.doorBot.instructions':
+    'WhatsApp’ta yazanları karşılarsın. Kısa, nazik ve yazanın dilinde cevap ver.\n\nHerkesin bilebileceği bilgiler (doldurun; müşteri, fiyat, şifre ya da şirket içi bilgi yazmayın):\n- Firma:\n- Çalışma saatleri:\n- Adres:\n- Verilen hizmetler:\n- İletişim:\n\nBu bilgilerde olmayan bir şey sorulursa uydurma; ilgili kişinin en kısa sürede dönüş yapacağını söyle.',
+  'whatsapp.reply': 'Cevap',
+  'whatsapp.reply.off': 'Kapalı',
+  'whatsapp.reply.draft': 'Taslak',
+  'whatsapp.reply.auto': 'Otomatik',
+  'whatsapp.routes': 'Botlara verilen sohbetler',
+  'whatsapp.routesHint':
+    'Bir kişiyi ya da grubu bir bota verin; o sohbete artık o bot, ona ait ayrı bir konuşmada cevap verir. Burada bot sizin kişisel verilerinizi ve WhatsApp’ınızı görmez, cevap dışındaki her iş için onay ister. Taslak: cevap önce onayınıza gelir. Otomatik: hemen gider; siz o sohbete elle yazdıysanız ya da sohbete saatte 5’ten fazla giderse yine kartla sorulur. Gruplarda bot yalnızca hesap etiketlenince ya da mesajına yanıt verilince çalışır ve gruba hiç yazmaz, size anlatır. Bir botun son 3 günde mesaj gönderdiği kişinin yanıtı ise o bota gider.',
+  'whatsapp.routeNumber': 'Telefon numarası',
+  'whatsapp.routeGroup': 'Grup',
+  'whatsapp.routeAdd': 'Numara ekle',
+  'whatsapp.routeGroupAdd': 'Grup ekle',
+  'whatsapp.routeRemove': 'Kaldır',
+  'whatsapp.routeNoBot': 'Verilen her sohbet için bir numara ya da grup ve bir bot seçin.',
+  'whatsapp.doorOwn':
+    'Kendi numaranızda karşılama botu yalnızca rehberinizde kayıtlı olmayan kişilere cevap verir; cevabı sizin numaranızdan gideceği için her zaman önce kartla onayınıza gelir.',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
+  'whatsapp.autoSend': 'Botlar onay sormadan gönderebilsin',
+  'whatsapp.autoSendHint':
+    'Tam erişimdeki bir bot, sizin istediğiniz işte mesajı kart açmadan gönderir. Yazdığı kişinin yanıtıyla uyandığında yalnızca o sohbete, siz oraya elle yazmadıysanız, kartsız cevap verir; bu yüzden yazdığı kişilerin sorularına sizin görmediğiniz cevaplar verebilir. Giden her mesaj konuşmaya yazılır. Dosya eklenen, daha önce yazışılmamış bir numaraya giden ya da bir sohbete saatte 5’ten fazla giden mesajlar yine kartla sorulur.',
   'whatsapp.chatsHint':
     'İstediğinizde botlarınız bu hesabın kişi ve grup sohbetlerini okur, mesaj taslağı hazırlar; mesaj ancak siz onaylayınca gider. Mesajlar açıldığı andan itibaren 30 gün şifreli saklanır.',
   'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',
@@ -2255,7 +2367,7 @@ export const tr = {
   'whatsapp.scan':
     "Bağlanacak hesabın telefonunda WhatsApp → Ayarlar → Bağlı cihazlar → Cihaz bağla'ya dokunun ve bu kodu okutun. Kod kendiliğinden yenilenir; kurulum 5 dakika içinde tamamlanmalı.",
   'whatsapp.howTo.separate':
-    'Botlara yazacağınız numaradan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
+    'Kendi numaranızdan +{number} numarasına yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
   'whatsapp.howTo.own':
     'WhatsApp\'ta "Kendine mesaj" sohbetine yazın. Başka botlara geçmek için /bot <ad>, çalışan işi durdurmak için /stop.',
   'whatsapp.risk':

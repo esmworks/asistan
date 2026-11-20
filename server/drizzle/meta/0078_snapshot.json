@@ -1,6 +1,6 @@
 {
-  "id": "5880f6c9-b6ec-4c10-ac4a-0a8a75d24fe6",
-  "prevId": "b552f087-8e58-48dd-b80a-e19d76426e88",
+  "id": "7d502466-b300-4337-ade7-fe1e1fd97059",
+  "prevId": "099cdd1d-db51-4196-8387-3810e4c9a9f8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1111,6 +1111,26 @@
           "primaryKey": false,
           "notNull": false
         },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "daily_limit_usd": {
+          "name": "daily_limit_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "monthly_limit_usd": {
+          "name": "monthly_limit_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1836,6 +1856,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sign_in_codes": {
+          "name": "sign_in_codes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2031,6 +2058,12 @@
           "notNull": true,
           "default": 0
         },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2147,6 +2180,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "reply_files": {
+          "name": "reply_files",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
@@ -4133,6 +4173,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "slack_reaction": {
+          "name": "slack_reaction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "on_startup": {
           "name": "on_startup",
           "type": "boolean",
@@ -4466,6 +4513,12 @@
           "notNull": true,
           "default": "''"
         },
+        "steps": {
+          "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
@@ -4735,6 +4788,13 @@
           "notNull": true,
           "default": "''"
         },
+        "title_auto": {
+          "name": "title_auto",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -4763,6 +4823,12 @@
         "engine_session_cost_usd": {
           "name": "engine_session_cost_usd",
           "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "engine_session_tokens": {
+          "name": "engine_session_tokens",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -5866,6 +5932,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "awaiting": {
+          "name": "awaiting",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "at": {
           "name": "at",
           "type": "timestamp with time zone",
@@ -5933,6 +6006,38 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.whatsapp_saved_names": {
+      "name": "whatsapp_saved_names",
+      "schema": "",
+      "columns": {
+        "jid": {
+          "name": "jid",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

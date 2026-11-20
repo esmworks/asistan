@@ -7,6 +7,38 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A long conversation can be summarised while it is idle, before the size at which a Claude bot would summarise it
+  in the middle of the next message (Settings → Model). Once a conversation is at least 70% of that size and has been
+  quiet for half an hour, the server folds its session and marks the place in the chat; a message that comes
+  meanwhile waits for the fold. Off by default, as after a pause the model reads the conversation again without its
+  cache; the fold counts toward spending, and a paused bot or one past its limit is left alone. Bots on another
+  model provider fold as they run.
+- A conversation is named by the bot's model once its first answer is in: a few words on what it is about, in place
+  of the first message's opening words. A title the person gives is never changed, a bot that is paused or past its
+  spending limit is not asked, and it can be turned off (Settings → General).
+- Settings → About has a check of the server's data for those who look after it: work that looks under way but that
+  nothing runs, approval cards waiting on such work, folders of deleted bots, conversations and groups, sealed content
+  that does not open, and the free disk space. A safe repair ends the hanging work as a restart would, marks the cards
+  expired, and moves the stray folders into `doctor-trash` in the data folder instead of deleting them.
+- A bot with a mail address can type the one-time sign-in code a site mails to it into that site's own field
+  (`browser_email_code`), once a person turns this on for its mailbox (Settings → Mail). Only unread mail from the
+  open page's own site, from the last ten minutes, gives a code, and each mail gives it once; a code that cannot be
+  told apart is not guessed. The person can forward code mails from their own mailbox to the bot's address.
+- A task taught by showing it in the browser keeps its steps with the skill, and can be done again without the model:
+  from the play button by the skill in the bot's panel, or by the bot itself with `skill_replay`, which it tries
+  first for a shown task. Each step finds what it acts on by the words the person saw. The replay stops at the first
+  step that no longer fits the page, or that needs a password, and says which; the person can hand the rest to the
+  bot, and the bot reads the steps left and finishes with its own browser tools.
+- A bot that hands work to another bot can send files with it (`bot_send` takes `files`): the other bot gets its own
+  copies under `received/<sender>/` in its conversation folder and reads where they are. The bot answering can send
+  files back with its answer (`reply_files`), and the asking bot reads where the copies landed.
+- A daily spending limit for the whole server beside the monthly one (Settings → Usage), and daily and monthly limits
+  for each bot in its advanced settings, with what it spent today and this month. A turn that would go past one does
+  not start and says which limit stopped it and where to change it. Another bot cannot set a bot's limits.
+- A bot, a group or every bot at once can be paused from the sidebar's menus. A paused bot's running work stops and
+  says why; what the person writes to it waits and is answered once it is resumed; its routines are skipped with the
+  reason; and another bot that asks it for help is told it is paused. A pause mark shows on its avatar and a bar above
+  the message box resumes it. Only admins pause a group or every bot.
 - A bot that finds a better way to do a skill's task while working for someone who may not change that skill now
   suggests the change to the skill's owner instead of changing it for every bot that has it. The suggestion carries
   the bot's reason; Settings → Skills shows it as a comparison with the skill as it is now, to accept or reject, and
@@ -15,6 +47,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - Skills count how often bots read them, and the skills list shows the count.
 
 ### Changed
+
+- Someone with no account here (a member of a Discord server, say) can no longer have a bot sign in to a site: the
+  vault's password, its two-step codes and codes mailed to the bot are not offered in their turns, since those tools
+  run without a card.
 
 - A skill a bot saves for someone belongs to that person, who may then change or delete it like one they wrote.
   Before, only the admins could.

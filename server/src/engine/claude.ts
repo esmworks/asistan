@@ -26,6 +26,8 @@ import {
   resultText,
   type AccountStatus,
   type AppTool,
+  type CompactOutcome,
+  type CompactRequest,
   type CompleteRequest,
   type Completion,
   type Engine,
@@ -42,6 +44,16 @@ import {
   runCost,
   withContext,
 } from './types';
+
+/** How full a model call left the context: what it read, cached or not, and what it wrote. */
+export function contextOf(usage: unknown): number | null {
+  if (!usage || typeof usage !== 'object') return null;
+  const u = usage as Record<string, unknown>;
+  const n = (k: string) => (typeof u[k] === 'number' ? (u[k] as number) : 0);
+  const total =
+    n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens') + n('output_tokens');
+  return total > 0 ? total : null;
+}
 
 /** The most model steps one turn may take. */
 const MAX_TURNS = 50;
@@ -585,6 +597,8 @@ export class ClaudeEngine implements Engine {
     let limited: { resetsAt: Date | null } | null = null;
     // What a failed API call said, when the CLI reported one.
     let apiError: string | null = null;
+    // How full the session was after the model's last answer, for folding it while idle.
+    let contextTokens: number | null = null;
     // The CLI named a billing failure itself, whatever words its text used.
     let billingFailed = false;
     // Subagents the bot started this run, by the id of the call that started each.
@@ -650,6 +664,8 @@ export class ClaudeEngine implements Engine {
             apiError = m.message.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('') || err;
             continue;
           }
+          // What the session's own model call read and wrote is how full its context is now.
+          if (!m.parent_tool_use_id) contextTokens = contextOf(m.message.usage) ?? contextTokens;
           // A subagent's own steps come with the id of the call that started it.
           const parent = m.parent_tool_use_id ? subagents.get(m.parent_tool_use_id) : undefined;
           for (const c of m.message.content) {
@@ -786,7 +802,65 @@ export class ClaudeEngine implements Engine {
         sessionCostUsd,
       };
     }
-    return { ok: true, text, sessionId, costUsd, sessionCostUsd };
+    return { ok: true, text, sessionId, costUsd, sessionCostUsd, contextTokens };
+  }
+
+  /**
+   * Folds the session into a summary with the CLI's own /compact, resumed where its turns ran, so
+   * the session found is the same one. No tool runs: the CLI only writes the summary.
+   */
+  async compact(req: CompactRequest): Promise<CompactOutcome> {
+    const t = translator(req.locale);
+    const home = this.opts.home ?? homedir();
+    const hidden = [home, ...(this.opts.hidden ?? [])];
+    if (this.opts.configDir) hidden.push(this.opts.configDir);
+    const base = (await this.baseOptions()).options;
+    const sandboxed = sandboxOptions(req.sandbox, hidden, null);
+    const q = query({
+      prompt: '/compact',
+      options: {
+        ...base,
+        ...sandboxed,
+        settings: withCompactWindow(sandboxed.settings as Record<string, unknown>, req.compactWindow),
+        ...(req.model ? { model: req.model } : {}),
+        resume: req.sessionId,
+        permissionMode: 'default',
+        maxTurns: 1,
+        canUseTool: async () => ({ behavior: 'deny', message: t('engine.stopped') }),
+      },
+    });
+    const onAbort = () => void q.interrupt().catch(() => {});
+    req.signal.addEventListener('abort', onAbort, { once: true });
+    let sessionId = req.sessionId;
+    let folded = false;
+    let after: number | null = null;
+    let total: number | null = null;
+    let error: string | null = null;
+    try {
+      for await (const m of q as AsyncIterable<SDKMessage>) {
+        if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
+        else if (m.type === 'system' && m.subtype === 'compact_boundary') {
+          folded = true;
+          after = m.compact_metadata.post_tokens ?? null;
+        } else if (m.type === 'result') {
+          total = m.total_cost_usd ?? null;
+          if (m.subtype !== 'success' || m.is_error) {
+            error = m.subtype === 'success' ? m.result : m.errors?.join('; ') || t('engine.unfinished');
+          }
+        }
+      }
+    } catch (err) {
+      error ??= (err as Error).message;
+    } finally {
+      req.signal.removeEventListener('abort', onAbort);
+    }
+    const costUsd = runCost(total, req.sessionCostUsd);
+    if (req.signal.aborted)
+      return { ok: false, message: t('engine.stopped'), costUsd, sessionCostUsd: total };
+    if (error || !folded) {
+      return { ok: false, message: error ?? t('engine.unfinished'), costUsd, sessionCostUsd: total };
+    }
+    return { ok: true, sessionId, contextTokens: after, costUsd, sessionCostUsd: total };
   }
 
   /** Starts a CLI without tools, runs `ask` against it and closes it. */
