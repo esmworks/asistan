@@ -1,12 +1,12 @@
 {
-  "name": "@yumakbot/desktop",
+  "name": "@leafbot/desktop",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "version": "0.7.0",
   "description": "Your own team of AI bots",
   "author": "esmworks",
-  "homepage": "https://github.com/esmworks/yumakbot",
+  "homepage": "https://github.com/esmworks/leafbot",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
@@ -20,7 +20,7 @@
     "electron-updater": "6.8.12"
   },
   "devDependencies": {
-    "@yumakbot/shared": "workspace:*",
+    "@leafbot/shared": "workspace:*",
     "electron": "45.3.1",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",

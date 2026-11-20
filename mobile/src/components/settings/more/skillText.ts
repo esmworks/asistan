@@ -1,4 +1,4 @@
-import type { SkillWarning } from '@yumakbot/shared';
+import type { SkillWarning } from '@leafbot/shared';
 
 /** A skill read from a SKILL.md file: front matter, then the instructions. */
 export interface SkillFile {

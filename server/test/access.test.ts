@@ -1,7 +1,7 @@
-import type { Approval, Bot, BotSummary, PermissionRule, SearchHit, Thread, Ticket } from '@yumakbot/shared';
+import type { Approval, Bot, BotSummary, PermissionRule, SearchHit, Thread, Ticket } from '@leafbot/shared';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { DeltaEvent } from '@yumakbot/shared';
+import type { DeltaEvent } from '@leafbot/shared';
 import { io as connect } from 'socket.io-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

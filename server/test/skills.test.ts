@@ -1,4 +1,4 @@
-import type { Bot, Message, Skill, SkillChange, Thread, TodayReport } from '@yumakbot/shared';
+import type { Bot, Message, Skill, SkillChange, Thread, TodayReport } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { taggedSkill } from '../src/runtime/turns';
 import { testServer, type Person, type TestServer } from './helpers';

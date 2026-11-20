@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { conversationMarkdown, exportFileName } from './exportChat';
 

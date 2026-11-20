@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import type { BotEmail, EmailSettings } from '@yumakbot/shared';
+import type { BotEmail, EmailSettings } from '@leafbot/shared';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import PostalMime from 'postal-mime';
 import type { Ctx } from '../context';

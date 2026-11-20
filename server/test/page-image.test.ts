@@ -3,13 +3,13 @@ import { createServer as httpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { findBrowser } from '../src/browser/find';
 import { bundlePage } from '../src/tools/page-bundle';
 import { testServer, type TestServer } from './helpers';
 
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 
 /** A PNG's size from its header. */
 const pngSize = (data: Buffer) => ({ width: data.readUInt32BE(16), height: data.readUInt32BE(20) });
@@ -19,7 +19,7 @@ const fileCards = (msgs: Message[]) =>
 
 describe('sayfayı resme çevirme', () => {
   it('stillerdeki resimleri de sayfaya gömer; bağlı stil dosyasınınkileri kendi klasörüne göre bulur', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-page-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-page-'));
     try {
       mkdirSync(join(dir, 'stil'));
       mkdirSync(join(dir, 'resim'));
@@ -111,7 +111,7 @@ describe.skipIf(!BROWSER)('sayfayı resme çevirme (tarayıcıyla)', () => {
     const { bot, thread, dir } = await setup();
     writeFileSync(
       join(dir, 'afiş.html'),
-      '<style>body{margin:0;width:300px;height:100px;background:#1b3226;color:#f4efe3}</style><h1>Yumak</h1>',
+      '<style>body{margin:0;width:300px;height:100px;background:#1b3226;color:#f4efe3}</style><h1>Leaf</h1>',
     );
     const msgs = await render(thread.id, { path: 'afiş.html', width: 300, height: 100, caption: 'Afiş' });
     const { card, file, data } = picture(msgs);

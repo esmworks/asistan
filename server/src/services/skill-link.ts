@@ -2,7 +2,7 @@ import { lookup } from 'node:dns/promises';
 import type { IncomingMessage } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
-import { blockedAddress } from '@yumakbot/shared/egress';
+import { blockedAddress } from '@leafbot/shared/egress';
 import { HttpError } from '../util';
 import { BodyTooLarge, readCapped, readStart } from './read-capped';
 

@@ -1,4 +1,4 @@
-import type { SearchHit } from '@yumakbot/shared';
+import type { SearchHit } from '@leafbot/shared';
 import { ChevronDown, ChevronUp, Loader2, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/i18n';

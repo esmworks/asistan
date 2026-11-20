@@ -1,4 +1,4 @@
-import { streamParts, type Bot, type Message, type Room } from '@yumakbot/shared';
+import { streamParts, type Bot, type Message, type Room } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

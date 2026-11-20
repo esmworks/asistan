@@ -1,4 +1,4 @@
-import { TICKET_PRIORITIES, type Ticket, type TicketPriority, type TicketStatus } from '@yumakbot/shared';
+import { TICKET_PRIORITIES, type Ticket, type TicketPriority, type TicketStatus } from '@leafbot/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ListFilter, Plus, Search, X } from 'lucide-react';
 import { Fragment, useMemo, useRef, useState } from 'react';

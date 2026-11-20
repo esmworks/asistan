@@ -1,4 +1,4 @@
-import type { BotSummary } from '@yumakbot/shared';
+import type { BotSummary } from '@leafbot/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useSyncExternalStore } from 'react';
 
@@ -36,7 +36,7 @@ export function markRead(seen: Seen, botId: string, at: string): Seen {
 // Marks are kept per server: two servers share no bot ids.
 const loaded = new Map<string, Seen | null>();
 const listeners = new Set<() => void>();
-const keyOf = (origin: string) => `yumakbot.seen:${origin}`;
+const keyOf = (origin: string) => `leafbot.seen:${origin}`;
 
 function set(origin: string, seen: Seen) {
   if (loaded.get(origin) === seen) return;

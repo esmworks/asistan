@@ -1,7 +1,7 @@
 import { constants, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { mkdir, open, readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { DEFAULT_LOCALE } from '@yumakbot/shared';
+import { DEFAULT_LOCALE } from '@leafbot/shared';
 import { z } from 'zod';
 import { translator, type T } from '../i18n';
 import { canFitImages } from './fit-image';

@@ -1,4 +1,4 @@
-import type { Bot, DiscordServer, DiscordStatus } from '@yumakbot/shared';
+import type { Bot, DiscordServer, DiscordStatus } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';

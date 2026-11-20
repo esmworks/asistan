@@ -1,4 +1,4 @@
-import { BRAND_COLOR, PROFILE_HELP, type AvatarShape, type ProfileHelp } from '@yumakbot/shared';
+import { BRAND_COLOR, PROFILE_HELP, type AvatarShape, type ProfileHelp } from '@leafbot/shared';
 import type { T } from '@/i18n';
 
 /** Roles offered for "What do you do?"; the chosen labels become the occupation text. */

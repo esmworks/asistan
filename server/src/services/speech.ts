@@ -45,7 +45,7 @@ export class SpeechService {
   }
 
   async test(): Promise<{ bytes: number }> {
-    const { audio } = await this.speak('Yumak Bot');
+    const { audio } = await this.speak('Leaf Bot');
     return { bytes: audio.length };
   }
 }

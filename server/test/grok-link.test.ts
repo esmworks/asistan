@@ -1,4 +1,4 @@
-import { grokTemplateId, parseGrokLink } from '@yumakbot/shared';
+import { grokTemplateId, parseGrokLink } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseGrokMarketplacePage, parseGrokTemplatePage, readGrokLink } from '../src/services/grok-link';
 import { AUTH, testServer, type TestServer } from './helpers';

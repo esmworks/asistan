@@ -1,4 +1,4 @@
-import type { TicketPriority } from '@yumakbot/shared';
+import type { TicketPriority } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';

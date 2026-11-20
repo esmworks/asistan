@@ -1,4 +1,4 @@
-import type { Bot, BotSummary, Group } from '@yumakbot/shared';
+import type { Bot, BotSummary, Group } from '@leafbot/shared';
 import {
   Blocks,
   CalendarCheck,
@@ -269,7 +269,7 @@ function SidebarPanel({
         ) : (
           <>
             {phone ? (
-              <h1 className="flex-1 pl-1 text-xl font-semibold">Yumak Bot</h1>
+              <h1 className="flex-1 pl-1 text-xl font-semibold">Leaf Bot</h1>
             ) : (
               <div className="flex-1" />
             )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DesktopStart } from '@yumakbot/shared';
+import type { DesktopStart } from '@leafbot/shared';
 import {
   bwrapArgs,
   checkSessionPath,
@@ -132,9 +132,9 @@ describe('collectBinds', () => {
 describe('sessionEnv', () => {
   it("hands the browser the controller's proxy only when the session has internet", () => {
     const proxy = 'socks5://127.0.0.1:4321';
-    expect(sessionEnv({ ...opts(start()), proxy }).YUMAKBOT_PROXY).toBe(proxy);
-    expect(sessionEnv({ ...opts(start({ internet: false })), proxy }).YUMAKBOT_PROXY).toBeUndefined();
-    expect(sessionEnv(opts(start())).YUMAKBOT_PROXY).toBeUndefined();
+    expect(sessionEnv({ ...opts(start()), proxy }).LEAFBOT_PROXY).toBe(proxy);
+    expect(sessionEnv({ ...opts(start({ internet: false })), proxy }).LEAFBOT_PROXY).toBeUndefined();
+    expect(sessionEnv(opts(start())).LEAFBOT_PROXY).toBeUndefined();
   });
 
   it('sets language, display and the workdir', () => {
@@ -145,7 +145,7 @@ describe('sessionEnv', () => {
       LANGUAGE: 'tr_TR:tr',
       DISPLAY: ':7',
       XAUTHORITY: '/run/ctl/xauth',
-      YUMAKBOT_WORKDIR: `${W}/b1/work`,
+      LEAFBOT_WORKDIR: `${W}/b1/work`,
       XDG_CONFIG_HOME: `${W}/b1/home/.config`,
     });
     expect(sessionEnv(opts(start({ locale: 'en' }))).LANG).toBe('en_US.UTF-8');

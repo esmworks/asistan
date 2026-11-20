@@ -1,4 +1,4 @@
-import { type ClaudeModel, type Effort } from '@yumakbot/shared';
+import { type ClaudeModel, type Effort } from '@leafbot/shared';
 import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

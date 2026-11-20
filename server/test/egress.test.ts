@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import { connect, createServer, type AddressInfo, type Server, type Socket } from 'node:net';
-import type { ServerInfo } from '@yumakbot/shared';
-import { dialPublic, EgressError, EgressMux } from '@yumakbot/shared/egress';
+import type { ServerInfo } from '@leafbot/shared';
+import { dialPublic, EgressError, EgressMux } from '@leafbot/shared/egress';
 import { io, type Socket as IoSocket } from 'socket.io-client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startEgress } from '../../desktop/src/egress';

@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { schema } from '../src/db';

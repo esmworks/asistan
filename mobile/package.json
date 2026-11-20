@@ -1,9 +1,9 @@
 {
-  "name": "@yumakbot/mobile",
+  "name": "@leafbot/mobile",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "version": "0.7.0",
-  "description": "Yumak Bot's native app for iOS and Android",
+  "description": "Leaf Bot's native app for iOS and Android",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -12,8 +12,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
   },
   "dependencies": {
-    "@yumakbot/app": "workspace:*",
-    "@yumakbot/shared": "workspace:*",
+    "@leafbot/app": "workspace:*",
+    "@leafbot/shared": "workspace:*",
     "@expo/vector-icons": "15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@tanstack/react-query": "5.107.1",

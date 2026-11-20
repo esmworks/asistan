@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 // Types only: the SDK itself (with its WebAssembly core) is loaded once 1Password is connected.
 import type * as OnePasswordSdk from '@1password/sdk';
-import type { PasswordManagerKind, PasswordManagerProblem } from '@yumakbot/shared';
+import type { PasswordManagerKind, PasswordManagerProblem } from '@leafbot/shared';
 
 /** A sign-in a password manager holds, as listed: where it may be typed, never its password. */
 export interface ManagerEntry {
@@ -143,7 +143,7 @@ export function onePassword(
   let client: Promise<OnePasswordSdk.Client> | null = null;
   const open = () => {
     client ??= load()
-      .then((sdk) => sdk.createClient({ auth: token, integrationName: 'Yumak Bot', integrationVersion: '1' }))
+      .then((sdk) => sdk.createClient({ auth: token, integrationName: 'Leaf Bot', integrationVersion: '1' }))
       .catch((err: unknown) => {
         client = null;
         throw onePasswordProblem(err);
@@ -208,7 +208,7 @@ export function onePassword(
 export function bitwarden(
   setup: DriverSetup,
   exec: Run = run,
-  cmd = process.env.YUMAKBOT_BW_PATH || 'bw',
+  cmd = process.env.LEAFBOT_BW_PATH || 'bw',
 ): ManagerDriver {
   if (!('clientId' in setup.secret)) throw new ManagerError('auth');
   const s = setup.secret;
@@ -334,7 +334,7 @@ function findArray(v: unknown, key: string, depth = 0): unknown[] | null {
 export function protonPass(
   setup: DriverSetup,
   exec: Run = run,
-  cmd = process.env.YUMAKBOT_PASS_CLI_PATH || 'pass-cli',
+  cmd = process.env.LEAFBOT_PASS_CLI_PATH || 'pass-cli',
 ): ManagerDriver {
   if (!('token' in setup.secret)) throw new ManagerError('auth');
   const token = setup.secret.token;

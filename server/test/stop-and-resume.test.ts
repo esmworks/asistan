@@ -1,4 +1,4 @@
-import type { Room, Thread } from '@yumakbot/shared';
+import type { Room, Thread } from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

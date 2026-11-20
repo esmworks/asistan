@@ -1,4 +1,4 @@
-import type { MessageFile } from '@yumakbot/shared';
+import type { MessageFile } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

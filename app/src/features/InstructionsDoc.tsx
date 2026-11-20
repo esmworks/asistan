@@ -1,4 +1,4 @@
-import { textDiff, type Bot } from '@yumakbot/shared';
+import { textDiff, type Bot } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, FileText, RefreshCw } from 'lucide-react';
 import { useState } from 'react';

@@ -1,4 +1,4 @@
-import type { ClaudeAuthSet, ClaudeAuthStatus } from '@yumakbot/shared';
+import type { ClaudeAuthSet, ClaudeAuthStatus } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

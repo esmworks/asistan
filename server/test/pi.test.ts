@@ -11,7 +11,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ProviderInfo } from '@yumakbot/shared';
+import type { ProviderInfo } from '@leafbot/shared';
 import {
   completeSimple,
   fauxAssistantMessage,
@@ -74,7 +74,7 @@ describe('Pi motoru', () => {
   let seenKeys: (string | undefined)[];
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-pi-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-pi-'));
     cwd = join(dir, 'thread');
     outside = join(dir, 'disari');
     mkdirSync(cwd);
@@ -663,7 +663,7 @@ describe('Pi motoru', () => {
     ]);
     const out = await engine().run(request({ tools: [tool] }).req);
     expect(out.ok).toBe(true);
-    expect(asks.map((a) => a.toolName)).toEqual(['mcp__yumakbot__memory_search']);
+    expect(asks.map((a) => a.toolName)).toEqual(['mcp__leafbot__memory_search']);
     expect(calls).toEqual([{ query: 'kahve' }]);
   });
 

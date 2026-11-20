@@ -1,4 +1,4 @@
-import { addressKey, catalogEntry, type Bot, type Connection } from '@yumakbot/shared';
+import { addressKey, catalogEntry, type Bot, type Connection } from '@leafbot/shared';
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { openBrowserAsync } from 'expo-web-browser';
 import { StyleSheet, Text, View } from 'react-native';

@@ -1,4 +1,4 @@
-import { hasSecretShape, type LinkPreview } from '@yumakbot/shared';
+import { hasSecretShape, type LinkPreview } from '@leafbot/shared';
 import { scrubCanary } from './canary';
 import { fetchPublic } from './skill-link';
 
@@ -11,7 +11,7 @@ const KEEP_MS = 10 * 60_000;
 const KEEP_MAX = 500;
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 300;
-const USER_AGENT = 'YumakBot-LinkPreview';
+const USER_AGENT = 'LeafBot-LinkPreview';
 
 /** A pull request or issue on GitHub: owner, repository, which of the two, and its number. */
 const GITHUB = /^\/([\w.-]+)\/([\w.-]+)\/(pull|issues)\/(\d+)(?:[/?#]|$)/;

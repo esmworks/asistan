@@ -1,5 +1,5 @@
-import type { SlashCommand } from '@yumakbot/app/src/lib/slash';
-import { streamParts, type Bot, type Message, type Thread } from '@yumakbot/shared';
+import type { SlashCommand } from '@leafbot/app/src/lib/slash';
+import { streamParts, type Bot, type Message, type Thread } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {

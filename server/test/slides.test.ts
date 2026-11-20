@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fitBox, pictureSize } from '../src/tools/slides';
 import { workspacePaths } from '../src/workspace';

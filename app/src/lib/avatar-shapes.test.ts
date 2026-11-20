@@ -1,4 +1,4 @@
-import { Avatar, AVATAR_SHAPES, OBJECT_AVATARS, OLD_AVATAR_SHAPES } from '@yumakbot/shared';
+import { Avatar, AVATAR_SHAPES, OBJECT_AVATARS, OLD_AVATAR_SHAPES } from '@leafbot/shared';
 import { getExample, validateAvatar } from 'open-bot-avatar';
 import { describe, expect, it } from 'vitest';
 

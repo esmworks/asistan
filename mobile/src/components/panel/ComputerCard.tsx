@@ -1,4 +1,4 @@
-import type { Bot, BrowserStatus, ComputerState } from '@yumakbot/shared';
+import type { Bot, BrowserStatus, ComputerState } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';

@@ -1,4 +1,4 @@
-import { DESKTOP_SIZE, type Bot, type DesktopAction } from '@yumakbot/shared';
+import { DESKTOP_SIZE, type Bot, type DesktopAction } from '@leafbot/shared';
 import { z } from 'zod';
 import { ComputerError, type ComputerClient } from '../computer/client';
 import type { ComputerService } from '../computer/service';

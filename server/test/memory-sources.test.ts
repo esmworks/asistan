@@ -1,4 +1,4 @@
-import type { Memory, MemoryChange, Routine, Thread } from '@yumakbot/shared';
+import type { Memory, MemoryChange, Routine, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { sourceOf } from '../src/services/memory';
 import { sourceAddress } from '../src/tools';

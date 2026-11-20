@@ -12,7 +12,7 @@ import {
   type Locale,
   type Memory,
   type ServerInfo,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AudioLines,
@@ -1971,7 +1971,7 @@ function ArchivedBots() {
   );
 }
 
-const REPO_URL = 'https://github.com/esmworks/yumakbot';
+const REPO_URL = 'https://github.com/esmworks/leafbot';
 
 /** A new issue with the version and the device filled in, so a report starts with what it needs. */
 function issueUrl(version: string | undefined): string {
@@ -2001,7 +2001,7 @@ function About() {
       <div className="mb-6 flex items-center gap-4 px-1">
         <img src="/logo.png" alt="" className="size-14 rounded-2xl" />
         <div>
-          <div className="text-lg font-semibold">Yumak Bot</div>
+          <div className="text-lg font-semibold">Leaf Bot</div>
           <div className="text-sm text-muted-foreground">
             {t('about.version', { version: info?.version ?? '…' })}
           </div>

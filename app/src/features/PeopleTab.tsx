@@ -1,4 +1,4 @@
-import type { PersonInfo } from '@yumakbot/shared';
+import type { PersonInfo } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Trash2, UserRound } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

@@ -1,4 +1,4 @@
-import type { PlanTone, PlanWindow } from '@yumakbot/shared';
+import type { PlanTone, PlanWindow } from '@leafbot/shared';
 import type { useT } from '@/i18n';
 
 const PLAN_LABELS = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'] as const;

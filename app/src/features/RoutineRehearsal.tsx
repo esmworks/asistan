@@ -1,4 +1,4 @@
-import type { Rehearsal, ReplayableRun, Routine } from '@yumakbot/shared';
+import type { Rehearsal, ReplayableRun, Routine } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical } from 'lucide-react';
 import { useState } from 'react';

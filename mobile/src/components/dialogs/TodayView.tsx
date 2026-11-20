@@ -1,4 +1,4 @@
-import type { TodayReport } from '@yumakbot/shared';
+import type { TodayReport } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useEffect, type ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';

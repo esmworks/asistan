@@ -1,4 +1,4 @@
-import { BRAND_COLOR } from '@yumakbot/shared';
+import { BRAND_COLOR } from '@leafbot/shared';
 import type { Settings } from '@/lib/api';
 
 /** The colours the bot editor offers; a bot keeps one it already has even if it is not listed. */

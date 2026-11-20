@@ -17,11 +17,11 @@ describe('toolPicker', () => {
   });
 
   it('leaves out only the excluded tools without "only"', () => {
-    const pick = toolPicker({ only: false, allow: [], exclude: ['Bash', 'mcp__yumakbot__browser_*'] });
+    const pick = toolPicker({ only: false, allow: [], exclude: ['Bash', 'mcp__leafbot__browser_*'] });
     expect(pick('Read')).toBe(true);
     expect(pick('Bash')).toBe(false);
-    expect(pick('mcp__yumakbot__browser_open')).toBe(false);
-    expect(pick('mcp__yumakbot__memory_write')).toBe(true);
+    expect(pick('mcp__leafbot__browser_open')).toBe(false);
+    expect(pick('mcp__leafbot__memory_write')).toBe(true);
   });
 
   it('takes names one per line and refuses a * anywhere but the end', () => {

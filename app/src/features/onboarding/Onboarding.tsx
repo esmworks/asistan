@@ -6,7 +6,7 @@ import {
   type Locale,
   type ProfileFocus,
   type ProfileHelp,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, Loader2, Pencil } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -678,7 +678,7 @@ function BotSays({ children }: { children: ReactNode }) {
     <Appear>
       <div className="flex items-end gap-3">
         <div className="size-8 shrink-0">
-          <ShapeArt shape="blob" color={MASCOT_COLOR} seed="yumakbot" />
+          <ShapeArt shape="blob" color={MASCOT_COLOR} seed="leafbot" />
         </div>
         <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-secondary px-4 py-2.5 text-[15px] leading-relaxed">
           {children}
@@ -715,7 +715,7 @@ function Typing() {
     <Appear>
       <div className="flex items-end gap-3">
         <div className="size-8 shrink-0">
-          <ShapeArt shape="blob" color={MASCOT_COLOR} activity="thinking" motion="always" seed="yumakbot" />
+          <ShapeArt shape="blob" color={MASCOT_COLOR} activity="thinking" motion="always" seed="leafbot" />
         </div>
         <div className="flex gap-1 rounded-2xl rounded-bl-md bg-secondary px-4 py-3.5" aria-hidden>
           {[0, 1, 2].map((i) => (

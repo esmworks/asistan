@@ -1,4 +1,4 @@
-import type { Thread } from '@yumakbot/shared';
+import type { Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,7 +37,7 @@ describe('güvenlik tabanı', () => {
     for (const cmd of [
       'rm -rf ./build',
       'rm -rf node_modules dist',
-      'rm -rf /tmp/yumakbot-test',
+      'rm -rf /tmp/leafbot-test',
       'rm -rf ~/project/cache',
       'ls /',
       'dd if=in.img of=out.img',
@@ -71,7 +71,7 @@ describe('güvenlik tabanı turda', () => {
 });
 
 describe('botun kendi klasörlerini okuması', () => {
-  const root = mkdtempSync(join(tmpdir(), 'yumakbot-own-'));
+  const root = mkdtempSync(join(tmpdir(), 'leafbot-own-'));
   const cwd = join(root, 'thread');
   const files = join(root, 'files');
   mkdirSync(cwd);
@@ -113,7 +113,7 @@ describe('botun kendi klasörlerini okuması', () => {
 
 describe('a read-only line in the bot folder', () => {
   // The bot folder as it lies on the data volume: its conversations, its files, the desktop home.
-  const bot = mkdtempSync(join(tmpdir(), 'yumakbot-line-'));
+  const bot = mkdtempSync(join(tmpdir(), 'leafbot-line-'));
   const threads = join(bot, 'threads');
   const cwd = join(threads, 'bu');
   const other = join(threads, 'baska');

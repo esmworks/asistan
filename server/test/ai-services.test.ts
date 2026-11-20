@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { AiEndpoints, Thread } from '@yumakbot/shared';
+import type { AiEndpoints, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { aiEndpointsFrom } from '../src/config';

@@ -1,6 +1,6 @@
-import { parseCsv } from '@yumakbot/app/src/lib/csv';
-import { libraryKey } from '@yumakbot/app/src/lib/fileLink';
-import { htmlPreviewDocument, type PreviewKind } from '@yumakbot/app/src/lib/preview';
+import { parseCsv } from '@leafbot/app/src/lib/csv';
+import { libraryKey } from '@leafbot/app/src/lib/fileLink';
+import { htmlPreviewDocument, type PreviewKind } from '@leafbot/app/src/lib/preview';
 import Feather from '@expo/vector-icons/Feather';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';

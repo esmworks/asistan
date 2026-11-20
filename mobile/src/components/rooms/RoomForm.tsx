@@ -1,10 +1,4 @@
-import {
-  MAX_ROOM_MEMBERS,
-  MAX_ROOM_ROUNDS,
-  type Bot,
-  type Room,
-  type RoomResponders,
-} from '@yumakbot/shared';
+import { MAX_ROOM_MEMBERS, MAX_ROOM_ROUNDS, type Bot, type Room, type RoomResponders } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';

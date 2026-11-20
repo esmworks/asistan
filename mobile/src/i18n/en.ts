@@ -20,14 +20,14 @@ export const en: Record<OwnKey, string> = {
 
   'connect.title': 'Connect to your server',
   'connect.intro':
-    'The bots run on your own server; this phone is only the window. Type the address of Yumak Bot on your computer or server.',
+    'The bots run on your own server; this phone is only the window. Type the address of Leaf Bot on your computer or server.',
   'connect.url': 'Server address',
   'connect.urlPlaceholder': '192.168.1.20:4319',
   'connect.submit': 'Connect',
   'connect.invalid': 'This is not an address',
-  'connect.notYumakBot': 'No Yumak Bot server answered at this address',
+  'connect.notLeafBot': 'No Leaf Bot server answered at this address',
   'connect.httpsOnly':
-    'No Yumak Bot server answered over HTTPS at this address. A server on the internet needs HTTPS; to use plain http anyway, type http:// in front.',
+    'No Leaf Bot server answered over HTTPS at this address. A server on the internet needs HTTPS; to use plain http anyway, type http:// in front.',
   'connect.insecureTitle': 'Connect without encryption?',
   'connect.insecureText':
     '{host} is on the internet but answers over plain http. Anyone on the way can read your access key, your password and your conversations. Use an https address unless you know why you need this.',

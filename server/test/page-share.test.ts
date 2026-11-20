@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PageShare, Thread } from '@yumakbot/shared';
+import type { PageShare, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTH, testServer, type TestServer } from './helpers';
 

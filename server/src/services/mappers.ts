@@ -13,8 +13,8 @@ import type {
   Thread,
   TurnState,
   ToolSelection,
-} from '@yumakbot/shared';
-import { ALL_TOOLS } from '@yumakbot/shared';
+} from '@leafbot/shared';
+import { ALL_TOOLS } from '@leafbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
 import { snapshotSteps } from './routine-steps';

@@ -1,16 +1,16 @@
-# Yumak Bot'u sunucuda çalıştırma (Docker)
+# Leaf Bot'u sunucuda çalıştırma (Docker)
 
 ## Tek komutla kurulum
 
 Boş bir Ubuntu (22.04 ve sonrası) ya da Debian (12 ve sonrası) sunucuda, en az 2 GB bellekle (4 GB önerilir):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash -s -- --lang tr
+curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | sudo bash -s -- --lang tr
 ```
 
 `install.sh` sırasıyla:
 
-1. En son sürümü `/opt/yumakbot` altına indirir ve işin geri kalanını o sürümün kendi betiğine bırakır.
+1. En son sürümü `/opt/leafbot` altına indirir ve işin geri kalanını o sürümün kendi betiğine bırakır.
 2. Docker'ı kurar (26 ya da sonrası gerekir).
 3. `docker/.env` dosyasını rastgele parola ve anahtarlarla doldurur; yeniden çalıştırınca bunlar değişmez.
 4. `apparmor.sh` ile AppArmor'u ayarlar (bkz. "AppArmor").
@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/insta
 6. Kapsayıcıları `compose.yml` ile `compose.vps.yml` birlikte başlatır. İkincisi Caddy'yi ekler; Caddy 80 ve 443
    numaralı bağlantı noktalarında dinler ve Let's Encrypt sertifikasını kendisi alıp yeniler.
 7. `firewall.sh` kurallarını uygular ve her açılışta ve Docker her yeniden başladığında yeniden uygulayan
-   `yumakbot-firewall` systemd servisini kurar. `ufw` açıksa 80 ve 443'e izin verir.
+   `leafbot-firewall` systemd servisini kurar. `ufw` açıksa 80 ve 443'e izin verir.
 8. Adresi ve erişim anahtarını yazar.
 
 Alan adı verilmezse sunucunun genel IP adresinden bir ad kullanılır: `203.0.113.7` için `203-0-113-7.sslip.io`. Bu ad
@@ -32,20 +32,20 @@ sslip.io'nun DNS hizmetine dayanır. Kendi alan adınız varsa önce DNS kaydın
 | `--version vX.Y.Z`     | Kurulacak sürüm (varsayılan: en son sürüm)                              |
 | `--computer`           | Botların bilgisayarını açar (8 GB önerilir); `--no-computer` kapatır    |
 | `--access-key ANAHTAR` | Erişim anahtarını siz seçin (en az 24 karakter: harf, rakam, `- _ . ~`) |
-| `--dir KLASÖR`         | Kurulum klasörü (varsayılan: `/opt/yumakbot`)                           |
+| `--dir KLASÖR`         | Kurulum klasörü (varsayılan: `/opt/leafbot`)                            |
 | `--lang tr`            | İletiler Türkçe                                                         |
 
-Kurulumdan sonra aynı betik `yumakbot` komutuyla çalışır:
+Kurulumdan sonra aynı betik `leafbot` komutuyla çalışır:
 
 ```bash
-sudo yumakbot update        # en son sürüme günceller; ayarlar ve veriler kalır
-sudo yumakbot status        # kapsayıcılar ve sunucunun yanıtı
-sudo yumakbot logs [servis] # kayıtlar (yumakbot, caddy, db, computer)
-sudo yumakbot access-key    # erişim anahtarı
-sudo yumakbot compose ...   # bu kurulumun dosyalarıyla docker compose
+sudo leafbot update        # en son sürüme günceller; ayarlar ve veriler kalır
+sudo leafbot status        # kapsayıcılar ve sunucunun yanıtı
+sudo leafbot logs [servis] # kayıtlar (leafbot, caddy, db, computer)
+sudo leafbot access-key    # erişim anahtarı
+sudo leafbot compose ...   # bu kurulumun dosyalarıyla docker compose
 ```
 
-`update` seçenek alır: `sudo yumakbot update --computer` botların bilgisayarını sonradan açar.
+`update` seçenek alır: `sudo leafbot update --computer` botların bilgisayarını sonradan açar.
 
 ### Sunucuyu oluştururken (cloud-init)
 
@@ -55,7 +55,7 @@ verir. Oraya yapıştırılan metin kurulumu SSH'a hiç girmeden yapar:
 ```yaml
 #cloud-config
 runcmd:
-  - curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | bash -s -- --lang tr --access-key UZUN-RASTGELE-BIR-ANAHTAR
+  - curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | bash -s -- --lang tr --access-key UZUN-RASTGELE-BIR-ANAHTAR
 ```
 
 Erişim anahtarını burada siz seçersiniz, çünkü betiğin çıktısı sunucuda bir kayıt dosyasına yazılır ve anahtar oraya
@@ -65,13 +65,13 @@ yazdırılmaz. Birkaç dakika sonra `https://<IP-adresi-tireli>.sslip.io` adresi
 ### Ters vekil ve giriş sınırı
 
 Aynı adresten 15 dakikada 10 yanlış şifre o adresi bekletir. Ters vekilin arkasında bütün istekler vekilin adresinden
-gelir; vekil tanıtılmazsa bir kişinin yanlış denemeleri herkesi bekletir. Bunun için vekil `YUMAKBOT_PROXY_SECRET`
-değerini `X-Yumakbot-Proxy` başlığında, kişinin adresini `X-Forwarded-For` başlığında gönderir; sunucu
+gelir; vekil tanıtılmazsa bir kişinin yanlış denemeleri herkesi bekletir. Bunun için vekil `LEAFBOT_PROXY_SECRET`
+değerini `X-Leafbot-Proxy` başlığında, kişinin adresini `X-Forwarded-For` başlığında gönderir; sunucu
 `X-Forwarded-For`'a yalnızca bu sırla gelen isteklerde güvenir. `install.sh` bunu kendisi ayarlar. Elle kurulan bir
 nginx için:
 
 ```nginx
-proxy_set_header X-Yumakbot-Proxy <YUMAKBOT_PROXY_SECRET değeri>;
+proxy_set_header X-Leafbot-Proxy <LEAFBOT_PROXY_SECRET değeri>;
 proxy_set_header X-Forwarded-For $remote_addr;
 ```
 
@@ -94,25 +94,25 @@ Sunucuyu dışarıya açmanın üç yolu var; hiçbiri ana makinede bir port aç
 
 1. Cloudflare panelinde Zero Trust → Networks → Tunnels → Create a tunnel (Cloudflared) ile bir tünel açın ve
    jetonunu `.env` dosyasında `CLOUDFLARE_TUNNEL_TOKEN` değerine yazın.
-2. Tünelin Public Hostname ayarına alan adınızı (ör. `bot.ornek.com`) ve servis olarak `http://yumakbot:4319`
+2. Tünelin Public Hostname ayarına alan adınızı (ör. `bot.ornek.com`) ve servis olarak `http://leafbot:4319`
    yazın.
-3. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://bot.ornek.com` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
-4. Vekili tanıtın (bkz. "Ters vekil ve giriş sınırı"): `.env` dosyasında `YUMAKBOT_PROXY_SECRET` boşsa
+3. `.env` dosyasında `LEAFBOT_PUBLIC_URL=https://bot.ornek.com` ve `LEAFBOT_SECURE_COOKIES=1` yapın.
+4. Vekili tanıtın (bkz. "Ters vekil ve giriş sınırı"): `.env` dosyasında `LEAFBOT_PROXY_SECRET` boşsa
    `openssl rand -hex 32` ile doldurun. Cloudflare panelinde alan adınızın Rules → Transform Rules → Modify
    Request Header bölümünde bir kural açın: koşul `Hostname equals bot.ornek.com`, işlem "Set static",
-   başlık `X-Yumakbot-Proxy`, değer `YUMAKBOT_PROXY_SECRET` değeri. Cloudflare kişinin adresini
+   başlık `X-Leafbot-Proxy`, değer `LEAFBOT_PROXY_SECRET` değeri. Cloudflare kişinin adresini
    `X-Forwarded-For` başlığının sonuna kendisi yazar. Kural yoksa bütün girişler tünel kapsayıcısının
    adresinden sayılır ve bir kişinin yanlış şifreleri herkesi bekletir.
 5. `docker compose -f docker/compose.yml --env-file docker/.env --profile cloudflare up -d`
 
-**Tailscale** (yalnız tailnet'inizdeki cihazlardan, `https://yumakbot.<tailnet>.ts.net`):
+**Tailscale** (yalnız tailnet'inizdeki cihazlardan, `https://leafbot.<tailnet>.ts.net`):
 
 1. Tailscale yönetim panelinde bir auth key oluşturup `.env` dosyasında `TAILSCALE_AUTHKEY` değerine yazın;
    tailnet'inizde HTTPS sertifikalarını açın (DNS → HTTPS Certificates).
-2. `.env` dosyasında `YUMAKBOT_PUBLIC_URL=https://yumakbot.<tailnet>.ts.net` ve `YUMAKBOT_SECURE_COOKIES=1` yapın.
+2. `.env` dosyasında `LEAFBOT_PUBLIC_URL=https://leafbot.<tailnet>.ts.net` ve `LEAFBOT_SECURE_COOKIES=1` yapın.
 3. `docker compose -f docker/compose.yml --env-file docker/.env --profile tailscale up -d`
 
-Tailscale'in `serve` özelliği isteğe kendi başlığını ekleyemez, bu yüzden `X-Yumakbot-Proxy` gönderilmez ve
+Tailscale'in `serve` özelliği isteğe kendi başlığını ekleyemez, bu yüzden `X-Leafbot-Proxy` gönderilmez ve
 girişler tünel kapsayıcısının adresinden sayılır: tailnet'teki bir cihazdan 15 dakikada 10 yanlış şifre bütün
 cihazları bekletir. Sunucuya yalnızca tailnet'inizdeki cihazlar ulaştığı için tek kişilik bir tailnet'te bu
 sorun değildir. Tailnet'i başkalarıyla paylaşıyorsanız Tailscale ile sunucunun arasına başlığı ekleyen bir
@@ -121,8 +121,8 @@ ters vekil (Caddy, nginx) koyun ya da Cloudflare Tunnel kullanın.
 Tünel kapsayıcıları sunucuya yalnızca kendi iç ağlarından (`edge`) ulaşır; sunucuya oradan dışarıya yeni bir yol
 açılmaz.
 
-**Kendi ters vekiliniz** (Caddy, nginx): önüne TLS veren vekili koyun, `YUMAKBOT_ALLOWED_HOSTS` değerine alan adını,
-`YUMAKBOT_SECURE_COOKIES=1` yazın.
+**Kendi ters vekiliniz** (Caddy, nginx): önüne TLS veren vekili koyun, `LEAFBOT_ALLOWED_HOSTS` değerine alan adını,
+`LEAFBOT_SECURE_COOKIES=1` yazın.
 
 Telefonu ya da başka bir bilgisayarı bağlamak için şifre yazmanız gerekmez: oturumu açık bir cihazda Ayarlar →
 Bağlantı → Başka bir cihaz bağla ile bir eşleştirme kodu alın, öbür cihazda sunucu adresini girip "Eşleştirme
@@ -130,7 +130,7 @@ koduyla gir"i seçin. Kod bir kez ve beş dakika içinde çalışır; yanlış k
 
 ## Uygulamaya giriş
 
-İlk girişte `.env` dosyasındaki `YUMAKBOT_ACCESS_KEY` yazılır. Hemen ardından uygulama bir kullanıcı adı ve
+İlk girişte `.env` dosyasındaki `LEAFBOT_ACCESS_KEY` yazılır. Hemen ardından uygulama bir kullanıcı adı ve
 şifre ister; sonraki girişler bunlarla yapılır. Veritabanında şifrenin kendisi değil, yalnızca scrypt özeti
 durur. Hesap Ayarlar → Bağlantı bölümünden mevcut şifreyle değiştirilir; şifre unutulursa giriş ekranındaki
 "Şifremi unuttum, erişim anahtarıyla gir" ile girilip mevcut şifre yerine erişim anahtarı yazılır. Aynı
@@ -156,7 +156,7 @@ Kapsayıcının içinde Claude Code ile giriş de hâlâ çalışır; uygulamada
 kayıtlıysa o kullanılır:
 
 ```bash
-docker compose -f docker/compose.yml --env-file docker/.env exec -it yumakbot sh -c \
+docker compose -f docker/compose.yml --env-file docker/.env exec -it leafbot sh -c \
   'exec $(find node_modules/.pnpm -path "*claude-agent-sdk-linux*/claude" -type f | head -1) auth login'
 ```
 
@@ -174,18 +174,18 @@ docker compose -f docker/compose.yml --env-file docker/.env exec -it yumakbot sh
 
 ## Kişi başında değilken
 
-Rutinlerin ve başka botların başlattığı turlarda açılan izin kartı ve soru, `YUMAKBOT_UNATTENDED_HOURS` saat
+Rutinlerin ve başka botların başlattığı turlarda açılan izin kartı ve soru, `LEAFBOT_UNATTENDED_HOURS` saat
 (varsayılan 12, en çok 576) içinde yanıtlanmazsa reddedilir; bot bunu bilerek işine devam eder. Kişinin kendi
 yazdığı mesajla başlayan turlarda kart süresiz bekler.
 
 ## Botların tarayıcısı
 
 Her bot web sitelerinde iş yapmak için kendi tarayıcısını kullanır. İmajda Chromium kuruludur
-(`YUMAKBOT_BROWSER=/usr/bin/chromium`). Her botun ayrı bir profili `/data/browsers/<bot>` altında durur;
+(`LEAFBOT_BROWSER=/usr/bin/chromium`). Her botun ayrı bir profili `/data/browsers/<bot>` altında durur;
 girişler ve çerezler orada kalır, botlar birbirinin profilini görmez.
 
 - Tarayıcı ilk kullanımda açılır; kimse izlemiyorsa ve bot 15 dakika kullanmazsa kapanır. Aynı anda en çok
-  `YUMAKBOT_MAX_BROWSERS` (varsayılan 3) tarayıcı açık kalır.
+  `LEAFBOT_MAX_BROWSERS` (varsayılan 3) tarayıcı açık kalır.
 - Sohbetin üstündeki bilgisayar düğmesinden ya da sağ paneldeki "Bilgisayar" bölümünden botun ekranı
   canlı izlenir. "Kontrolü al" ile tarayıcıyı siz kullanırsınız (giriş, doğrulama kodu gibi); bu sırada bot
   bekler, pencereyi kapatınca kontrol bota geri döner.
@@ -193,7 +193,7 @@ girişler ve çerezler orada kalır, botlar birbirinin profilini görmez.
   sormadan açar; bir şey gönderen, satın alan, silen ya da paylaşan bir adımdan önce onay kartı gösterir.
   Yalnızca `http` ve `https` adresleri açılır.
 - Chromium'un kendi yalıtımı (sandbox) açıktır; Bash yalıtımıyla aynı kullanıcı ad alanı izinlerine
-  dayanır. Çalışmadığı bir ortamda `YUMAKBOT_BROWSER_SANDBOX=0` ile kapatılabilir; o zaman web sayfaları
+  dayanır. Çalışmadığı bir ortamda `LEAFBOT_BROWSER_SANDBOX=0` ile kapatılabilir; o zaman web sayfaları
   yalnızca kapsayıcının sınırlarıyla korunur.
 
 ### Tarayıcının çıkış adresi
@@ -212,18 +212,18 @@ açılmadan geri çevirir; tarayıcıda `ERR_HTTP2_PROTOCOL_ERROR` ya da "This s
 WARP'ı açmak için `docker/.env` dosyasına şunları ekleyin:
 
 ```
-YUMAKBOT_WARP=1
-YUMAKBOT_EGRESS_PROXY=socks5://yumakbot-warp:1080
+LEAFBOT_WARP=1
+LEAFBOT_EGRESS_PROXY=socks5://leafbot-warp:1080
 ```
 
 Ardından kapsayıcıları yeni ayarla yeniden oluşturun. `docker/install.sh` ile kurulan sunucuda:
 
 ```bash
-yumakbot compose up -d
+leafbot compose up -d
 ```
 
 Kurulum betiği olmadan compose'u elle çalıştırıyorsanız `up -d` komutuna `--profile warp` ekleyin
-(`yumakbot restart` yetmez; yeni servisi başlatmaz ve ayarı kapsayıcılara geçirmez). `warp` servisi ilk açılışta Cloudflare'in ücretsiz WARP
+(`leafbot restart` yetmez; yeni servisi başlatmaz ve ayarı kapsayıcılara geçirmez). `warp` servisi ilk açılışta Cloudflare'in ücretsiz WARP
 hizmetine bir kayıt açar ve kayıt `warp` biriminde saklanır. Bu adımda Cloudflare'in WARP kullanım
 koşulları kabul edilmiş olur. Servise yalnızca sunucu ve botların bilgisayarı ulaşır; interneti açık bir
 botun masaüstündeki komutlar da buna dahildir. Servisin kendi çıkışı da `docker/firewall.sh` kurallarının
@@ -233,7 +233,7 @@ Kontrol etmek için bota `https://tls.peet.ws/api/all` adresini açtırın: `ip`
 adresi değil bir Cloudflare adresi görünmelidir.
 
 - Adresler yine sunucuda denetlenir; WARP üzerinden de yerel ağa ve özel adreslere ulaşılmaz.
-- `YUMAKBOT_BROWSER_LOCAL_HOSTS` içindeki adresler WARP'a gitmez, doğrudan bağlanır.
+- `LEAFBOT_BROWSER_LOCAL_HOSTS` içindeki adresler WARP'a gitmez, doğrudan bağlanır.
 - `warp` servisine ulaşılamazsa tarayıcı eskisi gibi sunucunun adresinden çıkar ve günlüğe
   `browser proxy: … leaving from here` yazılır. WARP açık olduğu hâlde bir siteye ulaşamıyorsa bağlantı
   sunucudan yeniden denenmez; hata o sitenin hatası olarak görünür.
@@ -267,7 +267,7 @@ WEB_SEARCH_URL=http://searxng:8080
 
 - SearXNG'nin JSON çıktısı açık olmalı: `settings.yml` içinde `search.formats` listesine `json` eklenir.
   Kapalıysa bot "arama hizmeti JSON vermiyor" der.
-- `yumakbot` kapsayıcısı SearXNG'ye bir Docker ağı üzerinden ulaşmalı; adres o ağdaki kapsayıcı adıdır. Bu
+- `leafbot` kapsayıcısı SearXNG'ye bir Docker ağı üzerinden ulaşmalı; adres o ağdaki kapsayıcı adıdır. Bu
   ağ panelin bütün uygulamaları bağlayan ortak ağı (Dokploy'da `dokploy-network`) olmamalı: sunucu o ağa
   girince güvenlik duvarının dışında kalır (bkz. "Dokploy ve benzeri paneller"). Yalnızca SearXNG'nin
   bulunduğu ayrı bir ağ kullanın. Adres sunucunun kendi ayarı olduğu için özel ağda olabilir; botların
@@ -299,13 +299,13 @@ Bedeli: kapsayıcının içindeki süreçler kullanıcı ad alanı açabilir; bu
 kullanıma açar. Kapsayıcının kendi sınırları (root olmayan kullanıcı, bütün yetkiler kapalı,
 `no-new-privileges`, salt okunur kök) yerinde kalır; gevşeyen yalnızca şunlardır:
 
-| Ayar                                      | Neden gerekli                                                                                                                                                                                                    |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seccomp.json`: `clone`, `unshare`        | Yalıtımın kendi kullanıcı, süreç ve bağlama ad alanları                                                                                                                                                          |
-| `mount`, `umount2`, `pivot_root`          | Yalıtımın dosya sistemini (yalnızca botun klasörleri) kurmak                                                                                                                                                     |
-| `chroot`                                  | Chromium'un kendi yalıtımı                                                                                                                                                                                       |
-| `systempaths=unconfined`                  | Yalıtım kendi süreç ad alanına yeni bir `/proc` bağlar; çekirdek bunu, kapsayıcının `/proc`'unun bir kısmı Docker'ın maskeleriyle örtülüyken reddeder. Eski `/proc`'u kullanmak sunucunun süreçlerini gösterirdi |
-| AppArmor `unconfined` / `yumakbot-userns` | `docker-default` bağlamaları reddeder; aşağıya bakın                                                                                                                                                             |
+| Ayar                                     | Neden gerekli                                                                                                                                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seccomp.json`: `clone`, `unshare`       | Yalıtımın kendi kullanıcı, süreç ve bağlama ad alanları                                                                                                                                                          |
+| `mount`, `umount2`, `pivot_root`         | Yalıtımın dosya sistemini (yalnızca botun klasörleri) kurmak                                                                                                                                                     |
+| `chroot`                                 | Chromium'un kendi yalıtımı                                                                                                                                                                                       |
+| `systempaths=unconfined`                 | Yalıtım kendi süreç ad alanına yeni bir `/proc` bağlar; çekirdek bunu, kapsayıcının `/proc`'unun bir kısmı Docker'ın maskeleriyle örtülüyken reddeder. Eski `/proc`'u kullanmak sunucunun süreçlerini gösterirdi |
+| AppArmor `unconfined` / `leafbot-userns` | `docker-default` bağlamaları reddeder; aşağıya bakın                                                                                                                                                             |
 
 Bağlamaları tek tek sayan daraltılmış bir AppArmor profili verilmedi: bubblewrap'in yaptığı bağlamalar
 sürümden sürüme değişir ve profil denenmeden gönderilirse yalıtım, dolayısıyla Claude botlarının Bash'i,
@@ -315,10 +315,10 @@ Ana makine için öneriler:
 
 - Çekirdeği güncel tutun (Ubuntu ve Debian'da `unattended-upgrades`) ve güncellemeden sonra yeniden başlatın;
   kullanıcı ad alanları üzerinden gelen açıkların çoğu çekirdek güncellemesiyle kapanır.
-- Yumak Bot'u, güvenmediğiniz ya da çok önemli başka işlerle aynı sunucuda değil, kendi sanal sunucusunda
+- Leaf Bot'u, güvenmediğiniz ya da çok önemli başka işlerle aynı sunucuda değil, kendi sanal sunucusunda
   çalıştırın.
 - Ubuntu 23.10 ve sonrasında `kernel.apparmor_restrict_unprivileged_userns=1` ayarını açık bırakın:
-  `yumakbot-userns` profili yalnızca bu iki kapsayıcıya izin verir, ana makinedeki öteki programlar kısıtlı
+  `leafbot-userns` profili yalnızca bu iki kapsayıcıya izin verir, ana makinedeki öteki programlar kısıtlı
   kalır. Kullanıcı ad alanlarını çekirdekte tümden kapatmak (`user.max_user_namespaces=0`) bu kapsayıcılardaki
   yalıtımı da durdurur.
 
@@ -332,7 +332,7 @@ sunucuda "Bash yalıtımı" satırı "Çalışmıyor" gösterir ve Claude botlar
 sonrası ayrıca kullanıcı ad alanlarını AppArmor ile kısıtlar (`kernel.apparmor_restrict_unprivileged_userns=1`);
 bu kısıt profilsiz (`unconfined`) süreçlere de uygulanır, yani `apparmor=unconfined` yetmez.
 
-`apparmor.sh` ana makineye bakıp `YUMAKBOT_APPARMOR` değerini seçer; ana makinede root olarak bir kez
+`apparmor.sh` ana makineye bakıp `LEAFBOT_APPARMOR` değerini seçer; ana makinede root olarak bir kez
 çalıştırın, yeniden çalıştırmak zarar vermez:
 
 ```bash
@@ -340,14 +340,14 @@ sudo ./docker/apparmor.sh --env docker/.env
 docker compose -f docker/compose.yml --env-file docker/.env up -d
 ```
 
-| Ana makine                                                            | Değer             | Betiğin yaptığı                     |
-| --------------------------------------------------------------------- | ----------------- | ----------------------------------- |
-| AppArmor kapalı                                                       | (yok)             | Hiçbir şey; satırı siler            |
-| AppArmor açık, kullanıcı ad alanı kısıtı yok (ör. Debian 12)          | `unconfined`      | Değeri yazar                        |
-| AppArmor kullanıcı ad alanlarını kısıtlıyor (Ubuntu 23.10 ve sonrası) | `yumakbot-userns` | Profili kurar, yükler, değeri yazar |
+| Ana makine                                                            | Değer            | Betiğin yaptığı                     |
+| --------------------------------------------------------------------- | ---------------- | ----------------------------------- |
+| AppArmor kapalı                                                       | (yok)            | Hiçbir şey; satırı siler            |
+| AppArmor açık, kullanıcı ad alanı kısıtı yok (ör. Debian 12)          | `unconfined`     | Değeri yazar                        |
+| AppArmor kullanıcı ad alanlarını kısıtlıyor (Ubuntu 23.10 ve sonrası) | `leafbot-userns` | Profili kurar, yükler, değeri yazar |
 
-`yumakbot-userns`, `yumakbot` ve `computer` kapsayıcılarına yalnızca kullanıcı ad alanı izni veren profildir
-(`docker/apparmor/yumakbot-userns`); `/etc/apparmor.d/` altına kurulur ve yeniden başlatmadan sonra da yüklü
+`leafbot-userns`, `leafbot` ve `computer` kapsayıcılarına yalnızca kullanıcı ad alanı izni veren profildir
+(`docker/apparmor/leafbot-userns`); `/etc/apparmor.d/` altına kurulur ve yeniden başlatmadan sonra da yüklü
 kalır. Profil AppArmor 4 ister (Ubuntu 24.04); yüklü değilken bu değer verilirse kapsayıcı başlamaz.
 Kullanıcı ad alanları çekirdekte kapalıysa betik bunu ve nasıl açılacağını söyler. `--env` verilmezse betik
 değeri yalnızca yazdırır; `--remove` profili kaldırır.
@@ -365,11 +365,11 @@ yüzden `--env` kullanmayın. Sunucuya SSH ile bağlanıp betiği panelin indird
 sudo /etc/dokploy/compose/<uygulama>/code/docker/apparmor.sh
 ```
 
-Betiğin yazdırdığı `YUMAKBOT_APPARMOR=…` satırını panelde uygulamanın ortam değişkenlerine (Dokploy'da
+Betiğin yazdırdığı `LEAFBOT_APPARMOR=…` satırını panelde uygulamanın ortam değişkenlerine (Dokploy'da
 Environment) ekleyip yeniden yayınlayın. Profil `/etc/apparmor.d/` altında durduğu için yeni yayınlar onu
 silmez.
 
-Alan adını `yumakbot` servisine değil, `gateway` servisine bağlayın. Ortam değişkenlerine
+Alan adını `leafbot` servisine değil, `gateway` servisine bağlayın. Ortam değişkenlerine
 `COMPOSE_PROFILES=gateway` ekleyin, Domains'te servis olarak `gateway`, port olarak `4319` seçin ve yeniden
 yayınlayın. Panel, alan adının bağlı olduğu servisi kendi ağına (Dokploy'da `dokploy-network`) ve projenin
 `default` ağına ekler. O ağ paneldeki bütün uygulamaları (panelin kendi veritabanı dahil) birbirine bağlar ve
@@ -379,33 +379,33 @@ internete kendi yolundan çıkar. Alan adı sunucuya bağlıyken sunucu kapsayı
 ağından ulaşır ve panelin ağına giren yalnızca o olur. HTTPS'i panel sağlar; `Host`, `X-Forwarded-Proto` ve
 `X-Forwarded-For` başlıkları sunucuya olduğu gibi geçer.
 
-Daha önce alan adını `yumakbot`'a bağladıysanız Domains'te servisi `gateway` yapıp yeniden yayınlayın; panel
+Daha önce alan adını `leafbot`'a bağladıysanız Domains'te servisi `gateway` yapıp yeniden yayınlayın; panel
 eklediği ağları sunucudan o zaman kaldırır. Kontrol için sunucu kapsayıcısının ağlarında `dokploy-network`
 görünmemelidir:
 
 ```bash
-docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' <uygulama>-yumakbot-1
+docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' <uygulama>-leafbot-1
 ```
 
-Yayın `networks have same bridge name` hatasıyla durursa bu sunucuda `yumakbot0` köprüsünü kullanan başka
+Yayın `networks have same bridge name` hatasıyla durursa bu sunucuda `leafbot0` köprüsünü kullanan başka
 bir ağ vardır: çoğunlukla aynı sunucudaki önceki bir kurulumdan ya da panelde silinip yeniden açılmış bir
 uygulamadan kalmıştır. Panel her uygulamaya kendi proje adını verdiği için ağ adları farklıdır, ama köprü
 adı güvenlik duvarı onu bulabilsin diye sabittir. Hangi ağın tuttuğunu görmek için:
 
 ```bash
-docker network ls -q | xargs docker network inspect -f '{{.Name}} {{index .Options "com.docker.network.bridge.name"}} {{len .Containers}}' | grep yumakbot0
+docker network ls -q | xargs docker network inspect -f '{{.Name}} {{index .Options "com.docker.network.bridge.name"}} {{len .Containers}}' | grep leafbot0
 ```
 
 Ağ eski bir kurulumdan kaldıysa ve kapsayıcısı yoksa (son sayı 0) `docker network rm <ad>` ile silip yeniden
 yayınlayın. İki kurulumu aynı sunucuda birlikte çalıştırmak istiyorsanız ikincisine panelde
-`YUMAKBOT_BRIDGE=yumakbot1` gibi başka bir ad verin (en çok 15 karakter). Öteki kurulum `127.0.0.1:4319`'u
-tuttuğu için `YUMAKBOT_PORT=4329` gibi başka bir port da verin. Bu yalnızca ana makinedeki portu değiştirir;
+`LEAFBOT_BRIDGE=leafbot1` gibi başka bir ad verin (en çok 15 karakter). Öteki kurulum `127.0.0.1:4319`'u
+tuttuğu için `LEAFBOT_PORT=4329` gibi başka bir port da verin. Bu yalnızca ana makinedeki portu değiştirir;
 panelde alan adının hedef portu yine `4319` kalır, çünkü panel servise kapsayıcının kendi portundan bağlanır.
 
 Panel güvenlik duvarını kurmaz. Yayından sonra her kurulum için, kendi köprüsüyle, bir kez:
 
 ```bash
-sudo BRIDGE=yumakbot0 /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh
+sudo BRIDGE=leafbot0 /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh
 ```
 
 Kurallar köprüye göre eklenir; iki kurulumun kuralları birbirini silmez, başka kapsayıcıların trafiğine de
@@ -413,9 +413,9 @@ dokunmaz. Yeniden başlatmadan sonra da kalmaları için her kuruluma bir servis
 başladığında da çalışır, panel yeniden yayınlayınca köprü aynı adla geri geldiği için kurallar geçerli kalır:
 
 ```bash
-sudo tee /etc/systemd/system/yumakbot-firewall-<uygulama>.service <<'EOF'
+sudo tee /etc/systemd/system/leafbot-firewall-<uygulama>.service <<'EOF'
 [Unit]
-Description=Yumak Bot egress firewall (<uygulama>)
+Description=Leaf Bot egress firewall (<uygulama>)
 After=docker.service
 Requires=docker.service
 PartOf=docker.service
@@ -423,14 +423,14 @@ PartOf=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=BRIDGE=yumakbot0
+Environment=BRIDGE=leafbot0
 ExecStart=/bin/sh /etc/dokploy/compose/<uygulama>/code/docker/firewall.sh --wait
 
 [Install]
 WantedBy=multi-user.target docker.service
 EOF
 sudo systemctl daemon-reload
-sudo systemctl enable --now yumakbot-firewall-<uygulama>.service
+sudo systemctl enable --now leafbot-firewall-<uygulama>.service
 ```
 
 Uygulamayı panelden silerseniz servisini de kaldırın (`systemctl disable --now …` ve dosyayı silin); yoksa
@@ -444,7 +444,7 @@ bağlanır. Her oturum ayrı bir bubblewrap yalıtımındadır: kendi ekranı, k
 klasörü vardır, yalnızca botun klasörlerini görür. Başka botların dosyalarını ve `computer` kapsayıcısının
 ortam değişkenlerini (erişim belirteci dahil) görmez.
 
-Kurulum için `.env` dosyasına `YUMAKBOT_COMPUTER_TOKEN` yazın (en az 32 karakter; `openssl rand -hex 32`).
+Kurulum için `.env` dosyasına `LEAFBOT_COMPUTER_TOKEN` yazın (en az 32 karakter; `openssl rand -hex 32`).
 Sunucu ile `computer` kapsayıcısı bu değerle birbirini tanır; `computer` ağı yalnızca bu ikisini bağlar ve
 dışarı çıkışı yoktur.
 
@@ -453,7 +453,7 @@ dışarı çıkışı yoktur.
   oluşturur; bu yüzden `computer` kapsayıcısı sunucu sağlıklı olduktan sonra başlar.
 - **Kaynak kullanımı:** boştaki bir masaüstü yaklaşık 70–140 MB bellek tutar, açık bir tarayıcı yaklaşık 200 MB
   daha ekler. Kapsayıcı en çok 6 GB belleğe ve 3 işlemciye sınırlıdır; aynı anda en çok 3 masaüstü
-  çalışır (`YUMAKBOT_COMPUTER_MAX`). Sınır dolunca yeni masaüstü açılmaz.
+  çalışır (`LEAFBOT_COMPUTER_MAX`). Sınır dolunca yeni masaüstü açılmaz.
 - **Masaüstlerinin interneti açıktır.** Oturumlar kapsayıcının ağını paylaşır, yani `firewall.sh`
   kuralları onlar için de geçerlidir. Bir oturumun ekranına başka bir oturum bağlanamaz (her ekranın
   kendi X yetki çerezi vardır), ama ağ düzeyinde oturumlar birbirinden ayrı değildir.
@@ -468,7 +468,7 @@ dışarı çıkışı yoktur.
   `data` biriminde kalır.
 - **GitHub, git rölesi üzerinden.** Masaüstlerinde git, pnpm ve yarn (corepack) kuruludur. Oturumdaki git
   `github.com` adreslerini kapsayıcının `127.0.0.1:4322` adresindeki röleye gönderir
-  (`YUMAKBOT_COMPUTER_GIT_PORT`); röle, bota açık ve `https://github.com` için kaydedilmiş API anahtarını
+  (`LEAFBOT_COMPUTER_GIT_PORT`); röle, bota açık ve `https://github.com` için kaydedilmiş API anahtarını
   isteğe ekler. Anahtar oturuma hiç girmez. Röle yalnızca git isteklerini ve yalnızca GitHub'a geçirir;
   deponun varsayılan dalına push'u reddeder. Oturumlar ağı paylaştığı için her oturumun röle adresinde
   kendine ait rastgele bir anahtar vardır.

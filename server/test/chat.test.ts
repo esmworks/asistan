@@ -5,7 +5,7 @@ import {
   type Message,
   type Bot,
   type Thread,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { isSilentReply, maybeSilentReply, planItems } from '../src/engine/types';

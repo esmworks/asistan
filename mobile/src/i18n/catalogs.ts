@@ -1,6 +1,6 @@
-import type { Catalog, Locale } from '@yumakbot/shared/i18n';
-import { en as webEn } from '@yumakbot/app/src/i18n/en';
-import { tr as webTr, type MessageKey as WebKey } from '@yumakbot/app/src/i18n/tr';
+import type { Catalog, Locale } from '@leafbot/shared/i18n';
+import { en as webEn } from '@leafbot/app/src/i18n/en';
+import { tr as webTr, type MessageKey as WebKey } from '@leafbot/app/src/i18n/tr';
 import { en } from './en';
 import { tr, type OwnKey } from './tr';
 

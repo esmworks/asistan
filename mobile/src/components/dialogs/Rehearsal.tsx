@@ -1,4 +1,4 @@
-import type { Rehearsal as RehearsalRun, ReplayableRun, Routine } from '@yumakbot/shared';
+import type { Rehearsal as RehearsalRun, ReplayableRun, Routine } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';

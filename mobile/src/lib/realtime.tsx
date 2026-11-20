@@ -4,7 +4,7 @@ import type {
   RefreshScope,
   ServerToClientEvents,
   TurnState,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';

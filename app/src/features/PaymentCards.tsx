@@ -1,4 +1,4 @@
-import { cardBrand, luhn, type CardBrand, type PaymentCard } from '@yumakbot/shared';
+import { cardBrand, luhn, type CardBrand, type PaymentCard } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CreditCard, Plus, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

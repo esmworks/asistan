@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Approval, Bot, PermissionRule, Routine, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, PermissionRule, Routine, Thread } from '@leafbot/shared';
 import { and, eq } from 'drizzle-orm';
 import { schema } from '../src/db';
 import { OWNER_ID } from '../src/users';

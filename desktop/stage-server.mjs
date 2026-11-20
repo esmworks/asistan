@@ -12,10 +12,10 @@ const out = join(here, '.stage', 'server');
 // pnpm is a .cmd script on Windows, which only runs through a shell.
 const shell = process.platform === 'win32';
 const dist = join(root, 'server', 'dist', 'index.mjs');
-if (!existsSync(dist)) throw new Error('Önce sunucuyu derleyin: pnpm --filter @yumakbot/server build');
+if (!existsSync(dist)) throw new Error('Önce sunucuyu derleyin: pnpm --filter @leafbot/server build');
 
 rmSync(out, { recursive: true, force: true });
-execFileSync('pnpm', ['--filter', '@yumakbot/server', 'deploy', '--prod', '--legacy', out], {
+execFileSync('pnpm', ['--filter', '@leafbot/server', 'deploy', '--prod', '--legacy', out], {
   cwd: root,
   stdio: 'inherit',
   shell,

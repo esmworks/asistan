@@ -16,30 +16,33 @@ import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';
 import { contentSealed, setSealing } from '../db/sealed';
 import { schema, schemaVersion, type Db } from '../db';
+import { renameOldToolNames } from '../db/old-tool-names';
 import { adoptLegacyAccount, OWNER_ID } from '../users';
 import { HttpError, newId } from '../util';
 import { BOUND_FILE } from './vault';
 
 /**
- * One file that holds everything needed to bring a Yumak Bot back on another computer: the
+ * One file that holds everything needed to bring a Leaf Bot back on another computer: the
  * database, the bots' folders and Pi sessions, and the vault key (without it the saved passwords
  * and tokens in the database cannot be opened). It is sealed with a password the person chooses,
  * so the file can be kept anywhere.
  *
- * Layout: `YUMAKBK2`, scrypt's cost (three bytes: log2 N, r, p), a 16-byte salt, a 12-byte IV,
+ * Layout: `LEAFBK2`, scrypt's cost (three bytes: log2 N, r, p), a 16-byte salt, a 12-byte IV,
  * the AES-256-GCM ciphertext, and its 16-byte tag; the bytes before the ciphertext are bound to it
  * as associated data. The key comes from the password with scrypt. Inside, gzip of a run of
  * records: each is a 4-byte length, a JSON header, then `header.size` bytes (a table's rows as
- * JSON, or a file). Older backups start `YUMAKBK1`, with no cost (it was always N = 2^15, r = 8,
+ * JSON, or a file). Older backups start `LEAFBK1`, with no cost (it was always N = 2^15, r = 8,
  * p = 1) and nothing bound; they still restore.
  */
-export const BACKUP_MAGIC = Buffer.from('YUMAKBK2');
-const LEGACY_MAGIC = Buffer.from('YUMAKBK1');
+export const BACKUP_MAGIC = Buffer.from('LEAFBK2');
+const LEGACY_MAGIC = Buffer.from('LEAFBK1');
 const COST = 3;
 const SALT = 16;
 const IV = 12;
 const TAG = 16;
-const FORMAT = 'yumakbot-backup';
+const FORMAT = 'leafbot-backup';
+/** Backups made before the app was renamed carry its earlier name. */
+const OLD_FORMATS = new Set(['yumakbot-backup']);
 const VERSION = 1;
 export const MIN_BACKUP_PASSWORD = 12;
 
@@ -207,6 +210,8 @@ export async function replaceRows(db: Db, files: Map<string, string>) {
     await tx
       .delete(schema.sessions)
       .where(notInArray(schema.sessions.userId, tx.select({ id: schema.users.id }).from(schema.users)));
+    // A backup made before the rename names the app's own tools by the old name.
+    await renameOldToolNames(tx as unknown as Db);
   });
 }
 
@@ -475,7 +480,11 @@ export class BackupService {
             throw new HttpError(400, 'error.backupDamaged');
           }
           if (!manifest) {
-            if (header.type !== 'manifest' || header.format !== FORMAT || header.version !== VERSION) {
+            if (
+              header.type !== 'manifest' ||
+              (header.format !== FORMAT && !OLD_FORMATS.has(header.format)) ||
+              header.version !== VERSION
+            ) {
               throw new HttpError(400, 'error.backupDamaged');
             }
             // A newer version may have tables and columns this one does not know.

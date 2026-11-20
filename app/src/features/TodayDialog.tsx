@@ -1,4 +1,4 @@
-import type { CanaryAlarm, TodayReport } from '@yumakbot/shared';
+import type { CanaryAlarm, TodayReport } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Brain, CircleAlert, CircleCheck, Clock, Loader2, ShieldAlert, Sparkles } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';

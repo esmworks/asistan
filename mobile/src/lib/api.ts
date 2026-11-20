@@ -68,7 +68,7 @@ import type {
   StorageReport,
   ProviderSignIn,
   SessionUser,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { locale, t } from '@/i18n';
 
 export class ApiError extends Error {
@@ -160,7 +160,7 @@ async function request<T>(
   return data as T;
 }
 
-/** Whether an YumakBot server answers at the origin. */
+/** Whether an LeafBot server answers at the origin. */
 export async function answers(origin: string): Promise<boolean> {
   try {
     const res = await fetchWithin(`${origin}/api/health`, {}, 6000);

@@ -7,7 +7,7 @@ import {
   type StorageReport,
   type UsageRange,
   type UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { Download, Loader2, RotateCw } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';

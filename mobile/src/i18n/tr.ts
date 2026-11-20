@@ -20,14 +20,14 @@ export const tr = {
 
   'connect.title': 'Sunucuna bağlan',
   'connect.intro':
-    'Botlar kendi sunucunda çalışır; bu telefon yalnızca pencere olur. Bilgisayarındaki ya da sunucundaki Yumak Bot’un adresini yaz.',
+    'Botlar kendi sunucunda çalışır; bu telefon yalnızca pencere olur. Bilgisayarındaki ya da sunucundaki Leaf Bot’un adresini yaz.',
   'connect.url': 'Sunucu adresi',
   'connect.urlPlaceholder': '192.168.1.20:4319',
   'connect.submit': 'Bağlan',
   'connect.invalid': 'Bu bir adres değil',
-  'connect.notYumakBot': 'Bu adreste bir Yumak Bot sunucusu yanıt vermedi',
+  'connect.notLeafBot': 'Bu adreste bir Leaf Bot sunucusu yanıt vermedi',
   'connect.httpsOnly':
-    'Bu adreste HTTPS ile yanıt veren bir Yumak Bot sunucusu yok. İnternetteki bir sunucu HTTPS ister; yine de düz http kullanmak için başına http:// yaz.',
+    'Bu adreste HTTPS ile yanıt veren bir Leaf Bot sunucusu yok. İnternetteki bir sunucu HTTPS ister; yine de düz http kullanmak için başına http:// yaz.',
   'connect.insecureTitle': 'Şifrelemeden bağlanılsın mı?',
   'connect.insecureText':
     '{host} internette ama düz http ile yanıt veriyor. Aradaki herkes erişim anahtarını, şifreni ve konuşmalarını okuyabilir. Neden gerektiğini bilmiyorsan https ile başlayan bir adres kullan.',

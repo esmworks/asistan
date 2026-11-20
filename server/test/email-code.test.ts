@@ -1,4 +1,4 @@
-import type { EmailSettings, Thread } from '@yumakbot/shared';
+import type { EmailSettings, Thread } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { findBrowser } from '../src/browser/find';
@@ -7,7 +7,7 @@ import type { AppTool } from '../src/engine/types';
 import { codeIn } from '../src/services/email';
 import { testServer, type TestServer } from './helpers';
 
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 
 function rawMail(o: { from: string; subject: string; text: string; id: string }) {
   return [

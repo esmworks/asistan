@@ -1,4 +1,4 @@
-import type { Bot, Thread } from '@yumakbot/shared';
+import type { Bot, Thread } from '@leafbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';

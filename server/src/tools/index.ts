@@ -26,7 +26,7 @@ import {
   type Skill,
   type WhatsAppGroup,
   zonedTime,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';

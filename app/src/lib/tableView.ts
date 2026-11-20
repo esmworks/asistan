@@ -1,4 +1,4 @@
-import { cellText, type CellValue, type TableColumn, type TableRow } from '@yumakbot/shared';
+import { cellText, type CellValue, type TableColumn, type TableRow } from '@leafbot/shared';
 
 /** Rows the table window draws at once; a search narrows a longer table. */
 export const SHOWN_ROWS = 300;

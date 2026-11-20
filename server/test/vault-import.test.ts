@@ -1,4 +1,4 @@
-import type { ApiCredential, ApiKeyImportResult, VaultImportResult, VaultLogin } from '@yumakbot/shared';
+import type { ApiCredential, ApiKeyImportResult, VaultImportResult, VaultLogin } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { keyNameOf } from '../src/services/api-credentials';
 import { csvRows, envEntries, loginsFromCsv } from '../src/services/vault-import';

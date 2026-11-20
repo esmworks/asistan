@@ -1,4 +1,4 @@
-import type { PluginPlan } from '@yumakbot/shared';
+import type { PluginPlan } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Puzzle, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';

@@ -1,5 +1,5 @@
-import type { CanaryAlarm, Pledge, RoutineSuggestion, SecondYes } from '@yumakbot/shared';
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import type { CanaryAlarm, Pledge, RoutineSuggestion, SecondYes } from '@leafbot/shared';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';

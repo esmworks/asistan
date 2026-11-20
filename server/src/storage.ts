@@ -8,7 +8,7 @@ import {
   type StorageGroup,
   type StorageReport,
   type StorageSize,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import type { Ctx } from './context';
 import { schema } from './db';
 

@@ -9,7 +9,7 @@ import {
   type SlackLink,
   type SlackStatus,
   type Thread,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { slackMessages } from '../src/channels/format';
@@ -23,7 +23,7 @@ import { testServer, waitFor, type Person, type TestServer } from './helpers';
 const APP = ['xapp', '1', 'A0001', '1234567890', 'abcdefabcdefabcdef'].join('-');
 const BOT = ['xoxb', '1234567890', '1234567890', 'abcdefabcdefabcd'].join('-');
 const BOT_USER = 'UBOT';
-const NAMES: Record<string, string> = { UAYSE: 'ayse.s', UMERT: 'mert.k', UYABAN: 'yabanci', UBOT: 'Yumak' };
+const NAMES: Record<string, string> = { UAYSE: 'ayse.s', UMERT: 'mert.k', UYABAN: 'yabanci', UBOT: 'Leaf' };
 
 interface Call {
   method: string;

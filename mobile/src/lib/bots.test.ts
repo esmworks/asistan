@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { initialOf, ordered } from './bots';
 

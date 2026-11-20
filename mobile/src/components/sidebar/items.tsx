@@ -1,4 +1,4 @@
-import type { Bot, BotSummary, Room } from '@yumakbot/shared';
+import type { Bot, BotSummary, Room } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

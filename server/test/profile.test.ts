@@ -1,4 +1,4 @@
-import type { Thread } from '@yumakbot/shared';
+import type { Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { schema } from '../src/db';

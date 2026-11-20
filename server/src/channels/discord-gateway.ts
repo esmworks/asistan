@@ -255,7 +255,7 @@ export class DiscordGateway {
                 d: {
                   token: this.token,
                   intents: this.intents,
-                  properties: { os: process.platform, browser: 'yumakbot', device: 'yumakbot' },
+                  properties: { os: process.platform, browser: 'leafbot', device: 'leafbot' },
                 },
               });
             }

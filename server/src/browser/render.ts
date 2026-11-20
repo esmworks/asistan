@@ -1,4 +1,4 @@
-import { PAGE_LIBRARIES } from '@yumakbot/shared';
+import { PAGE_LIBRARIES } from '@leafbot/shared';
 import { chromium } from 'playwright-core';
 
 /** The largest side of a picture, before the scale; a poster or a banner fits well inside it. */

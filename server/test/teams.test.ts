@@ -1,7 +1,7 @@
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { createServer as httpServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, Bot, Message, TeamsLink, TeamsStatus } from '@yumakbot/shared';
+import type { Approval, Bot, Message, TeamsLink, TeamsStatus } from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TEAMS_PATH } from '../src/channels/teams';
 import { TeamsAuth, teamsParts, teamsText, type TeamsActivity } from '../src/channels/teams-api';
@@ -184,7 +184,7 @@ describe('Teams sign-in check', () => {
   });
 
   it('reads Teams text as plain words and splits long replies', () => {
-    expect(teamsText('<at>Yumak</at> merhaba&nbsp;<b>dünya</b> &amp; &lt;siz&gt;')).toBe(
+    expect(teamsText('<at>Leaf</at> merhaba&nbsp;<b>dünya</b> &amp; &lt;siz&gt;')).toBe(
       'merhaba dünya & <siz>',
     );
     expect(teamsText('<p>bir</p><p>iki</p>')).toBe('bir\niki');
@@ -235,7 +235,7 @@ describe('Teams channel', () => {
       channelId: 'msteams',
       serviceUrl: ms.serviceUrl,
       from: { id: from, name: from === '29:ayse' ? 'Ayşe S.' : from },
-      recipient: { id: '28:bot', name: 'Yumak' },
+      recipient: { id: '28:bot', name: 'Leaf' },
       conversation: {
         id: `a:${from}`,
         conversationType: opts.type ?? 'personal',
@@ -255,9 +255,9 @@ describe('Teams channel', () => {
     waitFor(async () => ms.texts(`a:${from}`).find((p) => String(p.body.text ?? '').includes(has)));
 
   it('needs a public HTTPS address to show the endpoint', async () => {
-    await setUp('https://yumak.example.com');
+    await setUp('https://leaf.example.com');
     const s = (await t.api<TeamsStatus>('GET', '/api/teams')).body;
-    expect(s.endpoint).toBe(`https://yumak.example.com${TEAMS_PATH}`);
+    expect(s.endpoint).toBe(`https://leaf.example.com${TEAMS_PATH}`);
   });
 
   it('reads only signed requests; a linked person talks to the bot and hears its reply', async () => {
@@ -280,7 +280,7 @@ describe('Teams channel', () => {
     await said('29:ayse', 'geçersiz');
     const { code } = (await ayse.api<TeamsLink>('POST', '/api/teams/me/code')).body;
     expect(code).toMatch(/^[A-Z2-9]{10}$/);
-    await deliver('29:ayse', `<at>Yumak</at> link ${code}`);
+    await deliver('29:ayse', `<at>Leaf</at> link ${code}`);
     await said('29:ayse', 'Bağlandın, Ayşe S.');
     expect((await ayse.api<TeamsLink>('GET', '/api/teams/me')).body).toMatchObject({
       linked: { name: 'Ayşe S.' },

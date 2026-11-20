@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import type { BotEmail, EmailSettings, Routine, RoutineRun, Thread } from '@yumakbot/shared';
+import type { BotEmail, EmailSettings, Routine, RoutineRun, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import { htmlToText, MAX_EMAIL_BYTES } from '../src/services/email';

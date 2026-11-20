@@ -4,7 +4,7 @@ import {
   parseGrokLink,
   type GrokLink,
   type GrokTemplateCard,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { HttpError } from '../util';
 import { fetchPublicText, type PublicFetchOptions } from './skill-link';
 

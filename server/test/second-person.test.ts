@@ -1,10 +1,10 @@
-import type { Approval, Bot, BotAction, PermissionRule, SecondYes, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, BotAction, PermissionRule, SecondYes, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askRuleFor } from '../src/services/approvals';
 import { OWNER_ID } from '../src/users';
 import { testServer, waitFor, type Person, type TestServer } from './helpers';
 
-const TOOL = 'mcp__yumakbot__routine_create';
+const TOOL = 'mcp__leafbot__routine_create';
 const ROUTINE = { name: 'Morning', prompt: 'Say good morning.', schedule: { type: 'daily', time: '08:00' } };
 const create = (name = 'Morning') => `[araç:routine_create ${JSON.stringify({ ...ROUTINE, name })}]`;
 

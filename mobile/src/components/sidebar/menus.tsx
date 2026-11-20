@@ -1,5 +1,5 @@
-import { applyMove, moveTo, PINNED, UNGROUPED } from '@yumakbot/app/src/lib/botLayout';
-import type { Bot, BotSummary, Group } from '@yumakbot/shared';
+import { applyMove, moveTo, PINNED, UNGROUPED } from '@leafbot/app/src/lib/botLayout';
+import type { Bot, BotSummary, Group } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactElement } from 'react';
 import { confirm, askText, toast, toastError } from '@/components/overlay';

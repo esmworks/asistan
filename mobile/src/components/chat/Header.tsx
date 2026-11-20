@@ -1,5 +1,5 @@
-import { snoozeTimes, useMinuteClock } from '@yumakbot/app/src/lib/snooze';
-import type { Bot, Thread } from '@yumakbot/shared';
+import { snoozeTimes, useMinuteClock } from '@leafbot/app/src/lib/snooze';
+import type { Bot, Thread } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

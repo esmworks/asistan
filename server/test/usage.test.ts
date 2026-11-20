@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { Message, Room, Thread, TodayReport, UsageReport } from '@yumakbot/shared';
+import type { Message, Room, Thread, TodayReport, UsageReport } from '@leafbot/shared';
 import { asc, eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

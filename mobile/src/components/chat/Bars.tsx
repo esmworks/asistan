@@ -1,4 +1,4 @@
-import type { Bot, Thread } from '@yumakbot/shared';
+import type { Bot, Thread } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useQueryClient } from '@tanstack/react-query';
 import { Component, type ReactNode } from 'react';

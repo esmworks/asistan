@@ -9,7 +9,7 @@ import {
   type BotUpdate,
   type Group,
   type GroupMove,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, eq, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

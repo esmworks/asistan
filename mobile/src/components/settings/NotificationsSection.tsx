@@ -1,4 +1,4 @@
-import type { PushLevel } from '@yumakbot/shared';
+import type { PushLevel } from '@leafbot/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Linking } from 'react-native';
 import { Row, Section } from '@/components/page';

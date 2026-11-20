@@ -4,7 +4,7 @@ import {
   type Bot,
   type TicketPriority,
   type TicketStatus,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { UserRound } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

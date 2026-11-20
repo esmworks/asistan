@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { isValidTimeZone, ROUTINE_STEP_MAX, RoutineStep, Schedule } from './schedule';
 
 /**
- * The bot import file (`yumakbot-bot-import`, version 1). Another app produces it by following
+ * The bot import file (`leafbot-bot-import`, version 1). Another app produces it by following
  * `app/public/import/grok-bot-export.md`, so files written for version 1 must keep importing:
  * new fields have to be optional, and a field whose meaning changes needs version 2.
  *
@@ -12,7 +12,9 @@ import { isValidTimeZone, ROUTINE_STEP_MAX, RoutineStep, Schedule } from './sche
  * item on the server: a bad item is dropped or shortened and reported, since a model wrote the
  * file and one slip there should not cost the user every other bot.
  */
-export const BOT_IMPORT_FORMAT = 'yumakbot-bot-import';
+export const BOT_IMPORT_FORMAT = 'leafbot-bot-import';
+/** The format's name in files written before the app was renamed; still read. */
+export const OLD_BOT_IMPORT_FORMAT = 'yumakbot-bot-import';
 export const BOT_IMPORT_VERSION = 1;
 /** Upper bound on the file; fits fifty bots with full-size avatars. */
 export const MAX_BOT_IMPORT_BYTES = 25 * 1024 * 1024;
@@ -97,7 +99,7 @@ const BotImportGroup = z.object({
 
 export const BotImportFile = z
   .object({
-    format: z.literal(BOT_IMPORT_FORMAT),
+    format: z.union([z.literal(BOT_IMPORT_FORMAT), z.literal(OLD_BOT_IMPORT_FORMAT)]),
     version: z.literal(BOT_IMPORT_VERSION),
     source: clipped(60).default(''),
     exportedAt: z.string().max(40).optional(),

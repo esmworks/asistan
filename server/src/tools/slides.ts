@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { Bot, Thread } from '@yumakbot/shared';
+import type { Bot, Thread } from '@leafbot/shared';
 import PptxGenJS from 'pptxgenjs';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';

@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { BotEmail, Message, Routine, RoutineRun, Thread } from '@yumakbot/shared';
+import type { BotEmail, Message, Routine, RoutineRun, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, type TestServer } from './helpers';
 

@@ -1,4 +1,4 @@
-import type { Approval, Bot, BotCreate, Routine, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, BotCreate, Routine, Thread } from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { reachesOut } from '../src/runtime/outside';
 import { modeFor } from '../src/services/approvals';
@@ -124,8 +124,8 @@ describe('dış metinden sonra seviye ve dışarı ulaşan adımlar', () => {
       expect(reachesOut('Bash', { command }), command).toBe(false);
     expect(reachesOut('WebFetch', { url: 'https://x.test' })).toBe(true);
     expect(reachesOut('Write', { file_path: 'a' })).toBe(false);
-    expect(reachesOut('mcp__yumakbot__browser_open', {}, { name: 'browser_open' } as never)).toBe(true);
-    expect(reachesOut('mcp__yumakbot__api_request', {}, { name: 'api_request' } as never)).toBe(true);
+    expect(reachesOut('mcp__leafbot__browser_open', {}, { name: 'browser_open' } as never)).toBe(true);
+    expect(reachesOut('mcp__leafbot__api_request', {}, { name: 'api_request' } as never)).toBe(true);
     const sheet = {
       name: 'append_row',
       server: 'sheets',
@@ -223,7 +223,7 @@ describe('botun başka bir bota iş vermesi', () => {
   it('kendinden serbest bir bota iş vermek yine sorar', async () => {
     const a = await send({ permissionMode: 'ask' }, { permissionMode: 'auto' });
     const card = await waitFor(async () => (await pending(t)).find((x) => x.botId === a.id));
-    expect(card.toolName).toBe('mcp__yumakbot__bot_send');
+    expect(card.toolName).toBe('mcp__leafbot__bot_send');
     await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
     await t.services.turns.idle();
   });

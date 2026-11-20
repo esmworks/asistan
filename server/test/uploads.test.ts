@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import type { BotSummary, Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { BotSummary, Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { safeFileName, saveUpload, sweepUploads } from '../src/uploads';
 import { AUTH, testServer, type TestServer } from './helpers';
@@ -369,7 +369,7 @@ describe('dosya ekleme', () => {
 describe('saveUpload', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-upload-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-upload-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

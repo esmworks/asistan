@@ -1,4 +1,4 @@
-import { describeSchedule, SHORT_DAY_NAMES, type RoutineSuggestion, type Schedule } from '@yumakbot/shared';
+import { describeSchedule, SHORT_DAY_NAMES, type RoutineSuggestion, type Schedule } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';

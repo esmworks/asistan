@@ -10,7 +10,7 @@ import {
   type NoticeEvent,
   type TelegramStatus,
   type TurnEvent,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

@@ -1,4 +1,4 @@
-import type { ComputerAck } from '@yumakbot/shared';
+import type { ComputerAck } from '@leafbot/shared';
 
 /** The part of the socket.io client the channel uses; a fake can stand in for it in tests. */
 export interface VncSocket {

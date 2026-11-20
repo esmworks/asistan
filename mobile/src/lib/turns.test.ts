@@ -1,4 +1,4 @@
-import type { TurnChangeItem } from '@yumakbot/shared';
+import type { TurnChangeItem } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { clock, rehearsalSeconds, restoredCount, startedBySomething, triggerKey, undoGroups } from './turns';
 

@@ -1,4 +1,4 @@
-import type { VaultLogin } from '@yumakbot/shared';
+import type { VaultLogin } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileUp, KeyRound, Pencil, Plus, QrCode, Search, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess, Schedule, TaughtStep } from '@yumakbot/shared';
+import type { BotAccess, Schedule, TaughtStep } from '@leafbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */

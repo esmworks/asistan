@@ -9,7 +9,7 @@ import { ClaudeEngine } from '../src/engine/claude';
  * or calling the API, so this needs no Claude login and makes no request.
  */
 describe('gerçek Claude CLI: kayıp oturum', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'yumakbot-lost-'));
+  const dir = mkdtempSync(join(tmpdir(), 'leafbot-lost-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it('kaydı olmayan oturumu ayrı bir sonuç olarak bildirir', { timeout: 60_000 }, async () => {

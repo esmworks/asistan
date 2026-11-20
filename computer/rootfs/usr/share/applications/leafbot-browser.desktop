@@ -2,7 +2,7 @@
 Type=Application
 Name=Web Browser
 Name[tr]=Web Tarayıcı
-Exec=/usr/local/bin/yumakbot-browser %u
+Exec=/usr/local/bin/leafbot-browser %u
 Icon=web-browser
 Categories=Network;WebBrowser;
 MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;

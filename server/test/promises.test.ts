@@ -1,4 +1,4 @@
-import type { Message, Pledge, Thread, UsageReport } from '@yumakbot/shared';
+import type { Message, Pledge, Thread, UsageReport } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

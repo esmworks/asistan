@@ -6,7 +6,7 @@ import { KEY, testServer, type TestServer } from './helpers';
 
 const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-const APNS = { teamId: 'TEAM123456', keyId: 'KEY1234567', bundleId: 'com.yumakbot.app', key: P8 };
+const APNS = { teamId: 'TEAM123456', keyId: 'KEY1234567', bundleId: 'com.leafbot.app', key: P8 };
 const TOKEN = 'ab'.repeat(32);
 
 describe('telefon bildirimleri', () => {
@@ -58,7 +58,7 @@ describe('telefon bildirimleri', () => {
     expect(req.token).toBe(TOKEN);
     expect(req.sandbox).toBe(false);
     expect(req.headers).toMatchObject({
-      'apns-topic': 'com.yumakbot.app',
+      'apns-topic': 'com.leafbot.app',
       'apns-push-type': 'alert',
       'apns-collapse-id': 'reply:th1',
     });

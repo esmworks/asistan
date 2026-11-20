@@ -1,4 +1,4 @@
-import type { DoctorCheck, DoctorCheckId, DoctorReport } from '@yumakbot/shared';
+import type { DoctorCheck, DoctorCheckId, DoctorReport } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';

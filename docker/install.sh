@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Sets up Yumak Bot on a fresh Ubuntu or Debian server in one go: Docker, the server and its database,
+# Sets up Leaf Bot on a fresh Ubuntu or Debian server in one go: Docker, the server and its database,
 # HTTPS through Caddy, the AppArmor profile and the egress firewall, kept across reboots. Running it
 # again updates the installation and keeps its settings and data. See "Tek komutla kurulum" in
 # docker/README.md.
 #
-#   curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash
-#   curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash -s -- --domain bot.example.com
+#   curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | sudo bash -s -- --domain bot.example.com
 #
-# Afterwards the `yumakbot` command runs the same script: yumakbot update | status | logs | restart | access-key.
+# Afterwards the `leafbot` command runs the same script: leafbot update | status | logs | restart | access-key.
 #
 # It works in two stages. The first, possibly piped from the internet, only fetches the chosen release
 # into the installation folder; it then hands over to that release's own copy of this script, so the
 # rest always matches the compose files and scripts next to it.
 set -euo pipefail
 
-DEFAULT_REPO=https://github.com/esmworks/yumakbot.git
-DIR=/opt/yumakbot
+DEFAULT_REPO=https://github.com/esmworks/leafbot.git
+DIR=/opt/leafbot
 REPO=
 COMMAND=install
 DOMAIN=
@@ -50,7 +50,7 @@ Komutlar:
   install       Kurar ya da kuruluysa günceller (varsayılan)
   update        En son sürüme günceller; ayarlar ve veriler kalır
   status        Kapsayıcıların durumu
-  logs [servis] Kayıtları izler (varsayılan: yumakbot)
+  logs [servis] Kayıtları izler (varsayılan: leafbot)
   restart       Kapsayıcıları yeniden başlatır
   access-key    Erişim anahtarını gösterir
   compose ...   docker compose'u bu kurulumun dosyalarıyla çalıştırır
@@ -64,8 +64,8 @@ Seçenekler:
   --access-key ANAHTAR
                      Erişim anahtarını siz verin (en az 24 karakter; harf, rakam, - _ . ~).
                      Verilmezse rastgele üretilir.
-  --dir KLASÖR       Kurulum klasörü (varsayılan: /opt/yumakbot)
-  --repo ADRES       Git deposu (varsayılan: esmworks/yumakbot)
+  --dir KLASÖR       Kurulum klasörü (varsayılan: /opt/leafbot)
+  --repo ADRES       Git deposu (varsayılan: esmworks/leafbot)
   --lang tr|en       İletilerin dili
 EOF
   else
@@ -76,7 +76,7 @@ Commands:
   install       Install, or update when already installed (default)
   update        Update to the latest release; settings and data stay
   status        State of the containers
-  logs [service] Follow the logs (default: yumakbot)
+  logs [service] Follow the logs (default: leafbot)
   restart       Restart the containers
   access-key    Show the access key
   compose ...   Run docker compose with this installation's files
@@ -89,8 +89,8 @@ Options:
   --no-computer      Turn off the bots' desktops
   --access-key KEY   Choose the access key yourself (at least 24 characters: letters, digits, - _ . ~).
                      Without it, a random one is made.
-  --dir FOLDER       Installation folder (default: /opt/yumakbot)
-  --repo URL         Git repository (default: esmworks/yumakbot)
+  --dir FOLDER       Installation folder (default: /opt/leafbot)
+  --repo URL         Git repository (default: esmworks/leafbot)
   --lang tr|en       Language of the messages
 EOF
   fi
@@ -199,10 +199,20 @@ set_env() {
 
 random_hex() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 
+# The files and settings every compose call uses. An installation made before the rename keeps its
+# project name (see migrate_old_install), so compose finds its containers and volumes.
+compose_base() {
+  BASE=(-f "$DIR/docker/compose.yml" -f "$DIR/docker/compose.vps.yml" --env-file "$(ENV_FILE)")
+  local project
+  project=$(get_env COMPOSE_PROJECT_NAME)
+  [ -z "$project" ] || BASE+=(-p "$project")
+}
+
 compose() {
-  local args=(-f "$DIR/docker/compose.yml" -f "$DIR/docker/compose.vps.yml" --env-file "$(ENV_FILE)")
-  [ "$(get_env YUMAKBOT_COMPUTER)" != 1 ] || args+=(--profile computer)
-  [ "$(get_env YUMAKBOT_WARP)" != 1 ] || args+=(--profile warp)
+  compose_base
+  local args=("${BASE[@]}")
+  [ "$(get_env LEAFBOT_COMPUTER)" != 1 ] || args+=(--profile computer)
+  [ "$(get_env LEAFBOT_WARP)" != 1 ] || args+=(--profile warp)
   docker compose "${args[@]}" "$@"
 }
 
@@ -222,19 +232,19 @@ manage() {
     status)
       compose ps
       local port
-      port=$(get_env YUMAKBOT_PORT)
+      port=$(get_env LEAFBOT_PORT)
       if curl -fsS --max-time 5 "http://127.0.0.1:${port:-4319}/api/health" >/dev/null 2>&1; then
-        say "Sunucu yanıt veriyor: https://$(get_env YUMAKBOT_DOMAIN)" "The server answers: https://$(get_env YUMAKBOT_DOMAIN)"
+        say "Sunucu yanıt veriyor: https://$(get_env LEAFBOT_DOMAIN)" "The server answers: https://$(get_env LEAFBOT_DOMAIN)"
       else
-        warn "Sunucu yanıt vermiyor; kayıtlara bakın: yumakbot logs" "The server does not answer; see the logs: yumakbot logs"
+        warn "Sunucu yanıt vermiyor; kayıtlara bakın: leafbot logs" "The server does not answer; see the logs: leafbot logs"
       fi
       ;;
-    logs) compose logs -f --tail 200 "${REST[@]:-yumakbot}" ;;
+    logs) compose logs -f --tail 200 "${REST[@]:-leafbot}" ;;
     restart)
       compose restart
-      ! systemctl is-enabled --quiet yumakbot-firewall.service 2>/dev/null || systemctl restart yumakbot-firewall.service
+      ! systemctl is-enabled --quiet leafbot-firewall.service 2>/dev/null || systemctl restart leafbot-firewall.service
       ;;
-    access-key) get_env YUMAKBOT_ACCESS_KEY ;;
+    access-key) get_env LEAFBOT_ACCESS_KEY ;;
     compose) compose "${REST[@]}" ;;
   esac
 }
@@ -293,7 +303,7 @@ fetch_source() {
 }
 
 checkout() {
-  step "Yumak Bot $1 indiriliyor ($DIR)" "Fetching Yumak Bot $1 ($DIR)"
+  step "Leaf Bot $1 indiriliyor ($DIR)" "Fetching Leaf Bot $1 ($DIR)"
   if [ -d "$DIR/.git" ]; then
     git -C "$DIR" remote set-url origin "$REPO"
     git -C "$DIR" fetch --quiet --depth 1 origin "$1" ||
@@ -303,7 +313,7 @@ checkout() {
         "Files in $DIR have local changes; see them with: git -C $DIR status"
   else
     if [ -e "$DIR" ] && [ -n "$(ls -A "$DIR")" ]; then
-      die "$DIR boş değil ve bir Yumak Bot kurulumu değil." "$DIR is not empty and is not a Yumak Bot installation."
+      die "$DIR boş değil ve bir Leaf Bot kurulumu değil." "$DIR is not empty and is not a Leaf Bot installation."
     fi
     git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$1" "$REPO" "$DIR" ||
       die "$1 indirilemedi." "Could not fetch $1."
@@ -330,7 +340,7 @@ check_resources() {
 }
 
 effective_computer() {
-  if [ -n "$COMPUTER" ]; then printf '%s' "$COMPUTER"; else printf '%s' "$(get_env YUMAKBOT_COMPUTER)"; fi
+  if [ -n "$COMPUTER" ]; then printf '%s' "$COMPUTER"; else printf '%s' "$(get_env LEAFBOT_COMPUTER)"; fi
 }
 
 ensure_docker() {
@@ -374,7 +384,7 @@ public_ipv4() {
 }
 
 choose_domain() {
-  DOMAIN=${DOMAIN:-$(get_env YUMAKBOT_DOMAIN)}
+  DOMAIN=${DOMAIN:-$(get_env LEAFBOT_DOMAIN)}
   local ip
   ip=$(public_ipv4 || true)
   if [ -z "$DOMAIN" ]; then
@@ -401,6 +411,27 @@ choose_domain() {
   fi
 }
 
+# The app was called Yumak Bot before Leaf Bot. An installation made then keeps its settings under
+# YUMAKBOT_ names, its data in Docker volumes and a database named after the old project, its egress
+# bridge as yumakbot0 and its Tailscale machine as yumakbot. The settings get the new names once; the
+# names that hold data or an address are pinned, so the update finds the same volumes, database,
+# bridge and address.
+migrate_old_install() {
+  local file tmp
+  file=$(ENV_FILE)
+  [ -f "$file" ] && grep -q '^[[:space:]]*YUMAKBOT_' "$file" || return 0
+  step "Yumak Bot ayarları Leaf Bot adına taşınıyor" "Carrying the Yumak Bot settings over to Leaf Bot"
+  tmp=$(mktemp "$file.XXXXXX")
+  sed 's/^\([[:space:]]*\)YUMAKBOT_/\1LEAFBOT_/' "$file" >"$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$file"
+  [ -n "$(get_env COMPOSE_PROJECT_NAME)" ] || set_env COMPOSE_PROJECT_NAME yumakbot
+  [ -n "$(get_env POSTGRES_USER)" ] || set_env POSTGRES_USER yumakbot
+  [ -n "$(get_env POSTGRES_DB)" ] || set_env POSTGRES_DB yumakbot
+  [ -n "$(get_env LEAFBOT_BRIDGE)" ] || set_env LEAFBOT_BRIDGE yumakbot0
+  [ -n "$(get_env TAILSCALE_HOSTNAME)" ] || set_env TAILSCALE_HOSTNAME yumakbot
+}
+
 write_env() {
   local file
   file=$(ENV_FILE)
@@ -413,7 +444,7 @@ write_env() {
   chmod 600 "$file"
   # Hex values: they go into DATABASE_URL and compose files as they are.
   local key
-  for key in POSTGRES_PASSWORD YUMAKBOT_COMPUTER_TOKEN YUMAKBOT_PROXY_SECRET; do
+  for key in POSTGRES_PASSWORD LEAFBOT_COMPUTER_TOKEN LEAFBOT_PROXY_SECRET; do
     [ -n "$(get_env "$key")" ] || set_env "$key" "$(random_hex)"
   done
   local allowed='^[A-Za-z0-9._~-]{24,}$'
@@ -421,62 +452,64 @@ write_env() {
     [[ $ACCESS_KEY =~ $allowed ]] ||
       die "Erişim anahtarı en az 24 karakter olmalı ve yalnızca harf, rakam ve - _ . ~ içermeli." \
         "The access key must be at least 24 characters of letters, digits and - _ . ~ only."
-    set_env YUMAKBOT_ACCESS_KEY "$ACCESS_KEY"
-  elif [ -z "$(get_env YUMAKBOT_ACCESS_KEY)" ]; then
-    set_env YUMAKBOT_ACCESS_KEY "$(random_hex)"
+    set_env LEAFBOT_ACCESS_KEY "$ACCESS_KEY"
+  elif [ -z "$(get_env LEAFBOT_ACCESS_KEY)" ]; then
+    set_env LEAFBOT_ACCESS_KEY "$(random_hex)"
   fi
-  set_env YUMAKBOT_DOMAIN "$DOMAIN"
-  set_env YUMAKBOT_PUBLIC_URL "https://$DOMAIN"
-  set_env YUMAKBOT_ALLOWED_HOSTS "$DOMAIN"
-  set_env YUMAKBOT_SECURE_COOKIES 1
-  [ -n "$(get_env YUMAKBOT_PORT)" ] || set_env YUMAKBOT_PORT 4319
-  set_env YUMAKBOT_VERSION "$IMAGE_TAG"
+  set_env LEAFBOT_DOMAIN "$DOMAIN"
+  set_env LEAFBOT_PUBLIC_URL "https://$DOMAIN"
+  set_env LEAFBOT_ALLOWED_HOSTS "$DOMAIN"
+  set_env LEAFBOT_SECURE_COOKIES 1
+  [ -n "$(get_env LEAFBOT_PORT)" ] || set_env LEAFBOT_PORT 4319
+  set_env LEAFBOT_VERSION "$IMAGE_TAG"
   local computer
   computer=$(effective_computer)
-  set_env YUMAKBOT_COMPUTER "${computer:-0}"
+  set_env LEAFBOT_COMPUTER "${computer:-0}"
   if [ "$computer" = 1 ]; then
-    set_env YUMAKBOT_COMPUTER_URL http://computer-api:4320
+    set_env LEAFBOT_COMPUTER_URL http://computer-api:4320
   else
-    set_env YUMAKBOT_COMPUTER_URL ''
+    set_env LEAFBOT_COMPUTER_URL ''
   fi
-  set_env YUMAKBOT_INSTALL_LANG "$UI"
+  set_env LEAFBOT_INSTALL_LANG "$UI"
 }
 
 # Ports 80 and 443 must be free for Caddy, unless it is this installation's Caddy holding them.
 check_ports() {
   [ -z "$(compose ps -q caddy 2>/dev/null)" ] || return 0
   if ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq '[:.](80|443)$'; then
-    die "80 ya da 443 numaralı bağlantı noktasını başka bir program kullanıyor (ör. nginx, Apache). Onu kapatın ya da Yumak Bot'u docker/README.md'deki elle kurulumla kendi ters vekilinizin arkasına koyun." \
-      "Another program uses port 80 or 443 (e.g. nginx, Apache). Stop it, or put Yumak Bot behind your own reverse proxy with the manual setup in docker/README.md."
+    die "80 ya da 443 numaralı bağlantı noktasını başka bir program kullanıyor (ör. nginx, Apache). Onu kapatın ya da Leaf Bot'u docker/README.md'deki elle kurulumla kendi ters vekilinizin arkasına koyun." \
+      "Another program uses port 80 or 443 (e.g. nginx, Apache). Stop it, or put Leaf Bot behind your own reverse proxy with the manual setup in docker/README.md."
   fi
 }
 
 start_containers() {
-  local server=ghcr.io/esmworks/yumakbot-server:$IMAGE_TAG
-  local computer=ghcr.io/esmworks/yumakbot-computer:$IMAGE_TAG
+  local server=ghcr.io/esmworks/leafbot-server:$IMAGE_TAG
+  local computer=ghcr.io/esmworks/leafbot-computer:$IMAGE_TAG
   local build=()
   step "İmajlar indiriliyor" "Pulling the images"
   compose pull --quiet db caddy
   if [[ $REF =~ ^v[0-9] ]] && docker pull --quiet "$server" >/dev/null 2>&1 &&
-    { [ "$(get_env YUMAKBOT_COMPUTER)" != 1 ] || docker pull --quiet "$computer" >/dev/null 2>&1; }; then
+    { [ "$(get_env LEAFBOT_COMPUTER)" != 1 ] || docker pull --quiet "$computer" >/dev/null 2>&1; }; then
     :
   else
     build=(--build)
     warn "$REF için hazır imaj yok; imajlar bu sunucuda derleniyor. Bu 10-20 dakika sürer ve 4 GB'tan az bellekte yarıda kalabilir." \
       "There is no ready-made image for $REF; the images are built on this server. This takes 10-20 minutes and can fail with less than 4 GB of memory."
   fi
-  if [ "$(get_env YUMAKBOT_COMPUTER)" != 1 ]; then
+  if [ "$(get_env LEAFBOT_COMPUTER)" != 1 ]; then
     # A desktop service left from an earlier installation with --computer.
-    docker compose -f "$DIR/docker/compose.yml" -f "$DIR/docker/compose.vps.yml" --env-file "$(ENV_FILE)" \
-      --profile computer rm --stop --force computer >/dev/null 2>&1 || true
+    compose_base
+    docker compose "${BASE[@]}" --profile computer rm --stop --force computer >/dev/null 2>&1 || true
   fi
   step "Kapsayıcılar başlatılıyor" "Starting the containers"
-  compose up -d "${build[@]}"
+  # --remove-orphans: the server's service was called yumakbot before the rename, and its old
+  # container would keep holding the port.
+  compose up -d --remove-orphans "${build[@]}"
 }
 
 wait_healthy() {
   local port
-  port=$(get_env YUMAKBOT_PORT)
+  port=$(get_env LEAFBOT_PORT)
   step "Sunucunun açılması bekleniyor" "Waiting for the server to start"
   for _ in $(seq 1 90); do
     if curl -fsS --max-time 3 "http://127.0.0.1:${port:-4319}/api/health" >/dev/null 2>&1; then
@@ -484,7 +517,7 @@ wait_healthy() {
     fi
     sleep 2
   done
-  die "Sunucu 3 dakikada açılmadı. Kayıtlar: yumakbot logs" "The server did not start within 3 minutes. Logs: yumakbot logs"
+  die "Sunucu 3 dakikada açılmadı. Kayıtlar: leafbot logs" "The server did not start within 3 minutes. Logs: leafbot logs"
 }
 
 wait_https() {
@@ -495,11 +528,11 @@ wait_https() {
     fi
     sleep 4
   done
-  warn "https://$DOMAIN henüz yanıt vermiyor. DNS kaydının bu sunucuyu gösterdiğine ve sağlayıcınızın güvenlik duvarında 80 ve 443 numaralı bağlantı noktalarının açık olduğuna bakın; sertifika sonra kendiliğinden alınır. Kayıtlar: yumakbot logs caddy" \
-    "https://$DOMAIN does not answer yet. Check that the DNS record points at this server and that your provider's firewall allows ports 80 and 443; the certificate is then fetched by itself. Logs: yumakbot logs caddy"
+  warn "https://$DOMAIN henüz yanıt vermiyor. DNS kaydının bu sunucuyu gösterdiğine ve sağlayıcınızın güvenlik duvarında 80 ve 443 numaralı bağlantı noktalarının açık olduğuna bakın; sertifika sonra kendiliğinden alınır. Kayıtlar: leafbot logs caddy" \
+    "https://$DOMAIN does not answer yet. Check that the DNS record points at this server and that your provider's firewall allows ports 80 and 443; the certificate is then fetched by itself. Logs: leafbot logs caddy"
 }
 
-# Before the containers start: compose.yml reads YUMAKBOT_APPARMOR when it creates them.
+# Before the containers start: compose.yml reads LEAFBOT_APPARMOR when it creates them.
 setup_apparmor() {
   step "AppArmor ayarlanıyor" "Setting up AppArmor"
   sh "$DIR/docker/apparmor.sh" --env "$(ENV_FILE)" >/dev/null
@@ -509,9 +542,16 @@ setup_host() {
   step "Güvenlik duvarı ayarlanıyor" "Setting up the firewall"
   # Docker starts the containers again after a reboot; this service puts the egress rules back each
   # time, and again whenever Docker restarts (Docker keeps the chain but the rules go with a reboot).
-  cat >/etc/systemd/system/yumakbot-firewall.service <<EOF
+  # The unit was named after Yumak Bot before the rename.
+  if [ -f /etc/systemd/system/yumakbot-firewall.service ]; then
+    systemctl disable --now --quiet yumakbot-firewall.service 2>/dev/null || true
+    rm -f /etc/systemd/system/yumakbot-firewall.service
+  fi
+  local bridge
+  bridge=$(get_env LEAFBOT_BRIDGE)
+  cat >/etc/systemd/system/leafbot-firewall.service <<EOF
 [Unit]
-Description=Yumak Bot egress firewall (keeps the bots' containers away from private addresses)
+Description=Leaf Bot egress firewall (keeps the bots' containers away from private addresses)
 After=docker.service
 Requires=docker.service
 PartOf=docker.service
@@ -519,43 +559,46 @@ PartOf=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+Environment=BRIDGE=${bridge:-leafbot0}
 ExecStart=$DIR/docker/firewall.sh --wait
 
 [Install]
 WantedBy=multi-user.target docker.service
 EOF
   systemctl daemon-reload
-  systemctl enable --quiet yumakbot-firewall.service
+  systemctl enable --quiet leafbot-firewall.service
   # The bridge exists only once the containers are up, so start_containers runs first.
-  systemctl restart yumakbot-firewall.service
+  systemctl restart leafbot-firewall.service
   if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
     ufw allow 80/tcp >/dev/null
     ufw allow 443/tcp >/dev/null
     ufw allow 443/udp >/dev/null
   fi
-  cat >/usr/local/bin/yumakbot <<EOF
+  cat >/usr/local/bin/leafbot <<EOF
 #!/bin/sh
-# Manages the Yumak Bot installation in $DIR; see $DIR/docker/install.sh --help.
+# Manages the Leaf Bot installation in $DIR; see $DIR/docker/install.sh --help.
 exec bash "$DIR/docker/install.sh" --dir "$DIR" "\$@"
 EOF
-  chmod 755 /usr/local/bin/yumakbot
+  chmod 755 /usr/local/bin/leafbot
+  # The command was called yumakbot before the rename; that name keeps working.
+  [ ! -e /usr/local/bin/yumakbot ] || ln -sf leafbot /usr/local/bin/yumakbot
 }
 
 summary() {
   printf '\n'
-  say "Yumak Bot hazır." "Yumak Bot is ready."
+  say "Leaf Bot hazır." "Leaf Bot is ready."
   say "  Adres:          https://$DOMAIN" "  Address:     https://$DOMAIN"
   # Shown only on a terminal: when run from cloud-init the output lands in a log file.
   if [ -t 1 ]; then
-    say "  Erişim anahtarı: $(get_env YUMAKBOT_ACCESS_KEY)" "  Access key:  $(get_env YUMAKBOT_ACCESS_KEY)"
+    say "  Erişim anahtarı: $(get_env LEAFBOT_ACCESS_KEY)" "  Access key:  $(get_env LEAFBOT_ACCESS_KEY)"
   else
-    say "  Erişim anahtarı: sudo yumakbot access-key ile görün" "  Access key:  see it with sudo yumakbot access-key"
+    say "  Erişim anahtarı: sudo leafbot access-key ile görün" "  Access key:  see it with sudo leafbot access-key"
   fi
   printf '\n'
   say "Adresi açıp erişim anahtarıyla girin; ardından bir kullanıcı adı ve şifre seçersiniz. Masaüstü ya da telefon uygulamasından bağlanmak için bağlantı ayarlarına bu adresi ve anahtarı yazın." \
     "Open the address and sign in with the access key; you then choose a user name and password. To connect the desktop or phone app, enter this address and key in its connection settings."
-  say "Komutlar: yumakbot status | logs | update | restart | access-key" \
-    "Commands: yumakbot status | logs | update | restart | access-key"
+  say "Komutlar: leafbot status | logs | update | restart | access-key" \
+    "Commands: leafbot status | logs | update | restart | access-key"
   say "Yedek: uygulamadaki şifreli tam yedek ya da $DIR/docker/.env dosyası ile Docker birimleri." \
     "Backups: the password-sealed full backup in the app, or $DIR/docker/.env together with the Docker volumes."
 }
@@ -563,12 +606,17 @@ summary() {
 main() {
   local args=("$@")
   parse_args "$@"
+  # An installation made before the rename lives in /opt/yumakbot; the default finds it there.
+  if [ "$DIR" = /opt/leafbot ] && [ ! -e /opt/leafbot ] && [ -f /opt/yumakbot/docker/.env ]; then
+    DIR=/opt/yumakbot
+  fi
   DIR=$(realpath -m "$DIR")
   require_root
+  migrate_old_install
   # An installed server keeps the language it was installed in, unless --lang says otherwise.
   if [ -z "$LANG_GIVEN" ]; then
     local saved
-    saved=$(get_env YUMAKBOT_INSTALL_LANG)
+    saved=$(get_env LEAFBOT_INSTALL_LANG)
     [ -z "$saved" ] || UI=$saved
   fi
   case $COMMAND in

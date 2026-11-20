@@ -1,4 +1,4 @@
-import { maskCardNumbers, SECRET_TOKENS } from '@yumakbot/shared';
+import { maskCardNumbers, SECRET_TOKENS } from '@leafbot/shared';
 
 /**
  * Secrets a bot might copy into a note: memory reaches the model on every turn and shows in the

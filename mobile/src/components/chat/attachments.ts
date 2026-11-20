@@ -1,4 +1,4 @@
-import { startUpload } from '@yumakbot/shared';
+import { startUpload } from '@leafbot/shared';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { toast } from '@/components/overlay';
 import { t } from '@/i18n';

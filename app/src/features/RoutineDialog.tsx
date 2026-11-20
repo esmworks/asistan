@@ -6,7 +6,7 @@ import {
   SHORT_DAY_NAMES,
   type Routine,
   type Schedule,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Terminal, Webhook as WebhookIcon } from 'lucide-react';
@@ -783,7 +783,7 @@ export function Field({
 export function runCommand(origin: string, routineId: string): string {
   return [
     `curl -X POST '${origin}/api/routines/${routineId}/run'`,
-    `  -H "Authorization: Bearer $YUMAKBOT_ACCESS_KEY"`,
+    `  -H "Authorization: Bearer $LEAFBOT_ACCESS_KEY"`,
     `  -H 'Content-Type: application/json'`,
     `  -d '{"payload":"..."}'`,
   ].join(' \\\n');

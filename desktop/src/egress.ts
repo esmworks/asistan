@@ -1,4 +1,4 @@
-import { dialPublic, EgressMux, WEB_PORTS } from '@yumakbot/shared/egress';
+import { dialPublic, EgressMux, WEB_PORTS } from '@leafbot/shared/egress';
 import { io, type Socket } from 'socket.io-client';
 
 export interface EgressOptions {

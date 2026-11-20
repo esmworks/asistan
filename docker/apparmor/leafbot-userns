@@ -1,9 +1,9 @@
 abi <abi/4.0>,
 include <tunables/global>
 
-# Lets the Yumak Bot containers open user namespaces for their bubblewrap sandboxes on hosts that
+# Lets the Leaf Bot containers open user namespaces for their bubblewrap sandboxes on hosts that
 # restrict them (kernel.apparmor_restrict_unprivileged_userns=1). Everything else stays as without
 # a profile; the containers keep their seccomp profile, dropped capabilities and no-new-privileges.
-profile yumakbot-userns flags=(unconfined) {
+profile leafbot-userns flags=(unconfined) {
   userns,
 }

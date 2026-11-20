@@ -1,4 +1,4 @@
-import type { Approval, Bot, Group, Message, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, Group, Message, Thread } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';

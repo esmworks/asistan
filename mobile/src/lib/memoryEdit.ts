@@ -1,5 +1,5 @@
-import { untilDay, untilEndOfDay } from '@yumakbot/app/src/lib/memoryNotes';
-import type { Memory } from '@yumakbot/shared';
+import { untilDay, untilEndOfDay } from '@leafbot/app/src/lib/memoryNotes';
+import type { Memory } from '@leafbot/shared';
 
 /** A day typed by hand: year-month-day that exists on the calendar. */
 export function isDay(v: string): boolean {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTranslator } from '@yumakbot/shared';
+import { createTranslator } from '@leafbot/shared';
 import { en } from '@/i18n/en';
 import { tr } from '@/i18n/tr';
 import { ruleLabel } from './ruleLabel';
@@ -17,7 +17,7 @@ describe('izin kuralının okunur adı', () => {
   });
 
   it('kendi araçlarında öneki atar; düz kuralları olduğu gibi bırakır', () => {
-    expect(ruleLabel('mcp__yumakbot__bot_send', t, apps)).toBe('bot_send');
+    expect(ruleLabel('mcp__leafbot__bot_send', t, apps)).toBe('bot_send');
     expect(ruleLabel('Bash(git push*)', t, apps)).toBeNull();
     expect(ruleLabel('WebFetch', t, apps)).toBeNull();
   });

@@ -1,4 +1,4 @@
-import type { PermissionRule } from '@yumakbot/shared';
+import type { PermissionRule } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askRuleFor, blockRuleFor, decide, limitValue, withinLimit } from '../src/services/approvals';
 import { testServer, type TestServer } from './helpers';

@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { Routine, RoutineRun } from '@yumakbot/shared';
+import type { Routine, RoutineRun } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, type TestServer } from './helpers';
 

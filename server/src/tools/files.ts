@@ -1,7 +1,7 @@
 import { constants, realpathSync, statSync } from 'node:fs';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { MAX_UPLOAD_BYTES, type Bot, type MessageFile, type Thread } from '@yumakbot/shared';
+import { MAX_UPLOAD_BYTES, type Bot, type MessageFile, type Thread } from '@leafbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';

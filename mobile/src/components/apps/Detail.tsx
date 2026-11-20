@@ -1,4 +1,4 @@
-import { addressKey, catalogEntry, type Connection } from '@yumakbot/shared';
+import { addressKey, catalogEntry, type Connection } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';

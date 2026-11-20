@@ -1,4 +1,4 @@
-import type { Routine, RoutineRevision } from '@yumakbot/shared';
+import type { Routine, RoutineRevision } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import { testServer, type TestServer } from './helpers';

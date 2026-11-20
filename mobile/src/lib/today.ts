@@ -1,4 +1,4 @@
-import type { PersonInfo, Schedule } from '@yumakbot/shared';
+import type { PersonInfo, Schedule } from '@leafbot/shared';
 
 export type Rhythm = 'daily' | 'weekdays' | 'weekly';
 

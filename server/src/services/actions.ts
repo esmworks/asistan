@@ -1,4 +1,4 @@
-import type { BotAction, BotActionHow } from '@yumakbot/shared';
+import type { BotAction, BotActionHow } from '@leafbot/shared';
 import { asc, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

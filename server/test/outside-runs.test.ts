@@ -6,7 +6,7 @@ import type {
   PermissionRule,
   Routine,
   RoutineRun,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardView } from '../src/channels/common';

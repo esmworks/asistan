@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 
 /** The reply a bot is writing now, as it arrives over the socket, before it is saved. */
 export interface Stream {

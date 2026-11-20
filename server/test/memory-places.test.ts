@@ -1,4 +1,4 @@
-import type { Approval, Memory, MemoryChange } from '@yumakbot/shared';
+import type { Approval, Memory, MemoryChange } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

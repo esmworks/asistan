@@ -1,4 +1,4 @@
-import type { Approval } from '@yumakbot/shared';
+import type { Approval } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registrableSite, siteMatches } from '../src/services/vault';
 import { OWNER_ID } from '../src/users';

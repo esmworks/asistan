@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
+All notable changes to Leaf Bot (called Yumak Bot before 0.7.0) are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
 ## 0.7.0 — 2026-11-21
@@ -199,6 +199,27 @@ version is 0.x, a minor release may change the data format or the API; the serve
   for these bots for now.
 
 ### Changed
+
+- Yumak Bot is now Leaf Bot. The repository is `esmworks/leafbot`, the contact address `info@leafbot.app`, the
+  images `ghcr.io/esmworks/leafbot-server` and `-computer`, and the app ID `com.esmworks.leafbot` on the desktop and
+  phones. What an earlier installation set up keeps working:
+  - The desktop app is a new app under the new ID, so an installed Yumak Bot does not update itself to it: install
+    Leaf Bot from the release. On first start it takes over Yumak Bot's bots, chats and settings (quit Yumak Bot
+    first; it says so if it is still open). A desktop app that was connected to a server elsewhere starts with its
+    own server instead, since the saved key was sealed for the old app; connect it to that server again.
+  - The phone apps are new apps too. A server that sends iPhone notifications needs the new app ID under its push
+    settings; until then they reach the old app only.
+  - `sudo yumakbot update` on a server installed with `docker/install.sh` carries the settings over: the `.env` keys
+    get their new names, and the project, database, network bridge and Tailscale names stay as they were, so the
+    same volumes, data and address are found. The command is `leafbot` from then on; `yumakbot` stays as a link.
+  - A server set up by hand keeps running with its old `YUMAKBOT_*` settings, which are read wherever the new
+    `LEAFBOT_*` name is not set. Before renaming the keys in its `.env`, add `COMPOSE_PROJECT_NAME=yumakbot`,
+    `POSTGRES_USER=yumakbot`, `POSTGRES_DB=yumakbot` and `LEAFBOT_BRIDGE=yumakbot0`, or Docker starts it with new,
+    empty volumes. A reverse proxy may keep sending `X-Yumakbot-Proxy`.
+  - Signed-in browsers and phones stay signed in, `yumakbot://` links still open the desktop app, settings saved in
+    the browser come along, and backups and bot files made with Yumak Bot can still be restored and imported. The
+    app's own tools are named `mcp__leafbot__*`; permission rules, tool limits, routines and chat history are
+    rewritten to the new name, also in a restored older backup.
 
 - Someone with no account here (a member of a Discord server, say) can no longer have a bot sign in to a site: the
   vault's password, its two-step codes and codes mailed to the bot are not offered in their turns, since those tools

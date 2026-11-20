@@ -1,4 +1,4 @@
-import type { Ticket } from '@yumakbot/shared';
+import type { Ticket } from '@leafbot/shared';
 import { MessageSquare } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { useT } from '@/i18n';

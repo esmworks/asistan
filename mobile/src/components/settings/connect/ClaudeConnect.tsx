@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@yumakbot/shared';
+import type { ServerInfo } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';

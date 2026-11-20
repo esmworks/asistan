@@ -1,4 +1,4 @@
-import type { VaultImportSkip } from '@yumakbot/shared';
+import type { VaultImportSkip } from '@leafbot/shared';
 import { totpSecret } from '../totp';
 
 /** The most rows one file may bring; a longer one is refused rather than read in part. */

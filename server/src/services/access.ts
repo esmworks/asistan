@@ -1,4 +1,4 @@
-import type { Bot, BotAccess, BotLevel, Role } from '@yumakbot/shared';
+import type { Bot, BotAccess, BotLevel, Role } from '@leafbot/shared';
 import { and, desc, eq, exists, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

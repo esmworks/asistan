@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { TailscaleState } from '@yumakbot/shared';
+import type { TailscaleState } from '@leafbot/shared';
 import { HttpError } from '../util';
 
 /** Runs the Tailscale command line; `missing` when it is not installed. */

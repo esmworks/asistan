@@ -8,7 +8,7 @@ import {
   type RoutineSuggestion,
   type RoutineSuggestionAccept,
   type Schedule,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, eq, gte, isNull } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

@@ -1,4 +1,4 @@
-import { newBotEngine, type BotEngineChoice } from '@yumakbot/shared';
+import { newBotEngine, type BotEngineChoice } from '@leafbot/shared';
 
 export type BotEngine = BotEngineChoice;
 export { newBotEngine };

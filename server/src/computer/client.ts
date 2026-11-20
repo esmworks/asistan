@@ -10,7 +10,7 @@ import {
   type DesktopExec,
   type DesktopGit,
   type DesktopStart,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { z } from 'zod';
 
 export class ComputerError extends Error {

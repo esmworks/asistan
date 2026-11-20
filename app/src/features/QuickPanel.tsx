@@ -1,4 +1,4 @@
-import { describeAction, questionItems, type Approval, type Bot } from '@yumakbot/shared';
+import { describeAction, questionItems, type Approval, type Bot } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, KeyRound, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';

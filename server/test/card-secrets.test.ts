@@ -1,4 +1,4 @@
-import type { Approval } from '@yumakbot/shared';
+import type { Approval } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { cardView } from '../src/channels/common';
 import { translator } from '../src/i18n';
@@ -32,7 +32,7 @@ describe('kart metnindeki sırlar', () => {
     expect(app.text).toContain('"title":"Alışveriş"');
     expect(app.text.length).toBeLessThan(1000);
     // A step with nothing to show says only what it is.
-    expect(cardView(card('mcp__yumakbot__bot_list', {}), {}, tr).text).toBe(
+    expect(cardView(card('mcp__leafbot__bot_list', {}), {}, tr).text).toBe(
       '🔐 Bot 1 bir şey yapmak istiyor.',
     );
   });

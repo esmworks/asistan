@@ -3,7 +3,7 @@ import type { AuthEvent, AuthPrompt, ModelAuth, OAuthAuth, OAuthCredential } fro
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth';
 import { githubCopilotProvider } from '@earendil-works/pi-ai/providers/github-copilot';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
-import type { ProviderSignIn } from '@yumakbot/shared';
+import type { ProviderSignIn } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -22,7 +22,7 @@ import type { VaultService } from './vault';
 const PREFIX = 'secret.oauth.';
 const DEVICE_ID = 'install.device-id';
 /** The name the person sees on the provider's consent page. */
-const AGENT_NAME = 'Yumak Bot';
+const AGENT_NAME = 'Leaf Bot';
 /** A sign-in nobody finishes is dropped after this long. */
 const SIGN_IN_MS = 15 * 60 * 1000;
 /** A token this close to running out is refreshed before use. */

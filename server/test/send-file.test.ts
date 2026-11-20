@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { AUTH, testServer, type TestServer } from './helpers';
@@ -95,7 +95,7 @@ describe('botun dosya göndermesi', () => {
   });
 
   it('proje klasöründeki dosyanın kopyasını gönderir; asıl dosya sonra değişse de gönderilen değişmez', async () => {
-    const project = mkdtempSync(join(tmpdir(), 'yumakbot-proje-'));
+    const project = mkdtempSync(join(tmpdir(), 'leafbot-proje-'));
     extra.push(project);
     writeFileSync(join(project, 'cikti.txt'), 'ilk');
     const bot = await t.bot({ projectDir: project });
@@ -113,7 +113,7 @@ describe('botun dosya göndermesi', () => {
     const thread = await main(bot.id);
     const otherThread = await main(other.id);
     writeFileSync(join(threadDir(other.id, otherThread.id), 'gizli.txt'), 'başkasının');
-    const outside = mkdtempSync(join(tmpdir(), 'yumakbot-dis-'));
+    const outside = mkdtempSync(join(tmpdir(), 'leafbot-dis-'));
     extra.push(outside);
     writeFileSync(join(outside, 'dis.txt'), 'dış');
     // A link inside the bot's own folder that points out of it.

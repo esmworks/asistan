@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { PageShare } from '@yumakbot/shared';
+import type { PageShare } from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

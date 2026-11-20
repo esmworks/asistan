@@ -1,4 +1,4 @@
-import type { Approval, Thread } from '@yumakbot/shared';
+import type { Approval, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { publicHost } from '../src/services/skill-link';
 import { testServer, waitFor, type TestServer } from './helpers';

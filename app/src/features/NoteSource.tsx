@@ -1,4 +1,4 @@
-import type { Memory } from '@yumakbot/shared';
+import type { Memory } from '@leafbot/shared';
 import { ExternalLink, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';

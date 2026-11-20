@@ -1,4 +1,4 @@
-import { PROFILE_FOCUS, PROFILE_HELP, type ProfileFocus } from '@yumakbot/shared';
+import { PROFILE_FOCUS, PROFILE_HELP, type ProfileFocus } from '@leafbot/shared';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,7 +11,7 @@ import { Card, Row, useSaveSettings } from './SettingsDialog';
 import { SlackLinkCard } from './SlackCards';
 import { TeamsLinkCard } from './TeamsCards';
 
-/** What the person told YumakBot about themselves; every bot reads it. */
+/** What the person told LeafBot about themselves; every bot reads it. */
 export function ProfileTab() {
   const t = useT();
   const { data: settings } = useSettings();

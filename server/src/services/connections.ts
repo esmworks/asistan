@@ -11,7 +11,7 @@ import {
   type ConnectionToolPatch,
   type ConnectionUpdate,
   type MailSender,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, eq, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import {
   authFetch,

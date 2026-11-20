@@ -1,4 +1,4 @@
-import { streamParts, type Message, type StreamPart } from '@yumakbot/shared';
+import { streamParts, type Message, type StreamPart } from '@leafbot/shared';
 import { useLayoutEffect } from 'react';
 import { useApprovals } from './queries';
 import { useUi, type Stream } from './store';

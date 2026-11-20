@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import type { Ctx } from '../context';
 import type { Engine } from '../engine/types';
 import { TurnManager } from '../runtime/turns';

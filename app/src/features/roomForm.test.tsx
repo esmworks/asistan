@@ -1,4 +1,4 @@
-import type { Bot, Room } from '@yumakbot/shared';
+import type { Bot, Room } from '@leafbot/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';

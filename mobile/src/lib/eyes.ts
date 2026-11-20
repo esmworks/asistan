@@ -1,4 +1,4 @@
-import { AT_YOU, type Spot } from '@yumakbot/app/src/lib/gaze';
+import { AT_YOU, type Spot } from '@leafbot/app/src/lib/gaze';
 
 /**
  * How far the eyes slide for a turn of the head, as a share of the body picture: they sit on a sphere

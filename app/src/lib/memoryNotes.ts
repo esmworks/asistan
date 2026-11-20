@@ -1,4 +1,4 @@
-import type { Bot, Memory, MemoryHistoryLine, Room, Translate } from '@yumakbot/shared';
+import type { Bot, Memory, MemoryHistoryLine, Room, Translate } from '@leafbot/shared';
 // The catalog's keys alone, by a relative path, so the phone app can use these too.
 import type { MessageKey } from '../i18n/tr';
 

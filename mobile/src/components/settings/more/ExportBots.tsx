@@ -7,7 +7,7 @@ import { t } from '@/i18n';
 import { useBots } from '@/lib/queries';
 import { useServer } from '@/lib/server';
 
-/** Bots written to an import file, to move them to another YumakBot or keep a copy. */
+/** Bots written to an import file, to move them to another LeafBot or keep a copy. */
 export function ExportBots() {
   const { origin } = useServer();
   const { data: bots = [] } = useBots();
@@ -19,7 +19,7 @@ export function ExportBots() {
     setBusy(true);
     await shareFile(
       `${origin}/api/export/bots?ids=${picked.map((b) => b.id).join(',')}`,
-      'yumakbot-bots.json',
+      'leafbot-bots.json',
     );
     setBusy(false);
   };

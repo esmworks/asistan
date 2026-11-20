@@ -4,7 +4,7 @@ import {
   planUsedPercent,
   planTone,
   type PlanWindow,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';

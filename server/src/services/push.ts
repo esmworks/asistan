@@ -5,7 +5,7 @@ import {
   type ApnsStatus,
   type NoticeEvent,
   type PushDeviceSet,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq, inArray } from 'drizzle-orm';
 import { hashSession } from '../auth';
 import type { Ctx } from '../context';

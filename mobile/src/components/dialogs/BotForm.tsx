@@ -8,8 +8,8 @@ import {
   ToolSelection,
   type Bot,
   type Effort,
-} from '@yumakbot/shared';
-import { availableStarters, starterBot, type StarterId } from '@yumakbot/app/src/features/onboarding/profile';
+} from '@leafbot/shared';
+import { availableStarters, starterBot, type StarterId } from '@leafbot/app/src/features/onboarding/profile';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -31,8 +31,8 @@ import { useColors } from '@/lib/theme';
 
 const NO_GROUP = '';
 /** Tool names as cards name them; examples, the same in every language. */
-const TOOLS_EXAMPLE = 'Read\nmcp__yumakbot__memory_*\nmcp__gmail__search_threads';
-const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__yumakbot__browser_*';
+const TOOLS_EXAMPLE = 'Read\nmcp__leafbot__memory_*\nmcp__gmail__search_threads';
+const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__leafbot__browser_*';
 /** The message for tool lines the server would refuse, or nothing. */
 const toolsError = (text: string): MessageKey | undefined =>
   ToolSelection.shape.allow.safeParse(selectorLines(text)).success ? undefined : 'bot.toolsInvalid';

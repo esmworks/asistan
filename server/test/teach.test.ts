@@ -7,7 +7,7 @@ import { addTyping, stepsText, type TeachStep } from '../src/browser/teach';
 import { translator } from '../src/i18n';
 import { testServer, type TestServer } from './helpers';
 
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 const t = translator('tr') as unknown as (key: string, params?: Record<string, string | number>) => string;
 
 describe('gösterek öğretme: adımların yazılışı', () => {

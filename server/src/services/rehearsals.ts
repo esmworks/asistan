@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Rehearsal, RehearsalStart, RehearsalStep, ReplayableRun } from '@yumakbot/shared';
+import type { Rehearsal, RehearsalStart, RehearsalStep, ReplayableRun } from '@leafbot/shared';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

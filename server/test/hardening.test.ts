@@ -74,7 +74,7 @@ describe('güvenlik tabanının genişliği', () => {
       'rm -rf /home/user/project/build',
       'rm -rf *',
       'find . -name "*.tmp" -delete',
-      'find /tmp/yumakbot -delete',
+      'find /tmp/leafbot -delete',
       'chmod -R 755 /srv/site/public',
       'python3 -c "print(1)"',
       "node -e \"console.log(require('fs').readdirSync('/'))\"",

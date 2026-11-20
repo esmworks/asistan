@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EmailSettings } from '@yumakbot/shared';
+import type { EmailSettings } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openWith, sealWith } from '../src/crypto';

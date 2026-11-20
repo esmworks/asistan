@@ -19,7 +19,7 @@ describe('cihaz adı', () => {
       ),
     ).toEqual({ app: 'Safari', os: 'iOS' });
     expect(deviceName('Mozilla/5.0 (X11; Linux x86_64) Chrome/140 Electron/38.0 Safari/537.36')).toEqual({
-      app: 'Yumak Bot',
+      app: 'Leaf Bot',
       os: 'Linux',
     });
     expect(deviceName(null)).toEqual({ app: null, os: null });

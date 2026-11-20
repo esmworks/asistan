@@ -6,7 +6,7 @@ import {
   type PlanWindow,
   type UsageRange,
   type UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { Loading, Note, PillButton, Row, Section, Segments, SwitchRow } from '@/components/page';
@@ -80,7 +80,7 @@ export function UsageSection() {
         busy={busy}
         onPress={async () => {
           setBusy(true);
-          await shareFile(`${origin}/api/usage/turns.csv?days=${days}`, 'yumakbot-usage.csv');
+          await shareFile(`${origin}/api/usage/turns.csv?days=${days}`, 'leafbot-usage.csv');
           setBusy(false);
         }}
       />

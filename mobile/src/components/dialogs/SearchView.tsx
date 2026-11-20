@@ -1,5 +1,5 @@
-import type { Bot, SearchHit } from '@yumakbot/shared';
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import type { Bot, SearchHit } from '@leafbot/shared';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import Feather from '@expo/vector-icons/Feather';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';

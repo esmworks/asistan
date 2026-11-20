@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ApiCredential, Approval, Thread } from '@yumakbot/shared';
+import type { ApiCredential, Approval, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import { testServer, waitFor, type Person, type TestServer } from './helpers';

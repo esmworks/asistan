@@ -9,7 +9,7 @@ import {
   ToolSelection,
   type Bot,
   type Effort,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ChevronDown, Upload } from 'lucide-react';
@@ -66,8 +66,8 @@ export const COLORS = [
 const NO_GROUP = '__none__';
 
 /** Tool names as cards name them; examples, the same in every language. */
-const TOOLS_EXAMPLE = 'Read\nmcp__yumakbot__memory_*\nmcp__gmail__search_threads';
-const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__yumakbot__browser_*';
+const TOOLS_EXAMPLE = 'Read\nmcp__leafbot__memory_*\nmcp__gmail__search_threads';
+const TOOLS_EXCLUDE_EXAMPLE = 'Bash\nmcp__leafbot__browser_*';
 /** An instructions document address; an example, the same in every language. */
 const DOC_EXAMPLE = 'https://github.com/…/BOT.md';
 

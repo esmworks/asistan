@@ -57,7 +57,7 @@ const dark: Colors = {
 };
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-export const THEME_KEY = 'yumakbot.theme';
+export const THEME_KEY = 'leafbot.theme';
 
 /** The theme picked in the settings, or the phone's own. */
 export function useTheme(): [ThemeChoice, (v: ThemeChoice) => void] {

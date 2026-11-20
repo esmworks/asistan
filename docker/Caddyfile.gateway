@@ -12,9 +12,9 @@
 }
 
 :4319 {
-	reverse_proxy yumakbot-edge:4319 {
+	reverse_proxy leafbot-edge:4319 {
 		# The server reads the last X-Forwarded-For entry, the address the panel's proxy saw, when the
-		# request carries YUMAKBOT_PROXY_SECRET. Passed on as it came, without this hop appended.
+		# request carries LEAFBOT_PROXY_SECRET. Passed on as it came, without this hop appended.
 		header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
 	}
 }

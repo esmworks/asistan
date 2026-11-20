@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { BrowserError } from '../browser/manager';
 import type { ElementHandle, Frame, Page, Route } from 'playwright-core';
 import { z } from 'zod';
@@ -30,7 +30,7 @@ import type { T } from '../i18n';
 import type { LoginAnswer } from '../services/approvals';
 import type { OpenCard, PaymentCardService } from '../services/payment-cards';
 import { registrableSite, siteMatches, siteOf, type VaultService } from '../services/vault';
-import { maskCardNumbers } from '@yumakbot/shared';
+import { maskCardNumbers } from '@leafbot/shared';
 import { totp } from '../totp';
 import { botFile } from './files';
 import type { Define } from './index';

@@ -7,7 +7,7 @@ import {
   type TeamsConnect,
   type TeamsLink,
   type TeamsStatus,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq, ne } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { and, eq, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

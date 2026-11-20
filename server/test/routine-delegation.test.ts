@@ -1,4 +1,4 @@
-import type { Message, Routine, RoutineRun, Thread } from '@yumakbot/shared';
+import type { Message, Routine, RoutineRun, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, waitFor, type TestServer } from './helpers';
 

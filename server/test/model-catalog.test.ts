@@ -1,5 +1,5 @@
 import { getModels } from '@earendil-works/pi-ai/compat';
-import { EFFORTS, type ModelInfo } from '@yumakbot/shared';
+import { EFFORTS, type ModelInfo } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Ctx } from '../src/context';
 import { ProviderKeyService } from '../src/services/keys';

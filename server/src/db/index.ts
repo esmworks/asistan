@@ -15,7 +15,7 @@ export interface DbHandle {
 // Source runs from src/db, the bundle from dist; migrations sit next to either.
 const migrationsFolder =
   [
-    process.env.YUMAKBOT_MIGRATIONS_DIR,
+    process.env.LEAFBOT_MIGRATIONS_DIR,
     resolve(import.meta.dirname, 'drizzle'),
     resolve(import.meta.dirname, '../../drizzle'),
   ].find((p): p is string => !!p && existsSync(resolve(p, 'meta/_journal.json'))) ??

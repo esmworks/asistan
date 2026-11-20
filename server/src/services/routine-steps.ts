@@ -1,5 +1,5 @@
-import type { RoutineStep, RoutineStepRun } from '@yumakbot/shared';
-import { filterVars, RoutineStep as StepSchema } from '@yumakbot/shared';
+import type { RoutineStep, RoutineStepRun } from '@leafbot/shared';
+import { filterVars, RoutineStep as StepSchema } from '@leafbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
 

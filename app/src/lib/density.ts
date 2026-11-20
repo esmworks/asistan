@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 /** How the sidebar lists bots: with their last message, or one short line each. */
 export type Density = 'comfortable' | 'compact';
-const KEY = 'yumakbot.density';
+const KEY = 'leafbot.density';
 
 function read(): Density {
   try {
@@ -27,7 +27,7 @@ export const useDensity = create<{ density: Density; set(d: Density): void }>((s
 
 /** How wide the conversation column is: the reading width, wider, or the whole window. */
 export type ChatWidth = 'normal' | 'wide' | 'full';
-const WIDTH_KEY = 'yumakbot.chatWidth';
+const WIDTH_KEY = 'leafbot.chatWidth';
 const WIDTHS: Record<ChatWidth, [string, string]> = {
   normal: ['860px', '730px'],
   wide: ['1180px', '1000px'],
@@ -69,7 +69,7 @@ export const useChatWidth = create<{ width: ChatWidth; set(w: ChatWidth): void }
 
 /** The interface's typeface: the bundled one, the system's own, or a serif for long reading. */
 export type FontChoice = 'default' | 'system' | 'serif';
-const FONT_KEY = 'yumakbot.font';
+const FONT_KEY = 'leafbot.font';
 const FONTS: Record<FontChoice, string | null> = {
   default: null,
   system: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",

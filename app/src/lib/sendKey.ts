@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 /** What sends a message: Enter (Shift+Enter breaks the line), or ⌘/Ctrl+Enter (Enter breaks it). */
 export type SendKey = 'enter' | 'mod';
-const KEY = 'yumakbot.sendKey';
+const KEY = 'leafbot.sendKey';
 
 /**
  * The choice kept on this device, or the device's own default: on a touch screen the keyboard's

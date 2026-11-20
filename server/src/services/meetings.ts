@@ -14,7 +14,7 @@ import {
   type Message,
   type RoomMinutes,
   RoutineCreate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';

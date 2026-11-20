@@ -1,4 +1,4 @@
-import type { TurnChangeItem } from '@yumakbot/shared';
+import type { TurnChangeItem } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { StyleSheet, Text, View } from 'react-native';
 import { toast, toastError } from '@/components/overlay';

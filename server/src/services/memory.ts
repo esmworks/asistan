@@ -4,7 +4,7 @@ import {
   type Memory,
   type MemoryChange,
   type MemoryScope,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   and,
   asc,

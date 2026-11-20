@@ -1,4 +1,4 @@
-import { cellValue, type TableRow } from '@yumakbot/shared';
+import { cellValue, type TableRow } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { cellDraft, cellLabel, filterRows } from './tableView';
 

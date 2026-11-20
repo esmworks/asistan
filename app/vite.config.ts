@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 // In development the API runs separately; the proxy keeps the page and the API on one origin
 // so the session cookie and the Origin check behave as in production.
-const api = process.env.YUMAKBOT_API ?? 'http://127.0.0.1:4319';
+const api = process.env.LEAFBOT_API ?? 'http://127.0.0.1:4319';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

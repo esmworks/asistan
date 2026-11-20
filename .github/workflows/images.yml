@@ -6,8 +6,8 @@ name: Images
 # its own runner (amd64 and arm64, as cheap ARM servers are common) and the two are then joined
 # under one tag: the version without the v, and latest for a release that is not a pre-release.
 #
-# After the first run, check under the repository's Packages that yumakbot-server and
-# yumakbot-computer are public; servers pull them without signing in.
+# After the first run, check under the repository's Packages that leafbot-server and
+# leafbot-computer are public; servers pull them without signing in.
 on:
   push:
     tags: ['v*']
@@ -59,7 +59,7 @@ jobs:
         # Registry names must be lower case; the owner's name may not be.
         run: |
           owner=${GITHUB_REPOSITORY_OWNER,,}
-          echo "IMAGE=ghcr.io/$owner/yumakbot-${{ matrix.image }}" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/$owner/leafbot-${{ matrix.image }}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -117,7 +117,7 @@ jobs:
         working-directory: digests
         run: |
           owner=${GITHUB_REPOSITORY_OWNER,,}
-          image=ghcr.io/$owner/yumakbot-${{ matrix.image }}
+          image=ghcr.io/$owner/leafbot-${{ matrix.image }}
           tags=(-t "$image:${TAG#v}")
           # A pre-release (v1.2.0-beta.1) does not become what new installations get.
           [[ $TAG == *-* ]] || tags+=(-t "$image:latest")

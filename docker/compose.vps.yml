@@ -1,20 +1,20 @@
 # Additions to compose.yml for a server set up with docker/install.sh: ready-made images instead of a
 # build on the server, HTTPS through Caddy, and the bots' desktops only when they were asked for.
 #   docker compose -f docker/compose.yml -f docker/compose.vps.yml --env-file docker/.env up -d
-# The installer's `yumakbot` command runs compose with these files and options.
+# The installer's `leafbot` command runs compose with these files and options.
 services:
-  yumakbot:
+  leafbot:
     # Pulled for a release; built from the checkout when the image is not published (a branch, or a
     # release from before images were published). The installer writes the version it installed, so
     # the images always match the compose files next to them; there is no `latest` fallback that could
     # pull a newer server onto older files.
-    image: ghcr.io/esmworks/yumakbot-server:${YUMAKBOT_VERSION:?YUMAKBOT_VERSION gerekli}
+    image: ghcr.io/esmworks/leafbot-server:${LEAFBOT_VERSION:?LEAFBOT_VERSION gerekli}
     environment:
       # Empty, so off, unless the installer turned the bots' desktops on.
-      YUMAKBOT_COMPUTER_URL: ${YUMAKBOT_COMPUTER_URL:-}
+      LEAFBOT_COMPUTER_URL: ${LEAFBOT_COMPUTER_URL:-}
 
   computer:
-    image: ghcr.io/esmworks/yumakbot-computer:${YUMAKBOT_VERSION:?YUMAKBOT_VERSION gerekli}
+    image: ghcr.io/esmworks/leafbot-computer:${LEAFBOT_VERSION:?LEAFBOT_VERSION gerekli}
     # Needs about 6 GB of memory of its own, more than a small server has; started only with
     # `--profile computer`.
     profiles: [computer]
@@ -27,9 +27,9 @@ services:
     # port compose.yml publishes, without joining the bots' networks.
     network_mode: host
     environment:
-      YUMAKBOT_DOMAIN: ${YUMAKBOT_DOMAIN:?YUMAKBOT_DOMAIN gerekli}
-      YUMAKBOT_PORT: ${YUMAKBOT_PORT:-4319}
-      YUMAKBOT_PROXY_SECRET: ${YUMAKBOT_PROXY_SECRET:?YUMAKBOT_PROXY_SECRET gerekli}
+      LEAFBOT_DOMAIN: ${LEAFBOT_DOMAIN:?LEAFBOT_DOMAIN gerekli}
+      LEAFBOT_PORT: ${LEAFBOT_PORT:-4319}
+      LEAFBOT_PROXY_SECRET: ${LEAFBOT_PROXY_SECRET:?LEAFBOT_PROXY_SECRET gerekli}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and the ACME account; kept so a restart does not ask Let's Encrypt again.

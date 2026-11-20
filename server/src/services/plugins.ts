@@ -5,7 +5,7 @@ import {
   type PluginInstallResult,
   type PluginPlan,
   type SkillFile,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { HttpError } from '../util';
 import { fetchPublicText } from './skill-link';
 import type { Services } from './index';

@@ -6,7 +6,7 @@ import {
   type Room,
   type RoomMinutes,
   type RoomResponders,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUp,

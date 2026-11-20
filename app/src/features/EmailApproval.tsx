@@ -1,4 +1,4 @@
-import type { Approval, EmailPreview } from '@yumakbot/shared';
+import type { Approval, EmailPreview } from '@leafbot/shared';
 import { Ban, ChevronDown, Mail, Paperclip } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';

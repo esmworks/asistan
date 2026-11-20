@@ -1,5 +1,5 @@
 {
-  "name": "yumakbot",
+  "name": "leafbot",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
@@ -8,15 +8,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev:server": "pnpm --filter @yumakbot/server dev",
-    "dev:app": "pnpm --filter @yumakbot/app dev",
-    "build": "pnpm --filter @yumakbot/app build && pnpm --filter @yumakbot/server build && pnpm --filter @yumakbot/desktop build",
+    "dev:server": "pnpm --filter @leafbot/server dev",
+    "dev:app": "pnpm --filter @leafbot/app dev",
+    "build": "pnpm --filter @leafbot/app build && pnpm --filter @leafbot/server build && pnpm --filter @leafbot/desktop build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "start": "pnpm build && pnpm --filter @yumakbot/desktop exec electron ."
+    "start": "pnpm build && pnpm --filter @leafbot/desktop exec electron ."
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

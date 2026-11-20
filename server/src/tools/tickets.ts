@@ -1,4 +1,4 @@
-import { TICKET_PRIORITIES, TICKET_STATUSES, type Bot, type Ticket } from '@yumakbot/shared';
+import { TICKET_PRIORITIES, TICKET_STATUSES, type Bot, type Ticket } from '@leafbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';

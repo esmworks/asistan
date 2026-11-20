@@ -1,4 +1,4 @@
-import type { OutsideTrigger } from '@yumakbot/shared';
+import type { OutsideTrigger } from '@leafbot/shared';
 import { domainToUnicode } from 'node:url';
 import { getDomainWithoutSuffix, getPublicSuffix } from 'tldts';
 import type { AppTool, ToolResult } from '../engine/types';

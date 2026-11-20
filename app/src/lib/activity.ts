@@ -1,4 +1,4 @@
-import type { TurnState } from '@yumakbot/shared';
+import type { TurnState } from '@leafbot/shared';
 
 // Kept apart from the hooks that read it from the stores, so the phone app can use it too.
 

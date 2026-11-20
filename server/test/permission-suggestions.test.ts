@@ -1,4 +1,4 @@
-import type { Approval, PermissionRule, PermissionSuggestions, Thread } from '@yumakbot/shared';
+import type { Approval, PermissionRule, PermissionSuggestions, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   permissionSuggestions,
@@ -110,10 +110,10 @@ describe('ways to ask less, from real cards', () => {
     const bot = await t.bot();
     await answerCards(bot.id, SUGGEST_RULE_MIN);
     expect((await suggestions(bot.id)).rules).toEqual([
-      expect.objectContaining({ pattern: 'mcp__yumakbot__routine_create', allowed: SUGGEST_RULE_MIN }),
+      expect.objectContaining({ pattern: 'mcp__leafbot__routine_create', allowed: SUGGEST_RULE_MIN }),
     ]);
     const res = await t.api('POST', `/api/bots/${bot.id}/suggestions/dismiss`, {
-      key: 'mcp__yumakbot__routine_create',
+      key: 'mcp__leafbot__routine_create',
     });
     expect(res.status).toBe(200);
     expect((await suggestions(bot.id)).rules).toEqual([]);
@@ -124,7 +124,7 @@ describe('ways to ask less, from real cards', () => {
     await answerCards(bot.id, SUGGEST_RULE_MIN);
     await t.api('POST', '/api/rules', {
       list: 'allow',
-      pattern: 'mcp__yumakbot__routine_create',
+      pattern: 'mcp__leafbot__routine_create',
       botId: bot.id,
     });
     expect((await suggestions(bot.id)).rules).toEqual([]);

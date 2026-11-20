@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { upstreamProxy, type UpstreamProxy } from '@yumakbot/shared/egress';
+import { upstreamProxy, type UpstreamProxy } from '@leafbot/shared/egress';
 import { findBrowser } from './browser/find';
 import { BASH_MAX_TIMEOUT_MS, stallLimits, type StallLimits } from './runtime/watchdog';
 
@@ -27,15 +27,15 @@ export interface Config {
   allowedOrigins: string[];
   secureCookies: boolean;
   /**
-   * A secret the reverse proxy in front of the server sends in the X-Yumakbot-Proxy header
-   * (`YUMAKBOT_PROXY_SECRET`). Behind a proxy every request comes from the proxy's address, so the
+   * A secret the reverse proxy in front of the server sends in the X-Leafbot-Proxy header
+   * (`LEAFBOT_PROXY_SECRET`). Behind a proxy every request comes from the proxy's address, so the
    * sign-in limit would count all people as one; a request carrying the secret is trusted to name the
    * person's address in X-Forwarded-For. A secret rather than the proxy's address, because that
    * address depends on how Docker wires the networks, and other containers can reach the server too.
    */
   proxySecret: string | null;
   /**
-   * The address other services reach this server at (`https://yumakbot.example.com`), for routine
+   * The address other services reach this server at (`https://leafbot.example.com`), for routine
    * webhooks and sign-in callbacks; null uses the address the page was opened at.
    */
   publicUrl: string | null;
@@ -157,71 +157,71 @@ export function publicUrl(raw: string | undefined): string | null {
     if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('protocol');
     return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
   } catch {
-    console.warn(`YUMAKBOT_PUBLIC_URL is not an http(s) address and is ignored: ${raw}`);
+    console.warn(`LEAFBOT_PUBLIC_URL is not an http(s) address and is ignored: ${raw}`);
     return null;
   }
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Partial<Config> = {}): Config {
-  const dataDir = resolve(env.YUMAKBOT_DATA_DIR ?? resolve(process.cwd(), 'data'));
+  const dataDir = resolve(env.LEAFBOT_DATA_DIR ?? resolve(process.cwd(), 'data'));
   const defaultApp = resolve(import.meta.dirname, '../../app/dist');
-  const appDir = env.YUMAKBOT_APP_DIR
-    ? resolve(env.YUMAKBOT_APP_DIR)
+  const appDir = env.LEAFBOT_APP_DIR
+    ? resolve(env.LEAFBOT_APP_DIR)
     : existsSync(defaultApp)
       ? defaultApp
       : null;
-  const mcpCallTimeoutMs = mcpCallSeconds(env.YUMAKBOT_MCP_TIMEOUT_SECONDS) * 1000;
+  const mcpCallTimeoutMs = mcpCallSeconds(env.LEAFBOT_MCP_TIMEOUT_SECONDS) * 1000;
   return {
-    host: env.YUMAKBOT_HOST ?? '127.0.0.1',
-    port: Number(env.YUMAKBOT_PORT ?? 4319),
+    host: env.LEAFBOT_HOST ?? '127.0.0.1',
+    port: Number(env.LEAFBOT_PORT ?? 4319),
     dataDir,
     databaseUrl: env.DATABASE_URL ?? null,
     memoryDb: false,
-    accessKey: env.YUMAKBOT_ACCESS_KEY ?? null,
-    allowedHosts: list(env.YUMAKBOT_ALLOWED_HOSTS),
-    allowedOrigins: list(env.YUMAKBOT_ALLOWED_ORIGINS),
-    secureCookies: env.YUMAKBOT_SECURE_COOKIES === '1',
-    proxySecret: env.YUMAKBOT_PROXY_SECRET?.trim() || null,
-    publicUrl: publicUrl(env.YUMAKBOT_PUBLIC_URL),
-    maxConcurrentTurns: Number(env.YUMAKBOT_MAX_TURNS ?? 3),
+    accessKey: env.LEAFBOT_ACCESS_KEY ?? null,
+    allowedHosts: list(env.LEAFBOT_ALLOWED_HOSTS),
+    allowedOrigins: list(env.LEAFBOT_ALLOWED_ORIGINS),
+    secureCookies: env.LEAFBOT_SECURE_COOKIES === '1',
+    proxySecret: env.LEAFBOT_PROXY_SECRET?.trim() || null,
+    publicUrl: publicUrl(env.LEAFBOT_PUBLIC_URL),
+    maxConcurrentTurns: Number(env.LEAFBOT_MAX_TURNS ?? 3),
     appDir,
-    engine: env.YUMAKBOT_ENGINE === 'fake' ? 'fake' : 'claude',
-    claudeModel: env.YUMAKBOT_CLAUDE_MODEL ?? '',
+    engine: env.LEAFBOT_ENGINE === 'fake' ? 'fake' : 'claude',
+    claudeModel: env.LEAFBOT_CLAUDE_MODEL ?? '',
     maxJobDepth: 4,
     maxJobsPerChain: 20,
     routineTickMs: 30_000,
     routinesEnabled: true,
-    onUserComputer: env.YUMAKBOT_ON_USER_COMPUTER === '1',
+    onUserComputer: env.LEAFBOT_ON_USER_COMPUTER === '1',
     browserPath: findBrowser(env),
-    browserSandbox: env.YUMAKBOT_BROWSER_SANDBOX !== '0',
-    maxBrowsers: Number(env.YUMAKBOT_MAX_BROWSERS ?? 3),
+    browserSandbox: env.LEAFBOT_BROWSER_SANDBOX !== '0',
+    maxBrowsers: Number(env.LEAFBOT_MAX_BROWSERS ?? 3),
     browserIdleMs: 15 * 60_000,
     browserCallMs: 90_000,
-    browserLocalHosts: list(env.YUMAKBOT_BROWSER_LOCAL_HOSTS).map((h) => h.toLowerCase()),
-    browserEgressProxy: upstreamProxy(env.YUMAKBOT_EGRESS_PROXY),
+    browserLocalHosts: list(env.LEAFBOT_BROWSER_LOCAL_HOSTS).map((h) => h.toLowerCase()),
+    browserEgressProxy: upstreamProxy(env.LEAFBOT_EGRESS_PROXY),
     computer:
-      env.YUMAKBOT_COMPUTER_URL && env.YUMAKBOT_COMPUTER_TOKEN
-        ? { url: env.YUMAKBOT_COMPUTER_URL.replace(/\/+$/, ''), token: env.YUMAKBOT_COMPUTER_TOKEN }
+      env.LEAFBOT_COMPUTER_URL && env.LEAFBOT_COMPUTER_TOKEN
+        ? { url: env.LEAFBOT_COMPUTER_URL.replace(/\/+$/, ''), token: env.LEAFBOT_COMPUTER_TOKEN }
         : null,
-    computerIdleMs: Number(env.YUMAKBOT_COMPUTER_IDLE_MINUTES ?? 15) * 60_000,
-    unattendedApprovalMs: unattendedHours(env.YUMAKBOT_UNATTENDED_HOURS) * 60 * 60_000,
+    computerIdleMs: Number(env.LEAFBOT_COMPUTER_IDLE_MINUTES ?? 15) * 60_000,
+    unattendedApprovalMs: unattendedHours(env.LEAFBOT_UNATTENDED_HOURS) * 60 * 60_000,
     mcpCallTimeoutMs,
     stall: stallLimits({
-      silenceMs: turnStallMinutes(env.YUMAKBOT_TURN_STALL_MINUTES) * 60_000,
+      silenceMs: turnStallMinutes(env.LEAFBOT_TURN_STALL_MINUTES) * 60_000,
       mcpCallTimeoutMs,
       shellMaxMs: BASH_MAX_TIMEOUT_MS,
     }),
     reactionDelayMs: 4000,
-    telegramApi: (env.YUMAKBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
+    telegramApi: (env.LEAFBOT_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, ''),
     telegramPollSeconds: 50,
-    slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
-    discordApi: (env.YUMAKBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
+    slackApi: (env.LEAFBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
+    discordApi: (env.LEAFBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
     // Fixed, not read from the environment: where the keys come from decides whose requests are
     // believed, so it is not something a setting swaps.
     teamsLogin: 'https://login.microsoftonline.com',
     teamsOpenId: 'https://login.botframework.com/v1/.well-known/openidconfiguration',
     channelsEnabled: true,
-    modelCatalogUrl: modelCatalogUrl(env.YUMAKBOT_MODEL_CATALOG_URL),
+    modelCatalogUrl: modelCatalogUrl(env.LEAFBOT_MODEL_CATALOG_URL),
     aiEndpoints: aiEndpointsFrom(env),
     webSearchUrl: webSearchUrl(env.WEB_SEARCH_URL),
     ...overrides,

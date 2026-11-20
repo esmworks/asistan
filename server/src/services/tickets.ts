@@ -7,7 +7,7 @@ import {
   type TicketStatus,
   type TicketUpdate as UpdateInput,
   type TurnState,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import type { TurnOutcome } from '../engine/types';

@@ -1,4 +1,4 @@
-import type { Bot, Group } from '@yumakbot/shared';
+import type { Bot, Group } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Archive,

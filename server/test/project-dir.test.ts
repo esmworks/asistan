@@ -6,12 +6,12 @@ import { projectDirProblem } from '../src/workspace';
 import { testServer, type TestServer } from './helpers';
 
 describe('proje klasörü', () => {
-  const opts = { home: '/home/ayse', dataDir: '/home/ayse/.yumakbot' };
+  const opts = { home: '/home/ayse', dataDir: '/home/ayse/.leafbot' };
   it('kökü, ev klasörünü ve onu içerenleri, veri klasörünü reddeder', () => {
     expect(projectDirProblem('/', opts)).toBe('error.projectDirTooWide');
     expect(projectDirProblem('/home', opts)).toBe('error.projectDirTooWide');
     expect(projectDirProblem('/home/ayse', opts)).toBe('error.projectDirTooWide');
-    expect(projectDirProblem('/home/ayse/.yumakbot/workspaces', opts)).toBe('error.projectDirData');
+    expect(projectDirProblem('/home/ayse/.leafbot/workspaces', opts)).toBe('error.projectDirData');
     expect(projectDirProblem('proje', opts)).toBe('error.projectDirRelative');
     expect(projectDirProblem('/home/ayse/kod/site', opts)).toBeNull();
     expect(projectDirProblem('/srv/site', opts)).toBeNull();
@@ -33,7 +33,7 @@ describe('proje klasörü', () => {
     afterEach(() => t.dispose());
     it('bot oluşturulurken ve güncellenirken uygular', async () => {
       expect((await t.api('POST', '/api/bots', { name: 'X', projectDir: homedir() })).status).toBe(400);
-      const ok = mkdtempSync(join(tmpdir(), 'yumakbot-proje-'));
+      const ok = mkdtempSync(join(tmpdir(), 'leafbot-proje-'));
       const bot = await t.bot({ projectDir: ok });
       expect(bot.projectDir).toBe(ok);
       expect((await t.api('PATCH', `/api/bots/${bot.id}`, { projectDir: t.dataDir })).status).toBe(400);

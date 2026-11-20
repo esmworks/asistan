@@ -1,4 +1,4 @@
-import type { Skill } from '@yumakbot/shared';
+import type { Skill } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';

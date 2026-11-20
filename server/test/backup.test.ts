@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot, Memory } from '@yumakbot/shared';
+import type { Bot, Memory } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { hashPassword } from '../src/account';
@@ -24,7 +24,7 @@ describe('yedek', () => {
     const made = await t.api<{ id: string; size: number }>('POST', '/api/backup', { password });
     if (made.status !== 200) return { status: made.status, file: null };
     const res = await t.app.inject({ method: 'GET', url: `/api/backup/${made.body.id}`, headers: AUTH });
-    expect(res.headers['content-disposition']).toMatch(/yumakbot-backup-.*\.ybk/);
+    expect(res.headers['content-disposition']).toMatch(/leafbot-backup-.*\.ybk/);
     expect(res.rawPayload.length).toBe(made.body.size);
     // One download: the file does not wait on the server once fetched.
     await new Promise((r) => setTimeout(r, 50));
@@ -121,7 +121,7 @@ describe('yedek', () => {
   it('kişilerden önceki bir yedeğin tek hesabı owner olur', async () => {
     const ownerSession = await t.auth.createSession(OWNER_ID);
     // What such a backup holds: no people, the single account in kv.
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-old-backup-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-old-backup-'));
     const kv = join(dir, 'kv.json');
     writeFileSync(
       kv,
@@ -141,7 +141,7 @@ describe('yedek', () => {
     const bot = await t.bot({ name: 'Eski' });
     const thread = (await t.api<{ id: string }>('GET', `/api/bots/${bot.id}/main-thread`)).body;
     // The same rows as such a backup holds them: no person on the bot or the conversation.
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-old-backup-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-old-backup-'));
     const write = (name: string, rows: Record<string, unknown>[]) => {
       writeFileSync(join(dir, `${name}.json`), JSON.stringify(rows));
       return join(dir, `${name}.json`);
@@ -164,6 +164,21 @@ describe('yedek', () => {
     expect(restored!.userId).toBe(OWNER_ID);
     const [b] = await t.services.ctx.db.select().from(schema.bots).where(eq(schema.bots.id, bot.id));
     expect(b).toMatchObject({ ownerUserId: OWNER_ID, access: { everyone: 'none', people: {} } });
+  });
+
+  it('yeniden adlandırmadan önceki yedekte uygulamanın araçlarını yeni adıyla geri yükler', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-old-backup-'));
+    const rules = join(dir, 'permission_rules.json');
+    writeFileSync(
+      rules,
+      JSON.stringify([
+        { id: 'r1', list: 'ask', pattern: 'mcp__yumakbot__run_command', note: '', createdAt: new Date() },
+        { id: 'r2', list: 'allow', pattern: 'mcp__notion__search', note: '', createdAt: new Date() },
+      ]),
+    );
+    await replaceRows(t.services.ctx.db, new Map([['permission_rules', rules]]));
+    const kept = await t.services.ctx.db.select().from(schema.permissionRules);
+    expect(kept.map((r) => r.pattern).sort()).toEqual(['mcp__leafbot__run_command', 'mcp__notion__search']);
   });
 
   it('bir bot çalışırken geri yüklemez', async () => {

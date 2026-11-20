@@ -1,4 +1,4 @@
-import type { Approval, Bot, Message } from '@yumakbot/shared';
+import type { Approval, Bot, Message } from '@leafbot/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';

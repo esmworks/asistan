@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@yumakbot/shared';
+import type { ServerInfo } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

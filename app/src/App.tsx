@@ -1,4 +1,4 @@
-import { BRAND_COLOR, isLocale } from '@yumakbot/shared';
+import { BRAND_COLOR, isLocale } from '@leafbot/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -198,7 +198,7 @@ function Workspace() {
     const linked = takeLinkedThread();
     if (linked) openLinkedThread(linked, t);
   }, [t]);
-  // In the desktop app, a `yumakbot://` link opened from outside: now, and whenever one arrives.
+  // In the desktop app, a `leafbot://` link opened from outside: now, and whenever one arrives.
   useEffect(() => {
     const take = () =>
       void desktop

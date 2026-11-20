@@ -46,14 +46,14 @@ export function MermaidDiagram({ code }: { code: string }) {
             theme: dark ? 'dark' : 'default',
             fontFamily: 'inherit',
           });
-          const out = await mermaid.render(`yumakbot-mermaid-${++renderId}`, code);
+          const out = await mermaid.render(`leafbot-mermaid-${++renderId}`, code);
           if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
           cache.set(key, out.svg);
           if (live) setDrawn({ key, svg: out.svg });
         })
         .catch(() => {
           // Mermaid leaves the element of a failed render behind.
-          document.getElementById(`dyumakbot-mermaid-${renderId}`)?.remove();
+          document.getElementById(`dleafbot-mermaid-${renderId}`)?.remove();
           if (live) setDrawn({ key, svg: null });
         });
     }, 400);

@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
-import { INTL_LOCALE, type Locale } from '@yumakbot/shared';
+import { INTL_LOCALE, type Locale } from '@leafbot/shared';
 import { api } from './api';
 
-const RATE_KEY = 'yumakbot.speech.rate';
+const RATE_KEY = 'leafbot.speech.rate';
 /** The reading speeds the bar spans; 1 is the voice's own. */
 export const SPEECH_RATE_MIN = 0.5;
 export const SPEECH_RATE_MAX = 2;

@@ -1,4 +1,4 @@
-import { BRAND_COLOR, type AvatarShape, type ObjectAvatar } from '@yumakbot/shared';
+import { BRAND_COLOR, type AvatarShape, type ObjectAvatar } from '@leafbot/shared';
 import { getExample, type AvatarState } from 'open-bot-avatar';
 import { mountAvatar, type MountedAvatar } from 'open-bot-avatar/dom';
 import { POSES, type ExpressionId } from '@norbert_bodziony/bloub';

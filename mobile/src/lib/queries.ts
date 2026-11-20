@@ -1,4 +1,4 @@
-import type { UsageRange } from '@yumakbot/shared';
+import type { UsageRange } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ApiError } from './api';
 import { useApi, useServer } from './server';

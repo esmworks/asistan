@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DesktopAction } from '@yumakbot/shared';
+import { DesktopAction } from '@leafbot/shared';
 import {
   allocateDisplay,
   bearerToken,
@@ -215,7 +215,7 @@ describe('arka plan komutları', () => {
 
 describe('Chromium profile lock', () => {
   const profile = () => {
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-profile-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-profile-'));
     symlinkSync('12345', join(dir, 'SingletonCookie'));
     symlinkSync('/tmp/org.chromium.Chromium.x/SingletonSocket', join(dir, 'SingletonSocket'));
     return dir;
@@ -234,6 +234,6 @@ describe('Chromium profile lock', () => {
     expect(left(own)).toEqual(['SingletonCookie', 'SingletonLock', 'SingletonSocket']);
 
     // No lock: nothing to do.
-    expect(clearForeignProfileLock(mkdtempSync(join(tmpdir(), 'yumakbot-profile-')), 'h')).toBe(false);
+    expect(clearForeignProfileLock(mkdtempSync(join(tmpdir(), 'leafbot-profile-')), 'h')).toBe(false);
   });
 });

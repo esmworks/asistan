@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { applyMove, isNoop, moveTo, PINNED, sectionOf, UNGROUPED } from './botLayout';
 

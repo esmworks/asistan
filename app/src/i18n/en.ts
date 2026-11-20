@@ -1,4 +1,4 @@
-import type { Catalog } from '@yumakbot/shared';
+import type { Catalog } from '@leafbot/shared';
 import type { MessageKey } from './tr';
 
 export const en: Catalog<MessageKey> = {
@@ -37,7 +37,7 @@ export const en: Catalog<MessageKey> = {
   'pair.title': 'Connect another device',
   'pair.label': 'Pairing code',
   'pair.hint':
-    'Sign in on a phone or another computer without the password: open Yumak Bot there, choose "Sign in with a pairing code", and type the code. It works once, within five minutes.',
+    'Sign in on a phone or another computer without the password: open Leaf Bot there, choose "Sign in with a pairing code", and type the code. It works once, within five minutes.',
   'pair.make': 'Get a code',
   'pair.again': 'New code',
   'pair.left': 'Works for {minutes}:{seconds} more',
@@ -66,7 +66,7 @@ export const en: Catalog<MessageKey> = {
   'account.change': 'Change',
   'account.saved': 'Account saved',
 
-  'welcome.title': 'Welcome to Yumak Bot',
+  'welcome.title': 'Welcome to Leaf Bot',
   'welcome.body':
     'Each bot works in its own folder, keeps its own memory and talks to other bots when needed.',
   'welcome.create': 'Create a bot',
@@ -455,7 +455,7 @@ export const en: Catalog<MessageKey> = {
   'general.desktop': 'Desktop app',
   'general.openAtLogin': 'Open at login',
   'general.openAtLoginHint':
-    'Yumak Bot opens in the menu bar when you log in, so routines run without opening it by hand.',
+    'Leaf Bot opens in the menu bar when you log in, so routines run without opening it by hand.',
   'sidebarMenu.markGroupRead': 'Mark the group as read',
   'chat.apiThreads': 'Through the API',
   'chat.teamThreads': 'Team (Slack, Discord)',
@@ -541,7 +541,7 @@ export const en: Catalog<MessageKey> = {
   'chat.micDenied':
     'the microphone is turned off for this site. Allow it in the browser’s site settings (the icon left of the address), then try again.',
   'chat.micDeniedDesktop':
-    'the microphone is turned off for Yumak Bot. On a Mac, allow it in System Settings → Privacy & Security → Microphone; elsewhere, in your system’s microphone privacy settings.',
+    'the microphone is turned off for Leaf Bot. On a Mac, allow it in System Settings → Privacy & Security → Microphone; elsewhere, in your system’s microphone privacy settings.',
   'chat.micMissing': 'no microphone was found. Plug one in or choose an input device, then try again.',
   'chat.micBusy':
     'another app may be using the microphone, or it could not start. Close the other app and try again.',
@@ -585,12 +585,12 @@ export const en: Catalog<MessageKey> = {
   'page.shared': 'Shared',
   'page.shareAnyone': 'Anyone with the link',
   'page.shareOffHint':
-    'Only you can see this page. Turn the link on to send it to someone who does not use Yumak Bot.',
+    'Only you can see this page. Turn the link on to send it to someone who does not use Leaf Bot.',
   'page.shareOnHint':
     'Anyone with the link sees the page as the bot last wrote it, with the files it shows, without signing in. Turn it off and the link stops working.',
   'page.linkCopied': 'Link copied',
   'page.shareLocalOnly':
-    'This address only works on this computer. For others to open the link, run the server where they can reach it and set YUMAKBOT_PUBLIC_URL.',
+    'This address only works on this computer. For others to open the link, run the server where they can reach it and set LEAFBOT_PUBLIC_URL.',
   'page.pdf': 'PDF',
   'page.printHint': 'Opens the page with the print dialog; choose Save as PDF there',
   'page.sharedPages': 'Shared pages',
@@ -860,7 +860,7 @@ export const en: Catalog<MessageKey> = {
   'sidebarMenu.deleteGroupConfirm':
     'Delete the group "{name}"? Its bots move to Ungrouped and lose access to the group\'s shared folder.',
 
-  'update.title': 'Yumak Bot was updated',
+  'update.title': 'Leaf Bot was updated',
   'update.reloading': 'Loading the new version…',
   'update.waiting': 'The page will reload once your unsent message and files are done.',
   'update.reloadNow': 'Reload now',
@@ -1395,7 +1395,7 @@ export const en: Catalog<MessageKey> = {
   'routine.webhookCreate': 'Make a webhook',
   'routine.webhookRenew': 'New address',
   'routine.webhookLocalOnly':
-    'This address only works on this computer. To start the routine from a service on the internet, run the server where that service can reach it and set YUMAKBOT_PUBLIC_URL.',
+    'This address only works on this computer. To start the routine from a service on the internet, run the server where that service can reach it and set LEAFBOT_PUBLIC_URL.',
   'routine.carryReport': 'Build on the last report',
   'routine.carryReportHint':
     'Each run gets what the bot wrote last time, so it can say what changed instead of starting over.',
@@ -1412,7 +1412,7 @@ export const en: Catalog<MessageKey> = {
     'The bot works in the main conversation, with what you talked about there, and its steps show there too. When off, the routine works in a conversation of its own and only its report lands in the main one.',
   'routine.onStartup': 'Also run when the server starts',
   'routine.onStartupHint':
-    'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Yumak Bot.',
+    'Runs once each time the server starts; in the desktop app, when you turn on the computer and open Leaf Bot.',
   'routine.slackChannel': 'Also post the report to a Slack channel',
   'routine.slackChannelHint':
     "The channel's id (at the bottom of its details, starts with C). Add the app to that channel. Such a routine runs as a team conversation: it uses no one's personal notes or own connections.",
@@ -1552,7 +1552,7 @@ export const en: Catalog<MessageKey> = {
   'routine.gateWouldSkipNoReason': 'The pre-check would have skipped it',
   'routine.runCommandHint': 'A script or another service can start this routine and hand it some text.',
   'routine.copyRunCommand': 'Copy run command',
-  'routine.runCommandCopied': 'Copied. Set YUMAKBOT_ACCESS_KEY to the server’s access key before running it.',
+  'routine.runCommandCopied': 'Copied. Set LEAFBOT_ACCESS_KEY to the server’s access key before running it.',
   'routine.type.once': 'Once',
   'routine.date': 'Date',
   'routine.dateFormat': 'Pick a date',
@@ -1671,14 +1671,14 @@ export const en: Catalog<MessageKey> = {
   'notify.level.needsYou': 'Only when a bot needs me',
   'notify.level.off': 'Never',
   'notify.hint': 'Shown on this device while you are looking at something else.',
-  'notify.blocked': 'This browser blocks notifications from Yumak Bot; allow them in its site settings.',
+  'notify.blocked': 'This browser blocks notifications from Leaf Bot; allow them in its site settings.',
   'notify.unsupported': 'This browser cannot show notifications.',
   'notify.sound': 'Play a sound',
   'notify.soundHint':
     'A short sound with each notification, on this device; a reply, a question, a permission request and an error each sound different.',
   'notify.test': 'Try it',
   'notify.testButton': 'Send a test notification',
-  'notify.testTitle': 'Yumak Bot',
+  'notify.testTitle': 'Leaf Bot',
   'notify.testBody': 'Notifications work on this device.',
   'apns.title': 'Phone notifications',
   'apns.key': 'Apple key for the iPhone',
@@ -1720,7 +1720,7 @@ export const en: Catalog<MessageKey> = {
     'A command runs encoded content (like base64), so what runs cannot be read in the text.',
   'skills.bringIn': 'Bring in from other AI tools',
   'skills.bringInHint':
-    'What tools such as Claude Code, Codex or Cursor on this computer have and Yumak Bot does not. They come in switched off: no bot uses them until you turn them on.',
+    'What tools such as Claude Code, Codex or Cursor on this computer have and Leaf Bot does not. They come in switched off: no bot uses them until you turn them on.',
   'skills.bringInSkills': 'Skills',
   'skills.bringInServers': 'App connections (MCP)',
   'skills.bringInRun': 'Bring in the chosen ones',
@@ -1794,10 +1794,10 @@ export const en: Catalog<MessageKey> = {
   'browserInfo.missing': 'Missing',
   'browserInfo.okHint': 'Each bot uses this browser with its own profile: {path}',
   'browserInfo.missingHint':
-    'No Chrome, Edge or Chromium was found on the server, so bots cannot work on websites. Install one or give its path with YUMAKBOT_BROWSER.',
+    'No Chrome, Edge or Chromium was found on the server, so bots cannot work on websites. Install one or give its path with LEAFBOT_BROWSER.',
   'egress.label': "Bots' browsers go out through my computer",
   'egress.hint':
-    "Sites see the connection of the computer whose Yumak Bot app is connected to this server, not the server's. While that computer is off, the browsers go out from the server. Browsers only: the bots' commands still go out from the server.",
+    "Sites see the connection of the computer whose Leaf Bot app is connected to this server, not the server's. While that computer is off, the browsers go out from the server. Browsers only: the bots' commands still go out from the server.",
   'egress.connected': 'Going out through {device} now.',
   'egress.connectedUnnamed': 'Going out through the connected computer now.',
   'egress.waiting':
@@ -1888,13 +1888,13 @@ export const en: Catalog<MessageKey> = {
   'import.step1': '1. Export from Grok Bot',
   'import.instructions': 'Export instructions',
   'import.instructionsHint':
-    'Copy the instructions and paste them into a Grok Bot chat, or add them as a skill; Grok Bot writes the yumakbot-bots.json file for you.',
+    'Copy the instructions and paste them into a Grok Bot chat, or add them as a skill; Grok Bot writes the leafbot-bots.json file for you.',
   'import.copy': 'Copy',
   'import.download': 'Download the instructions',
   'import.copied': 'Instructions copied',
   'import.copyFailed': 'Could not copy the instructions; download and open them',
   'import.step2': '2. Choose the file',
-  'import.file': 'yumakbot-bots.json',
+  'import.file': 'leafbot-bots.json',
   'import.fileHint': 'We show what will be added first; nothing is saved until you confirm.',
   'import.choose': 'Choose file',
   'import.safety':
@@ -1922,7 +1922,7 @@ export const en: Catalog<MessageKey> = {
   'import.link.open': 'Open the page',
   'import.link.export': '2. Have Grok Bot export this bot',
   'import.link.exportHint':
-    'Copy the instructions for this bot only and paste them into a Grok Bot chat; it writes yumakbot-bots.json with its instructions, memory, skills and routines.',
+    'Copy the instructions for this bot only and paste them into a Grok Bot chat; it writes leafbot-bots.json with its instructions, memory, skills and routines.',
   'import.link.load': '3. Load the file under "2. Choose the file" below',
   'import.link.loadHint':
     'You see everything Grok Bot wrote, skill texts included, before anything is saved.',
@@ -1946,10 +1946,10 @@ export const en: Catalog<MessageKey> = {
   'backup.restoreConfirm':
     'Everything on this server will be replaced with this backup: bots, conversations, memory and files. The server starts again afterwards. Continue?',
   'backup.restored': 'Restored. The server is starting again; the page reloads in a moment.',
-  'backup.phoneRestore': 'To restore a backup, open Yumak Bot on a computer: Settings → Import and backup.',
+  'backup.phoneRestore': 'To restore a backup, open Leaf Bot on a computer: Settings → Import and backup.',
   'export.title': 'Export bots',
   'export.hint':
-    'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Yumak Bot imports it from this page. Conversations, permissions and folders stay out of the file.',
+    'The picked bots are written to a file with their instructions, avatars, routines, memories, skills and groups; another Leaf Bot imports it from this page. Conversations, permissions and folders stay out of the file.',
   'export.download': 'Download {count} bots',
   'import.instructionsOf': 'Instructions',
   'import.none': '(none)',
@@ -2011,7 +2011,7 @@ export const en: Catalog<MessageKey> = {
   'about.open': 'Open',
   'about.license': 'License',
   'about.licenseText':
-    'You can use, change and share this program for any noncommercial purpose under the PolyForm Noncommercial License 1.0.0. Use by or for a business needs a commercial license: info@yumakbot.com. Anyone you pass it on to must also get the license and the notices in the NOTICE file.',
+    'You can use, change and share this program for any noncommercial purpose under the PolyForm Noncommercial License 1.0.0. Use by or for a business needs a commercial license: info@leafbot.app. Anyone you pass it on to must also get the license and the notices in the NOTICE file.',
   'about.warranty': 'The program comes with no warranty.',
   'about.links': 'Links',
   'about.source': 'Source code',
@@ -2027,7 +2027,7 @@ export const en: Catalog<MessageKey> = {
   'profile.addressAsHint': 'For example just your first name.',
   'profile.occupation': 'What do you do?',
   'profile.occupationPlaceholder': 'e.g. architect, student, I run a shop',
-  'profile.section.use': 'How you use Yumak Bot',
+  'profile.section.use': 'How you use Leaf Bot',
   'profile.focus': 'Mostly for',
   'profile.focus.work': 'Work',
   'profile.focus.personal': 'Personal life',
@@ -2057,7 +2057,7 @@ export const en: Catalog<MessageKey> = {
   'onboarding.intro': 'Let me get to know you a little, so I can set up your bots.',
   'onboarding.q.name': 'What is your full name?',
   'onboarding.q.addressAs': 'What should I call you?',
-  'onboarding.q.focus': 'What will you mostly use Yumak Bot for?',
+  'onboarding.q.focus': 'What will you mostly use Leaf Bot for?',
   'onboarding.q.occupation': 'What do you do?',
   'onboarding.q.helpWith': 'What would you like help with?',
   'onboarding.q.about': 'Anything else your bots should know?',
@@ -2179,7 +2179,7 @@ export const en: Catalog<MessageKey> = {
   'provider.signInDone': 'Signed in with {provider}',
   'provider.signInWaiting': 'Waiting for the sign-in to finish…',
   'provider.chatgptHint':
-    'Use your ChatGPT plan instead of an API key: OpenAI asks you to let Yumak Bot use it, and the bots run on OpenAI models from your plan.',
+    'Use your ChatGPT plan instead of an API key: OpenAI asks you to let Leaf Bot use it, and the bots run on OpenAI models from your plan.',
   'provider.copilotHint':
     'Use your GitHub Copilot plan: you sign in on GitHub with a code, and the bots run on the models your plan opens.',
   'provider.enterprise': 'GitHub Enterprise domain (leave empty for github.com)',
@@ -2444,7 +2444,7 @@ export const en: Catalog<MessageKey> = {
   'discord.disconnectConfirm':
     'Disconnect Discord? The bot stays in its servers until someone there removes it, and stops answering.',
   'slack.title': 'Slack',
-  'slack.appName': 'Yumak Bot',
+  'slack.appName': 'Leaf Bot',
   'slack.off': 'Not connected',
   'slack.connectedTo': 'Connected to the {workspace} workspace',
   'slack.error': 'The Slack connection is not working: {error}',
@@ -2491,7 +2491,7 @@ export const en: Catalog<MessageKey> = {
     'People in your Microsoft 365 organization write to the bot in a one-to-one Teams chat and approve its steps there. Teams sends messages to this server, so the server needs a public HTTPS address.',
   'teams.endpoint': 'Messaging endpoint',
   'teams.noEndpoint':
-    'The server has no public HTTPS address yet. Set YUMAKBOT_PUBLIC_URL to an HTTPS address Teams can reach; the endpoint appears here.',
+    'The server has no public HTTPS address yet. Set LEAFBOT_PUBLIC_URL to an HTTPS address Teams can reach; the endpoint appears here.',
   'teams.copy': 'Copy',
   'teams.copied': 'Copied',
   'teams.step1': 'In the Azure portal, create an Azure Bot of the single-tenant type:',

@@ -1,6 +1,6 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
-import { previewKind } from '@yumakbot/app/src/lib/preview';
+import { previewKind } from '@leafbot/app/src/lib/preview';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Loading, Note } from '@/components/page';
 import { locale, t } from '@/i18n';

@@ -6,7 +6,7 @@ import {
   type TodayReport,
   type UsageRange,
   type UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { z } from 'zod';
 import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';

@@ -1,4 +1,4 @@
-import type { Bot, BotMove } from '@yumakbot/shared';
+import type { Bot, BotMove } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useState } from 'react';
 import { toast } from 'sonner';

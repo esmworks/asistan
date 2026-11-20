@@ -152,7 +152,7 @@ describe('Pi motorunda web araçları', () => {
   let cwd: string;
   let asks: PermissionAsk[];
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-piweb-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-piweb-'));
     cwd = join(dir, 'thread');
     mkdirSync(cwd);
     asks = [];

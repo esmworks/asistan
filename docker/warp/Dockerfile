@@ -14,9 +14,9 @@ RUN apt-get update \
  && apt-get purge -y curl \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
-COPY entrypoint.sh /usr/local/bin/yumakbot-warp
-RUN chmod 755 /usr/local/bin/yumakbot-warp
+COPY entrypoint.sh /usr/local/bin/leafbot-warp
+RUN chmod 755 /usr/local/bin/leafbot-warp
 EXPOSE 1080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD warp-cli --accept-tos status | grep -q Connected
-ENTRYPOINT ["/usr/local/bin/yumakbot-warp"]
+ENTRYPOINT ["/usr/local/bin/leafbot-warp"]

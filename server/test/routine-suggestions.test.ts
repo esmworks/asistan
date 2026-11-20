@@ -4,7 +4,7 @@ import {
   type RoutineSuggestion,
   type Thread,
   type UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

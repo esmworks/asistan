@@ -11,7 +11,7 @@ import {
   Server,
   X,
 } from 'lucide-react';
-import type { ProviderInfo, ProviderSignIn } from '@yumakbot/shared';
+import type { ProviderInfo, ProviderSignIn } from '@leafbot/shared';
 import {
   useEffect,
   useId,

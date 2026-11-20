@@ -1,4 +1,4 @@
-import { LOCALE_NAMES, LOCALES } from '@yumakbot/shared';
+import { LOCALE_NAMES, LOCALES } from '@leafbot/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound, Loader2 } from 'lucide-react';
@@ -31,7 +31,7 @@ export function Login() {
           <div className="size-16">
             <AppMascot />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Yumak Bot</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Leaf Bot</h1>
           <p className="text-sm text-muted-foreground">
             {useCode ? t('login.codeHint') : hasAccount && !useKey ? t('login.accountHint') : t('login.hint')}
           </p>

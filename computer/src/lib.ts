@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { DesktopAction } from '@yumakbot/shared';
+import type { DesktopAction } from '@leafbot/shared';
 
 /**
  * Removes a Chromium profile lock left by another host. Chromium names its lock `<host>-<pid>`

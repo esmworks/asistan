@@ -15,7 +15,7 @@ import {
 } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { Readable } from 'node:stream';
-import { FileName, MAX_UPLOAD_BYTES } from '@yumakbot/shared';
+import { FileName, MAX_UPLOAD_BYTES } from '@leafbot/shared';
 import type { T } from './i18n';
 import { HttpError } from './util';
 

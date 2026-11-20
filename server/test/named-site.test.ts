@@ -1,4 +1,4 @@
-import type { Approval, Bot, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, Thread } from '@leafbot/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resembledSite } from '../src/runtime/outside';
 import type * as SkillLink from '../src/services/skill-link';

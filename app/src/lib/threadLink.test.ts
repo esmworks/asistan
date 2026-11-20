@@ -3,8 +3,8 @@ import { linkedThread, sameServerThread, threadLink } from './threadLink';
 
 describe('konuşma bağlantısı', () => {
   it('konuşmayı açan adresi verir ve geri okur', () => {
-    const link = threadLink('abc-123', { origin: 'https://yumakbot.ornek', pathname: '/' });
-    expect(link).toBe('https://yumakbot.ornek/?thread=abc-123');
+    const link = threadLink('abc-123', { origin: 'https://leafbot.ornek', pathname: '/' });
+    expect(link).toBe('https://leafbot.ornek/?thread=abc-123');
     expect(linkedThread(new URL(link).search)).toBe('abc-123');
   });
 
@@ -15,15 +15,15 @@ describe('konuşma bağlantısı', () => {
   });
 
   it('mesajdaki bağlantı bu sunucunun konuşmasıysa onu tanır, başka adresleri tanımaz', () => {
-    const at = { origin: 'https://yumakbot.ornek', pathname: '/', href: 'https://yumakbot.ornek/' };
-    expect(sameServerThread('https://yumakbot.ornek/?thread=abc-123', at)).toBe('abc-123');
+    const at = { origin: 'https://leafbot.ornek', pathname: '/', href: 'https://leafbot.ornek/' };
+    expect(sameServerThread('https://leafbot.ornek/?thread=abc-123', at)).toBe('abc-123');
     expect(sameServerThread('/?thread=abc-123', at)).toBe('abc-123');
     expect(sameServerThread('https://baska.ornek/?thread=abc-123', at)).toBeNull();
-    expect(sameServerThread('https://yumakbot.ornek/docs?thread=abc-123', at)).toBeNull();
-    expect(sameServerThread('https://yumakbot.ornek/', at)).toBeNull();
+    expect(sameServerThread('https://leafbot.ornek/docs?thread=abc-123', at)).toBeNull();
+    expect(sameServerThread('https://leafbot.ornek/', at)).toBeNull();
     expect(sameServerThread('javascript:alert(1)', at)).toBeNull();
     // The desktop app's own link, pasted into a chat.
-    expect(sameServerThread('yumakbot://thread/abc-123', at)).toBe('abc-123');
-    expect(sameServerThread('yumakbot://thread/../x', at)).toBeNull();
+    expect(sameServerThread('leafbot://thread/abc-123', at)).toBe('abc-123');
+    expect(sameServerThread('leafbot://thread/../x', at)).toBeNull();
   });
 });

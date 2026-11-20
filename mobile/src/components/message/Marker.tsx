@@ -1,4 +1,4 @@
-import { outsideTrigger, type Bot, type Message } from '@yumakbot/shared';
+import { outsideTrigger, type Bot, type Message } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

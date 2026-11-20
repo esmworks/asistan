@@ -49,7 +49,7 @@ describe('içerik güvenlik politikası', () => {
     let t: TestServer;
     let appDir: string;
     beforeEach(async () => {
-      appDir = mkdtempSync(join(tmpdir(), 'yumakbot-app-'));
+      appDir = mkdtempSync(join(tmpdir(), 'leafbot-app-'));
       mkdirSync(join(appDir, 'assets'));
       writeFileSync(join(appDir, 'index.html'), PAGE);
       writeFileSync(join(appDir, 'assets', 'index.js'), 'export {};');

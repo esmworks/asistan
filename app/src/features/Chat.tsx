@@ -1,4 +1,4 @@
-import { hasSecretShape, quoteExcerpt, type Bot, type Message, type Thread } from '@yumakbot/shared';
+import { hasSecretShape, quoteExcerpt, type Bot, type Message, type Thread } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
@@ -1967,7 +1967,7 @@ function BrokenMessage() {
 
 /** How long typing pauses before the draft is saved. */
 const DRAFT_PAUSE_MS = 400;
-const draftKey = (threadId: string) => `yumakbot.draft.${threadId}`;
+const draftKey = (threadId: string) => `leafbot.draft.${threadId}`;
 
 function readDraft(threadId: string): string {
   try {

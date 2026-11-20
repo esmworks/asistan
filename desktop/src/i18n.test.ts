@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadLocale, saveLocale, setLocale, t } from './i18n';
 
 describe('masaüstü dili', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'yumakbot-desktop-'));
+  const dir = mkdtempSync(join(tmpdir(), 'leafbot-desktop-'));
   afterEach(() => setLocale('tr'));
 
   it('kayıt yoksa sistem dilini, varsa uygulamanın son dilini kullanır', () => {

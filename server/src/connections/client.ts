@@ -26,7 +26,7 @@ import {
   TooManyRequestsError,
 } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { ElicitForm } from './elicit';
-import { MAX_CONNECTION_TOOLS } from '@yumakbot/shared';
+import { MAX_CONNECTION_TOOLS } from '@leafbot/shared';
 import type { StoredConnectionTool } from '../db/schema';
 import { Agent } from 'undici';
 import { privateHost, publicLookup } from '../services/skill-link';
@@ -128,7 +128,7 @@ export class ConnectionClientError extends Error {
 export const CALL_TIMEOUT_MS = 60_000;
 /**
  * How long a tool call may run: a report or an export can take minutes. Set from the server's
- * configuration at start (YUMAKBOT_MCP_TIMEOUT_SECONDS); listing tools keeps the short limit.
+ * configuration at start (LEAFBOT_MCP_TIMEOUT_SECONDS); listing tools keeps the short limit.
  */
 let toolCallMs = 5 * 60_000;
 export function setToolCallTimeout(ms: number) {
@@ -142,7 +142,7 @@ const GOOGLE_ACCOUNTS = 'https://accounts.google.com';
 
 export function clientMetadata(redirectUrl: string): OAuthClientMetadata {
   return {
-    client_name: 'Yumak Bot',
+    client_name: 'Leaf Bot',
     redirect_uris: [redirectUrl],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
@@ -793,7 +793,7 @@ const CONNECT_RETRY_MS = 1000;
 async function connectOnce(holder: Holder): Promise<Client> {
   // Forms only: a server asking to open a web page is declined.
   const client = new Client(
-    { name: 'YumakBot', version: '0.7.0' },
+    { name: 'LeafBot', version: '0.7.0' },
     {
       capabilities: {
         elicitation: { form: {} },

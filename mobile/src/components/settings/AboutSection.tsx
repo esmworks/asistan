@@ -15,7 +15,7 @@ import LOGO from '../../../assets/logo.png';
  * oblige anyone who conveys or hosts a modified version to keep the product attribution and the
  * repository link visible here.
  */
-const REPO_URL = 'https://github.com/esmworks/yumakbot';
+const REPO_URL = 'https://github.com/esmworks/leafbot';
 
 /** A new issue with the version and the device filled in, so a report starts with what it needs. */
 function issueUrl(version: string | undefined): string {

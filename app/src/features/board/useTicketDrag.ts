@@ -1,4 +1,4 @@
-import type { Ticket, TicketStatus } from '@yumakbot/shared';
+import type { Ticket, TicketStatus } from '@leafbot/shared';
 import { useEffect, useRef, useState } from 'react';
 
 /*

@@ -1,13 +1,13 @@
-# Yumak Bot server image. Bots run inside this container; see docker/README.md for the host setup.
+# Leaf Bot server image. Bots run inside this container; see docker/README.md for the host setup.
 FROM node:22-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=1
 RUN corepack enable
 WORKDIR /src
 COPY . .
-RUN pnpm install --frozen-lockfile --filter "@yumakbot/server..." --filter "@yumakbot/app..." \
- && pnpm --filter @yumakbot/app build \
- && pnpm --filter @yumakbot/server build \
- && pnpm --filter @yumakbot/server deploy --prod --legacy /out \
+RUN pnpm install --frozen-lockfile --filter "@leafbot/server..." --filter "@leafbot/app..." \
+ && pnpm --filter @leafbot/app build \
+ && pnpm --filter @leafbot/server build \
+ && pnpm --filter @leafbot/server deploy --prod --legacy /out \
  && cp -r server/dist /out/dist \
  && cp -r app/dist /out/app \
  && cp LICENSE NOTICE /out/
@@ -20,20 +20,20 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends bubblewrap socat tini ca-certificates git ripgrep \
     chromium fonts-dejavu-core fonts-liberation fonts-noto-color-emoji fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --create-home --uid 10001 --shell /usr/sbin/nologin yumakbot \
- && mkdir -p /data && chown yumakbot:yumakbot /data
+ && useradd --create-home --uid 10001 --shell /usr/sbin/nologin leafbot \
+ && mkdir -p /data && chown leafbot:leafbot /data
 # Application files belong to root and stay read-only for the server user.
-COPY --from=build --chown=root:root /out /srv/yumakbot
-WORKDIR /srv/yumakbot
+COPY --from=build --chown=root:root /out /srv/leafbot
+WORKDIR /srv/leafbot
 ENV NODE_ENV=production \
-    YUMAKBOT_HOST=0.0.0.0 \
-    YUMAKBOT_PORT=4319 \
-    YUMAKBOT_DATA_DIR=/data \
-    YUMAKBOT_APP_DIR=/srv/yumakbot/app \
-    YUMAKBOT_BROWSER=/usr/bin/chromium \
+    LEAFBOT_HOST=0.0.0.0 \
+    LEAFBOT_PORT=4319 \
+    LEAFBOT_DATA_DIR=/data \
+    LEAFBOT_APP_DIR=/srv/leafbot/app \
+    LEAFBOT_BROWSER=/usr/bin/chromium \
     CLAUDE_CONFIG_DIR=/data/claude \
-    HOME=/home/yumakbot
-USER yumakbot
+    HOME=/home/leafbot
+USER leafbot
 VOLUME ["/data"]
 EXPOSE 4319
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \

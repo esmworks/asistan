@@ -1,20 +1,20 @@
 #!/bin/sh
-# Blocks traffic from the Yumak Bot container network to private and link-local addresses
+# Blocks traffic from the Leaf Bot container network to private and link-local addresses
 # (home/office network, cloud metadata), IPv4 and IPv6, and to the host itself. Run on the Linux host
-# as root after `docker compose up` created the yumakbot0 bridge; rerun after reboots. Running it again
+# as root after `docker compose up` created the leafbot0 bridge; rerun after reboots. Running it again
 # replaces the rules instead of adding them twice.
-#   --wait  waits up to three minutes for the bridge first; the yumakbot-firewall service that
+#   --wait  waits up to three minutes for the bridge first; the leafbot-firewall service that
 #           docker/install.sh sets up uses it at boot, when Docker brings the containers up after itself.
 #
 # Two chains, because the kernel sends a container's packet down one of two paths:
-#   YUMAKBOT-EGRESS (from DOCKER-USER, in FORWARD): packets routed on to another machine.
-#   YUMAKBOT-INPUT (from INPUT): packets for one of the host's own addresses (the bridge's gateway, the
+#   LEAFBOT-EGRESS (from DOCKER-USER, in FORWARD): packets routed on to another machine.
+#   LEAFBOT-INPUT (from INPUT): packets for one of the host's own addresses (the bridge's gateway, the
 #     host's LAN or public address). Without it a bot could reach services the host runs on 0.0.0.0, such
 #     as a local model server, a database or an admin panel. The containers need nothing from the host:
 #     names are resolved by Docker's resolver inside each container (127.0.0.11), which asks the
 #     upstream servers itself, so only answers to connections the host opened are let through.
 set -eu
-BRIDGE=${BRIDGE:-yumakbot0}
+BRIDGE=${BRIDGE:-leafbot0}
 
 if [ "${1:-}" = --wait ]; then
   i=0
@@ -35,8 +35,8 @@ chain() {
 }
 
 for cmd in iptables ip6tables; do
-  chain "$cmd" YUMAKBOT-EGRESS DOCKER-USER
-  chain "$cmd" YUMAKBOT-INPUT INPUT
+  chain "$cmd" LEAFBOT-EGRESS DOCKER-USER
+  chain "$cmd" LEAFBOT-INPUT INPUT
 done
 
 # Private, shared (carrier-grade NAT, Tailscale), loopback, link-local (cloud metadata), "this network",
@@ -44,7 +44,7 @@ done
 # with the broadcast address (240.0.0.0/4).
 for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8 100.64.0.0/10 169.254.0.0/16 0.0.0.0/8 \
   224.0.0.0/4 192.0.0.0/24 198.18.0.0/15 240.0.0.0/4; do
-  iptables -A YUMAKBOT-EGRESS -d "$net" -j REJECT
+  iptables -A LEAFBOT-EGRESS -d "$net" -j REJECT
 done
 # Unique local, link-local, loopback, multicast and IPv4-mapped addresses, the local-use NAT64 prefix,
 # and the well-known NAT64 prefix (64:ff9b::/96) where it carries one of the private IPv4 ranges above:
@@ -53,15 +53,15 @@ for net in fc00::/7 fe80::/10 ::1/128 ::/128 ff00::/8 ::ffff:0:0/96 64:ff9b:1::/
   64:ff9b::a00:0/104 64:ff9b::ac10:0/108 64:ff9b::c0a8:0/112 64:ff9b::7f00:0/104 64:ff9b::6440:0/106 \
   64:ff9b::a9fe:0/112 64:ff9b::/104 64:ff9b::e000:0/100 64:ff9b::c000:0/120 64:ff9b::c612:0/111 \
   64:ff9b::f000:0/100; do
-  ip6tables -A YUMAKBOT-EGRESS -d "$net" -j REJECT
+  ip6tables -A LEAFBOT-EGRESS -d "$net" -j REJECT
 done
 
 # IPv6 needs neighbour discovery with the gateway to reach anything at all, and multicast listener
 # reports (131, 143) keep the bridge delivering it; none of these leave the link.
 for type in neighbour-solicitation neighbour-advertisement router-solicitation 131 143; do
-  ip6tables -A YUMAKBOT-INPUT -p ipv6-icmp --icmpv6-type "$type" -j RETURN
+  ip6tables -A LEAFBOT-INPUT -p ipv6-icmp --icmpv6-type "$type" -j RETURN
 done
-iptables -A YUMAKBOT-INPUT -j REJECT
-ip6tables -A YUMAKBOT-INPUT -j REJECT
+iptables -A LEAFBOT-INPUT -j REJECT
+ip6tables -A LEAFBOT-INPUT -j REJECT
 
-echo "Yumak Bot çıkış kuralları kuruldu ($BRIDGE)."
+echo "Leaf Bot çıkış kuralları kuruldu ($BRIDGE)."

@@ -1138,7 +1138,7 @@ export const SessionInfo = z.object({
 export type SessionInfo = z.infer<typeof SessionInfo>;
 
 export const ServerInfo = z.object({
-  name: z.literal('yumakbot'),
+  name: z.literal('leafbot'),
   version: z.string(),
   bootId: z.string(),
   /** Changes when a new version is deployed; null without a built web app, missing on older servers. */
@@ -1264,7 +1264,7 @@ export type CustomEndpointCreate = z.infer<typeof CustomEndpointCreate>;
 export const CustomEndpointUpdate = CustomEndpointCreate.partial();
 export type CustomEndpointUpdate = z.infer<typeof CustomEndpointUpdate>;
 
-/** How the person mostly uses the assistant; asked when YumakBot is first opened. */
+/** How the person mostly uses the assistant; asked when LeafBot is first opened. */
 export const PROFILE_FOCUS = ['work', 'personal', 'both'] as const;
 export type ProfileFocus = (typeof PROFILE_FOCUS)[number];
 

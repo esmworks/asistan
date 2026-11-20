@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, basename } from 'node:path';
-import type { TurnChangeItem, TurnChanges, TurnChangeOutcome, TurnChangeKind } from '@yumakbot/shared';
+import type { TurnChangeItem, TurnChanges, TurnChangeOutcome, TurnChangeKind } from '@leafbot/shared';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -47,7 +47,7 @@ const NOT_OUTSIDE = new Set([
 ]);
 
 /** The step as people name it, without the prefix of the bot's own tools. */
-const stepName = (tool: string) => tool.replace(/^mcp__yumakbot__/, '');
+const stepName = (tool: string) => tool.replace(/^mcp__leafbot__/, '');
 
 type Row = typeof schema.turnChanges.$inferSelect;
 type Json = Record<string, unknown>;

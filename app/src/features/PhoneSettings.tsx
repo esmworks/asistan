@@ -1,4 +1,4 @@
-import type { ApnsSet } from '@yumakbot/shared';
+import type { ApnsSet } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';

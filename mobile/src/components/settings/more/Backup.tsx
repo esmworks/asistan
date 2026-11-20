@@ -25,7 +25,7 @@ export function Backup() {
     try {
       const { id } = await api.createBackup(password);
       const day = new Date().toISOString().slice(0, 10);
-      await shareFile(`${origin}/api/backup/${id}`, `yumakbot-backup-${day}.ybk`);
+      await shareFile(`${origin}/api/backup/${id}`, `leafbot-backup-${day}.ybk`);
       setPassword('');
     } catch (e) {
       toastError(e);

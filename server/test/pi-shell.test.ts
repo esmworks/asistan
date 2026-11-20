@@ -45,7 +45,7 @@ describe.skipIf(!sandboxed)('Pi kabuğu', () => {
   afterAll(() => local.close());
 
   beforeEach(() => {
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'yumakbot-pish-')));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'leafbot-pish-')));
     cwd = join(dir, 'thread');
     secret = join(dir, 'data');
     other = join(dir, 'other');
@@ -92,13 +92,13 @@ describe.skipIf(!sandboxed)('Pi kabuğu', () => {
   });
 
   it('sunucunun ortam değişkenlerini görmez', async () => {
-    process.env.YUMAKBOT_TEST_SECRET = 'sizan-deger';
+    process.env.LEAFBOT_TEST_SECRET = 'sizan-deger';
     try {
       const out = await open()('env');
       expect(out).not.toContain('sizan-deger');
-      expect(out).not.toContain('YUMAKBOT_');
+      expect(out).not.toContain('LEAFBOT_');
     } finally {
-      delete process.env.YUMAKBOT_TEST_SECRET;
+      delete process.env.LEAFBOT_TEST_SECRET;
     }
   });
 
@@ -155,7 +155,7 @@ describe('Pi motorunda kabuk', () => {
   let cwd: string;
   let asks: PermissionAsk[];
   beforeEach(() => {
-    dir = realpathSync(mkdtempSync(join(tmpdir(), 'yumakbot-pishe-')));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'leafbot-pishe-')));
     cwd = join(dir, 'thread');
     mkdirSync(cwd);
     asks = [];

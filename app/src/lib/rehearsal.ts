@@ -1,4 +1,4 @@
-import type { Rehearsal, Routine } from '@yumakbot/shared';
+import type { Rehearsal, Routine } from '@leafbot/shared';
 
 /** The catalog key naming what started a run; anything unknown reads as "by hand or from a script". */
 export const triggerKey = (trigger: string | null) =>

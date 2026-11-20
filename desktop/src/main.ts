@@ -1,3 +1,4 @@
+import './old-env';
 import { existsSync, lstatSync, readFileSync, readlinkSync, renameSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -30,26 +31,37 @@ import {
 import { createCrashGuard, isCrash } from './crash-guard';
 import { startEgress } from './egress';
 import { readSpellingOn, spellingEntries, spellingLanguages, writeSpellingOn } from './spelling';
-import { isLocale } from '@yumakbot/shared/i18n';
+import { isLocale } from '@leafbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
-import { LINK_SCHEME, linkInArgs, parseLink, type AppLink } from './links';
+import { LINK_SCHEMES, linkInArgs, parseLink, type AppLink } from './links';
 import { claimQuickKey, isThreadId, quickBounds, quickUrl, readQuickOn, writeQuickOn } from './quick';
 import { ServerProcess } from './server-process';
 import { startUpdates, type Updates } from './updates';
 import { MIN_SIZE, readWindowState, resolveWindowState, writeWindowState } from './window-state';
 
 /**
- * The app was called Asistan before, and its bots, chats and settings live in a folder named after
- * it. Moved once to the new name so an earlier installation keeps its data.
+ * The app was called Yumak Bot before Leaf Bot, and Asistan before that; its bots, chats and settings
+ * live in a folder named after it. The newest earlier folder is moved once to the new name so an
+ * earlier installation keeps its data.
  */
+const EARLIER_DATA = [
+  { folder: 'esmworks-yumakbot', name: 'Yumak Bot' },
+  { folder: 'esmworks-asistan', name: 'Asistan' },
+];
+
 function adoptRenamedData(dir: string): string {
-  const before = join(dirname(dir), 'esmworks-asistan');
-  if (existsSync(dir) || !existsSync(before)) return dir;
+  if (existsSync(dir)) return dir;
+  const earlier = EARLIER_DATA.find((e) => existsSync(join(dirname(dir), e.folder)));
+  if (!earlier) return dir;
+  const before = join(dirname(dir), earlier.folder);
   // Moving the folder under a running copy of the old app would pull its database away mid-write,
   // and starting here would make an empty folder that stops the move for good. So stop and ask.
   if (heldByRunningApp(before)) {
     loadLocale(before, app.getPreferredSystemLanguages());
-    dialog.showErrorBox(t('error.oldAppTitle'), t('error.oldAppRunning'));
+    dialog.showErrorBox(
+      t('error.oldAppTitle', { name: earlier.name }),
+      t('error.oldAppRunning', { name: earlier.name }),
+    );
     app.exit(0);
     return dir;
   }
@@ -75,15 +87,15 @@ function heldByRunningApp(dir: string): boolean {
   }
 }
 
-// Own data folder, separate from any earlier installation. The internal name stays YumakBot while
-// the app bundle is called Yumak Bot: what Electron keys to it, such as the keychain entry for the
+// Own data folder, separate from any earlier installation. The internal name stays LeafBot while
+// the app bundle is called Leaf Bot: what Electron keys to it, such as the keychain entry for the
 // saved server key, would otherwise be looked up under a new name. The About panel and the menu
 // items that name the app show the product name people see.
-app.setName('YumakBot');
-app.setAboutPanelOptions({ applicationName: 'Yumak Bot' });
+app.setName('LeafBot');
+app.setAboutPanelOptions({ applicationName: 'Leaf Bot' });
 app.setPath(
   'userData',
-  process.env.YUMAKBOT_DESKTOP_DATA ?? adoptRenamedData(join(app.getPath('appData'), 'esmworks-yumakbot')),
+  process.env.LEAFBOT_DESKTOP_DATA ?? adoptRenamedData(join(app.getPath('appData'), 'esmworks-leafbot')),
 );
 log.initialize();
 log.transports.file.resolvePathFn = () => join(app.getPath('userData'), 'logs', 'main.log');
@@ -124,7 +136,7 @@ const serverEntry = () => join(resources(), 'server', 'dist', 'index.mjs');
 const appDir = () => (app.isPackaged ? join(resources(), 'app') : join(resources(), 'app', 'dist'));
 const assets = () => (app.isPackaged ? join(resources(), 'assets') : join(app.getAppPath(), 'assets'));
 
-/** A `yumakbot://` link waiting for the page to take it (see `links.ts`). */
+/** A `leafbot://` link waiting for the page to take it (see `links.ts`). */
 let pendingLink: AppLink | null = linkInArgs(process.argv);
 
 /** Shows the chat a link names: the window comes forward and the page is told to open it. */
@@ -136,7 +148,7 @@ function openLink(link: AppLink | null) {
   pendingLink = link;
   showWindow();
   // A page already up takes it now; one still loading takes it when it starts.
-  if (win && !win.isDestroyed()) win.webContents.send('yumakbot:open-link');
+  if (win && !win.isDestroyed()) win.webContents.send('leafbot:open-link');
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -155,12 +167,17 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(boot);
 }
 
-/** Makes this app the one `yumakbot://` links open. Run from source, Electron needs the app's path. */
+/**
+ * Makes this app the one `leafbot://` links open, and `yumakbot://` links made before the rename.
+ * Run from source, Electron needs the app's path.
+ */
 function registerLinks() {
-  if (process.defaultApp && process.argv[1]) {
-    app.setAsDefaultProtocolClient(LINK_SCHEME, process.execPath, [join(process.cwd(), process.argv[1])]);
-  } else {
-    app.setAsDefaultProtocolClient(LINK_SCHEME);
+  for (const scheme of LINK_SCHEMES) {
+    if (process.defaultApp && process.argv[1]) {
+      app.setAsDefaultProtocolClient(scheme, process.execPath, [join(process.cwd(), process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient(scheme);
+    }
   }
 }
 
@@ -209,8 +226,7 @@ async function connect() {
     port: DEFAULT_PORT,
     log: (level, line) => log[level](`[sunucu] ${line}`),
     // Development only: run the server with the offline test engine.
-    env:
-      !app.isPackaged && process.env.YUMAKBOT_ENGINE ? { YUMAKBOT_ENGINE: process.env.YUMAKBOT_ENGINE } : {},
+    env: !app.isPackaged && process.env.LEAFBOT_ENGINE ? { LEAFBOT_ENGINE: process.env.LEAFBOT_ENGINE } : {},
   });
   server.on('restarted', (url: string) => {
     origin = url;
@@ -247,10 +263,10 @@ async function connect() {
 /**
  * Only an installed app updates itself: one run from source has no release to compare with. On
  * Linux only the AppImage can replace itself; a .deb is updated through the package manager.
- * YUMAKBOT_DISABLE_UPDATES turns it off, e.g. while testing a packaged build.
+ * LEAFBOT_DISABLE_UPDATES turns it off, e.g. while testing a packaged build.
  */
 function watchForUpdates() {
-  if (!app.isPackaged || process.env.YUMAKBOT_DISABLE_UPDATES) return;
+  if (!app.isPackaged || process.env.LEAFBOT_DISABLE_UPDATES) return;
   if (
     process.platform === 'linux'
       ? !process.env.APPIMAGE
@@ -321,7 +337,7 @@ function showWindow() {
     ...restored.bounds,
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
-    title: 'Yumak Bot',
+    title: 'Leaf Bot',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
     show: false,
     // On macOS the page draws to the top edge; the window buttons sit in the
@@ -491,7 +507,7 @@ function toggleQuick() {
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
-      title: 'Yumak Bot',
+      title: 'Leaf Bot',
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1b' : '#fafafa',
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'),
@@ -523,7 +539,7 @@ function toggleQuick() {
   quickWin.show();
   quickWin.focus();
   // The page refetches and starts again from the top each time it is shown.
-  quickWin.webContents.send('yumakbot:quick-shown');
+  quickWin.webContents.send('leafbot:quick-shown');
 }
 
 function closeQuick() {
@@ -605,33 +621,33 @@ function fromConnectPage(e: IpcMainInvokeEvent) {
 }
 
 function registerIpc() {
-  ipcMain.handle('yumakbot:access-key', (e) => (fromMainPage(e) ? accessKey : null));
-  // The chat a `yumakbot://` link named, once: the page asks when it starts and when told to.
-  ipcMain.handle('yumakbot:take-link', (e) => {
+  ipcMain.handle('leafbot:access-key', (e) => (fromMainPage(e) ? accessKey : null));
+  // The chat a `leafbot://` link named, once: the page asks when it starts and when told to.
+  ipcMain.handle('leafbot:take-link', (e) => {
     if (!fromMainPage(e)) return null;
     const link = pendingLink;
     pendingLink = null;
     return link;
   });
   // Which server the window shows, so the page can offer to switch.
-  ipcMain.handle('yumakbot:server', (e) =>
+  ipcMain.handle('leafbot:server', (e) =>
     fromMainPage(e) ? { mode: config.mode, url: config.mode === 'remote' ? config.url : null } : null,
   );
   // The quick window: putting itself away, opening a conversation in the main window, and the
   // shortcut that opens it, for the app to show.
-  ipcMain.handle('yumakbot:quick-hide', (e) => {
+  ipcMain.handle('leafbot:quick-hide', (e) => {
     if (fromMainPage(e)) quickWin?.hide();
   });
-  ipcMain.handle('yumakbot:open-thread', (e, id: unknown) => {
+  ipcMain.handle('leafbot:open-thread', (e, id: unknown) => {
     if (!fromMainPage(e) || !isThreadId(id)) return;
     quickWin?.hide();
     openLink({ kind: 'thread', id });
   });
-  ipcMain.handle('yumakbot:quick-key', (e) => (fromMainPage(e) ? quickKey : null));
-  ipcMain.handle('yumakbot:open-connect', (e) => {
+  ipcMain.handle('leafbot:quick-key', (e) => (fromMainPage(e) ? quickKey : null));
+  ipcMain.handle('leafbot:open-connect', (e) => {
     if (fromMainPage(e)) openConnectWindow();
   });
-  ipcMain.handle('yumakbot:connect-remote', async (e, rawUrl: string, key: string) => {
+  ipcMain.handle('leafbot:connect-remote', async (e, rawUrl: string, key: string) => {
     if (!fromConnectPage(e)) return { ok: false, error: t('connect.noPermission') };
     try {
       const url = normalizeRemoteUrl(String(rawUrl));
@@ -653,7 +669,7 @@ function registerIpc() {
     }
   });
   // The app reports its language so the menu and windows match it.
-  ipcMain.handle('yumakbot:set-locale', (e, next: unknown) => {
+  ipcMain.handle('leafbot:set-locale', (e, next: unknown) => {
     if (!fromMainPage(e) || !isLocale(next) || next === locale()) return;
     setLocale(next);
     try {
@@ -664,7 +680,7 @@ function registerIpc() {
     if (connectWin && !connectWin.isDestroyed()) connectWin.setTitle(t('connect.title'));
     rebuildMenu();
   });
-  ipcMain.handle('yumakbot:set-unread', (e, count: unknown) => {
+  ipcMain.handle('leafbot:set-unread', (e, count: unknown) => {
     if (!fromMainPage(e)) return;
     const n =
       typeof count === 'number' && Number.isFinite(count) ? Math.min(999, Math.max(0, Math.trunc(count))) : 0;
@@ -674,7 +690,7 @@ function registerIpc() {
   });
   // While a bot works on this computer, the computer stays awake (the screen may still turn off),
   // so a routine or a long reply is not cut short by sleep.
-  ipcMain.handle('yumakbot:set-busy', (e, busy: unknown) => {
+  ipcMain.handle('leafbot:set-busy', (e, busy: unknown) => {
     if (!fromMainPage(e) || config.mode !== 'local') return;
     if (busy === true && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension');
     if (busy !== true && awake !== null) {
@@ -682,7 +698,7 @@ function registerIpc() {
       awake = null;
     }
   });
-  ipcMain.handle('yumakbot:open-at-login', (e, on?: unknown) => {
+  ipcMain.handle('leafbot:open-at-login', (e, on?: unknown) => {
     if (!fromMainPage(e)) return null;
     if (typeof on === 'boolean') {
       app.setLoginItemSettings({ openAtLogin: on });
@@ -690,10 +706,10 @@ function registerIpc() {
     }
     return app.getLoginItemSettings().openAtLogin;
   });
-  ipcMain.handle('yumakbot:show-logs', (e) => {
+  ipcMain.handle('leafbot:show-logs', (e) => {
     if (fromMainPage(e)) shell.showItemInFolder(log.transports.file.getFile().path);
   });
-  ipcMain.handle('yumakbot:use-local', async (e) => {
+  ipcMain.handle('leafbot:use-local', async (e) => {
     if (!fromConnectPage(e) && !fromMainPage(e)) return;
     writeDesktopConfig(userData, { mode: 'local' }, safeStorage);
     await switchTo({ mode: 'local' });
@@ -772,7 +788,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(join(assets(), 'trayTemplate.png'));
   icon.setTemplateImage(true);
   tray = new Tray(icon);
-  tray.setToolTip('Yumak Bot');
+  tray.setToolTip('Leaf Bot');
   tray.on('click', () => tray?.popUpContextMenu());
   rebuildMenu();
 }
@@ -791,12 +807,12 @@ function buildAppMenu() {
   if (process.platform !== 'darwin') return;
   const openSettings = () => {
     showWindow();
-    win?.webContents.send('yumakbot:open-settings');
+    win?.webContents.send('leafbot:open-settings');
   };
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: 'Yumak Bot',
+        label: 'Leaf Bot',
         submenu: [
           { role: 'about', label: t('menu.about') },
           { type: 'separator' },
@@ -807,7 +823,7 @@ function buildAppMenu() {
             enabled: !!origin,
           },
           { type: 'separator' },
-          // Without a label these read "Hide YumakBot", from the internal name.
+          // Without a label these read "Hide LeafBot", from the internal name.
           { role: 'hide', label: t('menu.hide') },
           { role: 'hideOthers', label: t('menu.hideOthers') },
           { role: 'unhide', label: t('menu.unhide') },

@@ -1,29 +1,30 @@
-# Production-style setup: Yumak Bot server + PostgreSQL.
+# Production-style setup: Leaf Bot server + PostgreSQL.
 #   cp docker/.env.example docker/.env   (fill in the values)
 #   docker compose -f docker/compose.yml up -d --build
-name: yumakbot
+name: leafbot
 # Images from elsewhere are pinned to a version and its digest, so a server gets what this release was
-# tried with, and a changed or taken-over tag cannot slip other code in. They move with Yumak Bot's
+# tried with, and a changed or taken-over tag cannot slip other code in. They move with Leaf Bot's
 # releases; the *_VERSION variables choose another version (a tag, with or without its digest).
 services:
   db:
     image: postgres:${POSTGRES_VERSION:-17.12-alpine@sha256:a77aa70e641402a21411b92b721c58d10f23b50ae5fdd2333efd22d166e1e5f7}
     restart: unless-stopped
     environment:
-      POSTGRES_USER: yumakbot
-      POSTGRES_DB: yumakbot
+      # An installation made before the rename keeps yumakbot here (docker/install.sh pins it in .env).
+      POSTGRES_USER: ${POSTGRES_USER:-leafbot}
+      POSTGRES_DB: ${POSTGRES_DB:-leafbot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}
     volumes:
       - db:/var/lib/postgresql/data
     networks: [internal]
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U yumakbot']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-leafbot}']
       interval: 5s
       retries: 20
     security_opt: ['no-new-privileges:true']
     mem_limit: 512m
 
-  yumakbot:
+  leafbot:
     build: { context: .., dockerfile: Dockerfile }
     restart: unless-stopped
     depends_on:
@@ -31,21 +32,21 @@ services:
     environment:
       # The name exists only on the `computer` network; plain `computer` could resolve to its address
       # on `egress`, where containers cannot reach each other.
-      YUMAKBOT_COMPUTER_URL: http://computer-api:4320
-      YUMAKBOT_COMPUTER_TOKEN: ${YUMAKBOT_COMPUTER_TOKEN:?YUMAKBOT_COMPUTER_TOKEN gerekli}
-      DATABASE_URL: postgres://yumakbot:${POSTGRES_PASSWORD}@db:5432/yumakbot
-      YUMAKBOT_ACCESS_KEY: ${YUMAKBOT_ACCESS_KEY:?YUMAKBOT_ACCESS_KEY gerekli}
-      YUMAKBOT_ALLOWED_HOSTS: ${YUMAKBOT_ALLOWED_HOSTS:-}
-      YUMAKBOT_SECURE_COOKIES: ${YUMAKBOT_SECURE_COOKIES:-0}
-      YUMAKBOT_PUBLIC_URL: ${YUMAKBOT_PUBLIC_URL:-}
-      YUMAKBOT_PROXY_SECRET: ${YUMAKBOT_PROXY_SECRET:-}
+      LEAFBOT_COMPUTER_URL: http://computer-api:4320
+      LEAFBOT_COMPUTER_TOKEN: ${LEAFBOT_COMPUTER_TOKEN:?LEAFBOT_COMPUTER_TOKEN gerekli}
+      DATABASE_URL: postgres://${POSTGRES_USER:-leafbot}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-leafbot}
+      LEAFBOT_ACCESS_KEY: ${LEAFBOT_ACCESS_KEY:?LEAFBOT_ACCESS_KEY gerekli}
+      LEAFBOT_ALLOWED_HOSTS: ${LEAFBOT_ALLOWED_HOSTS:-}
+      LEAFBOT_SECURE_COOKIES: ${LEAFBOT_SECURE_COOKIES:-0}
+      LEAFBOT_PUBLIC_URL: ${LEAFBOT_PUBLIC_URL:-}
+      LEAFBOT_PROXY_SECRET: ${LEAFBOT_PROXY_SECRET:-}
       # A SearXNG the bots on API keys search the web with; see "Web araması" in docker/README.md.
       WEB_SEARCH_URL: ${WEB_SEARCH_URL:-}
       # The proxy the browsers this server starts itself (no computer service) leave through; see
       # "Tarayıcının çıkış adresi" in docker/README.md.
-      YUMAKBOT_EGRESS_PROXY: ${YUMAKBOT_EGRESS_PROXY:-}
+      LEAFBOT_EGRESS_PROXY: ${LEAFBOT_EGRESS_PROXY:-}
     # Only on the host's loopback; put a TLS reverse proxy in front for remote use.
-    ports: ['127.0.0.1:${YUMAKBOT_PORT:-4319}:4319']
+    ports: ['127.0.0.1:${LEAFBOT_PORT:-4319}:4319']
     volumes:
       - data:/data
     networks:
@@ -54,14 +55,14 @@ services:
       computer: {}
       warp: {}
       # The gateway's name for the server. A panel puts every service it routes to on one network it
-      # shares with all its apps, where `yumakbot` can be another installation's server; this name
+      # shares with all its apps, where `leafbot` can be another installation's server; this name
       # exists only on this installation's `edge`.
-      edge: { aliases: [yumakbot-edge] }
+      edge: { aliases: [leafbot-edge] }
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
       # Chromium keeps its crash reports and some state under home.
-      - /home/yumakbot:size=256m,uid=10001,gid=10001
+      - /home/leafbot:size=256m,uid=10001,gid=10001
     cap_drop: [ALL]
     security_opt:
       - 'no-new-privileges:true'
@@ -71,8 +72,8 @@ services:
       - 'seccomp=./seccomp.json'
       - 'systempaths=unconfined'
       # Hosts that restrict user namespaces through AppArmor (Ubuntu 23.10 and later) need the
-      # yumakbot-userns profile; see "AppArmor" in docker/README.md.
-      - 'apparmor=${YUMAKBOT_APPARMOR:-docker-default}'
+      # leafbot-userns profile; see "AppArmor" in docker/README.md.
+      - 'apparmor=${LEAFBOT_APPARMOR:-docker-default}'
     mem_limit: 4g
     memswap_limit: 4g
     cpus: 2
@@ -85,12 +86,12 @@ services:
     restart: unless-stopped
     # The server creates the bots' folder on the data volume, which this service mounts.
     depends_on:
-      yumakbot: { condition: service_healthy }
+      leafbot: { condition: service_healthy }
     environment:
-      YUMAKBOT_COMPUTER_TOKEN: ${YUMAKBOT_COMPUTER_TOKEN:?YUMAKBOT_COMPUTER_TOKEN gerekli}
+      LEAFBOT_COMPUTER_TOKEN: ${LEAFBOT_COMPUTER_TOKEN:?LEAFBOT_COMPUTER_TOKEN gerekli}
       # The proxy the desktops' browsers leave through; see "Tarayıcının çıkış adresi" in
       # docker/README.md.
-      YUMAKBOT_EGRESS_PROXY: ${YUMAKBOT_EGRESS_PROXY:-}
+      LEAFBOT_EGRESS_PROXY: ${LEAFBOT_EGRESS_PROXY:-}
     volumes:
       # Only the bots' folders, at the same path the server sees. `subpath` needs Docker Engine 26+.
       - type: volume
@@ -113,7 +114,7 @@ services:
       # which Chromium's own sandbox needs inside it.
       - 'seccomp=./seccomp.json'
       - 'systempaths=unconfined'
-      - 'apparmor=${YUMAKBOT_APPARMOR:-docker-default}'
+      - 'apparmor=${LEAFBOT_APPARMOR:-docker-default}'
     mem_limit: 6g
     memswap_limit: 6g
     cpus: 3
@@ -123,7 +124,7 @@ services:
 
   # Optional: the bots' browsers leave through Cloudflare WARP instead of this host's address, which
   # some sites refuse for being a data centre's. Started only with `--profile warp`, and used once
-  # YUMAKBOT_EGRESS_PROXY points at it; see "Tarayıcının çıkış adresi" in docker/README.md.
+  # LEAFBOT_EGRESS_PROXY points at it; see "Tarayıcının çıkış adresi" in docker/README.md.
   warp:
     build: { context: ./warp }
     profiles: [warp]
@@ -132,7 +133,7 @@ services:
     # docker/firewall.sh like theirs: a desktop's shell shares that service's network and can reach
     # this proxy directly, so what WARP is asked for must not get to private addresses either.
     networks:
-      warp: { aliases: [yumakbot-warp] }
+      warp: { aliases: [leafbot-warp] }
       egress: {}
     volumes:
       # The free registration, kept across restarts.
@@ -158,7 +159,7 @@ services:
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
-      yumakbot: { condition: service_healthy }
+      leafbot: { condition: service_healthy }
     # `edge` reaches the server and nothing else; `outbound` reaches Cloudflare.
     networks: [edge, outbound]
     read_only: true
@@ -178,7 +179,7 @@ services:
     profiles: [gateway]
     restart: unless-stopped
     depends_on:
-      yumakbot: { condition: service_healthy }
+      leafbot: { condition: service_healthy }
     volumes:
       - ./Caddyfile.gateway:/etc/caddy/Caddyfile:ro
     networks: [edge]
@@ -200,7 +201,7 @@ services:
     image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.104.7@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4}
     profiles: [tailscale]
     restart: unless-stopped
-    hostname: ${TAILSCALE_HOSTNAME:-yumakbot}
+    hostname: ${TAILSCALE_HOSTNAME:-leafbot}
     environment:
       TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
       TS_STATE_DIR: /var/lib/tailscale
@@ -211,7 +212,7 @@ services:
       - tailscale:/var/lib/tailscale
       - ./tailscale-serve.json:/config/serve.json:ro
     depends_on:
-      yumakbot: { condition: service_healthy }
+      leafbot: { condition: service_healthy }
     networks: [edge, outbound]
     # In user space Tailscale needs no capability, no TUN device and no writable root: its state is on
     # the volume and its control socket in /tmp.
@@ -229,10 +230,10 @@ networks:
     internal: true
   # Internet access for the server; see docker/firewall.sh to block private ranges. The bridge has a fixed
   # name so the firewall can find it; a host keeps one bridge per name, so a second installation on the
-  # same host (or one left from an earlier deploy) needs another YUMAKBOT_BRIDGE.
+  # same host (or one left from an earlier deploy) needs another LEAFBOT_BRIDGE.
   egress:
     driver_opts:
-      com.docker.network.bridge.name: ${YUMAKBOT_BRIDGE:-yumakbot0}
+      com.docker.network.bridge.name: ${LEAFBOT_BRIDGE:-leafbot0}
       com.docker.network.bridge.enable_icc: 'false'
   # Server to computer service only; no route out.
   computer:

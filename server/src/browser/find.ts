@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { posix, win32 } from 'node:path';
 
 /**
- * The browser program for the bots: `YUMAKBOT_BROWSER` if set, else an installed Chrome, Edge or
+ * The browser program for the bots: `LEAFBOT_BROWSER` if set, else an installed Chrome, Edge or
  * Chromium in its usual place. Each bot gets its own profile, so the person's own browser profile
  * is never touched.
  */
@@ -11,7 +11,7 @@ export function findBrowser(
   platform: NodeJS.Platform = process.platform,
   exists: (p: string) => boolean = existsSync,
 ): string | null {
-  if (env.YUMAKBOT_BROWSER) return exists(env.YUMAKBOT_BROWSER) ? env.YUMAKBOT_BROWSER : null;
+  if (env.LEAFBOT_BROWSER) return exists(env.LEAFBOT_BROWSER) ? env.LEAFBOT_BROWSER : null;
   return candidates(env, platform).find(exists) ?? null;
 }
 

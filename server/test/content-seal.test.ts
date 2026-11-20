@@ -1,4 +1,4 @@
-import type { SearchHit, Thread } from '@yumakbot/shared';
+import type { SearchHit, Thread } from '@leafbot/shared';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';

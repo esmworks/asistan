@@ -1,4 +1,4 @@
-import { outsideIn } from '@yumakbot/shared';
+import { outsideIn } from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import type { GateRequest } from '../engine/types';

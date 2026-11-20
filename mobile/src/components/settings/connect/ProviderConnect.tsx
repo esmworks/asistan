@@ -1,4 +1,4 @@
-import type { ProviderInfo, ProviderSignIn } from '@yumakbot/shared';
+import type { ProviderInfo, ProviderSignIn } from '@leafbot/shared';
 import * as Clipboard from 'expo-clipboard';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

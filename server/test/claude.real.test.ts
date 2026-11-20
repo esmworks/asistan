@@ -1,20 +1,20 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Approval, Bot, Message, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, Message, Thread } from '@leafbot/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createServer, type YumakBotServer } from '../src/app';
+import { createServer, type LeafBotServer } from '../src/app';
 import { loadConfig } from '../src/config';
 import { KEY, waitFor } from './helpers';
 
 /**
  * Runs against the real Claude subscription login. Off by default:
- *   YUMAKBOT_REAL_CLAUDE=1 pnpm vitest run --project server test/claude.real
+ *   LEAFBOT_REAL_CLAUDE=1 pnpm vitest run --project server test/claude.real
  */
-const enabled = process.env.YUMAKBOT_REAL_CLAUDE === '1';
+const enabled = process.env.LEAFBOT_REAL_CLAUDE === '1';
 
 describe.skipIf(!enabled)('gerçek Claude', () => {
-  let s: YumakBotServer;
+  let s: LeafBotServer;
   let dataDir: string;
   const api = async <T>(method: string, url: string, body?: unknown) => {
     const res = await s.app.inject({
@@ -35,7 +35,7 @@ describe.skipIf(!enabled)('gerçek Claude', () => {
 
   let thread: Thread;
   beforeAll(async () => {
-    dataDir = mkdtempSync(join(tmpdir(), 'yumakbot-real-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'leafbot-real-'));
     s = await createServer(
       loadConfig(
         {},
@@ -45,7 +45,7 @@ describe.skipIf(!enabled)('gerçek Claude', () => {
           databaseUrl: null,
           accessKey: KEY,
           engine: 'claude',
-          claudeModel: process.env.YUMAKBOT_CLAUDE_MODEL ?? 'haiku',
+          claudeModel: process.env.LEAFBOT_CLAUDE_MODEL ?? 'haiku',
           routinesEnabled: false,
           appDir: null,
         },
@@ -77,7 +77,7 @@ describe.skipIf(!enabled)('gerçek Claude', () => {
   }, 300_000);
 
   it('Bash için izin kartı açar; reddedilince komut çalışmaz', async () => {
-    await send(thread.id, 'Bash aracıyla şu komutu çalıştır: echo yumakbot > kanit.txt');
+    await send(thread.id, 'Bash aracıyla şu komutu çalıştır: echo leafbot > kanit.txt');
     const card = await waitFor(
       async () => (await api<Approval[]>('GET', '/api/approvals?status=pending'))[0],
       120_000,

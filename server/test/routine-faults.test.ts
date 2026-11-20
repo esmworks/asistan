@@ -1,4 +1,4 @@
-import type { Routine, RoutineRun } from '@yumakbot/shared';
+import type { Routine, RoutineRun } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schema } from '../src/db';

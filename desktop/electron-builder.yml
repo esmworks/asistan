@@ -1,10 +1,10 @@
 # Packaging settings. The server and app are built first (pnpm build at the root).
-appId: com.esmworks.yumakbot
+appId: com.esmworks.leafbot
 # The name people read: the app bundle, the menu bar title (macOS takes it from the bundle, not
-# from the menu), the Windows exe and shortcuts. Installer and update file names keep "YumakBot"
+# from the menu), the Windows exe and shortcuts. Installer and update file names keep "LeafBot"
 # below: a space in a release asset's name does not survive the upload, and the update information
 # must name the file as it was uploaded.
-productName: Yumak Bot
+productName: Leaf Bot
 copyright: Copyright (C) 2026 esmworks (Erhan Erbaş)
 directories:
   output: out
@@ -14,12 +14,14 @@ directories:
 publish:
   provider: github
   owner: esmworks
-  repo: yumakbot
-# `yumakbot://` links open a chat in the app (desktop/src/links.ts). macOS reads the scheme from the
-# bundle and Linux from the desktop file; Windows registers it when the app starts.
+  repo: leafbot
+# `leafbot://` links open a chat in the app (desktop/src/links.ts), and `yumakbot://` links made
+# before the rename. macOS reads the schemes from the bundle and Linux from the desktop file; Windows
+# registers them when the app starts.
 protocols:
-  - name: Yumak Bot
+  - name: Leaf Bot
     schemes:
+      - leafbot
       - yumakbot
 files:
   - dist/**
@@ -68,11 +70,11 @@ mac:
     - dmg
     # The zip is what an installed app downloads to update itself; macOS cannot update from a dmg.
     - zip
-  artifactName: YumakBot-${version}-${arch}-mac.${ext}
+  artifactName: LeafBot-${version}-${arch}-mac.${ext}
   extendInfo:
     LSUIElement: false
     # What macOS shows when the app first asks for the microphone (the message box's mic button).
-    NSMicrophoneUsageDescription: Yumak Bot uses the microphone only when you press the microphone button to speak a message.
+    NSMicrophoneUsageDescription: Leaf Bot uses the microphone only when you press the microphone button to speak a message.
   # Signed with the Developer ID in the keychain, or the one in CSC_LINK / CSC_KEY_PASSWORD on CI,
   # and sent to Apple for notarization when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID
   # are set, so the downloaded app opens without the "unidentified developer" warning. Without
@@ -92,10 +94,10 @@ linux:
   target:
     - AppImage
     - deb
-  artifactName: YumakBot-${version}-${arch}.${ext}
-  maintainer: esmworks <info@yumakbot.com>
+  artifactName: LeafBot-${version}-${arch}.${ext}
+  maintainer: esmworks <info@leafbot.app>
   synopsis: Your own team of AI bots
-  executableName: yumakbot
+  executableName: leafbot
 deb:
   # Chromium's sandbox and the bots' browser need these on a minimal install.
   depends:
@@ -117,9 +119,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: YumakBot-${version}-Setup.${ext}
+  artifactName: LeafBot-${version}-Setup.${ext}
 dmg:
-  artifactName: YumakBot-${version}-${arch}.${ext}
+  artifactName: LeafBot-${version}-${arch}.${ext}
   # The stock background is 380 high with the icons at y 220, which leaves an empty band above
   # them. This one is shorter and puts the icons and the arrow in the middle of what Finder shows
   # (the window's height includes its title bar, so about 30 at the bottom of the image is hidden).

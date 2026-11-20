@@ -1,4 +1,4 @@
-import type { Approval, BotAction, Thread } from '@yumakbot/shared';
+import type { Approval, BotAction, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, waitFor, type TestServer } from './helpers';
 
@@ -28,7 +28,7 @@ describe("a bot's list of what it changed", () => {
     expect(list).toEqual([
       expect.objectContaining({
         how: 'level',
-        toolName: 'mcp__yumakbot__routine_create',
+        toolName: 'mcp__leafbot__routine_create',
         threadId: thread.id,
       }),
     ]);
@@ -55,14 +55,14 @@ describe("a bot's list of what it changed", () => {
     const bot = await t.bot();
     await t.api('POST', '/api/rules', {
       list: 'allow',
-      pattern: 'mcp__yumakbot__routine_create',
+      pattern: 'mcp__leafbot__routine_create',
       botId: bot.id,
     });
     const thread = await main(bot.id);
     await t.send(thread.id, create());
     await t.services.turns.idle();
     expect(await actions(bot.id)).toEqual([
-      expect.objectContaining({ how: 'rule', rule: 'mcp__yumakbot__routine_create' }),
+      expect.objectContaining({ how: 'rule', rule: 'mcp__leafbot__routine_create' }),
     ]);
   });
 

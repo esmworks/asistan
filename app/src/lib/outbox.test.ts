@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const send = vi.fn();

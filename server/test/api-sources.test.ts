@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ApiSource, Approval, Thread } from '@yumakbot/shared';
+import type { ApiSource, Approval, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readSpec } from '../src/services/api-sources';
 import { testServer, waitFor, type TestServer } from './helpers';

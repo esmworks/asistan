@@ -4,7 +4,7 @@ import {
   newUploadId,
   startUpload,
   type MessageFile,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { AlertCircle, Download, FileText, Loader2, PenLine, RotateCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';

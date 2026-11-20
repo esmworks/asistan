@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { DeltaEvent, NoticeEvent, RefreshScope, ToolEvent, TurnEvent } from '@yumakbot/shared';
+import type { DeltaEvent, NoticeEvent, RefreshScope, ToolEvent, TurnEvent } from '@leafbot/shared';
 
 /** In-process event bus; the realtime layer forwards these to connected clients. */
 export class Bus {

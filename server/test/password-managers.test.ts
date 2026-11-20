@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PasswordManager } from '@yumakbot/shared';
+import type { PasswordManager } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
@@ -260,7 +260,7 @@ describe('parola yöneticileri', () => {
 describe('parola yöneticisi programları', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-pm-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-pm-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

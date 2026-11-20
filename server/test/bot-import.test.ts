@@ -1,4 +1,4 @@
-import type { Bot, BotImportPlan, BotImportResult, Group, Memory, Routine } from '@yumakbot/shared';
+import type { Bot, BotImportPlan, BotImportResult, Group, Memory, Routine } from '@leafbot/shared';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTH, testServer, type TestServer } from './helpers';
@@ -31,7 +31,7 @@ const planner = {
 const keeper = { ref: 'bookkeeper', name: 'Bookkeeper', instructions: 'Keep the books.' };
 
 const doc = (over: Record<string, unknown> = {}) => ({
-  format: 'yumakbot-bot-import',
+  format: 'leafbot-bot-import',
   version: 1,
   source: 'grok-bot',
   bots: [planner, keeper],
@@ -57,6 +57,12 @@ describe('bot içe aktarma', () => {
     return { status: res.statusCode, body: res.json() as T };
   };
   const list = async <T>(path: string) => (await t.api<T[]>('GET', path)).body;
+
+  it('yeniden adlandırmadan önce yazılmış dosyayı da okur', async () => {
+    const r = await send<BotImportPlan>(doc({ format: 'yumakbot-bot-import' }), true);
+    expect(r.status).toBe(200);
+    expect(r.body.bots).toHaveLength(2);
+  });
 
   it('önizleme yalnızca planı gösterir, veritabanına dokunmaz', async () => {
     const r = await send<BotImportPlan>(doc(), true);
@@ -258,7 +264,7 @@ describe('bot içe aktarma', () => {
     expect((await send('{ nope', true)).status).toBe(400);
     const foreign = await send<{ error: string }>({ format: 'chat-export', version: 1, bots: [] }, true);
     expect(foreign.status).toBe(400);
-    expect(foreign.body.error).toContain('Yumak Bot');
+    expect(foreign.body.error).toContain('Leaf Bot');
     const longName = await send<{ error: string }>(doc({ bots: [{ ref: 'x', name: 'n'.repeat(61) }] }), true);
     expect(longName.body.error).toContain('bots.0.name');
     const badRef = await send<{ error: string }>(doc({ bots: [{ ref: 'Has Spaces', name: 'X' }] }), true);
@@ -340,7 +346,7 @@ describe('bot içe aktarma', () => {
       url: `/api/export/bots?ids=${bot.id}`,
       headers: { ...AUTH, host: 'localhost' },
     });
-    expect(res.headers['content-disposition']).toMatch(/attachment; filename="yumakbot-bots-/);
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename="leafbot-bots-/);
     const file = res.json() as {
       bots: { ref: string; avatar: string; skills: unknown[]; memories: string[] }[];
       groups: unknown[];

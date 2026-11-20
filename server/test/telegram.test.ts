@@ -1,7 +1,7 @@
 import { createServer as httpServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, TelegramStatus, Thread } from '@yumakbot/shared';
-import { telegramToken } from '@yumakbot/shared';
+import type { Approval, TelegramStatus, Thread } from '@leafbot/shared';
+import { telegramToken } from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   discordMessages,

@@ -4,8 +4,8 @@ import {
   STALE_MEMORY_DAYS,
   type BotNoteGroup,
   type Memory,
-} from '@yumakbot/shared';
-import { changeHint, changeLabel } from '@yumakbot/app/src/lib/memoryChange';
+} from '@leafbot/shared';
+import { changeHint, changeLabel } from '@leafbot/app/src/lib/memoryChange';
 import {
   historyText,
   historyWho,
@@ -15,7 +15,7 @@ import {
   placeLabel,
   placeNoteGroups,
   untilDay,
-} from '@yumakbot/app/src/lib/memoryNotes';
+} from '@leafbot/app/src/lib/memoryNotes';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';

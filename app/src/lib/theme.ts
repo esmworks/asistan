@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-const KEY = 'yumakbot.theme';
+const KEY = 'leafbot.theme';
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 
 function read(): ThemeChoice {

@@ -118,7 +118,7 @@ export default function Bots() {
           <>
             <Pressable style={styles.titleBox} onLongPress={menus.openSidebar} delayLongPress={350}>
               <Text style={[styles.title, { color: c.foreground }]} accessibilityRole="header">
-                Yumak Bot
+                Leaf Bot
               </Text>
             </Pressable>
             <RoundButton icon="search" label={t('sidebar.search')} onPress={() => setSearching(true)} />

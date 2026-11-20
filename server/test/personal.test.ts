@@ -9,7 +9,7 @@ import {
   type RoutineRun,
   type Thread,
   type VaultLogin,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

@@ -1,4 +1,4 @@
-import { MAX_MINUTES_ITEMS } from '@yumakbot/shared';
+import { MAX_MINUTES_ITEMS } from '@leafbot/shared';
 
 /** The day a moment falls on here, as `YYYY-MM-DD`. */
 export function localDay(iso: string): string {

@@ -10,7 +10,7 @@ import type {
   ReplayableRun,
   Thread,
   UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
@@ -57,9 +57,9 @@ describe('rehearsing a routine', () => {
         '[araç:routine_create {"name":"Yeni","prompt":"x","schedule":{"type":"daily","time":"09:00"}}]',
         '[araç:table_add {"table":"Notes","rows":[{"Title":"a"}]}]',
         '[araç:bot_send {"bot":"Ali","message":"selam"}]',
-        '[izin:mcp__yumakbot__browser_click {"ref":"e1"}]',
-        '[izin:mcp__yumakbot__whatsapp_send {"chat":"+905550000000","text":"merhaba"}]',
-        '[izin:mcp__yumakbot__email_send {"to":"a@b.c","subject":"s","text":"t"}]',
+        '[izin:mcp__leafbot__browser_click {"ref":"e1"}]',
+        '[izin:mcp__leafbot__whatsapp_send {"chat":"+905550000000","text":"merhaba"}]',
+        '[izin:mcp__leafbot__email_send {"to":"a@b.c","subject":"s","text":"t"}]',
         '[izin:Bash {"command":"rm -rf notlar"}]',
         '[izin:Bash {"command":"ls"}]',
       ].join(' '),
@@ -115,13 +115,13 @@ describe('rehearsing a routine', () => {
     );
     await t.api('POST', '/api/rules', {
       list: 'ask',
-      pattern: 'mcp__yumakbot__memory_write',
+      pattern: 'mcp__leafbot__memory_write',
       botId: bot.id,
     });
     // A read the rules would ask about is not done either.
     await t.api('POST', '/api/rules', {
       list: 'ask',
-      pattern: 'mcp__yumakbot__memory_search',
+      pattern: 'mcp__leafbot__memory_search',
       botId: bot.id,
     });
     const r = await rehearse(routine.id);

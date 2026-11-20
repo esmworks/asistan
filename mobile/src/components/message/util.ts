@@ -1,5 +1,5 @@
-import type { Approval, Bot, Locale, Message, MessageFile, ReplyQuote } from '@yumakbot/shared';
-import { APPROVAL_TIMED_OUT, describeAction, questionItems } from '@yumakbot/shared';
+import type { Approval, Bot, Locale, Message, MessageFile, ReplyQuote } from '@leafbot/shared';
+import { APPROVAL_TIMED_OUT, describeAction, questionItems } from '@leafbot/shared';
 import { useMemo } from 'react';
 import type { Palette } from '@/components/Markdown';
 import { t } from '@/i18n';
@@ -46,8 +46,8 @@ export function bubblePalette(c: Colors): Palette {
   return p;
 }
 
-/** YumakBot's own tools, under the server name every engine gives them. */
-const OWN = 'yumakbot';
+/** LeafBot's own tools, under the server name every engine gives them. */
+const OWN = 'leafbot';
 
 /**
  * What the bot is doing, in words, from the tool it is running. Null for a tool the "Working" line

@@ -6,7 +6,7 @@ import {
   planTone,
   type PlanWindow,
   type UsageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eventWindow, eventWindows, planWindows } from '../src/engine/claude';
 import { testServer, type TestServer } from './helpers';

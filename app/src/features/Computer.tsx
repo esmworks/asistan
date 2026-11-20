@@ -1,4 +1,4 @@
-import type { Bot, BrowserInput, BrowserState, BrowserStatus } from '@yumakbot/shared';
+import type { Bot, BrowserInput, BrowserState, BrowserStatus } from '@leafbot/shared';
 import {
   AppWindow,
   ArrowLeft,

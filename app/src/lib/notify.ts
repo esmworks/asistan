@@ -1,4 +1,4 @@
-import type { Bot, NoticeEvent } from '@yumakbot/shared';
+import type { Bot, NoticeEvent } from '@leafbot/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { getT } from '@/i18n';
@@ -8,9 +8,9 @@ import { useUi } from './store';
 export type NotifyLevel = 'all' | 'needsYou' | 'off';
 export const NOTIFY_LEVELS: NotifyLevel[] = ['all', 'needsYou', 'off'];
 
-const KEY = 'yumakbot.notify';
-const SOUND_KEY = 'yumakbot.notify.sound';
-const MUTED_KEY = 'yumakbot.notify.muted';
+const KEY = 'leafbot.notify';
+const SOUND_KEY = 'leafbot.notify.sound';
+const MUTED_KEY = 'leafbot.notify.muted';
 
 /** Muted bots and until when (ms since the epoch); null keeps a bot muted until unmuted. */
 export type Mutes = Record<string, number | null>;

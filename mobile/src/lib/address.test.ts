@@ -7,9 +7,9 @@ describe('candidates', () => {
       'https://192.168.1.20:4319',
       'http://192.168.1.20:4319',
     ]);
-    expect(candidates('yumakbot.local:4319')).toEqual([
-      'https://yumakbot.local:4319',
-      'http://yumakbot.local:4319',
+    expect(candidates('leafbot.local:4319')).toEqual([
+      'https://leafbot.local:4319',
+      'http://leafbot.local:4319',
     ]);
   });
 
@@ -19,7 +19,7 @@ describe('candidates', () => {
   });
 
   it('keeps the scheme that was typed', () => {
-    expect(candidates('http://yumakbot.local:4319/')).toEqual(['http://yumakbot.local:4319']);
+    expect(candidates('http://leafbot.local:4319/')).toEqual(['http://leafbot.local:4319']);
     expect(candidates('http://bot.example.com')).toEqual(['http://bot.example.com']);
   });
 
@@ -49,9 +49,9 @@ describe('isLocalHost', () => {
       '[fd12:3456::1]',
       '[fe80::1]',
       'nas',
-      'yumakbot.local',
+      'leafbot.local',
       'box.home.arpa',
-      'yumakbot.tail1234.ts.net',
+      'leafbot.tail1234.ts.net',
     ]) {
       expect(isLocalHost(host), host).toBe(true);
     }

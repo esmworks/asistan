@@ -1,5 +1,5 @@
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
-import { TEXT_PREVIEW_BYTES } from '@yumakbot/app/src/lib/preview';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
+import { TEXT_PREVIEW_BYTES } from '@leafbot/app/src/lib/preview';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { locale, t } from '@/i18n';

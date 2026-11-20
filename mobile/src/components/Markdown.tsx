@@ -1,7 +1,7 @@
 import { Lexer, type Token, type Tokens } from 'marked';
 import { memo, type ReactNode } from 'react';
 import { Linking, Platform, StyleSheet, Text, View, type TextStyle } from 'react-native';
-import { leftoverBold } from '@yumakbot/shared';
+import { leftoverBold } from '@leafbot/shared';
 
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 

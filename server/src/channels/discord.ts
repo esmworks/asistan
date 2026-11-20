@@ -12,7 +12,7 @@ import {
   type DiscordUpdate,
   type Message,
   type TurnEvent,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, desc, eq, like } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

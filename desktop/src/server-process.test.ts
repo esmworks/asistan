@@ -16,14 +16,14 @@ describe.skipIf(!existsSync(entry))('sunucu süreci', () => {
   });
 
   it('açılır, anahtar dosyasını yazar, beklenmedik çıkışta yeniden başlar, düzgün kapanır', async () => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-desk-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-desk-'));
     sp = new ServerProcess({
       entry,
       execPath: process.execPath,
       dataDir: dir,
       appDir: null,
       port: 0,
-      env: { YUMAKBOT_ENGINE: 'fake' },
+      env: { LEAFBOT_ENGINE: 'fake' },
     });
     const url = await sp.start();
     expect((await fetch(`${url}/api/health`)).ok).toBe(true);
@@ -47,7 +47,7 @@ describe('masaüstü ayarı', () => {
     decryptString: (b: Buffer) => [...b.toString()].reverse().join(''),
   };
   it('uzak sunucu anahtarı şifreli saklanır ve geri okunur', () => {
-    const d = mkdtempSync(join(tmpdir(), 'yumakbot-cfg-'));
+    const d = mkdtempSync(join(tmpdir(), 'leafbot-cfg-'));
     writeDesktopConfig(d, { mode: 'remote', url: 'https://a.example.com', key: 'gizli' }, crypto);
     expect(readDesktopConfig(d, crypto)).toEqual({
       mode: 'remote',

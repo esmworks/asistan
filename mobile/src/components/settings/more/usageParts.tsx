@@ -1,4 +1,4 @@
-import type { UsageReport } from '@yumakbot/shared';
+import type { UsageReport } from '@leafbot/shared';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Avatar } from '@/components/Avatar';

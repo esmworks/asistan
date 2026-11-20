@@ -1,4 +1,4 @@
-import type { Skill, Thread, Ticket } from '@yumakbot/shared';
+import type { Skill, Thread, Ticket } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

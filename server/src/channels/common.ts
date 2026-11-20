@@ -6,7 +6,7 @@ import {
   type Approval,
   type Locale,
   type Message,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

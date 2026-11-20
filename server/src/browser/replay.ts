@@ -1,4 +1,4 @@
-import type { ReplayResult, TaughtStep, TaughtTarget } from '@yumakbot/shared';
+import type { ReplayResult, TaughtStep, TaughtTarget } from '@leafbot/shared';
 import type { Locator, Page } from 'playwright-core';
 import type { z } from 'zod';
 import { BrowserError, type BrowserManager, webUrl } from './manager';

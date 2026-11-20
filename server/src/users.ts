@@ -1,4 +1,4 @@
-import type { PersonInfo, Role } from '@yumakbot/shared';
+import type { PersonInfo, Role } from '@leafbot/shared';
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from './account';
 import { schema, type Db } from './db';

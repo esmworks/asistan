@@ -1,4 +1,4 @@
-import type { Skill, SkillChange, SkillCreate, SkillUpdate } from '@yumakbot/shared';
+import type { Skill, SkillChange, SkillCreate, SkillUpdate } from '@leafbot/shared';
 import { asc, and, eq, isNull, sql } from 'drizzle-orm';
 import { canAdminister } from '../auth';
 import type { Ctx } from '../context';

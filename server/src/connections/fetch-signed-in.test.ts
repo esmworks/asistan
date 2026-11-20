@@ -9,7 +9,7 @@ type Secrets = Parameters<typeof fetchSignedIn>[0] extends { store: { get(): inf
 function targetWith(token: string) {
   let secrets: Secrets = {
     oauth: {
-      redirectUrl: 'https://yumak.example/cb',
+      redirectUrl: 'https://leaf.example/cb',
       tokens: { access_token: token, token_type: 'Bearer', refresh_token: 'r' },
     },
   };

@@ -12,7 +12,7 @@ import {
   type SlackLink,
   type SlackStatus,
   type TurnEvent,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, eq, like, desc, ne } from 'drizzle-orm';
 import { atLeast } from '../services/access';
 import type { Ctx } from '../context';

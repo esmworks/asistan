@@ -1,4 +1,4 @@
-import type { Catalog } from '@yumakbot/shared';
+import type { Catalog } from '@leafbot/shared';
 
 /** Turkish, the reference catalog: every key the app uses is defined here first. */
 export const tr = {
@@ -39,7 +39,7 @@ export const tr = {
   'pair.title': 'Başka bir cihaz bağla',
   'pair.label': 'Eşleştirme kodu',
   'pair.hint':
-    'Bir telefonda ya da başka bir bilgisayarda şifresiz oturum açın: orada Yumak Bot’u açıp "Eşleştirme koduyla gir"i seçin ve kodu yazın. Kod bir kez ve beş dakika içinde çalışır.',
+    'Bir telefonda ya da başka bir bilgisayarda şifresiz oturum açın: orada Leaf Bot’u açıp "Eşleştirme koduyla gir"i seçin ve kodu yazın. Kod bir kez ve beş dakika içinde çalışır.',
   'pair.make': 'Kod al',
   'pair.again': 'Yeni kod',
   'pair.left': '{minutes}:{seconds} daha geçerli',
@@ -69,7 +69,7 @@ export const tr = {
   'account.saved': 'Hesap kaydedildi',
 
   // Welcome
-  'welcome.title': "Yumak Bot'a hoş geldiniz",
+  'welcome.title': "Leaf Bot'a hoş geldiniz",
   'welcome.body':
     'Her bot kendi klasöründe çalışır, kendi hafızasını tutar ve gerekirse diğer botlarla konuşur.',
   'welcome.create': 'Bot oluştur',
@@ -435,7 +435,7 @@ export const tr = {
   'general.desktop': 'Masaüstü uygulaması',
   'general.openAtLogin': 'Girişte aç',
   'general.openAtLoginHint':
-    'Oturum açtığınızda Yumak Bot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
+    'Oturum açtığınızda Leaf Bot menü çubuğunda açılır; rutinler elle açmanıza gerek kalmadan çalışır.',
   'sidebarMenu.markGroupRead': 'Gruptakileri okundu işaretle',
   'chat.apiThreads': 'API üzerinden',
   'chat.teamThreads': 'Ekip (Slack, Discord)',
@@ -517,7 +517,7 @@ export const tr = {
   'chat.micDenied':
     'bu site için mikrofon kapalı. Tarayıcının site ayarlarından (adres çubuğunun solundaki simge) izin verip yeniden dene.',
   'chat.micDeniedDesktop':
-    'Yumak Bot için mikrofon kapalı. Mac’te Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon bölümünden izin ver; diğer sistemlerde sistemin mikrofon gizlilik ayarlarından.',
+    'Leaf Bot için mikrofon kapalı. Mac’te Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon bölümünden izin ver; diğer sistemlerde sistemin mikrofon gizlilik ayarlarından.',
   'chat.micMissing': 'mikrofon bulunamadı. Bir mikrofon tak ya da giriş aygıtını seç, sonra yeniden dene.',
   'chat.micBusy':
     'mikrofonu başka bir uygulama kullanıyor olabilir ya da başlatılamadı. Diğer uygulamayı kapatıp yeniden dene.',
@@ -561,12 +561,12 @@ export const tr = {
   'page.shared': 'Paylaşıldı',
   'page.shareAnyone': 'Bağlantısı olan herkes',
   'page.shareOffHint':
-    'Bu sayfayı yalnız sen görüyorsun. Yumak Bot kullanmayan birine göndermek için bağlantıyı aç.',
+    'Bu sayfayı yalnız sen görüyorsun. Leaf Bot kullanmayan birine göndermek için bağlantıyı aç.',
   'page.shareOnHint':
     'Bağlantısı olan herkes sayfayı, botun en son yazdığı haliyle ve gösterdiği dosyalarla, oturum açmadan görür. Kapatınca bağlantı çalışmaz olur.',
   'page.linkCopied': 'Bağlantı kopyalandı',
   'page.shareLocalOnly':
-    'Bu adres yalnızca bu bilgisayarda çalışır. Başkalarının açabilmesi için sunucuyu onların ulaşabileceği bir yerde çalıştır ve YUMAKBOT_PUBLIC_URL ayarını gir.',
+    'Bu adres yalnızca bu bilgisayarda çalışır. Başkalarının açabilmesi için sunucuyu onların ulaşabileceği bir yerde çalıştır ve LEAFBOT_PUBLIC_URL ayarını gir.',
   'page.pdf': 'PDF',
   'page.printHint': 'Sayfayı yazdırma penceresiyle açar; orada PDF olarak kaydet’i seç',
   'page.sharedPages': 'Paylaşılan sayfalar',
@@ -837,7 +837,7 @@ export const tr = {
     '"{name}" grubu silinsin mi? İçindeki botlar Grupsuz\'a taşınır ve grubun ortak klasörüne erişemez.',
 
   // Update notice
-  'update.title': 'Yumak Bot güncellendi',
+  'update.title': 'Leaf Bot güncellendi',
   'update.reloading': 'Yeni sürüm yükleniyor…',
   'update.waiting': 'Gönderilmemiş mesajınız ve dosyalarınız bitince sayfa yenilenecek.',
   'update.reloadNow': 'Şimdi yenile',
@@ -1368,7 +1368,7 @@ export const tr = {
   'routine.webhookCreate': 'Webhook oluştur',
   'routine.webhookRenew': 'Yeni adres',
   'routine.webhookLocalOnly':
-    'Bu adres yalnız bu bilgisayarda çalışır. Rutini internetteki bir servisten başlatmak için sunucuyu o servisin ulaşabileceği bir yerde çalıştırın ve YUMAKBOT_PUBLIC_URL ayarlayın.',
+    'Bu adres yalnız bu bilgisayarda çalışır. Rutini internetteki bir servisten başlatmak için sunucuyu o servisin ulaşabileceği bir yerde çalıştırın ve LEAFBOT_PUBLIC_URL ayarlayın.',
   'routine.carryReport': 'Son raporun üzerine kur',
   'routine.carryReportHint':
     'Her çalıştırma botun geçen sefer yazdığını görür; baştan başlamak yerine neyin değiştiğini söyler.',
@@ -1384,7 +1384,7 @@ export const tr = {
     'Bot ana sohbette, orada konuştuklarınızı bilerek çalışır; adımları da orada görünür. Kapalıyken rutin kendi sohbetinde çalışır, ana sohbete yalnız raporu düşer.',
   'routine.onStartup': 'Sunucu açılınca da çalıştır',
   'routine.onStartupHint':
-    'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Yumak Bot’u başlattığınızda.',
+    'Sunucu her açıldığında bir kez çalışır; masaüstü uygulamasında bilgisayarı açıp Leaf Bot’u başlattığınızda.',
   'routine.slackChannel': 'Raporu Slack kanalına da gönder',
   'routine.slackChannelHint':
     'Kanalın kimliği (kanal ayrıntılarının en altında, C ile başlar). Uygulamayı o kanala ekle. Böyle bir rutin ekip konuşmasında çalışır: kimsenin kişisel notlarını ve kendi bağlantılarını kullanmaz.',
@@ -1527,7 +1527,7 @@ export const tr = {
   'routine.runCommandHint': 'Bir betik ya da başka bir hizmet bu rutini başlatıp ona bir metin verebilir.',
   'routine.copyRunCommand': 'Çalıştırma komutunu kopyala',
   'routine.runCommandCopied':
-    'Kopyalandı. Çalıştırmadan önce YUMAKBOT_ACCESS_KEY değişkenine sunucunun erişim anahtarını ver.',
+    'Kopyalandı. Çalıştırmadan önce LEAFBOT_ACCESS_KEY değişkenine sunucunun erişim anahtarını ver.',
   'routine.type.once': 'Bir kez',
   'routine.date': 'Tarih',
   'routine.dateFormat': 'Bir tarih seç',
@@ -1648,14 +1648,14 @@ export const tr = {
   'notify.level.needsYou': 'Yalnızca bir bot beni beklerken',
   'notify.level.off': 'Hiçbir zaman',
   'notify.hint': 'Başka bir şeye bakarken bu cihazda gösterilir.',
-  'notify.blocked': 'Bu tarayıcı Yumak Bot bildirimlerini engelliyor; site ayarlarından izin ver.',
+  'notify.blocked': 'Bu tarayıcı Leaf Bot bildirimlerini engelliyor; site ayarlarından izin ver.',
   'notify.unsupported': 'Bu tarayıcı bildirim gösteremiyor.',
   'notify.sound': 'Ses çal',
   'notify.soundHint':
     'Her bildirimde bu cihazda kısa bir ses; cevap, soru, izin isteği ve hatanın sesi farklı.',
   'notify.test': 'Dene',
   'notify.testButton': 'Deneme bildirimi gönder',
-  'notify.testTitle': 'Yumak Bot',
+  'notify.testTitle': 'Leaf Bot',
   'notify.testBody': 'Bildirimler bu cihazda çalışıyor.',
   'apns.title': 'Telefon bildirimleri',
   'apns.key': 'iPhone için Apple anahtarı',
@@ -1698,7 +1698,7 @@ export const tr = {
     'Kodlanmış (base64 gibi) içeriği çalıştıran bir komut var; ne çalışacağı metinden okunamıyor.',
   'skills.bringIn': 'Diğer yapay zekâ araçlarından al',
   'skills.bringInHint':
-    'Bu bilgisayardaki Claude Code, Codex, Cursor gibi araçlarda olup Yumak Bot’ta olmayanlar. Alınanlar kapalı gelir: hiçbir bot onları siz açana kadar kullanmaz.',
+    'Bu bilgisayardaki Claude Code, Codex, Cursor gibi araçlarda olup Leaf Bot’ta olmayanlar. Alınanlar kapalı gelir: hiçbir bot onları siz açana kadar kullanmaz.',
   'skills.bringInSkills': 'Beceriler',
   'skills.bringInServers': 'Uygulama bağlantıları (MCP)',
   'skills.bringInRun': 'Seçilenleri al',
@@ -1770,10 +1770,10 @@ export const tr = {
   'browserInfo.missing': 'Yok',
   'browserInfo.okHint': 'Her bot kendi profiliyle bu tarayıcıyı kullanır: {path}',
   'browserInfo.missingHint':
-    'Sunucuda Chrome, Edge ya da Chromium bulunamadı; botlar web sitelerinde iş yapamaz. Birini kurun ya da yolunu YUMAKBOT_BROWSER ile verin.',
+    'Sunucuda Chrome, Edge ya da Chromium bulunamadı; botlar web sitelerinde iş yapamaz. Birini kurun ya da yolunu LEAFBOT_BROWSER ile verin.',
   'egress.label': 'Botların tarayıcısı bilgisayarımdan çıksın',
   'egress.hint':
-    'Siteler sunucunun değil, Yumak Bot uygulaması bu sunucuya bağlı olan bilgisayarın bağlantısını görür. O bilgisayar kapalıyken tarayıcı sunucudan çıkar. Yalnızca tarayıcı: botların komutları yine sunucudan çıkar.',
+    'Siteler sunucunun değil, Leaf Bot uygulaması bu sunucuya bağlı olan bilgisayarın bağlantısını görür. O bilgisayar kapalıyken tarayıcı sunucudan çıkar. Yalnızca tarayıcı: botların komutları yine sunucudan çıkar.',
   'egress.connected': 'Şu an {device} üzerinden çıkıyor.',
   'egress.connectedUnnamed': 'Şu an bağlı bilgisayarın üzerinden çıkıyor.',
   'egress.waiting':
@@ -1865,13 +1865,13 @@ export const tr = {
   'import.step1': "1. Grok Bot'ta dışa aktarın",
   'import.instructions': 'Dışa aktarma talimatı',
   'import.instructionsHint':
-    "Talimatı kopyalayıp Grok Bot'ta bir sohbete yapıştırın ya da skill olarak ekleyin; Grok Bot sizin için yumakbot-bots.json dosyasını yazar.",
+    "Talimatı kopyalayıp Grok Bot'ta bir sohbete yapıştırın ya da skill olarak ekleyin; Grok Bot sizin için leafbot-bots.json dosyasını yazar.",
   'import.copy': 'Kopyala',
   'import.download': 'Talimatı indir',
   'import.copied': 'Talimat kopyalandı',
   'import.copyFailed': 'Talimat kopyalanamadı; indirip açın',
   'import.step2': '2. Dosyayı seçin',
-  'import.file': 'yumakbot-bots.json',
+  'import.file': 'leafbot-bots.json',
   'import.fileHint': 'Önce neyin ekleneceğini gösteririz; onaylamadan hiçbir şey kaydedilmez.',
   'import.choose': 'Dosya seç',
   'import.safety':
@@ -1899,7 +1899,7 @@ export const tr = {
   'import.link.open': 'Sayfayı aç',
   'import.link.export': "2. Bu botu Grok Bot'a dışa aktartın",
   'import.link.exportHint':
-    "Yalnızca bu bota özel talimatı kopyalayıp Grok Bot'ta bir sohbete yapıştırın; talimatları, hafızası, becerileri ve rutinleriyle yumakbot-bots.json dosyasını yazar.",
+    "Yalnızca bu bota özel talimatı kopyalayıp Grok Bot'ta bir sohbete yapıştırın; talimatları, hafızası, becerileri ve rutinleriyle leafbot-bots.json dosyasını yazar.",
   'import.link.load': '3. Dosyayı aşağıdaki "2. Dosyayı seçin" bölümünden yükleyin',
   'import.link.loadHint':
     "Grok Bot'un yazdığı her şeyi, beceri metinleri dahil, kaydetmeden önce görürsünüz.",
@@ -1924,10 +1924,10 @@ export const tr = {
     'Bu sunucudaki her şey bu yedekle değiştirilecek: botlar, sohbetler, hafıza ve dosyalar. Sunucu ardından yeniden başlar. Devam edilsin mi?',
   'backup.restored': 'Geri yüklendi. Sunucu yeniden başlıyor; sayfa birazdan yenilenecek.',
   'backup.phoneRestore':
-    'Bir yedeği geri yüklemek için Yumak Bot’u bilgisayarda açın: Ayarlar → İçe aktarma ve yedek.',
+    'Bir yedeği geri yüklemek için Leaf Bot’u bilgisayarda açın: Ayarlar → İçe aktarma ve yedek.',
   'export.title': 'Botları dışa aktar',
   'export.hint':
-    'Seçilen botlar talimatları, avatarları, rutinleri, hafızaları, becerileri ve gruplarıyla bir dosyaya yazılır; başka bir Yumak Bot bu sayfadan içe aktarır. Sohbetler, izinler ve klasörler dosyaya girmez.',
+    'Seçilen botlar talimatları, avatarları, rutinleri, hafızaları, becerileri ve gruplarıyla bir dosyaya yazılır; başka bir Leaf Bot bu sayfadan içe aktarır. Sohbetler, izinler ve klasörler dosyaya girmez.',
   'export.download': '{count} botu indir',
   'import.instructionsOf': 'Talimatlar',
   'import.none': '(yok)',
@@ -1987,7 +1987,7 @@ export const tr = {
   'about.open': 'Aç',
   'about.license': 'Lisans',
   'about.licenseText':
-    'Bu programı PolyForm Noncommercial License 1.0.0 altında ticari olmayan her amaçla kullanabilir, değiştirebilir ve paylaşabilirsiniz. Bir işletmenin ya da bir işletme için kullanımı ticari lisans gerektirir: info@yumakbot.com. Programı verdiğiniz herkese lisansı ve NOTICE dosyasındaki bildirimleri de vermelisiniz.',
+    'Bu programı PolyForm Noncommercial License 1.0.0 altında ticari olmayan her amaçla kullanabilir, değiştirebilir ve paylaşabilirsiniz. Bir işletmenin ya da bir işletme için kullanımı ticari lisans gerektirir: info@leafbot.app. Programı verdiğiniz herkese lisansı ve NOTICE dosyasındaki bildirimleri de vermelisiniz.',
   'about.warranty': 'Program hiçbir garanti olmaksızın sunulur.',
   'about.links': 'Bağlantılar',
   'about.source': 'Kaynak kod',
@@ -2003,7 +2003,7 @@ export const tr = {
   'profile.addressAsHint': 'Örneğin yalnızca adınız.',
   'profile.occupation': 'Ne iş yapıyorsunuz?',
   'profile.occupationPlaceholder': 'Örn. mimar, öğrenci, kendi dükkânım var',
-  'profile.section.use': "Yumak Bot'u kullanma biçiminiz",
+  'profile.section.use': "Leaf Bot'u kullanma biçiminiz",
   'profile.focus': 'Daha çok ne için?',
   'profile.focus.work': 'İş',
   'profile.focus.personal': 'Kişisel işler',
@@ -2033,7 +2033,7 @@ export const tr = {
   'onboarding.intro': 'Sizi biraz tanıyayım, botlarınızı ona göre hazırlayayım.',
   'onboarding.q.name': 'Adınız ve soyadınız nedir?',
   'onboarding.q.addressAs': 'Size nasıl hitap edeyim?',
-  'onboarding.q.focus': "Yumak Bot'u daha çok ne için kullanacaksınız?",
+  'onboarding.q.focus': "Leaf Bot'u daha çok ne için kullanacaksınız?",
   'onboarding.q.occupation': 'Ne iş yapıyorsunuz?',
   'onboarding.q.helpWith': 'Hangi işlerde yardım istersiniz?',
   'onboarding.q.about': 'Botlarınızın bilmesini istediğiniz başka bir şey var mı?',
@@ -2059,7 +2059,7 @@ export const tr = {
   'onboarding.startEmpty': 'Bot olmadan başla',
   'onboarding.creating': 'Botlar hazırlanıyor…',
 
-  'starter.general.name': 'Yumak Bot',
+  'starter.general.name': 'Leaf Bot',
   'starter.general.description': 'Her işe yardım eder, gerekince diğer botlarınıza iş verir.',
   'starter.general.instructions':
     'Kullanıcının genel yardımcısısın. Kısa ve net cevap ver. Bir iş başka bir botun alanına giriyorsa o bota yaz ve sonucu kullanıcıya özetle.',
@@ -2159,7 +2159,7 @@ export const tr = {
   'provider.signInDone': '{provider} ile oturum açıldı',
   'provider.signInWaiting': 'Oturum açmanın bitmesi bekleniyor…',
   'provider.chatgptHint':
-    'API anahtarı yerine ChatGPT planınızı kullanın: OpenAI, Yumak Bot’un planınızı kullanmasına izin vermenizi ister; botlar planınızdaki OpenAI modelleriyle çalışır.',
+    'API anahtarı yerine ChatGPT planınızı kullanın: OpenAI, Leaf Bot’un planınızı kullanmasına izin vermenizi ister; botlar planınızdaki OpenAI modelleriyle çalışır.',
   'provider.copilotHint':
     'GitHub Copilot planınızı kullanın: GitHub’da bir kodla oturum açarsınız; botlar planınızın açtığı modellerle çalışır.',
   'provider.enterprise': 'GitHub Enterprise alan adı (github.com için boş bırakın)',
@@ -2423,7 +2423,7 @@ export const tr = {
   'discord.disconnectConfirm':
     'Discord bağlantısı kesilsin mi? Bot oradan biri çıkarana kadar sunucularında kalır ve cevap vermeyi bırakır.',
   'slack.title': 'Slack',
-  'slack.appName': 'Yumak Bot',
+  'slack.appName': 'Leaf Bot',
   'slack.off': 'Bağlı değil',
   'slack.connectedTo': '{workspace} çalışma alanına bağlı',
   'slack.error': 'Slack bağlantısı çalışmıyor: {error}',
@@ -2471,7 +2471,7 @@ export const tr = {
     "Microsoft 365 kuruluşunuzdaki kişiler bota Teams'te birebir sohbetten yazar ve adımlarını orada onaylar. Teams mesajları bu sunucuya gönderir; bu yüzden sunucunun herkese açık bir HTTPS adresi olmalı.",
   'teams.endpoint': 'Mesajlaşma uç noktası',
   'teams.noEndpoint':
-    "Sunucunun henüz herkese açık bir HTTPS adresi yok. YUMAKBOT_PUBLIC_URL'yi Teams'in ulaşabileceği bir HTTPS adresine ayarla; uç nokta burada görünür.",
+    "Sunucunun henüz herkese açık bir HTTPS adresi yok. LEAFBOT_PUBLIC_URL'yi Teams'in ulaşabileceği bir HTTPS adresine ayarla; uç nokta burada görünür.",
   'teams.copy': 'Kopyala',
   'teams.copied': 'Kopyalandı',
   'teams.step1': 'Azure portalında tek kiracılı (single-tenant) bir Azure Bot oluştur:',

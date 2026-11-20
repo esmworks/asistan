@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { Bot, CanaryAlarm } from '@yumakbot/shared';
+import type { Bot, CanaryAlarm } from '@leafbot/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -190,7 +190,7 @@ export class CanaryService {
     }
     // Anything that goes to a trap key's address, whichever way (a command, a page, a request).
     // A command on the bot's desktop is a shell command like any other.
-    const shell = o.toolName === 'mcp__yumakbot__run_command';
+    const shell = o.toolName === 'mcp__leafbot__run_command';
     const reach = shell
       ? reachesOut('Bash', { command: o.input.command })
       : reachesOut(o.toolName, o.input, o.tool);

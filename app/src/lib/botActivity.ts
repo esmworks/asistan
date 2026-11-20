@@ -1,4 +1,4 @@
-import type { BotSummary, TurnState } from '@yumakbot/shared';
+import type { BotSummary, TurnState } from '@leafbot/shared';
 import { activityOf, type BotActivity } from './activity';
 import { useBrowsers } from './browser';
 import { useSummaries } from './queries';

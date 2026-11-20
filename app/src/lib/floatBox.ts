@@ -54,7 +54,7 @@ export function resizeFloat(start: FloatBox, dx: number, vw: number, vh: number)
   return clampFloat({ x: start.x + start.width - width, y: start.y, width }, vw, vh);
 }
 
-const KEY = 'yumakbot.browserFloat';
+const KEY = 'leafbot.browserFloat';
 
 export function loadFloat(): FloatBox | null {
   try {

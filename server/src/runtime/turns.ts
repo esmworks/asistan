@@ -11,7 +11,7 @@ import {
   type Effort,
   outsideIn,
   type OutsideTrigger,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -1506,7 +1506,7 @@ export class TurnManager {
       // A command on the bot's desktop is the same to the user as Bash here: same card wording,
       // and the same "always ask" / "always allow" rules apply.
       const ask =
-        raw.toolName === 'mcp__yumakbot__run_command'
+        raw.toolName === 'mcp__leafbot__run_command'
           ? { toolName: 'Bash', input: { command: raw.input.command } }
           : raw;
       // A tool the bot's selection leaves out is never run, even when the engine offers it by itself.
@@ -1517,7 +1517,7 @@ export class TurnManager {
       const blocked = blockRuleFor(await approvals.rules(bot.id), ask.toolName, ask.input);
       if (blocked) return { behavior: 'deny', message: t('turn.blocked', { rule: blocked.pattern }) };
       // ask_user handles its own card; a rehearsal asks no one, so it is only written down below.
-      if (ask.toolName === 'mcp__yumakbot__ask_user' && !turn.rehearsalId) return { behavior: 'allow' };
+      if (ask.toolName === 'mcp__leafbot__ask_user' && !turn.rehearsalId) return { behavior: 'allow' };
       // A sandboxed command reaching a host: the internet switch decides, never a card. This
       // computer and the private network stay closed either way.
       if (ask.toolName === SANDBOX_NETWORK) {
@@ -1987,7 +1987,7 @@ export class TurnManager {
           const { let: letThrough, ...answer } = await canUseTool(ask);
           // A step that changes something goes into the bot's list, with what let it through.
           if (answer.behavior === 'allow' && letThrough) {
-            const step = ask.toolName === 'mcp__yumakbot__run_command' ? 'Bash' : ask.toolName;
+            const step = ask.toolName === 'mcp__leafbot__run_command' ? 'Bash' : ask.toolName;
             const input = step === 'Bash' ? { command: ask.input.command } : ask.input;
             const server = tools.find((x) => toolPermName(x) === ask.toolName)?.server;
             const said = describeAction(step, input, {

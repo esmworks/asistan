@@ -14,7 +14,7 @@ import {
   WhatsAppRoute,
   type WhatsAppSet,
   type WhatsAppStatus,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   and,
   asc,
@@ -320,7 +320,7 @@ async function baileys(): Promise<WaLibrary> {
         auth: auth as never,
         ...(options.version && { version: options.version }),
         logger: quiet as never,
-        browser: ['Yumak Bot', 'Chrome', '1.0'],
+        browser: ['Leaf Bot', 'Chrome', '1.0'],
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
         markOnlineOnConnect: false,

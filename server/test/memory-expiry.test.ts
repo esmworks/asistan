@@ -1,4 +1,4 @@
-import type { Memory, Thread } from '@yumakbot/shared';
+import type { Memory, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { noteUntil } from '../src/tools';
 import { testServer, type TestServer } from './helpers';

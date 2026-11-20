@@ -1,4 +1,4 @@
-import type { SearchHit } from '@yumakbot/shared';
+import type { SearchHit } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';

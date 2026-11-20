@@ -1,4 +1,5 @@
-import { pickLocale } from '@yumakbot/shared';
+import './old-env';
+import { pickLocale } from '@leafbot/shared';
 import { createServer } from './app';
 import { loadConfig } from './config';
 import { translator } from './i18n';
@@ -7,12 +8,12 @@ const config = loadConfig();
 /** The exit code that asks whoever runs the server (the desktop app, Docker) to start it again. */
 const RESTART_CODE = 75;
 const server = await createServer(config, {
-  logger: process.env.YUMAKBOT_LOG === '1',
+  logger: process.env.LEAFBOT_LOG === '1',
   restart: () => void shutdown('restore', RESTART_CODE),
 });
 const address = await server.listen();
 // The desktop shell reads this line to learn the port.
-console.log(`YUMAKBOT_READY ${address}`);
+console.log(`LEAFBOT_READY ${address}`);
 // Terminal lines follow the terminal's language.
 const t = translator(pickLocale([process.env.LC_ALL, process.env.LC_MESSAGES, process.env.LANG]));
 if (!config.accessKey) console.log(t('log.accessKey', { path: `${config.dataDir}/access-key` }));

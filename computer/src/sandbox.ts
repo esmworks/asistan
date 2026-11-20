@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { DESKTOP_SIZE, type DesktopStart } from '@yumakbot/shared';
+import { DESKTOP_SIZE, type DesktopStart } from '@leafbot/shared';
 
 /** Where a session sees its own control directory. */
 export const CTL_IN_SANDBOX = '/run/ctl';
@@ -75,8 +75,8 @@ export function sessionEnv(o: SandboxOptions): Record<string, string> {
   return {
     PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     HOME: home,
-    USER: 'yumakbot',
-    LOGNAME: 'yumakbot',
+    USER: 'leafbot',
+    LOGNAME: 'leafbot',
     SHELL: '/bin/bash',
     TERM: 'xterm-256color',
     LANG: lang,
@@ -88,12 +88,12 @@ export function sessionEnv(o: SandboxOptions): Record<string, string> {
     XDG_RUNTIME_DIR: '/run/xdg',
     DISPLAY: `:${o.display}`,
     XAUTHORITY: `${CTL_IN_SANDBOX}/xauth`,
-    YUMAKBOT_WORKDIR: workdir,
-    YUMAKBOT_DISPLAY: `:${o.display}`,
-    YUMAKBOT_GEOMETRY: `${DESKTOP_SIZE.width}x${DESKTOP_SIZE.height}`,
-    YUMAKBOT_NODE: o.node,
-    YUMAKBOT_HELPER: o.helperScript,
-    ...(o.proxy && o.start.internet ? { YUMAKBOT_PROXY: o.proxy } : {}),
+    LEAFBOT_WORKDIR: workdir,
+    LEAFBOT_DISPLAY: `:${o.display}`,
+    LEAFBOT_GEOMETRY: `${DESKTOP_SIZE.width}x${DESKTOP_SIZE.height}`,
+    LEAFBOT_NODE: o.node,
+    LEAFBOT_HELPER: o.helperScript,
+    ...(o.proxy && o.start.internet ? { LEAFBOT_PROXY: o.proxy } : {}),
     // pnpm and yarn come through corepack, which would otherwise stop to ask before its first download.
     COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
     // Without internet the session has its own network, where the relay cannot be reached.

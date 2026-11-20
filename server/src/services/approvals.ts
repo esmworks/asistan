@@ -9,7 +9,7 @@ import {
   type PermissionMode,
   type PermissionRule,
   type PermissionSuggestions,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   and,
   asc,
@@ -483,7 +483,7 @@ const DISMISSED_MAX = 200;
 
 export function summarize(toolName: string, input: Record<string, unknown>): string {
   const subject = ruleSubject(toolName, input);
-  const name = toolName.startsWith('mcp__yumakbot__') ? toolName.slice('mcp__yumakbot__'.length) : toolName;
+  const name = toolName.startsWith('mcp__leafbot__') ? toolName.slice('mcp__leafbot__'.length) : toolName;
   return subject ? `${name}: ${truncate(subject, 200)}` : name;
 }
 

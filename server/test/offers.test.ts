@@ -1,4 +1,4 @@
-import type { Message, Thread, UsageReport } from '@yumakbot/shared';
+import type { Message, Thread, UsageReport } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseOffer } from '../src/services/offers';
 import { testServer, type TestServer } from './helpers';

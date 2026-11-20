@@ -1,4 +1,4 @@
-import type { ComputerState, DesktopStart } from '@yumakbot/shared';
+import type { ComputerState, DesktopStart } from '@leafbot/shared';
 import { ComputerClient, ComputerError } from './client';
 
 /** How long a desktop start is waited for: the computer service's own 90 s, and a few more. */

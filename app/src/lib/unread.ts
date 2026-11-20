@@ -1,4 +1,4 @@
-import type { BotSummary } from '@yumakbot/shared';
+import type { BotSummary } from '@leafbot/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { desktop } from './desktop';
@@ -6,7 +6,7 @@ import { useLayout } from './layout';
 import { useSummaries } from './queries';
 import { useUi } from './store';
 
-const KEY = 'yumakbot.seen';
+const KEY = 'leafbot.seen';
 
 /** Per bot, the time of the latest reply the person has seen on this device ('' for none). */
 export type Seen = Record<string, string>;
@@ -170,7 +170,7 @@ export function useUnreadTracking() {
 
   const count = summaries?.filter((s) => isUnread(s, seen)).length ?? 0;
   useEffect(() => {
-    document.title = titleWithCount('Yumak Bot', count);
+    document.title = titleWithCount('Leaf Bot', count);
     void desktop?.setUnread?.(badgeCount(count));
   }, [count]);
 }

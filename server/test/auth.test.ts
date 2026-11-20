@@ -59,7 +59,9 @@ describe('erişim', () => {
       payload: { code: second.code, token: true },
     });
     const given = withToken.json() as { token: string; cookie: string };
-    expect(given.cookie).toBe('yumakbot_session');
+    expect(given.cookie).toBe('leafbot_session');
+    expect((await req({ headers: { cookie: `leafbot_session=${given.token}` } })).statusCode).toBe(200);
+    // A device signed in before the rename sends the cookie under its old name.
     expect((await req({ headers: { cookie: `yumakbot_session=${given.token}` } })).statusCode).toBe(200);
     // And not after five minutes.
     const late = t.auth.createPairingCode(OWNER_ID, Date.now() - 6 * 60_000).code;
@@ -77,7 +79,7 @@ describe('erişim', () => {
     const ok = await req({ method: 'POST', url: '/api/access', payload: { key: KEY } });
     expect(ok.statusCode).toBe(200);
     const setCookie = String(ok.headers['set-cookie']);
-    expect(setCookie).toMatch(/yumakbot_session=/);
+    expect(setCookie).toMatch(/leafbot_session=/);
     expect(setCookie).toMatch(/HttpOnly/);
     expect(setCookie).toMatch(/SameSite=Strict/);
     const cookie = setCookie.split(';')[0]!;
@@ -220,7 +222,7 @@ describe('oturum gerektiren yollar', () => {
 describe('uygulama dosyaları sunulurken', () => {
   let t: TestServer;
   beforeAll(async () => {
-    const appDir = mkdtempSync(join(tmpdir(), 'yumakbot-app-'));
+    const appDir = mkdtempSync(join(tmpdir(), 'leafbot-app-'));
     writeFileSync(join(appDir, 'index.html'), '<!doctype html><title>app</title><div id="root"></div>');
     t = await testServer({ appDir });
   });
@@ -245,7 +247,7 @@ describe('uygulama dosyaları sunulurken', () => {
 describe('checkHostOrigin', () => {
   const config = loadConfig(
     {},
-    { allowedHosts: ['yumakbot.example.com'], allowedOrigins: ['https://app.example.com'] },
+    { allowedHosts: ['leafbot.example.com'], allowedOrigins: ['https://app.example.com'] },
   );
   const check = (host: string | undefined, origin?: string) =>
     checkHostOrigin({ host, origin, method: 'GET' }, config);
@@ -253,9 +255,9 @@ describe('checkHostOrigin', () => {
     expect(check('localhost:4319')).toBeNull();
     expect(check('127.0.0.1:4319')).toBeNull();
     expect(check('[::1]:4319')).toBeNull();
-    expect(check('yumakbot.example.com')).toBeNull();
-    expect(check('yumakbot.example.com', 'https://yumakbot.example.com')).toBeNull();
-    expect(check('yumakbot.example.com', 'https://app.example.com')).toBeNull();
+    expect(check('leafbot.example.com')).toBeNull();
+    expect(check('leafbot.example.com', 'https://leafbot.example.com')).toBeNull();
+    expect(check('leafbot.example.com', 'https://app.example.com')).toBeNull();
   });
   it('rebinding ve yabancı kaynaklar', () => {
     expect(check(undefined)).not.toBeNull();
@@ -266,17 +268,17 @@ describe('checkHostOrigin', () => {
 });
 
 describe('genel adres', () => {
-  it('YUMAKBOT_PUBLIC_URL köke indirgenir, geçersizi yok sayılır', () => {
-    expect(publicUrl('https://yumakbot.example.com/')).toBe('https://yumakbot.example.com');
-    expect(publicUrl(' https://ornek.com:8443/yumakbot/ ')).toBe('https://ornek.com:8443/yumakbot');
+  it('LEAFBOT_PUBLIC_URL köke indirgenir, geçersizi yok sayılır', () => {
+    expect(publicUrl('https://leafbot.example.com/')).toBe('https://leafbot.example.com');
+    expect(publicUrl(' https://ornek.com:8443/leafbot/ ')).toBe('https://ornek.com:8443/leafbot');
     expect(publicUrl('')).toBeNull();
     expect(publicUrl('ftp://ornek.com')).toBeNull();
     expect(publicUrl('ornek.com')).toBeNull();
   });
   it('genel adresin ana bilgisayar adı izinli sayılır', () => {
-    const config = loadConfig({ YUMAKBOT_PUBLIC_URL: 'https://yumakbot.example.com' });
+    const config = loadConfig({ LEAFBOT_PUBLIC_URL: 'https://leafbot.example.com' });
     expect(
-      checkHostOrigin({ host: 'yumakbot.example.com', origin: undefined, method: 'GET' }, config),
+      checkHostOrigin({ host: 'leafbot.example.com', origin: undefined, method: 'GET' }, config),
     ).toBeNull();
     expect(
       checkHostOrigin({ host: 'baska.example.com', origin: undefined, method: 'GET' }, config),
@@ -288,21 +290,26 @@ describe('ters vekil arkasında', () => {
   const config = { proxySecret: 'vekil-sirri-0123456789' };
   it('X-Forwarded-For yalnızca vekilin sırrıyla gelen istekte okunur', () => {
     const forwarded = { 'x-forwarded-for': '198.51.100.7, 203.0.113.1' };
-    expect(
-      clientAddress({ ...forwarded, 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', config),
-    ).toBe('203.0.113.1');
+    expect(clientAddress({ ...forwarded, 'x-leafbot-proxy': config.proxySecret }, '172.18.0.1', config)).toBe(
+      '203.0.113.1',
+    );
     expect(clientAddress(forwarded, '172.18.0.1', config)).toBe('172.18.0.1');
-    expect(clientAddress({ ...forwarded, 'x-yumakbot-proxy': 'yanlis' }, '172.18.0.1', config)).toBe(
+    expect(clientAddress({ ...forwarded, 'x-leafbot-proxy': 'yanlis' }, '172.18.0.1', config)).toBe(
       '172.18.0.1',
     );
     expect(
-      clientAddress({ ...forwarded, 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', {
+      clientAddress({ ...forwarded, 'x-leafbot-proxy': config.proxySecret }, '172.18.0.1', {
         proxySecret: null,
       }),
     ).toBe('172.18.0.1');
-    expect(clientAddress({ 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', config)).toBe(
-      '172.18.0.1',
-    );
+    expect(clientAddress({ 'x-leafbot-proxy': config.proxySecret }, '172.18.0.1', config)).toBe('172.18.0.1');
+  });
+
+  it('yeniden adlandırmadan önce kurulmuş vekilin başlığını da okur', () => {
+    const forwarded = { 'x-forwarded-for': '198.51.100.7' };
+    expect(
+      clientAddress({ ...forwarded, 'x-yumakbot-proxy': config.proxySecret }, '172.18.0.1', config),
+    ).toBe('198.51.100.7');
   });
 
   // Behind Caddy every request arrives from the same address; without the proxy's word, ten wrong
@@ -321,7 +328,7 @@ describe('ters vekil arkasında', () => {
         t.app.inject({
           method: 'POST',
           url: '/api/login',
-          headers: { host: 'localhost', 'x-forwarded-for': from, 'x-yumakbot-proxy': config.proxySecret },
+          headers: { host: 'localhost', 'x-forwarded-for': from, 'x-leafbot-proxy': config.proxySecret },
           payload: { username: 'erhan', password: 'yanlis-sifre' },
         });
       for (let i = 0; i < 10; i++) expect((await login('203.0.113.1')).statusCode).toBe(401);

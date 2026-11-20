@@ -1,5 +1,6 @@
 // The computer service: starts one sandboxed Linux desktop per bot and forwards the server's
 // requests to the helper inside it. See shared/src/computer.ts for the API.
+import './old-env';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
@@ -19,7 +20,7 @@ import {
   type DesktopStatus,
   DesktopJobQuery,
   DesktopJobStart,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   dialPublic,
   EgressError,
@@ -30,33 +31,33 @@ import {
   socksReplyFor,
   SOCKS_REPLY,
   upstreamProxy,
-} from '@yumakbot/shared/egress';
+} from '@leafbot/shared/egress';
 import { createGitRelay } from './git-relay';
 import { allocateDisplay, bearerToken, CdpDecoder, checkToken, encodeCdp } from './lib';
 import { bwrapArgs, checkSessionPath, collectBinds, type SandboxOptions } from './sandbox';
 
-const TOKEN = process.env.YUMAKBOT_COMPUTER_TOKEN ?? '';
+const TOKEN = process.env.LEAFBOT_COMPUTER_TOKEN ?? '';
 if (TOKEN.length < 32) {
-  console.error('YUMAKBOT_COMPUTER_TOKEN must be set and at least 32 characters long.');
+  console.error('LEAFBOT_COMPUTER_TOKEN must be set and at least 32 characters long.');
   process.exit(1);
 }
-const PORT = Number(process.env.YUMAKBOT_COMPUTER_PORT ?? 4320);
+const PORT = Number(process.env.LEAFBOT_COMPUTER_PORT ?? 4320);
 /** The desktops' browsers go through a proxy on this loopback port (they share its network). */
-const SOCKS_PORT = Number(process.env.YUMAKBOT_COMPUTER_SOCKS_PORT ?? 4321);
+const SOCKS_PORT = Number(process.env.LEAFBOT_COMPUTER_SOCKS_PORT ?? 4321);
 /**
  * A SOCKS5 proxy the browsers leave through when they do not go through the person's computer:
  * some sites refuse a data centre's address outright (see "Tarayıcının çıkış adresi" in
  * docker/README.md). Unset, they leave from here.
  */
-const EGRESS_PROXY = upstreamProxy(process.env.YUMAKBOT_EGRESS_PROXY);
+const EGRESS_PROXY = upstreamProxy(process.env.LEAFBOT_EGRESS_PROXY);
 /** Git in the desktops reaches GitHub through a relay on this loopback port (see git-relay.ts). */
-const GIT_PORT = Number(process.env.YUMAKBOT_COMPUTER_GIT_PORT ?? 4322);
-const STATE = process.env.YUMAKBOT_COMPUTER_STATE ?? '/run/computer';
-const MAX_DESKTOPS = Number(process.env.YUMAKBOT_COMPUTER_MAX ?? 3);
-const WORKSPACES_ROOT = (process.env.YUMAKBOT_WORKSPACES_ROOT ?? '/data/workspaces').replace(/\/+$/, '');
+const GIT_PORT = Number(process.env.LEAFBOT_COMPUTER_GIT_PORT ?? 4322);
+const STATE = process.env.LEAFBOT_COMPUTER_STATE ?? '/run/computer';
+const MAX_DESKTOPS = Number(process.env.LEAFBOT_COMPUTER_MAX ?? 3);
+const WORKSPACES_ROOT = (process.env.LEAFBOT_WORKSPACES_ROOT ?? '/data/workspaces').replace(/\/+$/, '');
 const HERE = dirname(fileURLToPath(import.meta.url));
-const HELPER_SCRIPT = process.env.YUMAKBOT_COMPUTER_HELPER ?? join(HERE, 'session.mjs');
-const SESSION_SCRIPT = process.env.YUMAKBOT_COMPUTER_SESSION_SH ?? join(HERE, '..', 'session.sh');
+const HELPER_SCRIPT = process.env.LEAFBOT_COMPUTER_HELPER ?? join(HERE, 'session.mjs');
+const SESSION_SCRIPT = process.env.LEAFBOT_COMPUTER_SESSION_SH ?? join(HERE, '..', 'session.sh');
 const MAX_BODY = 1024 * 1024;
 const START_TIMEOUT_MS = 90_000;
 

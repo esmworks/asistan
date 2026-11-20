@@ -399,7 +399,7 @@ async function copyImage(src: string): Promise<boolean> {
 }
 
 /** Long lines wrap to the panel or scroll sideways; the choice is kept on this device. */
-const WRAP_KEY = 'yumakbot.preview.wrap';
+const WRAP_KEY = 'leafbot.preview.wrap';
 const useWrap = create<{ wrap: boolean; setWrap(v: boolean): void }>((set) => ({
   wrap: (() => {
     try {

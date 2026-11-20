@@ -1,4 +1,4 @@
-# Yumak Bot computer service: one sandboxed Linux desktop per bot. Build context is the repository root:
+# Leaf Bot computer service: one sandboxed Linux desktop per bot. Build context is the repository root:
 #   docker build -f computer/Dockerfile .      (docker/compose.yml does this)
 # See "Botların bilgisayarı" in docker/README.md for the host setup.
 FROM node:22-bookworm-slim AS build
@@ -6,8 +6,8 @@ ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=1
 RUN corepack enable
 WORKDIR /src
 COPY . .
-RUN pnpm install --frozen-lockfile --filter "@yumakbot/computer..." \
- && pnpm --filter @yumakbot/computer build
+RUN pnpm install --frozen-lockfile --filter "@leafbot/computer..." \
+ && pnpm --filter @leafbot/computer build
 
 FROM node:22-bookworm-slim
 # bubblewrap: one sandbox per bot. tigervnc: the virtual screen (Xvnc) the app watches. xfce parts:
@@ -20,7 +20,7 @@ FROM node:22-bookworm-slim
 # repositories, with GitHub reached through the controller's relay (computer/src/git-relay.ts).
 # fonts: Turkish letters, emoji and CJK.
 # The slim base leaves out every translation; keep Turkish so the desktop's menus follow the locale.
-RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-yumakbot-locales \
+RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-leafbot-locales \
  && apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && install -d -m 0755 /etc/apt/keyrings \
@@ -39,35 +39,36 @@ RUN printf 'path-include /usr/share/locale/tr/*\n' > /etc/dpkg/dpkg.cfg.d/zz-yum
  && rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/google-chrome.* \
  && printf 'tr_TR.UTF-8 UTF-8\nen_US.UTF-8 UTF-8\n' >> /etc/locale.gen && locale-gen \
  && dbus-uuidgen --ensure=/etc/machine-id \
- && useradd --create-home --uid 10001 --shell /usr/sbin/nologin yumakbot
+ && useradd --create-home --uid 10001 --shell /usr/sbin/nologin leafbot
 
 # Desktop defaults (panel, wallpaper, default browser) and the browser launcher. Chrome's own menu
 # entry is hidden: a Chrome started without the DevTools pipe could not be driven by the bot. Chrome
 # registers itself as the default browser at priority 200, so the launcher takes it at 300.
-# The launcher's earlier name stays as a link: the panel copies its launchers into each bot's home on
+# The launcher's earlier names stay as links: the panel copies its launchers into each bot's home on
 # first start, and homes created before the rename still call the old path. Chrome's managed policy
 # (etc/opt/chrome/policies) hides the "unsupported command-line flag" bar the anti-automation flags in
 # computer/src/session.ts would put over every page: only a policy can turn it off.
 COPY --chown=root:root computer/rootfs/ /
 # corepack: the root file system is read-only for the bots, so the pnpm and yarn launchers go in here.
 RUN corepack enable \
- && ln -s yumakbot-browser /usr/local/bin/asistan-browser \
+ && ln -s leafbot-browser /usr/local/bin/asistan-browser \
+ && ln -s leafbot-browser /usr/local/bin/yumakbot-browser \
  && sed -i '0,/^\[Desktop Entry\]/s//[Desktop Entry]\nNoDisplay=true/' /usr/share/applications/google-chrome.desktop \
- && update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/yumakbot-browser 300 \
- && update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/yumakbot-browser 300
+ && update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/leafbot-browser 300 \
+ && update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/leafbot-browser 300
 
 # Application files belong to root and stay read-only for the service user.
 COPY --from=build --chown=root:root /src/computer/dist /srv/computer/dist
 COPY --chown=root:root computer/session.sh /srv/computer/session.sh
 WORKDIR /srv/computer
 ENV NODE_ENV=production \
-    YUMAKBOT_COMPUTER_PORT=4320 \
-    YUMAKBOT_COMPUTER_STATE=/run/computer \
-    YUMAKBOT_WORKSPACES_ROOT=/data/workspaces \
-    HOME=/home/yumakbot
-USER yumakbot
+    LEAFBOT_COMPUTER_PORT=4320 \
+    LEAFBOT_COMPUTER_STATE=/run/computer \
+    LEAFBOT_WORKSPACES_ROOT=/data/workspaces \
+    HOME=/home/leafbot
+USER leafbot
 EXPOSE 4320
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-  CMD node -e "fetch('http://127.0.0.1:4320/health',{headers:{authorization:'Bearer '+process.env.YUMAKBOT_COMPUTER_TOKEN}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:4320/health',{headers:{authorization:'Bearer '+process.env.LEAFBOT_COMPUTER_TOKEN}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/index.mjs"]

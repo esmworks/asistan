@@ -20,7 +20,7 @@ describe('araç isteklerinin düz dili', () => {
     expect(describeAction('WebFetch', { url: 'https://ornek.com/a?b=1' }, { bot: 'Katip' }).want).toBe(
       'Katip ornek.com sayfasını açmak istiyor.',
     );
-    expect(describeAction('mcp__yumakbot__bot_create', { name: 'Posta' }, { bot: 'Kahya' }).want).toBe(
+    expect(describeAction('mcp__leafbot__bot_create', { name: 'Posta' }, { bot: 'Kahya' }).want).toBe(
       'Kahya "Posta" adında yeni bir bot kurmak istiyor.',
     );
   });
@@ -35,7 +35,7 @@ describe('araç isteklerinin düz dili', () => {
     expect(describeAction('Write', { file_path: '/a/rapor.md' }, opts).want).toBe(
       'Katip wants to write "rapor.md".',
     );
-    expect(describeAction('mcp__yumakbot__bot_send', { bot: 'Posta' }, opts).want).toBe(
+    expect(describeAction('mcp__leafbot__bot_send', { bot: 'Posta' }, opts).want).toBe(
       'Katip wants to send a task to "Posta".',
     );
   });
@@ -66,34 +66,34 @@ describe('araç isteklerinin düz dili', () => {
 
   it('tarayıcı adımlarını düz dille anlatır', () => {
     const open = describeAction(
-      'mcp__yumakbot__browser_open',
+      'mcp__leafbot__browser_open',
       { url: 'https://www.sahibinden.com/ara' },
       { bot: 'Paşa' },
     );
     expect(open.want).toBe('Paşa tarayıcıda www.sahibinden.com sitesini açmak istiyor.');
     expect(open.detail).toBe('https://www.sahibinden.com/ara');
     const send = describeAction(
-      'mcp__yumakbot__browser_click',
+      'mcp__leafbot__browser_click',
       { ref: 'e4', element: 'Siparişi onayla', sends: true },
       { bot: 'Paşa', locale: 'en' },
     );
     expect(send.want).toBe('Paşa wants to send something with "Siparişi onayla" in the browser.');
     expect(send.detail).toBe('Siparişi onayla');
     const drag = describeAction(
-      'mcp__yumakbot__browser_drag',
+      'mcp__leafbot__browser_drag',
       { from_ref: 'e4', to_ref: 'e9', element: 'Kartı Bitti listesine', sends: true },
       { bot: 'Paşa' },
     );
     expect(drag.want).toBe('Paşa tarayıcıda "Kartı Bitti listesine" ile bir şey göndermek istiyor.');
     const upload = describeAction(
-      'mcp__yumakbot__browser_upload',
+      'mcp__leafbot__browser_upload',
       { ref: 'e2', element: 'Özgeçmiş', paths: ['belgeler/cv.pdf'] },
       { bot: 'Paşa' },
     );
     expect(upload.want).toBe('Paşa "cv.pdf" dosyasını tarayıcıdaki siteye yüklemek istiyor.');
     expect(upload.detail).toBe('belgeler/cv.pdf');
     const many = describeAction(
-      'mcp__yumakbot__browser_upload',
+      'mcp__leafbot__browser_upload',
       { ref: 'e2', element: 'Fotoğraflar', paths: ['a.png', 'b.png'] },
       { bot: 'Paşa', locale: 'en' },
     );

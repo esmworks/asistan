@@ -1,5 +1,5 @@
-import { activityOf, type BotActivity } from '@yumakbot/app/src/lib/activity';
-import { gazeOf, sharedClock } from '@yumakbot/app/src/lib/gaze';
+import { activityOf, type BotActivity } from '@leafbot/app/src/lib/activity';
+import { gazeOf, sharedClock } from '@leafbot/app/src/lib/gaze';
 import { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, Animated, AppState, type StyleProp, type ViewStyle } from 'react-native';
 import { eyeShift } from '@/lib/eyes';

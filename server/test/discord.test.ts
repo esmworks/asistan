@@ -1,6 +1,6 @@
 import { createServer as httpServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { discordToken, type Approval, type Bot, type DiscordStatus, type Thread } from '@yumakbot/shared';
+import { discordToken, type Approval, type Bot, type DiscordStatus, type Thread } from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { discordText } from '../src/channels/discord';
@@ -62,7 +62,7 @@ async function fakeDiscord(opts: { refuseContent?: boolean; heartbeat?: number; 
         return reply({ message: '401: Unauthorized', code: 0 }, 401);
       }
       calls.push({ method: req.method!, path: `${path}${url.search}`, body });
-      if (path === '/users/@me') return reply({ id: BOT_USER, username: 'Yumak' });
+      if (path === '/users/@me') return reply({ id: BOT_USER, username: 'Leaf' });
       if (path === '/oauth2/applications/@me') return reply({ id: '777' });
       if (path === '/gateway/bot') return reply({ url: `${wsBase}/gateway` });
       if (path === '/users/@me/guilds') return reply([{ id: SERVER, name: 'Topluluk' }]);
@@ -110,7 +110,7 @@ async function fakeDiscord(opts: { refuseContent?: boolean; heartbeat?: number; 
             d: {
               session_id: 's1',
               resume_gateway_url: `${wsBase}/gateway`,
-              user: { id: BOT_USER, username: 'Yumak' },
+              user: { id: BOT_USER, username: 'Leaf' },
             },
           }),
         );
@@ -154,8 +154,7 @@ async function fakeDiscord(opts: { refuseContent?: boolean; heartbeat?: number; 
         content: where.raw?.content ?? (where.mention === false ? text : `<@${BOT_USER}> ${text}`),
         ...(where.raw && { mention_roles: where.raw.mention_roles }),
         ...(where.attachments && { attachments: where.attachments }),
-        mentions:
-          where.mention === false || where.raw ? [] : [{ id: BOT_USER, username: 'Yumak', bot: true }],
+        mentions: where.mention === false || where.raw ? [] : [{ id: BOT_USER, username: 'Leaf', bot: true }],
         type: where.replyTo ? 19 : 0,
         timestamp: new Date().toISOString(),
         ...(where.replyTo && {
@@ -257,7 +256,7 @@ describe('Discord', () => {
     const status = (await t.api<DiscordStatus>('GET', '/api/discord')).body;
     expect(status).toMatchObject({
       connected: true,
-      botUser: 'Yumak',
+      botUser: 'Leaf',
       botId: bot.id,
       servers: [{ id: SERVER, name: 'Topluluk', roles: [{ id: ROLE, name: 'Müşteri' }], allowed: [] }],
     });
@@ -441,7 +440,7 @@ describe('Discord', () => {
       id: SERVER,
       roles: [
         { id: SERVER, name: '@everyone' },
-        { id: '777', name: 'Yumak', managed: true, tags: { bot_id: BOT_USER } },
+        { id: '777', name: 'Leaf', managed: true, tags: { bot_id: BOT_USER } },
         { id: '778', name: 'Başka', managed: true, tags: { bot_id: '12' } },
       ],
     });

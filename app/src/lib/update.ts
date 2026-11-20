@@ -4,7 +4,7 @@ import { getT } from '@/i18n';
 
 /** Time to read the notice before the page reloads. */
 const RELOAD_DELAY_MS = 2500;
-const TOAST_ID = 'yumakbot-update';
+const TOAST_ID = 'leafbot-update';
 
 /**
  * The server's build when this page first heard from it. Kept for the life of the page (not per

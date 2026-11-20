@@ -1,4 +1,4 @@
-import type { Bot, Message } from '@yumakbot/shared';
+import type { Bot, Message } from '@leafbot/shared';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

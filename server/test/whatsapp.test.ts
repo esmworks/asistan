@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Approval, Routine, RoutineRun, Thread, WhatsAppStatus } from '@yumakbot/shared';
+import type { Approval, Routine, RoutineRun, Thread, WhatsAppStatus } from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {

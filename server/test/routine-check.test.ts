@@ -1,12 +1,6 @@
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import {
-  describeAction,
-  type Connection,
-  type Routine,
-  type RoutineRun,
-  type Thread,
-} from '@yumakbot/shared';
+import { describeAction, type Connection, type Routine, type RoutineRun, type Thread } from '@leafbot/shared';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -132,7 +126,7 @@ describe('rutin denetimi', () => {
     expect(made.check).toEqual({ connectionId: conn.id, tool: 'unread', args: { folder: 'gelen' } });
     expect(
       describeAction(
-        'mcp__yumakbot__routine_create',
+        'mcp__leafbot__routine_create',
         { name: 'X', schedule: { type: 'daily', time: '07:00' }, prompt: 'p', check_tool: 'unread' },
         { bot: 'Ali', locale: 'en' },
       ).detail,

@@ -1,4 +1,4 @@
-import { outsideIn, type Bot, type Memory } from '@yumakbot/shared';
+import { outsideIn, type Bot, type Memory } from '@leafbot/shared';
 import { and, count, desc, eq, gt, gte, inArray, isNotNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from '../context';

@@ -1,4 +1,4 @@
-import { settingsMatch } from '@yumakbot/app/src/lib/settingsMatch';
+import { settingsMatch } from '@leafbot/app/src/lib/settingsMatch';
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';

@@ -1,5 +1,5 @@
-import type { Locale } from '@yumakbot/shared/i18n';
-import { LOCALE_NAMES, LOCALES } from '@yumakbot/shared/i18n';
+import type { Locale } from '@leafbot/shared/i18n';
+import { LOCALE_NAMES, LOCALES } from '@leafbot/shared/i18n';
 import { useState } from 'react';
 import { Keyboard, StyleSheet, Text, View } from 'react-native';
 import { Loading, Row, Section } from '@/components/page';

@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 import { useLayoutEffect, useMemo } from 'react';
 import { useApprovals } from './queries';
 import { useCardCuts } from './realtime';

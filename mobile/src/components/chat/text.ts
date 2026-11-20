@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 
 /** A message's Markdown as one plain line, so a quote of it reads like the text the person saw. */
 function plainText(markdown: string): string {

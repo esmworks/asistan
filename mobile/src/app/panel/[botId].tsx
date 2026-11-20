@@ -20,7 +20,7 @@ export default function PanelScreen() {
   const c = useColors();
   const bots = useBots();
   // The panel opens on the tab last viewed, whichever bot it shows.
-  const [tab, setTab] = useStored<Tab>('yumakbot.panelTab', 'activity');
+  const [tab, setTab] = useStored<Tab>('leafbot.panelTab', 'activity');
   const bot = bots.data?.find((b) => b.id === botId);
 
   if (!bot) {

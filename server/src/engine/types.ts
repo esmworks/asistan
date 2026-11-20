@@ -1,4 +1,4 @@
-import type { ClaudeModel, Effort, Locale, PlanWindow } from '@yumakbot/shared';
+import type { ClaudeModel, Effort, Locale, PlanWindow } from '@leafbot/shared';
 import type { z } from 'zod';
 import type { T } from '../i18n';
 import { readableError } from '../util';
@@ -35,13 +35,13 @@ export interface AppTool {
   input: z.ZodRawShape;
   /** Tools that only read state may run without asking. */
   readOnly: boolean;
-  /** Only touches YumakBot's own data (memory, bot messages); never asks in `ask` mode. */
+  /** Only touches LeafBot's own data (memory, bot messages); never asks in `ask` mode. */
   internal: boolean;
   /** Per-call override: some inputs of an internal tool still need a card. */
   gated?: (args: Record<string, unknown>) => Promise<boolean>;
   /**
    * The MCP server the tool is shown under (`mcp__<server>__<name>`): a connection's own name for
-   * its tools; unset for the app's own tools (`yumakbot`).
+   * its tools; unset for the app's own tools (`leafbot`).
    */
   server?: string;
   /** The input as JSON Schema, for tools another server describes; `input` is then unused. */
@@ -49,7 +49,7 @@ export interface AppTool {
   handler(args: Record<string, unknown>): Promise<ToolResult>;
 }
 
-export const APP_SERVER = 'yumakbot';
+export const APP_SERVER = 'leafbot';
 
 /** Tools that only add something under the reply; what is written with them is the reply. */
 const REPLY_TOOLS = new Set(['quick_replies']);

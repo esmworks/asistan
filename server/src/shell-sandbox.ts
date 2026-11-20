@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import type { ServerInfo } from '@yumakbot/shared';
+import type { ServerInfo } from '@leafbot/shared';
 
 export type ShellSandboxStatus = ServerInfo['shellSandbox'];
 

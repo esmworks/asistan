@@ -7,7 +7,7 @@ import {
   type CatalogCategory,
   type CatalogEntry,
   type Connection,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';

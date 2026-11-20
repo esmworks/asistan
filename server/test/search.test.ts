@@ -1,4 +1,4 @@
-import type { BotSummary, Message, SearchHit, Thread } from '@yumakbot/shared';
+import type { BotSummary, Message, SearchHit, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { excerptAround } from '../src/services/threads';
 import { testServer, type TestServer } from './helpers';

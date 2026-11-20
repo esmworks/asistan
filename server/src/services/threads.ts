@@ -8,7 +8,7 @@ import {
   type Thread,
   type TurnState,
   quoteExcerpt,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

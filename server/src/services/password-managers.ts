@@ -5,11 +5,11 @@ import type {
   PasswordManagerCreate,
   PasswordManagerProblem,
   PasswordManagerUpdate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   PasswordManagerCreate as CreateSchema,
   PasswordManagerUpdate as UpdateSchema,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

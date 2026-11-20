@@ -128,7 +128,7 @@ import type {
   PersonUpdate,
   BotAccess,
   StorageReport,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { getT, useLocale } from '@/i18n';
 
 export class ApiError extends Error {

@@ -1,5 +1,5 @@
 import type { OAuthAuth, OAuthCredential } from '@earendil-works/pi-ai';
-import type { ProviderInfo, ProviderSignIn } from '@yumakbot/shared';
+import type { ProviderInfo, ProviderSignIn } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SubscriptionService } from '../src/services/subscriptions';
 import { testServer, waitFor, type TestServer } from './helpers';
@@ -68,7 +68,7 @@ describe('planla oturum açma', () => {
       return s.status === 'waiting' ? s : null;
     });
     expect(waiting).toMatchObject({ userCode: 'ABCD-1234', url: 'https://github.com/login/device' });
-    expect(fake.calls.agent).toBe('Yumak Bot');
+    expect(fake.calls.agent).toBe('Leaf Bot');
     expect(fake.calls.deviceId).toMatch(/^[0-9a-f-]{36}$/);
 
     fake.finish({

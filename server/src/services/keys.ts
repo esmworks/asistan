@@ -9,7 +9,7 @@ import {
   type Effort,
   type ModelInfo,
   type ProviderInfo,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { HttpError } from '../util';

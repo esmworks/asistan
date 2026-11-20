@@ -1,4 +1,4 @@
-import type { Bot, BotAccess, BotLevel } from '@yumakbot/shared';
+import type { Bot, BotAccess, BotLevel } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

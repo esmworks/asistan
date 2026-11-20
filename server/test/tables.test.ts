@@ -1,4 +1,4 @@
-import type { BotTable, TableRow, Thread } from '@yumakbot/shared';
+import type { BotTable, TableRow, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Define } from '../src/tools';
 import { tableTools } from '../src/tools/tables';

@@ -5,7 +5,7 @@ import {
   pickLocale,
   type Locale,
   type Translate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { create } from 'zustand';
 import { desktop } from '@/lib/desktop';
 import { en } from './en';
@@ -14,7 +14,7 @@ import { tr, type MessageKey } from './tr';
 export type { MessageKey };
 export type T = Translate<MessageKey>;
 
-const KEY = 'yumakbot.locale';
+const KEY = 'leafbot.locale';
 const CATALOGS = { tr, en };
 
 /** Saved choice in this browser, else the browser's languages, else the default. */

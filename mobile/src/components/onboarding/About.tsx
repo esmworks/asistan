@@ -1,4 +1,4 @@
-import { PROFILE_FOCUS, PROFILE_HELP, type ProfileFocus, type ProfileHelp } from '@yumakbot/shared';
+import { PROFILE_FOCUS, PROFILE_HELP, type ProfileFocus, type ProfileHelp } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {

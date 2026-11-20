@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { T } from '../i18n';
-import type { DialOptions } from '@yumakbot/shared/egress';
+import type { DialOptions } from '@leafbot/shared/egress';
 import { startSandboxProxy, type SandboxProxy } from './sandbox-proxy';
 import type { FileTool } from './pi-files';
 import type { Sandbox, ToolResult } from './types';

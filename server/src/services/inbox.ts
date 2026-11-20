@@ -7,7 +7,7 @@ import {
   type Message,
   type MessageFile,
   type ReplyQuote,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

@@ -1,4 +1,4 @@
-import type { Bot, Thread } from '@yumakbot/shared';
+import type { Bot, Thread } from '@leafbot/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';

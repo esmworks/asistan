@@ -1,4 +1,4 @@
-import type { PushLevel } from '@yumakbot/shared';
+import type { PushLevel } from '@leafbot/shared';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import * as Notifications from 'expo-notifications';
@@ -19,8 +19,8 @@ import { useStored } from './stored';
  */
 
 /** The same key the web app keeps its level under, so the two read alike. */
-export const LEVEL_KEY = 'yumakbot.notify';
-const TOKEN_KEY = 'yumakbot.push.token';
+export const LEVEL_KEY = 'leafbot.notify';
+const TOKEN_KEY = 'leafbot.push.token';
 
 export const pushSupported =
   Platform.OS === 'ios' && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;

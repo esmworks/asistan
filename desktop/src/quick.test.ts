@@ -81,7 +81,7 @@ describe('quick shortcut setting', () => {
   });
 
   it('is on until turned off, and stays as last set', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-quick-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-quick-'));
     try {
       expect(readQuickOn(dir)).toBe(true);
       writeQuickOn(dir, false);

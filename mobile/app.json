@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Yumak Bot",
-    "slug": "yumakbot",
-    "scheme": "yumakbot",
+    "name": "Leaf Bot",
+    "slug": "leafbot",
+    "scheme": "leafbot",
     "version": "0.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.esmworks.yumakbot",
+      "bundleIdentifier": "com.esmworks.leafbot",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -18,7 +18,7 @@
       }
     },
     "android": {
-      "package": "com.esmworks.yumakbot",
+      "package": "com.esmworks.leafbot",
       "adaptiveIcon": {
         "backgroundColor": "#1F4330",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -54,8 +54,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Yumak Bot opens your photos so you can attach them to a message.",
-          "cameraPermission": "Yumak Bot uses the camera so you can take a photo to attach to a message.",
+          "photosPermission": "Leaf Bot opens your photos so you can attach them to a message.",
+          "cameraPermission": "Leaf Bot uses the camera so you can take a photo to attach to a message.",
           "microphonePermission": false
         }
       ],

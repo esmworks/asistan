@@ -13,7 +13,7 @@ const TEXT_MAX = 80_000;
 const FETCH_TIMEOUT_MS = 20_000;
 const REDIRECTS = 5;
 /** Sites that turn away a bare client usually let a browser-like one in. */
-const USER_AGENT = 'Mozilla/5.0 (compatible; YumakBot/1.0)';
+const USER_AGENT = 'Mozilla/5.0 (compatible; LeafBot/1.0)';
 const SEARCH_TIMEOUT_MS = 15_000;
 const SEARCH_DEFAULT = 8;
 const SEARCH_MAX = 20;

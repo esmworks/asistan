@@ -53,6 +53,9 @@ importers:
       '@hookform/resolvers':
         specifier: 7.0.6
         version: 7.0.6(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(react-hook-form@7.92.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
+      '@leafbot/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@norbert_bodziony/bloub':
         specifier: 0.6.4
         version: 0.6.4(patch_hash=1cc07233470f665d666a9f340ad263a5f5ee93ec8f5c1b08160386386440df09)(@solidjs/web@2.0.0-rc.18(solid-js@2.0.0-rc.18))(solid-js@2.0.0-rc.18)
@@ -65,9 +68,6 @@ importers:
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
-      '@yumakbot/shared':
-        specifier: workspace:*
-        version: link:../shared
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -168,7 +168,7 @@ importers:
 
   computer:
     dependencies:
-      '@yumakbot/shared':
+      '@leafbot/shared':
         specifier: workspace:*
         version: link:../shared
       ws:
@@ -191,7 +191,7 @@ importers:
         specifier: 6.8.12
         version: 6.8.12
     devDependencies:
-      '@yumakbot/shared':
+      '@leafbot/shared':
         specifier: workspace:*
         version: link:../shared
       electron:
@@ -212,18 +212,18 @@ importers:
       '@expo/vector-icons':
         specifier: 15.1.1
         version: 15.1.1(expo-font@58.0.12(expo@58.0.25)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
+      '@leafbot/app':
+        specifier: workspace:*
+        version: link:../app
+      '@leafbot/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@react-native-async-storage/async-storage':
         specifier: 2.2.0
         version: 2.2.0(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.0)
-      '@yumakbot/app':
-        specifier: workspace:*
-        version: link:../app
-      '@yumakbot/shared':
-        specifier: workspace:*
-        version: link:../shared
       expo:
         specifier: ~58.0.25
         version: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.17)(expo-router@58.0.31)(react-dom@19.3.1(react@19.3.0))(react-native-webview@14.0.1(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native-worklets@0.13.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
@@ -330,15 +330,15 @@ importers:
       '@fastify/static':
         specifier: 10.1.10
         version: 10.1.10
+      '@leafbot/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc14
         version: 7.0.0-rc14(sharp@0.35.5(@types/node@26.6.6))
-      '@yumakbot/shared':
-        specifier: workspace:*
-        version: link:../shared
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(@electric-sql/pglite@0.5.16)(@opentelemetry/api@1.10.0)(postgres@4.1.1)

@@ -1,5 +1,5 @@
 {
-  "name": "@yumakbot/computer",
+  "name": "@leafbot/computer",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@yumakbot/shared": "workspace:*",
+    "@leafbot/shared": "workspace:*",
     "ws": "8.22.2"
   },
   "devDependencies": {

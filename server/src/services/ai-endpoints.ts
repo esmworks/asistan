@@ -5,7 +5,7 @@ import {
   type AiEndpoints,
   type AiEndpointSet as SetInput,
   type AiKind,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

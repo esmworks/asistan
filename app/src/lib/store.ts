@@ -1,4 +1,4 @@
-import type { TurnState } from '@yumakbot/shared';
+import type { TurnState } from '@leafbot/shared';
 import { create } from 'zustand';
 
 export type SettingsTab =
@@ -159,7 +159,7 @@ interface UiState {
 
 const saved = (() => {
   try {
-    return JSON.parse(localStorage.getItem('yumakbot.ui') ?? '{}') as {
+    return JSON.parse(localStorage.getItem('leafbot.ui') ?? '{}') as {
       botId?: string;
       threadId?: string | null;
       roomId?: string | null;
@@ -299,7 +299,7 @@ export const useUi = create<UiState>((set, get) => ({
 useUi.subscribe((s) => {
   try {
     localStorage.setItem(
-      'yumakbot.ui',
+      'leafbot.ui',
       JSON.stringify({
         botId: s.botId,
         threadId: s.threadId,

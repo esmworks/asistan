@@ -1,5 +1,5 @@
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
-import type { Message } from '@yumakbot/shared';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
+import type { Message } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useRef, useState, type RefObject } from 'react';
@@ -225,7 +225,7 @@ export function McpAppView({ m }: { m: Message }) {
       case 'ui/initialize':
         return {
           protocolVersion: typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
-          hostInfo: { name: 'YumakBot', version: '0.7.0' },
+          hostInfo: { name: 'LeafBot', version: '0.7.0' },
           hostCapabilities: { openLinks: {}, serverTools: {} },
           hostContext: {
             theme,

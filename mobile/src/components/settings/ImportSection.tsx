@@ -1,4 +1,4 @@
-import type { BotImportPlan } from '@yumakbot/shared';
+import type { BotImportPlan } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
@@ -92,7 +92,7 @@ export function ImportSection() {
             icon="download"
             label={t('import.download')}
             chevron={false}
-            onPress={() => void shareFile(`${origin}${INSTRUCTIONS}`, 'yumakbot-export.md')}
+            onPress={() => void shareFile(`${origin}${INSTRUCTIONS}`, 'leafbot-export.md')}
           />
         </Rows>
       </Section>

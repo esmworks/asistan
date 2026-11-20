@@ -10,7 +10,7 @@ import {
   socksReply,
   socksReplyFor,
   SOCKS_REPLY,
-} from '@yumakbot/shared/egress';
+} from '@leafbot/shared/egress';
 
 /** Where the bots' browser traffic leaves: the person's computer, or this server. */
 export type Exit = 'computer' | 'server';

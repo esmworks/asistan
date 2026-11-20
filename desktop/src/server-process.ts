@@ -34,7 +34,7 @@ export interface ServerProcessOptions {
 }
 
 /**
- * Runs the YumakBot server as a child process. Bots keep running while the window is closed;
+ * Runs the LeafBot server as a child process. Bots keep running while the window is closed;
  * the process stops only when the app quits. Unexpected exits restart it a few times.
  */
 export class ServerProcess extends EventEmitter {
@@ -78,11 +78,11 @@ export class ServerProcess extends EventEmitter {
           SHELL: process.env.SHELL ?? '/bin/zsh',
           ...(process.env.TZ ? { TZ: process.env.TZ } : {}),
           ELECTRON_RUN_AS_NODE: '1',
-          YUMAKBOT_HOST: '127.0.0.1',
-          YUMAKBOT_PORT: String(port),
-          YUMAKBOT_DATA_DIR: this.opts.dataDir,
-          YUMAKBOT_ON_USER_COMPUTER: '1',
-          ...(this.opts.appDir ? { YUMAKBOT_APP_DIR: this.opts.appDir } : {}),
+          LEAFBOT_HOST: '127.0.0.1',
+          LEAFBOT_PORT: String(port),
+          LEAFBOT_DATA_DIR: this.opts.dataDir,
+          LEAFBOT_ON_USER_COMPUTER: '1',
+          ...(this.opts.appDir ? { LEAFBOT_APP_DIR: this.opts.appDir } : {}),
           ...this.opts.env,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -98,7 +98,7 @@ export class ServerProcess extends EventEmitter {
       }, 60_000);
 
       createInterface({ input: child.stdout! }).on('line', (line) => {
-        const m = /^YUMAKBOT_READY (\S+)/.exec(line);
+        const m = /^LEAFBOT_READY (\S+)/.exec(line);
         if (m && !ready) {
           ready = true;
           clearTimeout(timer);

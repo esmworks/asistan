@@ -1,4 +1,4 @@
-import { createTranslator, INTL_LOCALE, type Locale } from '@yumakbot/shared';
+import { createTranslator, INTL_LOCALE, type Locale } from '@leafbot/shared';
 import { useMemo } from 'react';
 import { useLocale } from '@/i18n';
 import { en } from '@/i18n/en';

@@ -1,7 +1,7 @@
 import type { T } from '@/i18n';
 
-/** YumakBot's own tools, under the server name every engine gives them. */
-const OWN = 'yumakbot';
+/** LeafBot's own tools, under the server name every engine gives them. */
+const OWN = 'leafbot';
 
 /**
  * What the bot is doing, in words, from the tool it is running (`Bash`, `Read`,

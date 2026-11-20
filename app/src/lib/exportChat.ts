@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 
 /**
  * A conversation as a Markdown document: a heading with its name, then each message of the

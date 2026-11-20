@@ -8,7 +8,7 @@
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-Xvnc "$YUMAKBOT_DISPLAY" -geometry "$YUMAKBOT_GEOMETRY" -depth 24 \
+Xvnc "$LEAFBOT_DISPLAY" -geometry "$LEAFBOT_GEOMETRY" -depth 24 \
   -rfbunixpath /run/ctl/vnc.sock -rfbport -1 -SecurityTypes None -nolisten tcp -nolisten local \
   -auth "$XAUTHORITY" >>/run/ctl/xvnc.log 2>&1 &
 
@@ -19,12 +19,12 @@ while [ ! -S /run/ctl/vnc.sock ]; do
   sleep 0.1
 done
 
-exec dbus-run-session --config-file=/etc/yumakbot/dbus-session.conf -- sh -c '
+exec dbus-run-session --config-file=/etc/leafbot/dbus-session.conf -- sh -c '
   exec >>/run/ctl/desktop.log 2>&1
   xset s off -dpms s noblank
   xfsettingsd &
   xfwm4 --compositor=off &
   xfce4-panel &
   xfdesktop &
-  exec "$YUMAKBOT_NODE" "$YUMAKBOT_HELPER"
+  exec "$LEAFBOT_NODE" "$LEAFBOT_HELPER"
 '

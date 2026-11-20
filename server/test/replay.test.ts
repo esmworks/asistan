@@ -1,13 +1,13 @@
 import { createServer as httpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ReplayResult, Skill, TaughtStep, Thread } from '@yumakbot/shared';
+import type { ReplayResult, Skill, TaughtStep, Thread } from '@leafbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { findBrowser } from '../src/browser/find';
 import { replayHandOver } from '../src/browser/replay';
 import { translator } from '../src/i18n';
 import { testServer, type TestServer } from './helpers';
 
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 const t = translator('tr') as unknown as (key: string, params?: Record<string, string | number>) => string;
 
 const steps = (base: string): TaughtStep[] => [

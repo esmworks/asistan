@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as httpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, PaymentCard, Routine, Thread } from '@yumakbot/shared';
+import type { Approval, PaymentCard, Routine, Thread } from '@leafbot/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { findBrowser } from '../src/browser/find';
@@ -216,13 +216,13 @@ describe('tarayıcı yardımcıları', () => {
         has(['C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe']),
       ),
     ).toBe('C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe');
-    expect(findBrowser({ YUMAKBOT_BROWSER: '/yok' }, 'linux', has(['/usr/bin/chromium']))).toBeNull();
+    expect(findBrowser({ LEAFBOT_BROWSER: '/yok' }, 'linux', has(['/usr/bin/chromium']))).toBeNull();
     expect(findBrowser({}, 'linux', has([]))).toBeNull();
   });
 });
 
-/** A real browser: YUMAKBOT_TEST_BROWSER, or one found on this machine. */
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+/** A real browser: LEAFBOT_TEST_BROWSER, or one found on this machine. */
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 
 describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
   let site: Server;

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { basename, extname, join } from 'node:path';
-import type { BrowserInput, BrowserState } from '@yumakbot/shared';
+import type { BrowserInput, BrowserState } from '@leafbot/shared';
 import {
   chromium,
   type Browser,
@@ -171,7 +171,7 @@ export interface Frame {
 const BACKGROUND_CPU_RATE = 4;
 
 /** The function a page calls, through the wall below, to say it asked for a passkey. */
-const PASSKEY_BINDING = '__yumakbotPasskey';
+const PASSKEY_BINDING = '__leafbotPasskey';
 
 /**
  * Run in every frame before the page's own scripts. The bot's browser holds no passkeys, and a

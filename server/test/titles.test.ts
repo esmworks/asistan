@@ -1,4 +1,4 @@
-import type { Thread } from '@yumakbot/shared';
+import type { Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanTitle } from '../src/services/titles';
 import { testServer, type TestServer } from './helpers';

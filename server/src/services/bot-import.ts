@@ -1,6 +1,7 @@
 import {
   Avatar,
   BOT_IMPORT_FORMAT,
+  OLD_BOT_IMPORT_FORMAT,
   BOT_IMPORT_LIMITS,
   BotImportFile,
   BotImportMemory,
@@ -14,7 +15,7 @@ import {
   type BotImportPlan,
   type BotImportResult,
   type BotImportWarning,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { asc, inArray, isNull, max } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -103,7 +104,7 @@ export class BotImportService {
   ) {}
 
   /**
-   * The bots as an import file, so they can move to another YumakBot or come back later: their
+   * The bots as an import file, so they can move to another LeafBot or come back later: their
    * instructions, avatar, routines, own memories, skills and groups. Engine, model, permissions,
    * folders and conversations stay here; the file names them as left out.
    */
@@ -137,7 +138,7 @@ export class BotImportService {
     return {
       format: BOT_IMPORT_FORMAT,
       version: BOT_IMPORT_VERSION,
-      source: 'YumakBot',
+      source: 'LeafBot',
       exportedAt: new Date().toISOString(),
       bots: bots.map((b) => {
         const ref = refs.get(b.id)!;
@@ -426,7 +427,8 @@ function notes(items: unknown[], known: Set<string>): BotImportPlan['notImported
 
 /** The file's structure, or an error that names the first field that is wrong. */
 function parseFile(raw: unknown): BotImportFile {
-  if ((raw as { format?: unknown } | null)?.format !== BOT_IMPORT_FORMAT) {
+  const format = (raw as { format?: unknown } | null)?.format;
+  if (format !== BOT_IMPORT_FORMAT && format !== OLD_BOT_IMPORT_FORMAT) {
     throw new HttpError(400, 'error.importFormat');
   }
   const parsed = BotImportFile.safeParse(raw);

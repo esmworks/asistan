@@ -1,4 +1,4 @@
-import type { ApiKeyImportResult, VaultImportReason, VaultImportResult } from '@yumakbot/shared';
+import type { ApiKeyImportResult, VaultImportReason, VaultImportResult } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileUp } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';

@@ -1,4 +1,4 @@
-import type { Bot, Thread } from '@yumakbot/shared';
+import type { Bot, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, type TestServer } from './helpers';
 
@@ -15,11 +15,11 @@ describe('botun araç seçimi', () => {
     const bot = await t.bot({
       toolSelection: {
         only: true,
-        allow: ['mcp__yumakbot__memory_*', 'Read'],
-        exclude: ['mcp__yumakbot__memory_forget'],
+        allow: ['mcp__leafbot__memory_*', 'Read'],
+        exclude: ['mcp__leafbot__memory_forget'],
       },
     });
-    expect(bot.toolSelection.allow).toEqual(['mcp__yumakbot__memory_*', 'Read']);
+    expect(bot.toolSelection.allow).toEqual(['mcp__leafbot__memory_*', 'Read']);
     const thread = await main(bot.id);
     await t.send(thread.id, 'merhaba');
     await t.services.turns.idle();
@@ -44,7 +44,7 @@ describe('botun araç seçimi', () => {
     expect(all.tools.some((x) => x.name === 'send_file')).toBe(true);
 
     const patched = await t.api<Bot>('PATCH', `/api/bots/${bot.id}`, {
-      toolSelection: { only: false, allow: [], exclude: ['mcp__yumakbot__send_file'] },
+      toolSelection: { only: false, allow: [], exclude: ['mcp__leafbot__send_file'] },
     });
     expect(patched.status).toBe(200);
     await t.send(thread.id, 'y');
@@ -54,7 +54,7 @@ describe('botun araç seçimi', () => {
 
     // Without the tool to look earlier talk up, the prompt does not point to it.
     await t.api('PATCH', `/api/bots/${bot.id}`, {
-      toolSelection: { only: false, allow: [], exclude: ['mcp__yumakbot__conversations_search'] },
+      toolSelection: { only: false, allow: [], exclude: ['mcp__leafbot__conversations_search'] },
     });
     await t.send(thread.id, 'z');
     await t.services.turns.idle();

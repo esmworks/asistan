@@ -9,10 +9,10 @@ import {
   SkillName,
   skillWarnings,
   type SkillWarning,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { projectDirProblem } from '../workspace';
 
-/** A skill another AI tool on this computer has, not yet among YumakBot's. */
+/** A skill another AI tool on this computer has, not yet among LeafBot's. */
 export interface FoundSkill {
   name: string;
   description: string;
@@ -73,7 +73,7 @@ function readSmall(home: string, path: string, max = MAX_FILE): string | null {
 
 /**
  * The skills and remote MCP servers the person's other AI tools have on this computer, leaving out
- * what YumakBot already has. Only SKILL.md files and the tools' server lists are read: never their
+ * what LeafBot already has. Only SKILL.md files and the tools' server lists are read: never their
  * credential, session or history files. A broken entry is skipped, not the whole source.
  */
 export function findSetup(
@@ -147,7 +147,7 @@ const WORKTREE = /[\\/]\.claude[\\/]worktrees[\\/]/;
  * The folders the person's coding tools have worked in, for a bot to work in too. Only the tools'
  * lists of folders are read, and the time a folder's sessions last changed is taken from the
  * folder that holds them, never from what was said in them. A folder a bot could not be given (the
- * home folder, a private or temporary one, YumakBot's own data) or one a bot already works in is
+ * home folder, a private or temporary one, LeafBot's own data) or one a bot already works in is
  * left out; so is one that is gone.
  */
 export async function findProjects(

@@ -10,13 +10,13 @@ import type { Writable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { DESKTOP_SIZE, DesktopAction, DesktopExec, DesktopJobQuery, DesktopJobStart } from '@yumakbot/shared';
+import { DESKTOP_SIZE, DesktopAction, DesktopExec, DesktopJobQuery, DesktopJobStart } from '@leafbot/shared';
 import { clearForeignProfileLock, isOpenableUrl, Jobs, pngSize, TailBuffer, xdotoolArgs } from './lib';
 
-const CTL = process.env.YUMAKBOT_CTL ?? '/run/ctl';
+const CTL = process.env.LEAFBOT_CTL ?? '/run/ctl';
 const HOME = process.env.HOME ?? '/tmp';
 // Google Chrome in the computer image (see computer/Dockerfile); any Chromium-based browser works.
-const CHROMIUM = process.env.YUMAKBOT_CHROMIUM ?? 'google-chrome-stable';
+const CHROMIUM = process.env.LEAFBOT_CHROMIUM ?? 'google-chrome-stable';
 const MAX_OUTPUT = 100_000;
 const MAX_BODY = 1024 * 1024;
 
@@ -42,7 +42,7 @@ const chromiumArgs = [
   '--disable-blink-features=AutomationControlled',
   // Chromium builds send the experimental TLS Trust Anchor IDs extension (0xca34), which Google
   // Chrome does not; the extra extension makes the handshake unlike any Chrome a site knows, and the
-  // same bot guards refuse it. The flag keeps it off whichever browser YUMAKBOT_CHROMIUM names.
+  // same bot guards refuse it. The flag keeps it off whichever browser LEAFBOT_CHROMIUM names.
   '--disable-features=TLSTrustAnchorIDs',
   // The desktop has no GPU, and Chromium no longer falls back to drawing WebGL in software on its
   // own: without this flag pages get no WebGL at all. Maps need it, and bot guards such as
@@ -50,9 +50,9 @@ const chromiumArgs = [
   '--enable-unsafe-swiftshader',
   // The controller's proxy: the way out through the person's own computer when it is connected.
   // WebRTC would otherwise send UDP around it and show sites this machine's address.
-  ...(process.env.YUMAKBOT_PROXY
+  ...(process.env.LEAFBOT_PROXY
     ? [
-        `--proxy-server=${process.env.YUMAKBOT_PROXY}`,
+        `--proxy-server=${process.env.LEAFBOT_PROXY}`,
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
       ]
     : []),

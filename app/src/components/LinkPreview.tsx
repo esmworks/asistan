@@ -1,4 +1,4 @@
-import type { LinkPreview } from '@yumakbot/shared';
+import type { LinkPreview } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import {
   CircleCheck,

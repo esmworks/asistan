@@ -1,4 +1,4 @@
-import { ApiAuth, ApiCredentialName, ApiOrigin, type ApiSource, type Bot } from '@yumakbot/shared';
+import { ApiAuth, ApiCredentialName, ApiOrigin, type ApiSource, type Bot } from '@leafbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';

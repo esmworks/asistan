@@ -82,7 +82,7 @@ describe('emailPreview', () => {
     // A chat app's send_message names a space, not people with addresses.
     expect(emailPreview('mcp__googlechat__send_message', { space: 'spaces/1', text: 'Selam' })).toBeNull();
     expect(emailPreview('mcp__gmail__search_threads', { query: 'is:unread' })).toBeNull();
-    expect(emailPreview('mcp__yumakbot__send_message', { to: ['a@example.com'] })).toBeNull();
+    expect(emailPreview('mcp__leafbot__send_message', { to: ['a@example.com'] })).toBeNull();
     expect(emailPreview('send_message', { to: ['a@example.com'] })).toBeNull();
     expect(emailPreview('mcp__gmail__reply', { body: 'Tamam' })).toBeNull();
   });

@@ -1,4 +1,4 @@
-import type { ApiSource } from '@yumakbot/shared';
+import type { ApiSource } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileJson, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

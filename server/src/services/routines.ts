@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { Bot, BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/shared';
+import type { Bot, BotEmail, OutsideTrigger, RoutineUpdate } from '@leafbot/shared';
 import {
   APPROVAL_TIMED_OUT,
   cronTooOften,
@@ -20,7 +20,7 @@ import {
   type RoutineRun,
   type RoutineStep,
   type Schedule,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   and,
   asc,

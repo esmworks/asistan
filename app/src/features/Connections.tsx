@@ -15,7 +15,7 @@ import {
   type Connection,
   type ConnectionAuth,
   type ConnectionCreate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,

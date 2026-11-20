@@ -8,7 +8,7 @@ import {
   TableName,
   type BotTable,
   type TableRow,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';

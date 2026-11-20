@@ -1,4 +1,4 @@
-import { missingApps } from '@yumakbot/shared';
+import { missingApps } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { PlugZap } from 'lucide-react';
 import { useDeferredValue, useMemo } from 'react';

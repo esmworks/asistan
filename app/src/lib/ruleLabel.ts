@@ -1,11 +1,11 @@
 import type { T } from '@/i18n';
 
-/** YumakBot's own tools, under the server name every engine gives them. */
-const OWN = 'yumakbot';
+/** LeafBot's own tools, under the server name every engine gives them. */
+const OWN = 'leafbot';
 
 /**
  * A permission rule as a person reads it. A connection's tool is named by its service and tool
- * (`mcp__leafdesk__create_database` → Leafdesk: “create_database”), and YumakBot's own tools lose
+ * (`mcp__leafdesk__create_database` → Leafdesk: “create_database”), and LeafBot's own tools lose
  * the server prefix. Null when the pattern reads plainly as it is (`Bash(git push*)`).
  */
 export function ruleLabel(pattern: string, t: T, apps: ReadonlyMap<string, string>): string | null {

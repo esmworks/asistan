@@ -9,7 +9,7 @@ import {
   type ReplayResult,
   type Routine,
   type Skill,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
@@ -56,7 +56,7 @@ import { InstructionsDocNotice } from './InstructionsDoc';
 import { AppLogo, openTo, useToggleBot } from './Connections';
 import { RoutineDialog } from './RoutineDialog';
 
-const PANEL_TAB_KEY = 'yumakbot.panelTab';
+const PANEL_TAB_KEY = 'leafbot.panelTab';
 
 /** The panel opens on the tab last viewed on this device, whichever bot it shows. */
 function readPanelTab(): string {

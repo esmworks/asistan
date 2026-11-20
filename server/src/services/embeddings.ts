@@ -81,7 +81,7 @@ export class EmbeddingService {
 
   /** Tries the service with a short text: how many numbers its vectors have. */
   async test(): Promise<{ dimensions: number }> {
-    const [v] = await this.embed(['Yumak Bot']);
+    const [v] = await this.embed(['Leaf Bot']);
     return { dimensions: v!.length };
   }
 

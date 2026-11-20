@@ -15,7 +15,7 @@ import {
   type ClientToServerEvents,
   type ServerInfo,
   type ServerToClientEvents,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import type { IncomingMessage } from 'node:http';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { Server as IOServer, type Namespace } from 'socket.io';
@@ -28,6 +28,7 @@ import {
   needsSignIn,
   parseCookie,
   routedPath,
+  OLD_SESSION_COOKIE,
   SESSION_COOKIE,
   type Principal,
   type SocketData,
@@ -77,7 +78,7 @@ export interface ServerOptions {
   restart?: () => void;
 }
 
-export interface YumakBotServer {
+export interface LeafBotServer {
   app: FastifyInstance;
   io: IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
   services: Services;
@@ -117,7 +118,7 @@ const PUBLIC_API = new Set([
 /** Routes (as registered, not as a URL spells them) that need no access key or session. */
 const openRoute = (route: string) => PUBLIC_API.has(route) || route.startsWith(`${WEBHOOK_PATH}/`);
 
-export async function createServer(config: Config, opts: ServerOptions = {}): Promise<YumakBotServer> {
+export async function createServer(config: Config, opts: ServerOptions = {}): Promise<LeafBotServer> {
   const db = await openDb({ url: config.databaseUrl, dataDir: config.dataDir, memory: config.memoryDb });
   // The single account from before people came in becomes the owner's sign-in.
   await adoptLegacyAccount(db.db);
@@ -366,7 +367,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
   indexMemory.unref();
 
   const info = (): ServerInfo => ({
-    name: 'yumakbot',
+    name: 'leafbot',
     version: '0.7.0',
     bootId,
     buildId,
@@ -392,6 +393,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     reply.code(err.status).send({ error: err.localized(await requestT(req.headers)) });
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    // A session started before the rename reads as one under the new name for every handler.
+    const earlier = req.cookies[OLD_SESSION_COOKIE];
+    if (earlier && !req.cookies[SESSION_COOKIE]) req.cookies[SESSION_COOKIE] = earlier;
     if (config.secureCookies) void reply.header('strict-transport-security', STRICT_TRANSPORT_SECURITY);
     const problem = checkHostOrigin(
       { host: req.headers.host, origin: req.headers.origin, method: req.method },
@@ -507,7 +511,9 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
           services.tailscale.hosts(),
         );
         if (problem) return refuse(problem);
-        const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);
+        const cookie =
+          parseCookie(req.headers.cookie, SESSION_COOKIE) ??
+          parseCookie(req.headers.cookie, OLD_SESSION_COOKIE);
         const from = clientAddress(req.headers, req.socket.remoteAddress ?? '', config);
         auth
           .authenticate({ authorization: req.headers.authorization }, cookie, from)

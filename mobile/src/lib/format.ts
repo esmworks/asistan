@@ -1,4 +1,4 @@
-import { INTL_LOCALE, type Locale, type Translate } from '@yumakbot/shared/i18n';
+import { INTL_LOCALE, type Locale, type Translate } from '@leafbot/shared/i18n';
 import type { MessageKey } from '@/i18n/catalogs';
 
 function startOfDay(d: Date) {

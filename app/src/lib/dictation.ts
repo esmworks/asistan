@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { INTL_LOCALE, type Locale } from '@yumakbot/shared';
+import { INTL_LOCALE, type Locale } from '@leafbot/shared';
 import { api } from './api';
 import { desktop } from './desktop';
 

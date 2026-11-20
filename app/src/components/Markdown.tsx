@@ -19,7 +19,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
-import { leftoverBold } from '@yumakbot/shared';
+import { leftoverBold } from '@leafbot/shared';
 import { useLocale, useT } from '@/i18n';
 import { highlight } from '@/lib/highlight';
 import { MermaidDiagram, textOf } from './Mermaid';
@@ -171,9 +171,14 @@ export function repairTables(text: string): string {
   return out.join('\n');
 }
 
-/** Addresses as the default keeps them, and the desktop app's own `yumakbot://` links too. */
+/**
+ * Addresses as the default keeps them, and the desktop app's own `leafbot://` links too (`yumakbot://`
+ * in messages written before the rename).
+ */
 function keepAppLinks(url: string): string {
-  return /^yumakbot:\/\/(?:thread|bot|room)\/[\w-]{1,64}\/?$/.test(url) ? url : defaultUrlTransform(url);
+  return /^(?:leafbot|yumakbot):\/\/(?:thread|bot|room)\/[\w-]{1,64}\/?$/.test(url)
+    ? url
+    : defaultUrlTransform(url);
 }
 
 /** A web address to open on request, or null for any other scheme. */

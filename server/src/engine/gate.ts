@@ -1,4 +1,4 @@
-import type { Locale } from '@yumakbot/shared';
+import type { Locale } from '@leafbot/shared';
 import { truncate } from '../util';
 import type { GateRequest, GateVerdict } from './types';
 

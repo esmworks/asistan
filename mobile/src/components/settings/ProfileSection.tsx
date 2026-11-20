@@ -1,4 +1,4 @@
-import type { ProfileFocus, ProfileHelp } from '@yumakbot/shared';
+import type { ProfileFocus, ProfileHelp } from '@leafbot/shared';
 import { StyleSheet, Text, View } from 'react-native';
 import { Loading, Section, SwitchRow } from '@/components/page';
 import { CheckRow, ChoiceRow, Hint, Pad, Rows, SavedField, useSaveSettings } from './common/controls';

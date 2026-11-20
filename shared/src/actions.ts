@@ -426,7 +426,7 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
 /** A connection's tool (`mcp__<connection>__<tool>`): the connection's part and the tool's. */
 export function connectionToolParts(toolName: string): { server: string; tool: string } | null {
   const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(toolName);
-  if (!m || m[1] === 'yumakbot') return null;
+  if (!m || m[1] === 'leafbot') return null;
   return { server: m[1]!, tool: m[2]! };
 }
 
@@ -451,7 +451,7 @@ export function describeAction(
     service?: string;
   },
 ): ActionText {
-  const name = toolName.startsWith('mcp__yumakbot__') ? toolName.slice('mcp__yumakbot__'.length) : toolName;
+  const name = toolName.startsWith('mcp__leafbot__') ? toolName.slice('mcp__leafbot__'.length) : toolName;
   // Only a known connection's tool is named by its service; any other stays a plain "tool".
   const remote = opts.service ? connectionToolParts(toolName) : null;
   const phrase =

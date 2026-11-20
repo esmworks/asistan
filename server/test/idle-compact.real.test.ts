@@ -1,22 +1,22 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot, Message, Thread } from '@yumakbot/shared';
+import type { Bot, Message, Thread } from '@leafbot/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createServer, type YumakBotServer } from '../src/app';
+import { createServer, type LeafBotServer } from '../src/app';
 import { loadConfig } from '../src/config';
 import { schema } from '../src/db';
 import { KEY } from './helpers';
 
 /**
  * Folds a real Claude session while idle. Off by default:
- *   YUMAKBOT_REAL_CLAUDE=1 pnpm vitest run --project server test/idle-compact.real
+ *   LEAFBOT_REAL_CLAUDE=1 pnpm vitest run --project server test/idle-compact.real
  */
-const enabled = process.env.YUMAKBOT_REAL_CLAUDE === '1';
+const enabled = process.env.LEAFBOT_REAL_CLAUDE === '1';
 
 describe.skipIf(!enabled)('gerçek Claude: boştaki sohbeti özetleme', () => {
-  let s: YumakBotServer;
+  let s: LeafBotServer;
   let dataDir: string;
   const api = async <T>(method: string, url: string, body?: unknown) => {
     const res = await s.app.inject({
@@ -35,7 +35,7 @@ describe.skipIf(!enabled)('gerçek Claude: boştaki sohbeti özetleme', () => {
   const messages = (threadId: string) => api<Message[]>('GET', `/api/threads/${threadId}/messages`);
 
   beforeAll(async () => {
-    dataDir = mkdtempSync(join(tmpdir(), 'yumakbot-real-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'leafbot-real-'));
     s = await createServer(
       loadConfig(
         {},
@@ -45,7 +45,7 @@ describe.skipIf(!enabled)('gerçek Claude: boştaki sohbeti özetleme', () => {
           databaseUrl: null,
           accessKey: KEY,
           engine: 'claude',
-          claudeModel: process.env.YUMAKBOT_CLAUDE_MODEL ?? 'haiku',
+          claudeModel: process.env.LEAFBOT_CLAUDE_MODEL ?? 'haiku',
           routinesEnabled: false,
           appDir: null,
         },

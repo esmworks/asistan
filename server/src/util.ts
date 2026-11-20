@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_LOCALE, type Locale, type Params } from '@yumakbot/shared';
+import { DEFAULT_LOCALE, type Locale, type Params } from '@leafbot/shared';
 import { translator, type ServerKey, type T } from './i18n';
 
 export const newId = () => randomUUID();

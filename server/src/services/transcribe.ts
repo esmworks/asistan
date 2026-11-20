@@ -1,4 +1,4 @@
-import type { Locale } from '@yumakbot/shared';
+import type { Locale } from '@leafbot/shared';
 import { HttpError } from '../util';
 import { authHeaders, type AiEndpointService } from './ai-endpoints';
 import type { ProviderKeyService } from './keys';

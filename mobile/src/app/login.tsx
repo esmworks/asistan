@@ -24,7 +24,7 @@ export default function Login() {
   return (
     <FormScreen>
       <Mark />
-      <Title>Yumak Bot</Title>
+      <Title>Leaf Bot</Title>
       <Hint>{useCode ? t('login.codeHint') : password ? t('login.accountHint') : t('login.hint')}</Hint>
       {useCode ? <CodeForm /> : password ? <PasswordForm /> : <KeyForm />}
       {hasAccount && !useCode ? (

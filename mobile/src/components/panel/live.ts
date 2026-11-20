@@ -6,7 +6,7 @@ import type {
   ComputerAck,
   ComputerState,
   ServerToClientEvents,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { locale } from '@/i18n';

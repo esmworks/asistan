@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 import { useEffect, useRef, useState } from 'react';
 import { LiveFrame, type FrameMessage } from '@/components/LiveFrame';
 import { useLocale, useT } from '@/i18n';
@@ -32,7 +32,7 @@ export function McpAppView({ m }: { m: Message }) {
       case 'ui/initialize':
         return {
           protocolVersion: typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
-          hostInfo: { name: 'YumakBot', version: '0.7.0' },
+          hostInfo: { name: 'LeafBot', version: '0.7.0' },
           hostCapabilities: { openLinks: {}, serverTools: {} },
           hostContext: {
             theme,

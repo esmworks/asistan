@@ -27,8 +27,8 @@ describe('okunmamış yanıtlar', () => {
     expect(badgeCount(2.7)).toBe(2);
     expect(badgeCount(5000)).toBe(999);
     expect(badgeCount(Number.NaN)).toBe(0);
-    expect(titleWithCount('Yumak Bot', 0)).toBe('Yumak Bot');
-    expect(titleWithCount('Yumak Bot', 3)).toBe('(3) Yumak Bot');
+    expect(titleWithCount('Leaf Bot', 0)).toBe('Leaf Bot');
+    expect(titleWithCount('Leaf Bot', 3)).toBe('(3) Leaf Bot');
   });
 
   it('açık olmayan sohbetteki yanıtı, o sohbet açılana ya da burada sonra yazılana dek gösterir', () => {

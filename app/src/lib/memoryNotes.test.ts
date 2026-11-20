@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTranslator, type Memory, type MemoryHistoryLine } from '@yumakbot/shared';
+import { createTranslator, type Memory, type MemoryHistoryLine } from '@leafbot/shared';
 import { en } from '@/i18n/en';
 import { tr } from '@/i18n/tr';
 import {

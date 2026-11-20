@@ -1,4 +1,4 @@
-import type { TurnChangeItem } from '@yumakbot/shared';
+import type { TurnChangeItem } from '@leafbot/shared';
 
 /**
  * What taking a turn back sorts into: changes put back as they are, those that need the bot's
@@ -17,4 +17,4 @@ export const restoredCount = (items: TurnChangeItem[]) =>
   items.filter((i) => i.outcome === 'restored').length;
 
 // Shared with the web app, which offers the same rehearsal.
-export { clock, rehearsalSeconds, startedBySomething, triggerKey } from '@yumakbot/app/src/lib/rehearsal';
+export { clock, rehearsalSeconds, startedBySomething, triggerKey } from '@leafbot/app/src/lib/rehearsal';

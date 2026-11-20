@@ -1,4 +1,4 @@
-import type { Bot, BotMove } from '@yumakbot/shared';
+import type { Bot, BotMove } from '@leafbot/shared';
 
 /** A sidebar section: the pinned bots, a group's id, or the ungrouped bots. */
 export type SectionKey = string;

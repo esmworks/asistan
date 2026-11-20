@@ -1,5 +1,5 @@
-import type { Memory } from '@yumakbot/shared';
-import { MEMORY_REVIEW_STEPS } from '@yumakbot/shared';
+import type { Memory } from '@leafbot/shared';
+import { MEMORY_REVIEW_STEPS } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Pencil, Pin, Trash2 } from 'lucide-react';
 import { useState } from 'react';

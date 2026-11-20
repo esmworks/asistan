@@ -1,4 +1,4 @@
-import type { ApiAuth, ApiCredential } from '@yumakbot/shared';
+import type { ApiAuth, ApiCredential } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp, KeySquare, Pencil, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

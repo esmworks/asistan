@@ -1,4 +1,4 @@
-import type { Bot, WhatsAppMode, WhatsAppStatus } from '@yumakbot/shared';
+import type { Bot, WhatsAppMode, WhatsAppStatus } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useState } from 'react';

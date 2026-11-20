@@ -1,6 +1,6 @@
 #!/bin/sh
-# Prepares a Linux host for the bubblewrap sandboxes in the yumakbot and computer containers and prints the
-# YUMAKBOT_APPARMOR value this host needs. Run once on the host as root; running it again is safe.
+# Prepares a Linux host for the bubblewrap sandboxes in the leafbot and computer containers and prints the
+# LEAFBOT_APPARMOR value this host needs. Run once on the host as root; running it again is safe.
 #
 #   sudo ./docker/apparmor.sh                    # check the host, load the profile if needed, print the value
 #   sudo ./docker/apparmor.sh --env docker/.env  # also write the value into that file
@@ -10,11 +10,11 @@
 #   - AppArmor off: none. Docker applies no AppArmor profile, so nothing blocks bubblewrap.
 #   - AppArmor on, user namespaces not restricted (e.g. Debian 12): unconfined. Docker's default profile
 #     refuses the mounts bubblewrap makes.
-#   - AppArmor on and restricting user namespaces (Ubuntu 23.10+): yumakbot-userns. The restriction also
+#   - AppArmor on and restricting user namespaces (Ubuntu 23.10+): leafbot-userns. The restriction also
 #     covers unconfined processes, so only a profile that allows user namespaces works.
 set -eu
 
-PROFILE=yumakbot-userns
+PROFILE=leafbot-userns
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 SOURCE=$HERE/apparmor/$PROFILE
 TARGET=/etc/apparmor.d/$PROFILE
@@ -60,15 +60,15 @@ profile_loaded() {
   [ -r "$LOADED" ] && grep -q "^$PROFILE " "$LOADED"
 }
 
-# Replaces the YUMAKBOT_APPARMOR line in the env file, or removes it when the host needs no value.
+# Replaces the LEAFBOT_APPARMOR line in the env file, or removes it when the host needs no value.
 write_env() {
   [ -f "$ENV_FILE" ] || die "$ENV_FILE bulunamadı"
   tmp=$(mktemp "$ENV_FILE.XXXXXX")
-  grep -v '^[[:space:]]*YUMAKBOT_APPARMOR=' "$ENV_FILE" >"$tmp" || true
+  grep -v '^[[:space:]]*LEAFBOT_APPARMOR=' "$ENV_FILE" >"$tmp" || true
   if [ -n "$1" ]; then
     # Keep the file ending in a newline before appending.
     [ ! -s "$tmp" ] || [ -z "$(tail -c 1 "$tmp")" ] || printf '\n' >>"$tmp"
-    printf 'YUMAKBOT_APPARMOR=%s\n' "$1" >>"$tmp"
+    printf 'LEAFBOT_APPARMOR=%s\n' "$1" >>"$tmp"
   fi
   # Keep the original file's owner and mode; it holds secrets.
   chmod --reference="$ENV_FILE" "$tmp"
@@ -84,9 +84,9 @@ if [ -n "$REMOVE" ]; then
   printf '%s profili kaldırıldı.\n' "$PROFILE"
   if [ -n "$ENV_FILE" ]; then
     write_env ''
-    printf 'YUMAKBOT_APPARMOR satırı %s dosyasından silindi.\n' "$ENV_FILE"
+    printf 'LEAFBOT_APPARMOR satırı %s dosyasından silindi.\n' "$ENV_FILE"
   else
-    printf 'YUMAKBOT_APPARMOR=%s kalırsa kapsayıcılar başlamaz; o satırı silin.\n' "$PROFILE"
+    printf 'LEAFBOT_APPARMOR=%s kalırsa kapsayıcılar başlamaz; o satırı silin.\n' "$PROFILE"
   fi
   exit 0
 fi
@@ -96,7 +96,7 @@ max_userns=$(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo 1)
 userns_clone=$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)
 if [ "$max_userns" = 0 ] || [ "$userns_clone" = 0 ]; then
   die "Bu sunucuda kullanıcı ad alanları kapalı; bubblewrap çalışamaz. Açmak için:
-  printf 'user.max_user_namespaces=63000\nkernel.unprivileged_userns_clone=1\n' | sudo tee /etc/sysctl.d/90-yumakbot.conf
+  printf 'user.max_user_namespaces=63000\nkernel.unprivileged_userns_clone=1\n' | sudo tee /etc/sysctl.d/90-leafbot.conf
   sudo sysctl --system
 Sonra bu betiği yeniden çalıştırın."
 fi
@@ -106,7 +106,7 @@ restricted=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/n
 
 if [ "$apparmor" != Y ]; then
   value=
-  printf 'AppArmor kapalı; YUMAKBOT_APPARMOR gerekmez.\n'
+  printf 'AppArmor kapalı; LEAFBOT_APPARMOR gerekmez.\n'
   if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = Enforcing ]; then
     printf 'Uyarı: SELinux açık. Kapsayıcı politikası bubblewrap'"'"'i engelleyebilir; SELinux'"'"'lu sunucuda denenmedi.\n'
   fi
@@ -116,7 +116,7 @@ elif [ "$restricted" != 1 ]; then
 else
   command -v apparmor_parser >/dev/null 2>&1 ||
     die "AppArmor kullanıcı ad alanlarını kısıtlıyor ama apparmor_parser yok. Kurun: sudo apt-get install -y apparmor"
-  [ -f "$SOURCE" ] || die "$SOURCE bulunamadı; betiği Yumak Bot deposunun içinden çalıştırın."
+  [ -f "$SOURCE" ] || die "$SOURCE bulunamadı; betiği Leaf Bot deposunun içinden çalıştırın."
   # Dry run first, so a host whose AppArmor is too old for the profile gets a clear message and keeps its state.
   apparmor_parser -QK "$SOURCE" >/dev/null ||
     die "AppArmor $PROFILE profilini kabul etmedi (iletisi yukarıda). Profil AppArmor 4 ister (Ubuntu 24.04 ve sonrası)."
@@ -133,6 +133,6 @@ if [ -n "$ENV_FILE" ]; then
   printf '  docker compose -f docker/compose.yml --env-file docker/.env up -d\n'
 elif [ -n "$value" ]; then
   printf '\nOrtam değişkenlerine şu satırı ekleyip kapsayıcıları yeniden oluşturun:\n\n'
-  printf '  YUMAKBOT_APPARMOR=%s\n\n' "$value"
+  printf '  LEAFBOT_APPARMOR=%s\n\n' "$value"
   printf 'docker/.env dosyasına ya da Dokploy gibi bir panelde uygulamanın Environment ayarına.\n'
 fi

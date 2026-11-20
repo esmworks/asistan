@@ -1,4 +1,4 @@
-import { formHeaders, headerNameAllowed, type Connection, type ConnectionAuth } from '@yumakbot/shared';
+import { formHeaders, headerNameAllowed, type Connection, type ConnectionAuth } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';

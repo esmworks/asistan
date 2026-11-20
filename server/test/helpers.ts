@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot, BotCreate, Message } from '@yumakbot/shared';
-import { createServer, type YumakBotServer } from '../src/app';
+import type { Bot, BotCreate, Message } from '@leafbot/shared';
+import { createServer, type LeafBotServer } from '../src/app';
 import { SESSION_COOKIE } from '../src/auth';
 import { schema } from '../src/db';
 import { loadConfig, type Config } from '../src/config';
@@ -10,11 +10,11 @@ import { FakeEngine } from '../src/engine/fake';
 import postgres from 'postgres';
 
 /** Set to run the suite on PostgreSQL instead of in-memory PGlite; each server gets its own database. */
-const PG_URL = process.env.YUMAKBOT_TEST_DATABASE_URL;
+const PG_URL = process.env.LEAFBOT_TEST_DATABASE_URL;
 
 async function freshDatabase(): Promise<{ url: string; drop(): Promise<void> } | null> {
   if (!PG_URL) return null;
-  const name = `yumakbot_t_${Math.random().toString(36).slice(2, 10)}`;
+  const name = `leafbot_t_${Math.random().toString(36).slice(2, 10)}`;
   const admin = postgres(PG_URL, { max: 1, onnotice: () => {} });
   await admin.unsafe(`create database ${name}`);
   await admin.end();
@@ -33,7 +33,7 @@ async function freshDatabase(): Promise<{ url: string; drop(): Promise<void> } |
 export const KEY = 'test-access-key-123';
 export const AUTH = { authorization: `Bearer ${KEY}` };
 
-export interface TestServer extends YumakBotServer {
+export interface TestServer extends LeafBotServer {
   engine: FakeEngine;
   dataDir: string;
   now: { value: Date };
@@ -54,7 +54,7 @@ export interface Person {
 }
 
 export async function testServer(overrides: Partial<Config> = {}): Promise<TestServer> {
-  const dataDir = mkdtempSync(join(tmpdir(), 'yumakbot-test-'));
+  const dataDir = mkdtempSync(join(tmpdir(), 'leafbot-test-'));
   const pg = await freshDatabase();
   const config = loadConfig(
     {},

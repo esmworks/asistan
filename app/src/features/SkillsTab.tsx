@@ -1,4 +1,4 @@
-import { parseSkillFile, skillWarnings, textDiff, type Skill, type SkillChange } from '@yumakbot/shared';
+import { parseSkillFile, skillWarnings, textDiff, type Skill, type SkillChange } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,

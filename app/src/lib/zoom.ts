@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 /** Interface sizes offered, as a share of the normal size. */
 export const ZOOMS = [0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
-const KEY = 'yumakbot.zoom';
+const KEY = 'leafbot.zoom';
 
 function read(): number {
   try {

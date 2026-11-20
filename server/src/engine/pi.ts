@@ -8,7 +8,7 @@ import { completeSimple, getModel, streamSimple } from '@earendil-works/pi-ai/co
 import { clampThinkingLevel } from '@earendil-works/pi-ai/models';
 import { estimateTextTokens } from '@earendil-works/pi-ai/utils/estimate';
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow';
-import type { Locale } from '@yumakbot/shared';
+import type { Locale } from '@leafbot/shared';
 import { z } from 'zod';
 import { translator, type T } from '../i18n';
 import { failureStreak } from './failures';
@@ -516,7 +516,7 @@ export class PiEngine implements Engine {
         hidden: [this.opts.home ?? homedir(), ...(this.opts.hidden ?? [])],
         onReach: (host) => req.onReach?.(host),
         cli: this.opts.shellCli,
-        dir: this.opts.shellDir ?? join(tmpdir(), 'yumakbot-shell'),
+        dir: this.opts.shellDir ?? join(tmpdir(), 'leafbot-shell'),
       });
     const files = toolless
       ? []

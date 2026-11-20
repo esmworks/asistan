@@ -1,4 +1,4 @@
-import { createTranslator, pickLocale, type Locale, type Translate } from '@yumakbot/shared/i18n';
+import { createTranslator, pickLocale, type Locale, type Translate } from '@leafbot/shared/i18n';
 import { getLocales } from 'expo-localization';
 import { catalogs, type MessageKey } from './catalogs';
 

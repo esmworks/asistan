@@ -5,7 +5,7 @@ import type {
   BrowserState,
   ClientToServerEvents,
   ServerToClientEvents,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 

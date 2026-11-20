@@ -5,7 +5,7 @@ import {
   type Routine,
   type RoutineRun,
   type Schedule,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { useEffect, useMemo, useState } from 'react';

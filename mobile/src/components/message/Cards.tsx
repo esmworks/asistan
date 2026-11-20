@@ -9,9 +9,9 @@ import {
   type Approval,
   type Bot,
   type OutsideTrigger,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
-import { isRefusal } from '@yumakbot/app/src/lib/refusal';
+import { isRefusal } from '@leafbot/app/src/lib/refusal';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';

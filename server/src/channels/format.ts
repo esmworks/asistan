@@ -3,7 +3,7 @@
  * marks. Neither shows tables, so each table row becomes a short labelled list.
  */
 
-import { maskSecretShapes } from '@yumakbot/shared';
+import { maskSecretShapes } from '@leafbot/shared';
 
 /**
  * What stands in for a key or token in a message that leaves for a chat app. Only keys of a known

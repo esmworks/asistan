@@ -20,7 +20,7 @@ interface DesktopBridge {
   openAtLogin?(on?: boolean): Promise<boolean | null>;
   /** Calls `fn` when Settings is chosen in the menu bar; returns a function that stops it. Missing in older shells. */
   onOpenSettings?(fn: () => void): () => void;
-  /** The chat a `yumakbot://` link asked to open, once. Missing in older shells. */
+  /** The chat a `leafbot://` link asked to open, once. Missing in older shells. */
   takeLink?(): Promise<{ kind: 'thread' | 'bot' | 'room'; id: string } | null>;
   /** Calls `fn` when a link arrives while the page is open. Missing in older shells. */
   onOpenLink?(fn: () => void): () => void;
@@ -36,7 +36,9 @@ interface DesktopBridge {
   framelessTitleBar?: boolean;
 }
 
-export const desktop = (window as unknown as { yumakbotDesktop?: DesktopBridge }).yumakbotDesktop ?? null;
+/** Shells made before the rename offer the bridge under its old name only. */
+const shell = window as unknown as { leafbotDesktop?: DesktopBridge; yumakbotDesktop?: DesktopBridge };
+export const desktop = shell.leafbotDesktop ?? shell.yumakbotDesktop ?? null;
 
 export type DesktopServer = { mode: 'local' | 'remote'; url: string | null };
 

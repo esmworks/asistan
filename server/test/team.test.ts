@@ -1,4 +1,4 @@
-import type { Approval, Bot, Memory, Thread } from '@yumakbot/shared';
+import type { Approval, Bot, Memory, Thread } from '@leafbot/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testServer, waitFor, type Person, type TestServer } from './helpers';
 

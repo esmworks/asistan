@@ -144,7 +144,7 @@ export function searchEmojis(list: readonly Emoji[], query: string): Emoji[] {
   return [...named, ...tagged];
 }
 
-const RECENT_KEY = 'yumakbot.recentEmoji';
+const RECENT_KEY = 'leafbot.recentEmoji';
 const RECENT_MAX = 16;
 
 /** The emoji this person picked lately, newest first; kept in this browser only. */

@@ -12,15 +12,18 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Lets the browser install the app as its own window. -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Yumak Bot</title>
+    <title>Leaf Bot</title>
     <script>
-      // Settings saved before the app was renamed sit under the old key prefix; carried over once so
-      // they are not lost.
+      // Settings saved before the app was renamed (Asistan, then Yumak Bot) sit under an old key
+      // prefix; carried over once so they are not lost.
       try {
+        var before = ['yumakbot.', 'asistan.'];
         for (var i = localStorage.length - 1; i >= 0; i--) {
           var old = localStorage.key(i);
-          if (!old || old.indexOf('asistan.') !== 0) continue;
-          var renamed = 'yumakbot.' + old.slice('asistan.'.length);
+          var prefix = null;
+          for (var j = 0; j < before.length; j++) if (old && old.indexOf(before[j]) === 0) prefix = before[j];
+          if (!prefix) continue;
+          var renamed = 'leafbot.' + old.slice(prefix.length);
           if (localStorage.getItem(renamed) === null)
             localStorage.setItem(renamed, localStorage.getItem(old));
           localStorage.removeItem(old);
@@ -28,11 +31,11 @@
       } catch (e) {}
       // Apply the saved theme and language before first paint to avoid a flash.
       try {
-        var lang = localStorage.getItem('yumakbot.locale');
+        var lang = localStorage.getItem('leafbot.locale');
         if (lang === 'tr' || lang === 'en') document.documentElement.lang = lang;
       } catch (e) {}
       try {
-        var t = localStorage.getItem('yumakbot.theme') || 'system';
+        var t = localStorage.getItem('leafbot.theme') || 'system';
         var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
       } catch (e) {

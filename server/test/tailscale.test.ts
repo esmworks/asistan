@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TailscaleState } from '@yumakbot/shared';
+import type { TailscaleState } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TailscaleService, type TailscaleRun } from '../src/services/tailscale';
 import { AUTH, testServer, type TestServer } from './helpers';

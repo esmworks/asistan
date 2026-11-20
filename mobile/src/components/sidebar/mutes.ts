@@ -2,7 +2,7 @@
 export type Mutes = Record<string, number | null>;
 
 /** Kept under the same key the web app uses, so a setting made elsewhere on this phone agrees. */
-export const MUTED_KEY = 'yumakbot.notify.muted';
+export const MUTED_KEY = 'leafbot.notify.muted';
 
 /** Whether the bot is muted now; a mute whose time has passed no longer counts. */
 export function isMuted(mutes: Mutes, botId: string, now = Date.now()): boolean {

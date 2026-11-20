@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
-import { PhoneNumber, type Bot, type WhatsAppGroup } from '@yumakbot/shared';
+import { PhoneNumber, type Bot, type WhatsAppGroup } from '@leafbot/shared';
 import type { ChatReads } from '../channels/whatsapp';
 import { z } from 'zod';
 import type { AppTool } from '../engine/types';

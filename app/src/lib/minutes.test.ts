@@ -1,4 +1,4 @@
-import { MAX_MINUTES_ITEMS } from '@yumakbot/shared';
+import { MAX_MINUTES_ITEMS } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { fits, LINE_MAX, lines, oneLine } from './minutes';
 

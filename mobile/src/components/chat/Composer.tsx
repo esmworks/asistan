@@ -1,6 +1,6 @@
-import { pickSkill, skillQuery } from '@yumakbot/app/src/lib/skillTag';
-import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@yumakbot/app/src/lib/slash';
-import { hasSecretShape, type Message } from '@yumakbot/shared';
+import { pickSkill, skillQuery } from '@leafbot/app/src/lib/skillTag';
+import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@leafbot/app/src/lib/slash';
+import { hasSecretShape, type Message } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
@@ -89,7 +89,7 @@ export function Composer({
   const [attachOpen, setAttachOpen] = useState(false);
 
   // The unsent text stays with its conversation: leaving and coming back, or closing the app, keeps it.
-  const storeKey = `yumakbot.draft.${origin}.${draftKey}`;
+  const storeKey = `leafbot.draft.${origin}.${draftKey}`;
   const [stored, , loaded] = useStored<string>(storeKey, '');
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);

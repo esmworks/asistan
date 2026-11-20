@@ -5,8 +5,8 @@ import { z } from 'zod';
  * work, and keeps a bot to the tools its job needs.
  *
  * Tools are named as approval cards and permission rules name them: a built-in tool by its own
- * name (`Read`, `Bash`, `WebFetch`), a connected app's tool as `mcp__<app>__<tool>`, and Yumak
- * Bot's own tools as `mcp__yumakbot__<tool>`. A name ending in `*` takes every tool it starts
+ * name (`Read`, `Bash`, `WebFetch`), a connected app's tool as `mcp__<app>__<tool>`, and Leaf
+ * Bot's own tools as `mcp__leafbot__<tool>`. A name ending in `*` takes every tool it starts
  * (`mcp__gmail__*`). With `only`, the bot gets just the tools in `allow`; without it, every tool
  * but those in `exclude`. `exclude` wins over `allow`.
  */

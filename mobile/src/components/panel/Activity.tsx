@@ -5,7 +5,7 @@ import {
   type BotUpdate,
   type Routine,
   type ShownMode,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';

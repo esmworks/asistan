@@ -1,4 +1,4 @@
-import { describeSchedule, grokLinkPage, parseGrokLink, type BotImportPlan } from '@yumakbot/shared';
+import { describeSchedule, grokLinkPage, parseGrokLink, type BotImportPlan } from '@leafbot/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArchiveRestore, Copy, Download, ExternalLink, FileUp, Link2, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -84,7 +84,7 @@ export function ImportTab() {
             {t('import.copy')}
           </Button>
           <Button variant="ghost" size="icon" className="size-8 rounded-full" asChild>
-            <a href={EXPORT_INSTRUCTIONS} download="yumakbot-export.md" aria-label={t('import.download')}>
+            <a href={EXPORT_INSTRUCTIONS} download="leafbot-export.md" aria-label={t('import.download')}>
               <Download className="size-4" />
             </a>
           </Button>
@@ -459,7 +459,7 @@ function BackupCard() {
   );
 }
 
-/** Bots written to an import file, to move them to another YumakBot or keep a copy. */
+/** Bots written to an import file, to move them to another LeafBot or keep a copy. */
 function ExportCard() {
   const t = useT();
   const { data: bots = [] } = useBots();

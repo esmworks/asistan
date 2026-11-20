@@ -1,4 +1,4 @@
-import type { ClaudeModel, Effort } from '@yumakbot/shared';
+import type { ClaudeModel, Effort } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Chip, ChipRow } from '@/components/settings/common/controls';

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { apiFor, type Api } from './api';
 
-const KEY = 'yumakbot.server';
+const KEY = 'leafbot.server';
 
 interface ServerState {
   /** False until the saved address has been read. */

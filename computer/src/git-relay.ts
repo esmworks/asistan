@@ -12,7 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import type { Socket } from 'node:net';
 import { Readable } from 'node:stream';
 import { connect as tlsConnect } from 'node:tls';
-import { dialPublic } from '@yumakbot/shared/egress';
+import { dialPublic } from '@leafbot/shared/egress';
 
 export const GITHUB_HOST = 'github.com';
 /** A session's relay key: random, and part of every path the session's git asks for. */
@@ -305,7 +305,7 @@ export function createGitRelay(o: GitRelayOptions) {
       const r = await upstream({
         method: 'GET',
         path: upstreamPath({ ...t, op: 'info/refs', service: 'git-upload-pack' }),
-        headers: { 'user-agent': 'git/2 (yumakbot relay)', ...(auth && { authorization: auth }) },
+        headers: { 'user-agent': 'git/2 (leafbot relay)', ...(auth && { authorization: auth }) },
       });
       // Git has just read this repository's refs with the same key, so anything else is refused.
       if (r.status !== 200) {

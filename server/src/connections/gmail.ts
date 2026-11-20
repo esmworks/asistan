@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import type { MailSender } from '@yumakbot/shared';
+import type { MailSender } from '@leafbot/shared';
 import type { StoredConnectionTool } from '../db/schema';
 import { fetchSignedIn, type ClientTarget } from './client';
 import {
@@ -256,7 +256,7 @@ class Gmail {
         json: wrap(Buffer.from(mime, 'utf8').toString('base64url')),
       });
     }
-    const boundary = `yumak-upload-${crypto.randomUUID()}`;
+    const boundary = `leaf-upload-${crypto.randomUUID()}`;
     const raw = [
       `--${boundary}`,
       'Content-Type: application/json; charset=UTF-8',
@@ -379,7 +379,7 @@ const unique = (list: string[], drop: Set<string>) => {
   });
 };
 
-const boundary = () => `yumak-${crypto.randomUUID()}`;
+const boundary = () => `leaf-${crypto.randomUUID()}`;
 const mime = (m: Mail) => mimeMessage(m, boundary());
 
 // ---------------------------------------------------------------------------------------------

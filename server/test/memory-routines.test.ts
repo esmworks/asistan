@@ -8,7 +8,7 @@ import {
   type Routine,
   type RoutineRun,
   type Thread,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OWNER_ID } from '../src/users';
 import { eq } from 'drizzle-orm';
@@ -552,7 +552,7 @@ describe('rutinler', () => {
       const a = await local.bot({ name: 'Ali' });
       const p = await promptOf(local, a.id);
       expect(p).toContain('Sana tanımlı bir rutin yok.');
-      expect(p).toContain('yalnızca bilgisayar açık ve Yumak Bot çalışırken');
+      expect(p).toContain('yalnızca bilgisayar açık ve Leaf Bot çalışırken');
       expect(p).not.toContain('kapalıyken de');
     } finally {
       await local.dispose();
@@ -1102,7 +1102,7 @@ describe('rutinler', () => {
     expect((await t.messages(thread.id)).at(-1)!.text).toContain('zaten var');
     expect(
       describeAction(
-        'mcp__yumakbot__routine_create',
+        'mcp__leafbot__routine_create',
         { name: 'X', schedule: { type: 'daily', time: '07:00' }, prompt: 'p' },
         { bot: 'Ali', locale: 'en' },
       ).detail,
@@ -1146,7 +1146,7 @@ describe('rutinler', () => {
       '- Akşam raporu: Her gün 18:00 (Europe/Istanbul), model: haiku',
     );
     expect(
-      describeAction('mcp__yumakbot__routine_update', { routine: 'Akşam raporu', model: '' }, { bot: 'Ali' })
+      describeAction('mcp__leafbot__routine_update', { routine: 'Akşam raporu', model: '' }, { bot: 'Ali' })
         .detail,
     ).toBe('model: botun kendi modeli');
     await t.send(thread.id, '[araç:routine_update {"routine":"Akşam raporu","model":""}]');
@@ -1201,13 +1201,13 @@ describe('rutinler', () => {
 
     expect(
       describeAction(
-        'mcp__yumakbot__routine_update',
+        'mcp__leafbot__routine_update',
         { routine: 'Rapor', bot: 'Ali', enabled: false },
         { bot: 'Müdür' },
       ).want,
     ).toBe('Müdür "Ali" botunun "Rapor" rutinini kapatmak istiyor.');
     expect(
-      describeAction('mcp__yumakbot__routine_delete', { routine: 'Rapor' }, { bot: 'Müdür', locale: 'en' })
+      describeAction('mcp__leafbot__routine_delete', { routine: 'Rapor' }, { bot: 'Müdür', locale: 'en' })
         .want,
     ).toBe('Müdür wants to delete the routine "Rapor".');
   });

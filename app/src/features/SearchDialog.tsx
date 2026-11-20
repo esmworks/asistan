@@ -1,4 +1,4 @@
-import type { Bot, SearchHit } from '@yumakbot/shared';
+import type { Bot, SearchHit } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';

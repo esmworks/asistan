@@ -106,7 +106,7 @@
       <input
         id="url"
         data-i18n-placeholder="urlPlaceholder"
-        placeholder="https://yumakbot.ornek.com"
+        placeholder="https://leafbot.ornek.com"
         required
         autofocus
       />
@@ -127,7 +127,7 @@
           intro:
             'Botlar o sunucuda çalışır; bu Mac yalnızca pencere olur. Anahtar macOS anahtar zincirinde şifreli saklanır.',
           url: 'Sunucu adresi',
-          urlPlaceholder: 'https://yumakbot.ornek.com',
+          urlPlaceholder: 'https://leafbot.ornek.com',
           key: 'Erişim anahtarı ya da eşleştirme kodu',
           local: "Bu Mac'i kullan",
           connect: 'Bağlan',
@@ -138,7 +138,7 @@
           intro:
             'The bots run on that server; this Mac is only the window. The key is stored encrypted in the macOS keychain.',
           url: 'Server address',
-          urlPlaceholder: 'https://yumakbot.example.com',
+          urlPlaceholder: 'https://leafbot.example.com',
           key: 'Access key or pairing code',
           local: 'Use this Mac',
           connect: 'Connect',
@@ -155,11 +155,11 @@
         e.preventDefault();
         $('go').disabled = true;
         $('err').textContent = '';
-        const r = await window.yumakbotDesktop.connectRemote($('url').value, $('key').value);
+        const r = await window.leafbotDesktop.connectRemote($('url').value, $('key').value);
         if (!r.ok) $('err').textContent = r.error || text.failed;
         $('go').disabled = false;
       });
-      $('local').addEventListener('click', () => window.yumakbotDesktop.useLocal());
+      $('local').addEventListener('click', () => window.leafbotDesktop.useLocal());
     </script>
   </body>
 </html>

@@ -679,7 +679,7 @@ export function connectionSlug(name: string, taken: Iterable<string> = []): stri
       .replace(/_+$/, '') || 'mcp';
   const used = new Set(taken);
   // Reserved: the app's own tools.
-  used.add('yumakbot');
+  used.add('leafbot');
   if (!used.has(base)) return base;
   for (let i = 2; ; i++) {
     const s = `${base.slice(0, 17)}_${i}`;

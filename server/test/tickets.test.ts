@@ -1,4 +1,4 @@
-import type { Thread, Ticket } from '@yumakbot/shared';
+import type { Thread, Ticket } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testServer, type TestServer } from './helpers';
 

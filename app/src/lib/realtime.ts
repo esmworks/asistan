@@ -1,4 +1,4 @@
-import type { ClientToServerEvents, RefreshScope, ServerToClientEvents } from '@yumakbot/shared';
+import type { ClientToServerEvents, RefreshScope, ServerToClientEvents } from '@leafbot/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import { browserSocketClosed, onBrowserReconnect, useBrowsers } from './browser';

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isMp4, VideoService } from '../src/services/videos';
 import { testServer, type TestServer } from './helpers';

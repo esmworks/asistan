@@ -8,7 +8,7 @@ import {
   type ApiCredential,
   type ApiCredentialCreate as CreateInput,
   type ApiCredentialUpdate as UpdateInput,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';

@@ -1,6 +1,6 @@
-import type { BotActivity } from '@yumakbot/app/src/lib/activity';
-import type { AvatarShape } from '@yumakbot/shared';
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import type { BotActivity } from '@leafbot/app/src/lib/activity';
+import type { AvatarShape } from '@leafbot/shared';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
 import { PlushEyes, type EyeMotion } from '@/components/PlushEyes';

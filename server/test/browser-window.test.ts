@@ -5,7 +5,7 @@ import { createServer as httpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Bot, BrowserState } from '@yumakbot/shared';
+import type { Bot, BrowserState } from '@leafbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findBrowser } from '../src/browser/find';
 import { BrowserManager } from '../src/browser/manager';
@@ -124,7 +124,7 @@ describe('botun tarayıcısı ayrı pencerede', () => {
   });
 });
 
-const BROWSER = process.env.YUMAKBOT_TEST_BROWSER ?? findBrowser();
+const BROWSER = process.env.LEAFBOT_TEST_BROWSER ?? findBrowser();
 
 describe.skipIf(!BROWSER)('ayrı pencereden bota geçen oturum', () => {
   let dir: string | null = null;
@@ -134,7 +134,7 @@ describe.skipIf(!BROWSER)('ayrı pencereden bota geçen oturum', () => {
   });
 
   it('pencerede alınan çerezi bot kendi tarayıcısında okur', async () => {
-    dir = mkdtempSync(join(tmpdir(), 'yumakbot-pencere-'));
+    dir = mkdtempSync(join(tmpdir(), 'leafbot-pencere-'));
     let visits = 0;
     const site = httpServer((req, res) => {
       visits++;

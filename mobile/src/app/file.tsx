@@ -1,4 +1,4 @@
-import { previewKind } from '@yumakbot/app/src/lib/preview';
+import { previewKind } from '@leafbot/app/src/lib/preview';
 import { useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { useMemo, useState } from 'react';
@@ -46,7 +46,7 @@ export default function FileScreen() {
   const [current, setCurrent] = useState(params.path);
   const [menu, setMenu] = useState(false);
   const [source, setSource] = useState(false);
-  const [wrap, setWrap] = useStored('yumakbot.preview.wrap', true);
+  const [wrap, setWrap] = useStored('leafbot.preview.wrap', true);
   const { data: library } = useLibrary(botId);
 
   const at = list.indexOf(current);

@@ -1,4 +1,4 @@
-import type { PasswordManager, PasswordManagerCreate, PasswordManagerKind } from '@yumakbot/shared';
+import type { PasswordManager, PasswordManagerCreate, PasswordManagerKind } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw, Trash2, Vault } from 'lucide-react';
 import { useState, type FormEvent } from 'react';

@@ -1,4 +1,4 @@
-/** A short name for the device a user agent string belongs to: "Chrome on macOS", "Yumak Bot on Windows". */
+/** A short name for the device a user agent string belongs to: "Chrome on macOS", "Leaf Bot on Windows". */
 export function deviceName(ua: string | null): { app: string | null; os: string | null } {
   if (!ua) return { app: null, os: null };
   const os = /iPhone|iPad|iPod/.test(ua)
@@ -16,7 +16,7 @@ export function deviceName(ua: string | null): { app: string | null; os: string 
               : null;
   // The desktop app's window is Electron, checked first as it also says Chrome.
   const app = /Electron\//.test(ua)
-    ? 'Yumak Bot'
+    ? 'Leaf Bot'
     : /Edg\//.test(ua)
       ? 'Edge'
       : /OPR\//.test(ua)

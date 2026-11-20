@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { StorageReport, Thread } from '@yumakbot/shared';
+import type { StorageReport, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SizeWalk, storageReport } from '../src/storage';
 import { AUTH, testServer, type TestServer } from './helpers';
@@ -85,7 +85,7 @@ describe('depolama görünümü', () => {
 describe('klasör boyutu', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'yumak-boyut-'));
+    dir = mkdtempSync(join(tmpdir(), 'leaf-boyut-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -93,7 +93,7 @@ describe('klasör boyutu', () => {
     mkdirSync(join(dir, 'a', 'b'), { recursive: true });
     writeFileSync(join(dir, 'a', 'bir.txt'), '12345');
     writeFileSync(join(dir, 'a', 'b', 'iki.txt'), '123');
-    const outside = mkdtempSync(join(tmpdir(), 'yumak-dis-'));
+    const outside = mkdtempSync(join(tmpdir(), 'leaf-dis-'));
     writeFileSync(join(outside, 'buyuk.bin'), Buffer.alloc(10_000));
     symlinkSync(outside, join(dir, 'disari'));
     symlinkSync(join(outside, 'buyuk.bin'), join(dir, 'a', 'kisayol.bin'));

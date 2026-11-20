@@ -1,4 +1,4 @@
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 
 /** Active bots, pinned ones first, then each in its place in the list. */
 export function ordered(bots: readonly Bot[]): Bot[] {

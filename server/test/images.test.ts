@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Approval, Message, MessageFile, Thread } from '@yumakbot/shared';
+import type { Approval, Message, MessageFile, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ImageService, imageType, MAX_IMAGE_BYTES } from '../src/services/images';
 import { MAX_IMAGES_PER_TURN } from '../src/tools/images';

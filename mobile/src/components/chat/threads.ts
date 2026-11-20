@@ -1,5 +1,5 @@
-import type { Bot, Message, Thread } from '@yumakbot/shared';
-import { conversationMarkdown } from '@yumakbot/app/src/lib/exportChat';
+import type { Bot, Message, Thread } from '@leafbot/shared';
+import { conversationMarkdown } from '@leafbot/app/src/lib/exportChat';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { useMemo } from 'react';

@@ -1,4 +1,4 @@
-import { createTranslator } from '@yumakbot/shared/i18n';
+import { createTranslator } from '@leafbot/shared/i18n';
 import { describe, expect, it } from 'vitest';
 import { catalogs, type MessageKey } from '../i18n/catalogs';
 import { formatters, needsDivider } from './format';

@@ -20,7 +20,7 @@ import {
   type Routine,
   type RoutineRun,
   type Thread,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -1621,13 +1621,13 @@ describe('bağlantı yardımcıları', () => {
   it('OAuth dönüş adresi TLS vekili arkasında https, loopback adreste http olur', () => {
     const at = (host: string, extra: { forwardedProto?: string; secure?: boolean } = {}) =>
       oauthRedirectUrl({ protocol: 'http', host, secure: false, ...extra });
-    expect(at('yumakbot.example.com', { secure: true })).toBe(
-      'https://yumakbot.example.com/api/connections/oauth/callback',
+    expect(at('leafbot.example.com', { secure: true })).toBe(
+      'https://leafbot.example.com/api/connections/oauth/callback',
     );
-    expect(at('yumakbot.example.com', { forwardedProto: 'https' })).toBe(
-      'https://yumakbot.example.com/api/connections/oauth/callback',
+    expect(at('leafbot.example.com', { forwardedProto: 'https' })).toBe(
+      'https://leafbot.example.com/api/connections/oauth/callback',
     );
-    expect(at('yumakbot.example.com')).toBe('http://yumakbot.example.com/api/connections/oauth/callback');
+    expect(at('leafbot.example.com')).toBe('http://leafbot.example.com/api/connections/oauth/callback');
     expect(at('localhost:4319', { secure: true })).toBe(
       'http://localhost:4319/api/connections/oauth/callback',
     );
@@ -1638,15 +1638,15 @@ describe('bağlantı yardımcıları', () => {
   });
 
   it('vekil arkasındaki sunucu https dönüş adresi bildirir', async () => {
-    const t = await testServer({ allowedHosts: ['yumakbot.example.com'], secureCookies: true });
+    const t = await testServer({ allowedHosts: ['leafbot.example.com'], secureCookies: true });
     try {
       const r = await t.app.inject({
         method: 'GET',
         url: '/api/connections/redirect-url',
-        headers: { ...AUTH, host: 'yumakbot.example.com' },
+        headers: { ...AUTH, host: 'leafbot.example.com' },
       });
       expect(r.statusCode).toBe(200);
-      expect(r.json()).toEqual({ url: 'https://yumakbot.example.com/api/connections/oauth/callback' });
+      expect(r.json()).toEqual({ url: 'https://leafbot.example.com/api/connections/oauth/callback' });
     } finally {
       await t.dispose();
     }
@@ -1663,7 +1663,7 @@ describe('bağlantı yardımcıları', () => {
     expect(connectionSlug('Google Drive')).toBe('google_drive');
     expect(connectionSlug('Atlassian (Jira, Confluence)')).toBe('atlassian');
     expect(connectionSlug('Notion', ['notion'])).toBe('notion_2');
-    expect(connectionSlug('YumakBot')).toBe('yumakbot_2');
+    expect(connectionSlug('LeafBot')).toBe('leafbot_2');
     expect(connectionSlug('Çiçek Şirketi')).toBe('cicek_sirketi');
     const names = exposedNames('google_drive', ['a.b', 'a_b', 'x'.repeat(80)]);
     expect(names.get('a.b')).toBe('a_b');
@@ -1694,7 +1694,7 @@ describe('bağlantı yardımcıları', () => {
         handler: async () => 'ok',
       },
     ]);
-    expect(Object.keys(servers).sort()).toEqual(['notion', 'yumakbot']);
+    expect(Object.keys(servers).sort()).toEqual(['leafbot', 'notion']);
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     await servers.notion!.instance.connect(serverSide);
     const client = new Client({ name: 'test', version: '1' });

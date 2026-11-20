@@ -7,7 +7,7 @@ import { testServer, type TestServer } from './helpers';
 
 /** A home folder whose coding tools have worked in some folders, some of them not to be offered. */
 function fakeHome() {
-  const root = mkdtempSync(join(tmpdir(), 'yumakbot-proj-'));
+  const root = mkdtempSync(join(tmpdir(), 'leafbot-proj-'));
   const home = join(root, 'ev');
   const dir = (...p: string[]) => {
     const d = join(home, ...p);

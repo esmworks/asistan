@@ -5,7 +5,7 @@ import type {
   WhatsAppReplyMode,
   WhatsAppRoute,
   WhatsAppStatus,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';

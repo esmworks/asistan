@@ -168,7 +168,7 @@ describe('Claude API hatası', () => {
       block('m1', { type: 'tool_use', id: 'u1', name: 'Bash', input: {} }),
       done('u1'),
       block('m2', { type: 'text', text: 'Uzun rapor.' }),
-      block('m2', { type: 'tool_use', id: 'u2', name: 'mcp__yumakbot__quick_replies', input: {} }),
+      block('m2', { type: 'tool_use', id: 'u2', name: 'mcp__leafbot__quick_replies', input: {} }),
       done('u2'),
       block('m3', { type: 'text', text: close }),
       { type: 'result', subtype: 'success', is_error: false, result: close },

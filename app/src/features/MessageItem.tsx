@@ -19,7 +19,7 @@ import {
   subagentOf,
   subagentTime,
   type SubagentCard as Subagent,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,

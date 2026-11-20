@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemaVersion } from '../src/db';
 import { BACKUP_MAGIC, BACKUP_SCRYPT, MAX_TABLE_BYTES } from '../src/services/backup';
@@ -10,7 +10,7 @@ import { BOUND_FILE } from '../src/services/vault';
 import { AUTH, testServer, type TestServer } from './helpers';
 
 const PASSWORD = 'yedek-şifresi-2026';
-const LEGACY_MAGIC = Buffer.from('YUMAKBK1');
+const LEGACY_MAGIC = Buffer.from('LEAFBK1');
 
 /** The gzip inside a backup made now, opened with its password. */
 function openBackup(file: Buffer, password: string): Buffer {
@@ -51,7 +51,7 @@ function record(header: object): Buffer {
 const manifest = () =>
   record({
     type: 'manifest',
-    format: 'yumakbot-backup',
+    format: 'leafbot-backup',
     version: 1,
     schema: schemaVersion(),
     createdAt: new Date().toISOString(),

@@ -1,4 +1,4 @@
-import type { Connection } from '@yumakbot/shared';
+import type { Connection } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { servicesOf } from './Connections';
 

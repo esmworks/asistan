@@ -8,7 +8,7 @@ import {
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { Approval, ComputerState, DesktopStart, ServerInfo, Thread } from '@yumakbot/shared';
+import type { Approval, ComputerState, DesktopStart, ServerInfo, Thread } from '@leafbot/shared';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
@@ -374,7 +374,7 @@ describe('botun bilgisayarı', () => {
   });
 
   it('proje klasörlü bot sunucudaki Bash ile kalır; salt okunur botun klasörleri salt okunur bağlanır', async () => {
-    const project = await t.bot({ projectDir: mkdtempSync(join(tmpdir(), 'yumakbot-proje-')) });
+    const project = await t.bot({ projectDir: mkdtempSync(join(tmpdir(), 'leafbot-proje-')) });
     await t.send((await main(project.id)).id, 'merhaba');
     await t.services.turns.idle();
     expect(t.engine.requests.at(-1)!.shell).toBe('sandbox');

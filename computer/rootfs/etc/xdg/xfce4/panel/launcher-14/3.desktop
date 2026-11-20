@@ -3,6 +3,6 @@ Version=1.0
 Type=Application
 Name=Browser
 Icon=web-browser
-Exec=/usr/local/bin/yumakbot-browser
+Exec=/usr/local/bin/leafbot-browser
 Terminal=false
 StartupNotify=true

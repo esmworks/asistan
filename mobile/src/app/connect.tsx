@@ -26,7 +26,7 @@ function acceptInsecure(origin: string): Promise<boolean> {
   });
 }
 
-/** Asks for the server's address and keeps the first form of it that an YumakBot server answers at. */
+/** Asks for the server's address and keeps the first form of it that an LeafBot server answers at. */
 export default function Connect() {
   const { origin, setOrigin } = useServer();
   const queryClient = useQueryClient();
@@ -60,7 +60,7 @@ export default function Connect() {
     setBusy(false);
     // Typed without a scheme, a server on the internet is only tried over https (see candidates).
     const typedScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
-    setError(t(!typedScheme && list.length === 1 ? 'connect.httpsOnly' : 'connect.notYumakBot'));
+    setError(t(!typedScheme && list.length === 1 ? 'connect.httpsOnly' : 'connect.notLeafBot'));
   };
 
   return (

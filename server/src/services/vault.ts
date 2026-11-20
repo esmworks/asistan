@@ -10,12 +10,12 @@ import type {
   VaultLogin,
   VaultLoginCreate,
   VaultLoginUpdate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import {
   VaultImport as ImportSchema,
   VaultLoginCreate as CreateSchema,
   VaultLoginUpdate as UpdateSchema,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -141,7 +141,7 @@ export class VaultService {
    * so it lives in the data folder and never in the database.
    */
   contentKey(): Buffer {
-    return Buffer.from(hkdfSync('sha256', this.cipherKey(), Buffer.alloc(0), 'yumakbot content at rest', 32));
+    return Buffer.from(hkdfSync('sha256', this.cipherKey(), Buffer.alloc(0), 'leafbot content at rest', 32));
   }
 
   /**

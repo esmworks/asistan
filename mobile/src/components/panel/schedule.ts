@@ -1,5 +1,5 @@
-import type { Schedule } from '@yumakbot/shared';
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import type { Schedule } from '@leafbot/shared';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import { locale, t } from '@/i18n';
 
 const tag = INTL_LOCALE[locale];

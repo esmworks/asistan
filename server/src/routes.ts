@@ -105,7 +105,7 @@ import {
   TicketCreate,
   TicketUpdate,
   skillSlug,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { MIN_PASSWORD } from './account';
@@ -113,6 +113,7 @@ import {
   canAdminister,
   clientAddress,
   requireAdmin,
+  OLD_SESSION_COOKIE,
   SESSION_COOKIE,
   SESSION_IDLE_MS,
   type Auth,
@@ -479,6 +480,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/logout', async (req, reply) => {
     await d.auth.endSession(req.cookies[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(OLD_SESSION_COOKIE, { path: '/' });
     return { ok: true };
   });
 
@@ -812,11 +814,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const csv = await s.usage.csv(q.days as UsageRange);
     return reply
       .header('content-type', 'text/csv; charset=utf-8')
-      .header('content-disposition', `attachment; filename="yumakbot-usage-${q.days}d.csv"`)
+      .header('content-disposition', `attachment; filename="leafbot-usage-${q.days}d.csv"`)
       .send(csv);
   });
 
-  // What the person's other AI tools on this computer have that YumakBot does not: skills and remote
+  // What the person's other AI tools on this computer have that LeafBot does not: skills and remote
   // MCP servers. Only when the server runs on the person's own computer, whose home folder it is.
   const foundSetup = async () =>
     findSetup({
@@ -1529,7 +1531,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await s.bots.get(id);
     return reply
       .header('content-type', 'text/csv; charset=utf-8')
-      .header('content-disposition', `attachment; filename="yumakbot-steps-${id}.csv"`)
+      .header('content-disposition', `attachment; filename="leafbot-steps-${id}.csv"`)
       .send(await s.actions.csv(id));
   });
   // Rules for every bot are the server's: those who look after it set them. A bot's own rules are
@@ -2073,7 +2075,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const { ids } = z.object({ ids: z.string().max(20_000).optional() }).parse(req.query);
     const file = await s.botImport.export(ids ? ids.split(',').filter(Boolean) : undefined);
     const day = new Date().toISOString().slice(0, 10);
-    reply.header('content-disposition', `attachment; filename="yumakbot-bots-${day}.json"`);
+    reply.header('content-disposition', `attachment; filename="leafbot-bots-${day}.json"`);
     return file;
   });
   app.post('/api/import/bots', async (req) => {
@@ -2098,7 +2100,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const file = d.backup.path(IdParams.parse(req.params).id);
     if (!file) throw new HttpError(404, 'error.notFound');
     const day = new Date().toISOString().slice(0, 10);
-    reply.header('content-disposition', `attachment; filename="yumakbot-backup-${day}.ybk"`);
+    reply.header('content-disposition', `attachment; filename="leafbot-backup-${day}.ybk"`);
     reply.header('content-length', statSync(file).size);
     reply.type('application/octet-stream');
     // One download: the file holds everything, so it does not wait on the server once fetched.

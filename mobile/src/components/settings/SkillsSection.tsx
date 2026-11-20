@@ -1,4 +1,4 @@
-import type { Skill } from '@yumakbot/shared';
+import type { Skill } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';

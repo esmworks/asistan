@@ -1,6 +1,6 @@
-import type { Bot, BotSummary, Group, Room } from '@yumakbot/shared';
+import type { Bot, BotSummary, Group, Room } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { PillButton } from '@/components/page';
@@ -39,7 +39,7 @@ export function SidebarList({
   const c = useColors();
   const { origin } = useServer();
   const [mutes] = useStored<Mutes>(MUTED_KEY, {});
-  const [collapsed, setCollapsed] = useStored<string[]>(`yumakbot.sidebar.collapsed:${origin}`, []);
+  const [collapsed, setCollapsed] = useStored<string[]>(`leafbot.sidebar.collapsed:${origin}`, []);
   const q = query.trim();
   const searching = q.length > 0;
 

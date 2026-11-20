@@ -1,4 +1,4 @@
-import type { Pledge } from '@yumakbot/shared';
+import type { Pledge } from '@leafbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Check, X } from 'lucide-react';
 import { toast } from 'sonner';

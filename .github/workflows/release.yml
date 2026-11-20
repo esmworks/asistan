@@ -42,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "Yumak Bot ${TAG#v}" --generate-notes
+        run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "Leaf Bot ${TAG#v}" --generate-notes
 
   installer:
     name: Installer (${{ matrix.os }})
@@ -104,7 +104,7 @@ jobs:
             sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144
             ulimit -n 262144
           fi
-          pnpm --filter @yumakbot/desktop dist --publish never
+          pnpm --filter @leafbot/desktop dist --publish never
         env:
           # macOS only: the Developer ID certificate (a base64 .p12) and the Apple account that
           # notarizes the app. Missing secrets give an unsigned or un-notarized app, not a failure.

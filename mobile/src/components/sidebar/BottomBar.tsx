@@ -1,4 +1,4 @@
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

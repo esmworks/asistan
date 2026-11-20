@@ -1,4 +1,4 @@
-import type { Message } from '@yumakbot/shared';
+import type { Message } from '@leafbot/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { create } from 'zustand';

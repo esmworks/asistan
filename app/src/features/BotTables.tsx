@@ -1,4 +1,4 @@
-import { INTL_LOCALE, type Bot, type BotTable, type TableColumn, type TableRow } from '@yumakbot/shared';
+import { INTL_LOCALE, type Bot, type BotTable, type TableColumn, type TableRow } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Download, Plus, Search, Table2, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';

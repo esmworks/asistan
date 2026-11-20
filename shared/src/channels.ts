@@ -231,7 +231,7 @@ export const SLACK_OPTIONAL_SCOPES = ['reactions:read'] as const;
  * the events and permissions the server uses, and the buttons on cards.
  */
 export function slackManifest(name: string): string {
-  const display = name.trim().slice(0, 35) || 'Yumak Bot';
+  const display = name.trim().slice(0, 35) || 'Leaf Bot';
   return JSON.stringify(
     {
       display_information: { name: display },

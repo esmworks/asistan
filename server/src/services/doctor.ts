@@ -1,6 +1,6 @@
 import { mkdir, readdir, rename, stat, statfs } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
-import type { DoctorCheck, DoctorCheckId, DoctorReport } from '@yumakbot/shared';
+import type { DoctorCheck, DoctorCheckId, DoctorReport } from '@leafbot/shared';
 import { and, eq, inArray, lt, notInArray } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

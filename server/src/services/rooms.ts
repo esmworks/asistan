@@ -8,7 +8,7 @@ import {
   type RoomCreate,
   type RoomSend,
   type RoomUpdate,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

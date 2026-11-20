@@ -1,4 +1,4 @@
-# Yumak Bot
+# Leaf Bot
 
 Notes for people and coding agents working on this repository.
 
@@ -32,4 +32,4 @@ pnpm format:check
 pnpm test
 ```
 
-The `*.real.test.ts` files run against a real Claude account and are skipped unless `YUMAKBOT_REAL_CLAUDE=1` is set.
+The `*.real.test.ts` files run against a real Claude account and are skipped unless `LEAFBOT_REAL_CLAUDE=1` is set.

@@ -29,3 +29,4 @@ export * from './secret-shapes';
 export * from './upload-retry';
 export * from './storage';
 export * from './word-bold';
+export * from './old-names';

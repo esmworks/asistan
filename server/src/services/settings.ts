@@ -15,7 +15,7 @@ import {
   PROFILE_HELP,
   ROUTINE_GATE_MODES,
   type Locale,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { OWNER_ID } from '../users';
 
 /** The most turns the person may let run at the same time. */
@@ -130,7 +130,7 @@ export const Settings = z.object({
   workOffers: z.boolean().default(false),
   /**
    * How many turns may run at the same time across every bot; 0 leaves it to the server's
-   * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
+   * `LEAFBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
    */
   maxTurns: z.number().int().min(0).max(MAX_TURNS_LIMIT).default(0),
   /**

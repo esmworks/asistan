@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Params, Role, SessionInfo } from '@yumakbot/shared';
+import type { Params, Role, SessionInfo } from '@leafbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Config } from './config';
 import { schema, type Db } from './db';
@@ -10,7 +10,12 @@ import type { ServerKey } from './i18n';
 import { OWNER_ID, Users } from './users';
 import { HttpError } from './util';
 
-export const SESSION_COOKIE = 'yumakbot_session';
+export const SESSION_COOKIE = 'leafbot_session';
+/**
+ * The session cookie's name before the app was renamed. Browsers and phones signed in then still
+ * send it; it is read where the new one is missing, so the rename signs no one out.
+ */
+export const OLD_SESSION_COOKIE = 'yumakbot_session';
 /** A session unused for this long ends; every use moves the end further away. */
 export const SESSION_IDLE_MS = 90 * 24 * 60 * 60_000;
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
@@ -40,7 +45,9 @@ function hostName(host: string): string {
   return host.split(':')[0] ?? host;
 }
 
-export const PROXY_HEADER = 'x-yumakbot-proxy';
+export const PROXY_HEADER = 'x-leafbot-proxy';
+/** The header's name before the rename, still set by reverse proxies configured by hand then. */
+export const OLD_PROXY_HEADER = 'x-yumakbot-proxy';
 
 /**
  * The address a request comes from, for the sign-in limit. Only a request from the reverse proxy,
@@ -52,7 +59,7 @@ export function clientAddress(
   socketAddress: string,
   config: Pick<Config, 'proxySecret'>,
 ): string {
-  const sent = headers[PROXY_HEADER];
+  const sent = headers[PROXY_HEADER] ?? headers[OLD_PROXY_HEADER];
   if (!config.proxySecret || typeof sent !== 'string') return socketAddress;
   const a = Buffer.from(sent);
   const b = Buffer.from(config.proxySecret);

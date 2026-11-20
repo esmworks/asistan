@@ -1,9 +1,9 @@
-import type { PaymentCard, PaymentCardCreate, PaymentCardUpdate } from '@yumakbot/shared';
+import type { PaymentCard, PaymentCardCreate, PaymentCardUpdate } from '@leafbot/shared';
 import {
   cardBrand,
   PaymentCardCreate as CreateSchema,
   PaymentCardUpdate as UpdateSchema,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

@@ -1,4 +1,4 @@
-import type { Bot, Group } from '@yumakbot/shared';
+import type { Bot, Group } from '@leafbot/shared';
 
 /**
  * The bots in the order the sidebar lists them: those waiting on the person, the pinned ones, then

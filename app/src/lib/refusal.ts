@@ -1,4 +1,4 @@
-import type { Locale } from '@yumakbot/shared';
+import type { Locale } from '@leafbot/shared';
 
 /** How a choice that declines reads in each language: the card shows it less loudly. */
 const REFUSALS: Record<Locale, string[]> = {

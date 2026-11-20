@@ -1,4 +1,4 @@
-import { DESKTOP_SIZE, type Bot, type ComputerState } from '@yumakbot/shared';
+import { DESKTOP_SIZE, type Bot, type ComputerState } from '@leafbot/shared';
 import { Hand, Loader2, Minimize2, Monitor, MoonStar, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';

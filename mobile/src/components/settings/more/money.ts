@@ -1,4 +1,4 @@
-import { INTL_LOCALE } from '@yumakbot/shared/i18n';
+import { INTL_LOCALE } from '@leafbot/shared/i18n';
 import { locale } from '@/i18n';
 
 const tag = INTL_LOCALE[locale];

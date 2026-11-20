@@ -1,4 +1,4 @@
-import type { Bot, Message, OutsideTrigger } from '@yumakbot/shared';
+import type { Bot, Message, OutsideTrigger } from '@leafbot/shared';
 import { and, asc, desc, eq, exists, inArray, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Ctx } from '../context';

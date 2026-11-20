@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="desktop/assets/icon.png" alt="Yumak Bot icon" width="128" height="128">
+  <img src="desktop/assets/icon.png" alt="Leaf Bot icon" width="128" height="128">
 </p>
 
-<h1 align="center">Yumak Bot</h1>
+<h1 align="center">Leaf Bot</h1>
 
 <p align="center">
   A self-hosted, single-person AI assistant: a server runs your bots, and a desktop or web app talks to them.
@@ -10,7 +10,7 @@
 
 ---
 
-Yumak Bot lets you build a small team of AI bots, each with its own instructions, memory, files, schedule and
+Leaf Bot lets you build a small team of AI bots, each with its own instructions, memory, files, schedule and
 permissions. Bots run on a server you control — on your own computer through the desktop app, or on a Linux host in
 Docker — and you chat with them from the desktop app or a browser.
 
@@ -60,7 +60,7 @@ The interface is available in English and Turkish.
 - **Telegram and WhatsApp** — each bot can have its own Telegram bot, paired with your Telegram account only;
   WhatsApp links like WhatsApp Web, with a separate number or your own "Message yourself" chat, and `/bot <name>`
   switches the bot it talks to. Replies, files and approval cards go back to the app you last wrote from; passwords
-  and sign-ins stay in the Yumak Bot app.
+  and sign-ins stay in the Leaf Bot app.
 - **Slack** — one Slack app for the server, over Socket Mode (no public address). Each person links their Slack
   account with a code. A direct message goes to their own conversation; mentioning the app in a channel starts a team
   conversation that uses only what the team shares and that everyone who may talk with the bot sees in the app.
@@ -115,18 +115,18 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` builds the app, the server and the Electron shell, then opens Yumak Bot. In local mode the desktop app
+`pnpm start` builds the app, the server and the Electron shell, then opens Leaf Bot. In local mode the desktop app
 starts its own server in the background and signs you in. On first launch, connect Claude in the setup screen (or later
 in Settings → Connection → Claude).
 
-The desktop app can also connect to a remote Yumak Bot server: enter its URL and access key in the connection settings.
+The desktop app can also connect to a remote Leaf Bot server: enter its URL and access key in the connection settings.
 
 Installers for macOS (`.dmg`, Apple silicon), Windows (`.exe`) and Linux (`.AppImage`, and a `.deb` for Debian and
-Ubuntu) are attached to each [release](https://github.com/esmworks/yumakbot/releases). On Linux, install `bubblewrap`
+Ubuntu) are attached to each [release](https://github.com/esmworks/leafbot/releases). On Linux, install `bubblewrap`
 and `socat` too for the bots' shell sandbox (the `.deb` recommends them). To build one yourself on the platform it is for:
 
 ```bash
-pnpm build && pnpm --filter @yumakbot/desktop dist
+pnpm build && pnpm --filter @leafbot/desktop dist
 ```
 
 On a Mac with a Developer ID certificate in the keychain the app is signed; it is also notarized when `APPLE_ID`,
@@ -152,14 +152,14 @@ The installed app updates itself from the latest published release: it looks for
 hours, downloads it in the background and offers to restart into it; a version left waiting installs when the app
 quits. The workflow attaches the files this needs (`latest-mac.yml`, `latest.yml`, `latest-linux.yml`, the macOS
 `.zip` and the `.blockmap` files), and a draft release reaches no one until it is published. macOS installs an update
-only into a signed app. On Linux only the AppImage updates itself; a `.deb` is updated by installing the new one. Set `YUMAKBOT_DISABLE_UPDATES=1` to turn updates off.
+only into a signed app. On Linux only the AppImage updates itself; a `.deb` is updated by installing the new one. Set `LEAFBOT_DISABLE_UPDATES=1` to turn updates off.
 
 ## Quick start: your own server
 
 On a fresh Ubuntu (22.04 or later) or Debian (12 or later) server with at least 2 GB of memory (4 GB recommended):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | sudo bash
 ```
 
 The script installs Docker, fills in `docker/.env` with random secrets, sets up AppArmor and the egress firewall (kept
@@ -168,11 +168,11 @@ Without a domain it uses a name made from the server's IP address (`1-2-3-4.ssli
 at the server first and pass it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | sudo bash -s -- --domain bot.example.com
+curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | sudo bash -s -- --domain bot.example.com
 ```
 
-Ports 80 and 443 must be open in the provider's firewall. Afterwards `yumakbot update`, `yumakbot status`,
-`yumakbot logs` and `yumakbot access-key` manage the installation; `--computer` turns on the bots' desktops (8 GB
+Ports 80 and 443 must be open in the provider's firewall. Afterwards `leafbot update`, `leafbot status`,
+`leafbot logs` and `leafbot access-key` manage the installation; `--computer` turns on the bots' desktops (8 GB
 recommended) and `--help` lists the rest.
 
 Most providers (Hetzner, DigitalOcean, Vultr and others) also take a script when the server is created, under "Cloud
@@ -181,7 +181,7 @@ config" or "User data", which installs it with no SSH session at all:
 ```yaml
 #cloud-config
 runcmd:
-  - curl -fsSL https://raw.githubusercontent.com/esmworks/yumakbot/main/docker/install.sh | bash -s -- --access-key CHOOSE-A-LONG-RANDOM-KEY
+  - curl -fsSL https://raw.githubusercontent.com/esmworks/leafbot/main/docker/install.sh | bash -s -- --access-key CHOOSE-A-LONG-RANDOM-KEY
 ```
 
 The access key is chosen there because the script's output goes to a log file on the server; it needs at least 24
@@ -203,12 +203,12 @@ docker compose -f docker/compose.yml --env-file docker/.env up -d --build
 sudo ./docker/firewall.sh
 ```
 
-This starts PostgreSQL, the Yumak Bot server and the computer service with a read-only root file system, all
+This starts PostgreSQL, the Leaf Bot server and the computer service with a read-only root file system, all
 capabilities dropped and resource limits. The server listens only on `127.0.0.1:4319`. To reach it from elsewhere
 without opening a port, add `--profile cloudflare` (a Cloudflare Tunnel, with `CLOUDFLARE_TUNNEL_TOKEN`) or
-`--profile tailscale` (your tailnet, with `TAILSCALE_AUTHKEY`) and set `YUMAKBOT_PUBLIC_URL` and
-`YUMAKBOT_SECURE_COOKIES=1`; or put a TLS reverse proxy (Caddy, nginx) in front of it and set `YUMAKBOT_ALLOWED_HOSTS`
-to your domain. Have such a proxy send `YUMAKBOT_PROXY_SECRET` in an `X-Yumakbot-Proxy` header and the client's
+`--profile tailscale` (your tailnet, with `TAILSCALE_AUTHKEY`) and set `LEAFBOT_PUBLIC_URL` and
+`LEAFBOT_SECURE_COOKIES=1`; or put a TLS reverse proxy (Caddy, nginx) in front of it and set `LEAFBOT_ALLOWED_HOSTS`
+to your domain. Have such a proxy send `LEAFBOT_PROXY_SECRET` in an `X-Leafbot-Proxy` header and the client's
 address in `X-Forwarded-For`, so sign-in attempts are counted per person rather than all as the proxy's address
 (`docker/Caddyfile` shows how). To sign a phone or another computer in, get a one-time pairing code under Settings →
 Connection → Connect another device on a device already signed in.
@@ -228,10 +228,10 @@ The live screen of the bot's own desktop and picking an avatar image are still o
 Simulator or on a phone with Expo Go:
 
 ```bash
-pnpm --filter @yumakbot/mobile start
+pnpm --filter @leafbot/mobile start
 ```
 
-`pnpm --filter @yumakbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
+`pnpm --filter @leafbot/mobile ios` (or `android`) builds and runs the native project instead, with the app's own
 name, icon and network settings.
 
 The iPhone app is notified while it is closed: it hands its device token to the server, which sends each notice straight
@@ -258,7 +258,7 @@ pnpm dev:app
 Then open http://localhost:5173. Vite proxies `/api` and `/socket.io` to the server on port 4319 so cookies and origin
 checks behave as in production.
 
-Without `YUMAKBOT_ACCESS_KEY`, the server generates an access key on first start, saves it to `<data dir>/access-key` and
+Without `LEAFBOT_ACCESS_KEY`, the server generates an access key on first start, saves it to `<data dir>/access-key` and
 prints the path; use it to sign in. The data folder defaults to `data/` in the server's working directory (`server/data`
 with `pnpm dev:server`).
 
@@ -278,15 +278,15 @@ pnpm build && pnpm test
 ```
 
 Build before testing: the desktop tests start the built server. Database migrations live in `server/drizzle`; after
-changing `server/src/db/schema.ts`, run `pnpm --filter @yumakbot/server db:generate`.
+changing `server/src/db/schema.ts`, run `pnpm --filter @leafbot/server db:generate`.
 
 User-visible text goes through the translation tables in `shared/src/i18n.ts`, `server/src/i18n.ts` and
 `desktop/src/i18n.ts`; a test fails on hard-coded strings.
 
 ## Opening a chat from outside the app
 
-The desktop app opens `yumakbot://` links: `yumakbot://bot/<bot id>` shows a bot's chat, `yumakbot://thread/<id>` one
-conversation and `yumakbot://room/<id>` a room. "Copy a link to this conversation" in the desktop app copies such a
+The desktop app opens `leafbot://` links: `leafbot://bot/<bot id>` shows a bot's chat, `leafbot://thread/<id>` one
+conversation and `leafbot://room/<id>` a room. "Copy a link to this conversation" in the desktop app copies such a
 link, for a bookmark, a dashboard or a script. Opening one only shows the chat; it never sends anything.
 
 ## Calling a bot from a script
@@ -296,8 +296,8 @@ conversation of its own ("Through the API" in the conversation menu), and the re
 the turn ends:
 
 ```bash
-curl -s -X POST "$YUMAKBOT_URL/api/bots/$BOT_ID/ask" \
-  -H "Authorization: Bearer $YUMAKBOT_ACCESS_KEY" -H 'content-type: application/json' \
+curl -s -X POST "$LEAFBOT_URL/api/bots/$BOT_ID/ask" \
+  -H "Authorization: Bearer $LEAFBOT_ACCESS_KEY" -H 'content-type: application/json' \
   -d '{"text": "Summarise today'\''s unread mail"}'
 ```
 
@@ -306,53 +306,53 @@ The answer is `{ status, reply, error, threadId, turnId }`. `wait` (seconds, def
 bot's conversations instead.
 
 Agents that speak MCP (Claude Code, Claude Desktop and others) can reach the bots too: point them at
-`$YUMAKBOT_URL/api/mcp` (streamable HTTP) with the header `Authorization: Bearer $YUMAKBOT_ACCESS_KEY`. They get
+`$LEAFBOT_URL/api/mcp` (streamable HTTP) with the header `Authorization: Bearer $LEAFBOT_ACCESS_KEY`. They get
 `list_bots`, `ask_bot` and `get_reply`.
 
 ## Configuration
 
 The server reads these environment variables:
 
-| Variable                         | Default             | Purpose                                                                 |
-| -------------------------------- | ------------------- | ----------------------------------------------------------------------- |
-| `YUMAKBOT_HOST`                  | `127.0.0.1`         | Address to listen on                                                    |
-| `YUMAKBOT_PORT`                  | `4319`              | Port to listen on                                                       |
-| `YUMAKBOT_DATA_DIR`              | `./data`            | Bot workspaces, access key, vault key and the embedded database         |
-| `DATABASE_URL`                   | —                   | `postgres://…` connection string; unset means embedded PGlite           |
-| `YUMAKBOT_ACCESS_KEY`            | generated           | Key used to sign in to the server                                       |
-| `YUMAKBOT_ALLOWED_HOSTS`         | —                   | Comma-separated host names accepted besides loopback                    |
-| `YUMAKBOT_ALLOWED_ORIGINS`       | —                   | Comma-separated extra browser origins                                   |
-| `YUMAKBOT_SECURE_COOKIES`        | `0`                 | `1` when served over HTTPS                                              |
-| `YUMAKBOT_PUBLIC_URL`            | —                   | Public address for routine webhooks and sign-in callbacks               |
-| `YUMAKBOT_PROXY_SECRET`          | —                   | Secret the reverse proxy sends, so its `X-Forwarded-For` is trusted     |
-| `YUMAKBOT_APP_DIR`               | `app/dist` if built | Built web UI to serve                                                   |
-| `YUMAKBOT_CLAUDE_MODEL`          | —                   | Default Claude model                                                    |
-| `YUMAKBOT_MAX_TURNS`             | `3`                 | Bot turns running at once                                               |
-| `YUMAKBOT_UNATTENDED_HOURS`      | `12`                | How long an approval opened by a routine or another bot waits (max 576) |
-| `YUMAKBOT_MCP_TIMEOUT_SECONDS`   | `300`               | How long a connected app's tool call may run (10–3600)                  |
-| `YUMAKBOT_TURN_STALL_MINUTES`    | `10`                | How long a bot may stay silent before its turn is stopped (2–240)       |
-| `YUMAKBOT_BROWSER`               | detected            | Chrome, Edge or Chromium executable for the bots' browsers              |
-| `YUMAKBOT_BROWSER_SANDBOX`       | `1`                 | `0` turns off Chromium's own sandbox where it cannot start              |
-| `YUMAKBOT_MAX_BROWSERS`          | `3`                 | Browsers open at once                                                   |
-| `YUMAKBOT_BROWSER_LOCAL_HOSTS`   | —                   | Private-network hosts the bots' browsers may reach (comma-separated)    |
-| `YUMAKBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
-| `YUMAKBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
-| `YUMAKBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
-| `YUMAKBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
-| `YUMAKBOT_SLACK_API`             | Slack's own         | Address of Slack's Web API; only tests change it                        |
-| `YUMAKBOT_DISCORD_API`           | Discord's own       | Address of Discord's API with its version; only tests change it         |
-| `YUMAKBOT_MODEL_CATALOG_URL`     | models.dev          | Public model catalog for model names and new models; `off` turns it off |
-| `YUMAKBOT_LOG`                   | —                   | `1` turns on request logging                                            |
+| Variable                        | Default             | Purpose                                                                 |
+| ------------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `LEAFBOT_HOST`                  | `127.0.0.1`         | Address to listen on                                                    |
+| `LEAFBOT_PORT`                  | `4319`              | Port to listen on                                                       |
+| `LEAFBOT_DATA_DIR`              | `./data`            | Bot workspaces, access key, vault key and the embedded database         |
+| `DATABASE_URL`                  | —                   | `postgres://…` connection string; unset means embedded PGlite           |
+| `LEAFBOT_ACCESS_KEY`            | generated           | Key used to sign in to the server                                       |
+| `LEAFBOT_ALLOWED_HOSTS`         | —                   | Comma-separated host names accepted besides loopback                    |
+| `LEAFBOT_ALLOWED_ORIGINS`       | —                   | Comma-separated extra browser origins                                   |
+| `LEAFBOT_SECURE_COOKIES`        | `0`                 | `1` when served over HTTPS                                              |
+| `LEAFBOT_PUBLIC_URL`            | —                   | Public address for routine webhooks and sign-in callbacks               |
+| `LEAFBOT_PROXY_SECRET`          | —                   | Secret the reverse proxy sends, so its `X-Forwarded-For` is trusted     |
+| `LEAFBOT_APP_DIR`               | `app/dist` if built | Built web UI to serve                                                   |
+| `LEAFBOT_CLAUDE_MODEL`          | —                   | Default Claude model                                                    |
+| `LEAFBOT_MAX_TURNS`             | `3`                 | Bot turns running at once                                               |
+| `LEAFBOT_UNATTENDED_HOURS`      | `12`                | How long an approval opened by a routine or another bot waits (max 576) |
+| `LEAFBOT_MCP_TIMEOUT_SECONDS`   | `300`               | How long a connected app's tool call may run (10–3600)                  |
+| `LEAFBOT_TURN_STALL_MINUTES`    | `10`                | How long a bot may stay silent before its turn is stopped (2–240)       |
+| `LEAFBOT_BROWSER`               | detected            | Chrome, Edge or Chromium executable for the bots' browsers              |
+| `LEAFBOT_BROWSER_SANDBOX`       | `1`                 | `0` turns off Chromium's own sandbox where it cannot start              |
+| `LEAFBOT_MAX_BROWSERS`          | `3`                 | Browsers open at once                                                   |
+| `LEAFBOT_BROWSER_LOCAL_HOSTS`   | —                   | Private-network hosts the bots' browsers may reach (comma-separated)    |
+| `LEAFBOT_COMPUTER_URL`          | —                   | URL of the computer service; unset means no per-bot desktops            |
+| `LEAFBOT_COMPUTER_TOKEN`        | —                   | Shared secret with the computer service (at least 32 characters)        |
+| `LEAFBOT_COMPUTER_IDLE_MINUTES` | `15`                | An unwatched, unused desktop goes to sleep after this long              |
+| `LEAFBOT_TELEGRAM_API`          | Telegram's own      | Address of a self-hosted Telegram Bot API server, if one is used        |
+| `LEAFBOT_SLACK_API`             | Slack's own         | Address of Slack's Web API; only tests change it                        |
+| `LEAFBOT_DISCORD_API`           | Discord's own       | Address of Discord's API with its version; only tests change it         |
+| `LEAFBOT_MODEL_CATALOG_URL`     | models.dev          | Public model catalog for model names and new models; `off` turns it off |
+| `LEAFBOT_LOG`                   | —                   | `1` turns on request logging                                            |
 
 Model provider keys and the Claude token are entered in the app, stored encrypted in the database and never read from
 the server's environment.
 
 ## License
 
-Yumak Bot is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, change and share
+Leaf Bot is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, change and share
 it for any noncommercial purpose: personal use, study, hobby projects, and use by charities, schools, public research
 bodies and government institutions. Use by or for a business needs a commercial license; write to
-[info@yumakbot.com](mailto:info@yumakbot.com). Anyone you pass it on to must also get the license terms and the
+[info@leafbot.app](mailto:info@leafbot.app). Anyone you pass it on to must also get the license terms and the
 `Required Notice:` lines in [NOTICE](NOTICE).
 
 Copyright © 2026 esmworks (Erhan Erbaş).

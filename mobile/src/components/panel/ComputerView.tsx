@@ -1,4 +1,4 @@
-import type { Bot, BrowserInput, BrowserState } from '@yumakbot/shared';
+import type { Bot, BrowserInput, BrowserState } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';

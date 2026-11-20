@@ -8,7 +8,7 @@ import {
   type ProfileFocus,
   type Routine,
   type Skill,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { SILENT_REPLY } from '../engine/types';
 import { translator, type T } from '../i18n';
 import type { WorkspacePaths } from '../workspace';

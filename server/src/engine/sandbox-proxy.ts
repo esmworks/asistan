@@ -8,7 +8,7 @@ import {
   socksReplyFor,
   SOCKS_REPLY,
   type DialOptions,
-} from '@yumakbot/shared/egress';
+} from '@leafbot/shared/egress';
 
 /** The most a client may send before its request line and headers end. */
 const MAX_HEAD = 64 * 1024;

@@ -1,4 +1,4 @@
-import type { TelegramStatus } from '@yumakbot/shared';
+import type { TelegramStatus } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Send } from 'lucide-react';
 import { useState } from 'react';

@@ -45,7 +45,7 @@ describe('zip', () => {
       ok = false;
     }
     if (!ok) return ctx.skip();
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-zip-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-zip-'));
     try {
       const file = join(dir, 'a.zip');
       writeFileSync(file, zip([{ name: 'ç.txt', data: Buffer.from('merhaba'), modifiedAt: new Date() }]));

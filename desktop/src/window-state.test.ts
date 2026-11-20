@@ -41,7 +41,7 @@ describe('pencere durumu', () => {
   });
 
   it('kaydedilen durumu geri okur', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'yumakbot-window-'));
+    const dir = mkdtempSync(join(tmpdir(), 'leafbot-window-'));
     expect(readWindowState(dir)).toBeNull();
     writeWindowState(dir, { bounds: { x: 10, y: 20, width: 1000, height: 700 }, maximized: false });
     expect(readWindowState(dir)).toEqual({

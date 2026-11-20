@@ -1,4 +1,4 @@
-import type { Bot, TaughtStep } from '@yumakbot/shared';
+import type { Bot, TaughtStep } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, GraduationCap } from 'lucide-react';
 import { useState } from 'react';

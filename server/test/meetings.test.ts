@@ -1,4 +1,4 @@
-import type { Bot, Meeting, MeetingMinutes, Memory, MemoryChange, Message, Room } from '@yumakbot/shared';
+import type { Bot, Meeting, MeetingMinutes, Memory, MemoryChange, Message, Room } from '@leafbot/shared';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';

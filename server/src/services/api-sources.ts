@@ -4,7 +4,7 @@ import {
   type ApiOperation,
   type ApiSource,
   type ApiSourceCreate as CreateInput,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { asc, eq } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

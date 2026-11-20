@@ -1,4 +1,4 @@
-import type { AiEndpoint, AiKind } from '@yumakbot/shared';
+import type { AiEndpoint, AiKind } from '@leafbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';

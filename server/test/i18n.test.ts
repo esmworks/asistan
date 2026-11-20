@@ -1,4 +1,4 @@
-import type { Approval, Group, Thread } from '@yumakbot/shared';
+import type { Approval, Group, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isServerKey } from '../src/i18n';
 import { AUTH, testServer, waitFor, type TestServer } from './helpers';

@@ -5,7 +5,7 @@ import {
   type Bot,
   type Message,
   type ReplyQuote,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

@@ -1,4 +1,4 @@
-import { createTranslator, type Approval } from '@yumakbot/shared';
+import { createTranslator, type Approval } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { en } from '@/i18n/en';
 import { tr } from '@/i18n/tr';

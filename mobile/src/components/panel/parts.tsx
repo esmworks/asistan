@@ -1,4 +1,4 @@
-import type { BrowserStatus } from '@yumakbot/shared';
+import type { BrowserStatus } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { ReactNode } from 'react';

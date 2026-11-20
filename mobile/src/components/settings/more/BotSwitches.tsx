@@ -2,7 +2,7 @@ import { Switch, Text, View, StyleSheet } from 'react-native';
 import { Avatar } from '@/components/Avatar';
 import { Rows } from '../common/controls';
 import { useColors } from '@/lib/theme';
-import type { Bot } from '@yumakbot/shared';
+import type { Bot } from '@leafbot/shared';
 
 /** One switch per bot, for choosing which bots have something. */
 export function BotSwitches({

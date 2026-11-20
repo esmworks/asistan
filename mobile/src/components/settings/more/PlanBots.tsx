@@ -1,4 +1,4 @@
-import type { BotImportPlan } from '@yumakbot/shared';
+import type { BotImportPlan } from '@leafbot/shared';
 import Feather from '@expo/vector-icons/Feather';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

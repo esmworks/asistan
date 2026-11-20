@@ -1,4 +1,4 @@
-import { EgressMux } from '@yumakbot/shared/egress';
+import { EgressMux } from '@leafbot/shared/egress';
 import WebSocket from 'ws';
 import type { EgressHub } from './hub';
 

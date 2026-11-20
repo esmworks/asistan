@@ -37,11 +37,11 @@ const ALLOWED = new Map<string, string>([
 
 /** Single texts that are not translated, such as names. Each needs its reason. */
 const ALLOWED_TEXT: { file: string; text: string; reason: string }[] = [
-  { file: 'app/src/features/Login.tsx', text: 'Yumak Bot', reason: 'product name' },
-  { file: 'app/src/features/Sidebar.tsx', text: 'Yumak Bot', reason: 'product name' },
-  { file: 'mobile/src/app/login.tsx', text: 'Yumak Bot', reason: 'product name' },
-  { file: 'mobile/src/app/bots.tsx', text: 'Yumak Bot', reason: 'product name' },
-  { file: 'app/src/features/SettingsDialog.tsx', text: 'Yumak Bot', reason: 'product name' },
+  { file: 'app/src/features/Login.tsx', text: 'Leaf Bot', reason: 'product name' },
+  { file: 'app/src/features/Sidebar.tsx', text: 'Leaf Bot', reason: 'product name' },
+  { file: 'mobile/src/app/login.tsx', text: 'Leaf Bot', reason: 'product name' },
+  { file: 'mobile/src/app/bots.tsx', text: 'Leaf Bot', reason: 'product name' },
+  { file: 'app/src/features/SettingsDialog.tsx', text: 'Leaf Bot', reason: 'product name' },
   {
     file: 'app/src/features/SettingsDialog.tsx',
     text: 'Copyright © 2026 esmworks (Erhan Erbaş)',

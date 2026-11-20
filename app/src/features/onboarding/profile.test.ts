@@ -1,4 +1,4 @@
-import { createTranslator, LOCALES, PROFILE_HELP } from '@yumakbot/shared';
+import { createTranslator, LOCALES, PROFILE_HELP } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { en } from '@/i18n/en';
 import { tr } from '@/i18n/tr';

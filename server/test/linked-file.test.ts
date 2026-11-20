@@ -1,6 +1,6 @@
 import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { Thread } from '@yumakbot/shared';
+import type { Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTH, testServer, type TestServer } from './helpers';
 

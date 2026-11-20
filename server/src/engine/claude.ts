@@ -8,7 +8,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { EFFORTS, type ClaudeModel, type Effort, type PlanWindow } from '@yumakbot/shared';
+import { EFFORTS, type ClaudeModel, type Effort, type PlanWindow } from '@leafbot/shared';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { translator } from '../i18n';
@@ -245,7 +245,7 @@ export function engineEnv(extra: Record<string, string | undefined> = {}): Recor
     const v = process.env[k];
     if (v) env[k] = v;
   }
-  env.CLAUDE_AGENT_SDK_CLIENT_APP = 'yumakbot/0.7.0';
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = 'leafbot/0.7.0';
   for (const [k, v] of Object.entries(extra)) if (v) env[k] = v;
   return env;
 }
@@ -360,7 +360,7 @@ function connectionServer(name: string, tools: AppTool[]): McpSdkServerConfigWit
   return { type: 'sdk', name, instance: server as unknown as McpSdkServerConfigWithInstance['instance'] };
 }
 
-/** The app's own tools under `yumakbot`, and each connection's under its own name. */
+/** The app's own tools under `leafbot`, and each connection's under its own name. */
 export function mcpServers(tools: AppTool[]): Record<string, McpSdkServerConfigWithInstance> {
   const groups = new Map<string, AppTool[]>();
   for (const t of tools) {

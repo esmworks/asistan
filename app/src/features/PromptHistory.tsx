@@ -1,4 +1,4 @@
-import { textDiff, type RoutineRevision } from '@yumakbot/shared';
+import { textDiff, type RoutineRevision } from '@leafbot/shared';
 import { useQuery } from '@tanstack/react-query';
 import { History, RotateCcw } from 'lucide-react';
 import { useMemo, useState } from 'react';

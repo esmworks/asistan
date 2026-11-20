@@ -1,9 +1,4 @@
-import type {
-  ClientToServerEvents,
-  ComputerAck,
-  ComputerState,
-  ServerToClientEvents,
-} from '@yumakbot/shared';
+import type { ClientToServerEvents, ComputerAck, ComputerState, ServerToClientEvents } from '@leafbot/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { VncChannel } from './vnc-channel';

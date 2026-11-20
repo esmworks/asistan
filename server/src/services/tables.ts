@@ -10,7 +10,7 @@ import {
   type RowValues,
   type TableColumn,
   type TableRow,
-} from '@yumakbot/shared';
+} from '@leafbot/shared';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';

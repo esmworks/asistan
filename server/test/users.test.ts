@@ -22,7 +22,7 @@ function migrationsBeforeUsers(): string {
   };
   const upTo = journal.entries.findIndex((e) => e.tag.endsWith('_users'));
   expect(upTo).toBeGreaterThan(0);
-  const dir = mkdtempSync(join(tmpdir(), 'yumakbot-migrations-'));
+  const dir = mkdtempSync(join(tmpdir(), 'leafbot-migrations-'));
   mkdirSync(join(dir, 'meta'));
   const entries = journal.entries.slice(0, upTo);
   for (const e of entries) copyFileSync(join(MIGRATIONS, `${e.tag}.sql`), join(dir, `${e.tag}.sql`));

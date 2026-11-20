@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Approval, BotAction, Thread } from '@yumakbot/shared';
+import type { Approval, BotAction, Thread } from '@leafbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { confinedWrite, ownBoxStep, staysOnBox } from '../src/runtime/own-box';
 import { testServer, waitFor, type TestServer } from './helpers';
@@ -111,7 +111,7 @@ describe('botun kendi makinesindeki adımlar', () => {
   });
 
   it('a link in the folder to a file that does not exist yet is not taken as inside', () => {
-    const outside = mkdtempSync(join(tmpdir(), 'yumakbot-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'leafbot-outside-'));
     symlinkSync(join(outside, 'not-yet.plist'), join(dir, 'agent.plist'));
     symlinkSync(join(outside, 'no-folder'), join(dir, 'gone'));
     expect(confinedWrite('Write', { file_path: join(dir, 'agent.plist') }, [dir])).toBe(false);
@@ -222,7 +222,7 @@ describe("on the person's computer", () => {
 
   it("a project folder the bot was pointed at is the person's own, so a write there still asks", async () => {
     t = await testServer({ onUserComputer: true });
-    const project = mkdtempSync(join(tmpdir(), 'yumakbot-project-'));
+    const project = mkdtempSync(join(tmpdir(), 'leafbot-project-'));
     const bot = await t.bot({ permissionMode: 'ask', projectDir: project });
     expect(bot.projectDir).toBe(project);
     const thread = await write(bot.id, join(project, 'package.json'));
