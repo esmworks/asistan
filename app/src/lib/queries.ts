@@ -81,6 +81,9 @@ export const useStaleMemory = () => useQuery({ queryKey: ['memory', 'stale'], qu
 /** The person's open promises: a bot's, and their own to others. */
 export const usePromises = (enabled = true) =>
   useQuery({ queryKey: ['promises'], queryFn: api.promises, enabled });
+/** Routines offered because the person keeps asking a bot for the same thing by hand. */
+export const useRoutineSuggestions = (enabled = true) =>
+  useQuery({ queryKey: ['routine-suggestions'], queryFn: api.routineSuggestions, enabled });
 export const useRoutines = () => useQuery({ queryKey: ['routines'], queryFn: api.routines });
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: api.skills });
 export const useUsage = (days: UsageRange, botId?: string) =>

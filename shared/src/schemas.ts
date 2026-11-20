@@ -3,6 +3,7 @@ import { patchOf } from './patch';
 import { ALL_TOOLS, ToolSelection } from './tool-selection';
 import { internalHost } from './ai-endpoints';
 import { luhn } from './secret-shapes';
+import { Schedule } from './schedule';
 
 /**
  * The app's own green, a darker shade of its icon's so white text on it reads well: the accent of the
@@ -1468,6 +1469,10 @@ export const UsageReport = z.object({
     .optional(),
   /** The promise safety net over the period, when it looked at any reply: its looks, what they cost, the promises found. */
   promises: z.object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() }).optional(),
+  /** The routine suggestions' looks at groups of requests over the period, when there were any: looks, cost, suggestions made. */
+  suggestions: z
+    .object({ checks: z.number().int(), costUsd: z.number(), found: z.number().int() })
+    .optional(),
 });
 export type UsageReport = z.infer<typeof UsageReport>;
 
@@ -1557,6 +1562,36 @@ export const Pledge = z.object({
   createdAt: z.string(),
 });
 export type Pledge = z.infer<typeof Pledge>;
+
+/**
+ * A routine proposed because the person keeps asking a bot for the same thing by hand. Only the
+ * person it was written from sees it.
+ */
+export const RoutineSuggestion = z.object({
+  id: Id,
+  botId: Id,
+  name: z.string(),
+  /** What the routine would do; the person may change it before creating the routine. */
+  instructions: z.string(),
+  /** The rhythm the requests had, or null when they had none and the person picks. */
+  schedule: Schedule.nullable(),
+  timezone: z.string(),
+  /** How many requests it was made from, and the local days (YYYY-MM-DD) they were made on. */
+  requests: z.number().int(),
+  days: z.array(z.string()),
+  /** Whether the person may change the bot, which a routine of it needs. */
+  canCreate: z.boolean(),
+  createdAt: z.string(),
+});
+export type RoutineSuggestion = z.infer<typeof RoutineSuggestion>;
+
+/** What the person settled on when creating the routine from a suggestion. */
+export const RoutineSuggestionAccept = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  instructions: z.string().trim().min(1).max(20_000).optional(),
+  schedule: Schedule.optional(),
+});
+export type RoutineSuggestionAccept = z.infer<typeof RoutineSuggestionAccept>;
 
 /** A skill's name: what the bot asks for it by, in lower case with dashes (`weekly-report`). */
 export const SkillName = z

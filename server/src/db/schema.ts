@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess } from '@yumakbot/shared';
+import type { BotAccess, Schedule } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -1561,4 +1561,59 @@ export const promiseChecks = pgTable(
     createdAt: created(),
   },
   (t) => [index('promise_checks_created_idx').on(t.createdAt)],
+);
+
+/**
+ * A routine proposed to a person because they keep asking a bot for the same thing by hand. It is
+ * written from the person's own messages, so only they see it, admins included. A dismissed one
+ * stays, so the same request is never offered again.
+ */
+export const routineSuggestions = pgTable(
+  'routine_suggestions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    name: sealedText('name').notNull(),
+    instructions: sealedText('instructions').notNull(),
+    /** The rhythm the requests had, in the person's time zone; null when they had none. */
+    schedule: jsonb('schedule').$type<Schedule | null>(),
+    timezone: text('timezone').notNull(),
+    /** How many requests there were, and the local days (YYYY-MM-DD) they were made on. */
+    requests: integer('requests').notNull(),
+    days: jsonb('days').$type<string[]>().notNull(),
+    /** Identifies the request, so a later pass finds the same group again. */
+    fingerprint: text('fingerprint').notNull(),
+    /** The words the group's requests share; what a later pass compares a new group with. */
+    signature: sealedText('signature').notNull().default(''),
+    status: text('status', { enum: ['open', 'accepted', 'dismissed'] })
+      .notNull()
+      .default('open'),
+    routineId: text('routine_id').references(() => routines.id, { onDelete: 'set null' }),
+    createdAt: created(),
+    decidedAt: ts('decided_at'),
+  },
+  (t) => [
+    index('routine_suggestions_user_status_idx').on(t.userId, t.status),
+    uniqueIndex('routine_suggestions_fingerprint_uq').on(t.userId, t.botId, t.fingerprint),
+  ],
+);
+
+/** One look of the routine suggestions at a group of requests: what the small-model call cost. */
+export const routineSuggestionChecks = pgTable(
+  'routine_suggestion_checks',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    costUsd: real('cost_usd'),
+    found: boolean('found').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('routine_suggestion_checks_created_idx').on(t.createdAt)],
 );

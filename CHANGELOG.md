@@ -7,6 +7,18 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Routines are suggested for what a person keeps asking by hand. People ask a bot for the same thing again and again
+  ("this week's sales summary" every Monday) without thinking of a routine, so once a day, for each person who has
+  not turned it off, their own messages to bots of the last 45 days are grouped by meaning (when an embedding service
+  is set up) or by shared words. A request made at least three times on three different days to the same bot, that no
+  routine of the bot already does and the person has not turned down, becomes one small-model request on the bot's
+  own account (its cost shows on the usage page) that writes a routine name and instructions in the person's
+  language, with a schedule when the requests kept one (the same weekday, most days or most working days, around the
+  same hour) and none otherwise. Today lists them ("You asked Ada for this 4 times, on 4 different days") with the
+  instructions editable and "Create routine" or "Not this"; only someone who may change the bot can create the
+  routine, anyone else is told to ask its owner, and a request turned down is never offered again. Rooms, team
+  conversations, routine runs, API calls, text handed over from outside and chat-app strangers are never read, and
+  each person sees only their own suggestions. Each person can turn it off in their profile.
 - Promises are kept. Bots say "I'll let you know tomorrow" and nothing made it happen, so the prompt now tells a bot
   to set up a one-time routine in the same turn it promises something later. As a safety net, when a reply in a
   person's own conversation or room sounds like such a promise and the turn set up no routine, a short list of Turkish

@@ -129,6 +129,16 @@ const SEALED: Sealed[] = [
     ],
   },
   {
+    // A suggested routine is written from the person's own requests, so it is sealed with them.
+    table: schema.routineSuggestions,
+    id: schema.routineSuggestions.id,
+    columns: [
+      ['name', schema.routineSuggestions.name, 'text'],
+      ['instructions', schema.routineSuggestions.instructions, 'text'],
+      ['signature', schema.routineSuggestions.signature, 'text'],
+    ],
+  },
+  {
     // The sites a turn had read before a trip-wire; they say where the person has been.
     table: schema.canaryAlarms,
     id: schema.canaryAlarms.id,

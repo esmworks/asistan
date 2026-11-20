@@ -1,6 +1,8 @@
 import type {
   BotAction,
   Pledge,
+  RoutineSuggestion,
+  RoutineSuggestionAccept,
   PermissionSuggestions,
   BotTable,
   RowValues,
@@ -272,6 +274,8 @@ export interface Settings {
   maxTurns?: number;
   /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
   memoryReviewEvery?: number;
+  /** Whether the person's own requests are looked at for something asked again and again; missing on older servers. */
+  routineSuggestions?: boolean;
   /** The promise safety net after a bot's reply; missing on older servers. */
   promiseKeeper?: boolean;
   /** The time of day a reminder of the person's own promise arrives (HH:MM); missing on older servers. */
@@ -708,6 +712,11 @@ export const api = {
     http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
   removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
   addTrapKey: (input: TrapKeyCreate) => http.post<ApiCredential>('/api/api-keys/trap', input),
+  routineSuggestions: () => http.get<RoutineSuggestion[]>('/api/routine-suggestions'),
+  acceptRoutineSuggestion: (id: string, input: RoutineSuggestionAccept) =>
+    http.post<Routine>(`/api/routine-suggestions/${id}/accept`, input),
+  dismissRoutineSuggestion: (id: string) =>
+    http.post<{ ok: true }>(`/api/routine-suggestions/${id}/dismiss`, {}),
   promises: () => http.get<Pledge[]>('/api/promises'),
   promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
   promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),

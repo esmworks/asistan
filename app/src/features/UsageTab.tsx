@@ -84,6 +84,7 @@ export function UsageTab() {
       <MonthLimit month={data?.month} />
       <RoutineGate gate={data?.gate} />
       <PromiseNet net={data?.promises} />
+      <SuggestionNet net={data?.suggestions} />
       <Parallel parallel={data?.parallel} />
       <Storage />
       <Button variant="secondary" size="sm" className="rounded-full" asChild>
@@ -214,6 +215,20 @@ function PromiseNet({ net }: { net?: UsageReport['promises'] }) {
           {t('usage.promises.checks', { count: net.checks, cost: f.usd(net.costUsd), found: net.found })}
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The calls the routine suggestions made to the small model over the period, and what they cost. */
+function SuggestionNet({ net }: { net?: UsageReport['suggestions'] }) {
+  const t = useT();
+  const f = useFormat();
+  if (!net) return null;
+  return (
+    <Card title={t('usage.suggestions')}>
+      <div className="px-4 py-3 text-sm text-muted-foreground tabular-nums">
+        {t('usage.suggestions.checks', { count: net.checks, cost: f.usd(net.costUsd), found: net.found })}
+      </div>
     </Card>
   );
 }

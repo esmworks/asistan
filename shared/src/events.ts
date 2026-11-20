@@ -11,6 +11,7 @@ export type RefreshScope =
   | { scope: 'memory' }
   | { scope: 'routines' }
   | { scope: 'promises' }
+  | { scope: 'routineSuggestions' }
   | { scope: 'rules' }
   | { scope: 'vault' }
   | { scope: 'connections' }

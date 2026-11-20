@@ -164,6 +164,10 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/promises': 'self',
   'POST /api/promises/:id/done': 'self',
   'POST /api/promises/:id/drop': 'self',
+  // Routines suggested from a person's own requests; the handler keeps each person to theirs.
+  'GET /api/routine-suggestions': 'self',
+  'POST /api/routine-suggestions/:id/accept': 'self',
+  'POST /api/routine-suggestions/:id/dismiss': 'self',
   'GET /api/turns/:id/result': read('turn'),
   // How much work stopping the whole server would stop: for those who look after it.
   'GET /api/turns/running': 'admin',

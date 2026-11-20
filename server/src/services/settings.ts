@@ -95,6 +95,12 @@ export const Settings = z.object({
    * one-time routine. Off stops the extra call.
    */
   promiseKeeper: z.boolean().default(true),
+  /**
+   * Once a day, the person's own messages to bots of the last weeks are looked at for a request
+   * made again and again, and Today offers to make it a routine. Off stops the looking and the
+   * model call; each person has their own.
+   */
+  routineSuggestions: z.boolean().default(true),
   /** The time of day, in the person's time zone, that a reminder of their own promise arrives. */
   promiseRemindAt: z
     .string()
@@ -150,6 +156,7 @@ export const PERSONAL_SETTINGS = [
   'aboutMe',
   'onboarded',
   'promiseRemindAt',
+  'routineSuggestions',
   // The language the app and the bots speak with the person.
   'language',
 ] as const satisfies readonly (keyof Settings)[];
@@ -163,6 +170,7 @@ const Profile = Settings.pick({
   aboutMe: true,
   onboarded: true,
   promiseRemindAt: true,
+  routineSuggestions: true,
   language: true,
 });
 

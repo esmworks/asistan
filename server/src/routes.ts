@@ -52,6 +52,7 @@ import {
   LOCALES,
   pickLocale,
   RoutineCreate,
+  RoutineSuggestionAccept,
   RoutineUpdate,
   RoomCreate,
   RoomSend,
@@ -1680,6 +1681,18 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   );
   app.post('/api/promises/:id/drop', async (req) =>
     s.promises.close(IdParams.parse(req.params).id, me(req).userId, 'dropped'),
+  );
+  // Routines suggested from what the person keeps asking by hand: their own, never anyone else's.
+  app.get('/api/routine-suggestions', async (req) => s.routineSuggestions.list(me(req)));
+  app.post('/api/routine-suggestions/:id/accept', async (req) =>
+    s.routineSuggestions.accept(
+      IdParams.parse(req.params).id,
+      me(req),
+      RoutineSuggestionAccept.parse(req.body ?? {}),
+    ),
+  );
+  app.post('/api/routine-suggestions/:id/dismiss', async (req) =>
+    s.routineSuggestions.dismiss(IdParams.parse(req.params).id, me(req).userId),
   );
   app.post('/api/api-keys/import', async (req) => {
     const { team, ...body } = ApiKeyImport.parse(req.body);

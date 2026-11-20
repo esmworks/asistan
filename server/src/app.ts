@@ -333,6 +333,12 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     void services.instructionDocs
       .checkDue()
       .catch((err) => console.warn(`Instructions document check failed: ${String(err)}`));
+    // Each person's requests are looked at for something asked again and again, once a day. Not
+    // with a test's own engine, which would spend the day's look at the start, before any request.
+    if (!opts.engine && !fake)
+      void services.routineSuggestions
+        .runDue()
+        .catch((err) => console.warn(`Routine suggestions failed: ${String(err)}`));
   };
   sweep();
   const sweepTimer = setInterval(sweep, 60 * 60_000);
@@ -758,6 +764,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.turns.shutdown();
       await services.memoryReview.shutdown();
       await services.promises.shutdown();
+      await services.routineSuggestions.shutdown();
       await services.meetings.shutdown();
       await browser.shutdown();
       if (computerCheck) clearInterval(computerCheck);

@@ -949,6 +949,8 @@ const tr = {
     'Kullanıcının başkasına verdiği bir söz var (kime: {to}): "{what}". Vadesi: {day}. Bunu kullanıcıya bu sohbette kısaca hatırlat ve yapıp yapmadığını sor; yaptıysa ya da vazgeçtiyse Bugün sayfasından kapatabileceğini söyle.',
   'promise.someone': 'biri',
   'error.notFound.promise': 'Söz bulunamadı',
+  'error.notFound.routineSuggestion': 'Rutin önerisi bulunamadı',
+  'error.suggestionNoSchedule': 'Bu rutinin ne zaman çalışacağını seç',
   'tool.bots_list': 'Yazabileceğin botları listele.',
   'tool.open_conversation':
     'İşin bir parçasını kendi adına yeni bir sohbette başlat: başlık ve ilk mesaj ver. O sohbette ayrı bir turda çalışırsın, bu konuşma beklemez; kullanıcı yeni sohbeti listesinde görür. Bir turda en çok 5 sohbet.',
@@ -2517,6 +2519,8 @@ const en: Catalog<ServerKey> = {
     'The user made a promise to someone else (to: {to}): "{what}". It is due {day}. Remind the user of it briefly in this conversation and ask whether it is done; if they did it or gave it up, tell them they can close it on the Today page.',
   'promise.someone': 'someone',
   'error.notFound.promise': 'Promise not found',
+  'error.notFound.routineSuggestion': 'Routine suggestion not found',
+  'error.suggestionNoSchedule': 'Pick when this routine should run',
   'tool.bots_list': 'List the bots you can write to.',
   'tool.open_conversation':
     'Start part of the work in a new conversation of your own: give a title and the first message. You work there in a separate turn, and this conversation does not wait; the user sees the new one in their list. At most 5 per turn.',

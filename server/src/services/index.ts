@@ -34,6 +34,7 @@ import { MemoryService } from './memory';
 import { MeetingService } from './meetings';
 import { MemoryReviewService } from './memory-review';
 import { PromiseService } from './promises';
+import { RoutineSuggestionService } from './routine-suggestions';
 import { PushService } from './push';
 import { RoutineService } from './routines';
 import { SubscriptionService } from './subscriptions';
@@ -67,6 +68,7 @@ export class Services {
   readonly memory: MemoryService;
   readonly memoryReview: MemoryReviewService;
   readonly promises: PromiseService;
+  readonly routineSuggestions: RoutineSuggestionService;
   readonly meetings: MeetingService;
   readonly push: PushService;
   readonly settings: SettingsService;
@@ -163,6 +165,7 @@ export class Services {
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.promises = new PromiseService(ctx, this, engineFor, clock);
     this.turns.onFinished((t, o) => this.promises.onTurnFinished(t, o));
+    this.routineSuggestions = new RoutineSuggestionService(ctx, this, engineFor, clock);
     this.meetings = new MeetingService(ctx, this, engineFor, clock);
     this.turns.onFinished((t) => this.meetings.onTurnFinished(t));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
