@@ -10,6 +10,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - The phone app's Today page now shows expired notes, security alarms (with "Mark as seen"), steps waiting for the
   person's second yes, open promises with the reminder time, and routine suggestions; the profile settings hold the
   routine-suggestion switch and the usage settings the promise safety-net switch.
+- The phone app's memory screen shows when a note is true until, lets the person set, change or clear that day when
+  editing, and lists expired notes; the permission rules list shows a rule's second person, rules can be added for
+  one bot and with a second person's yes (offered when two or more people could give it), and a chat card waiting for
+  a second person says who said yes first and offers no "always allow".
 - A routine can be rehearsed before it runs for real. A new or changed routine runs unattended and the person only
   learned what it does from what it already did, so "Rehearse" in the routine's dialog runs it once, with the
   instruction as typed (saved or not) and, for a routine something else starts, with what started one of its last
