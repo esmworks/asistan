@@ -2515,7 +2515,7 @@ export class WhatsAppChannel {
           .set({ status: 'dropped' })
           .where(and(eq(schema.whatsappDrafts.id, draft.id), eq(schema.whatsappDrafts.status, 'pending')))
           .returning();
-        if (dropped) await this.draftNote(draft, 'dropped');
+        if (dropped) await this.answerNote(draft, 'dropped');
         continue;
       }
       // Sent only while connected; otherwise it waits for the next connect.
@@ -2536,14 +2536,29 @@ export class WhatsAppChannel {
           .update(schema.whatsappDrafts)
           .set({ status: 'failed' })
           .where(eq(schema.whatsappDrafts.id, draft.id));
-        await this.draftNote(draft, 'failed', errorText(err));
+        await this.answerNote(draft, 'failed', errorText(err));
         continue;
       }
       // Sent: whatever goes wrong after this does not make it look unsent, which would get it sent twice.
-      await this.draftNote(draft, 'sent').catch((err: unknown) =>
+      await this.answerNote(draft, 'sent').catch((err: unknown) =>
         console.warn('whatsapp draft note', errorText(err)),
       );
     }
+  }
+
+  /**
+   * The note on a card's answer. The bot's reply is posted only when its turn ends, so a card
+   * answered while that turn still runs gets its note below the reply: written above it, the
+   * reply (made before the answer) would read as the bot getting the note wrong. Held in memory;
+   * a server stop writes it as the turn ends, a crash loses it (the draft row keeps the outcome).
+   */
+  private async answerNote(
+    draft: typeof schema.whatsappDrafts.$inferSelect,
+    outcome: 'sent' | 'dropped' | 'failed',
+    error = '',
+  ) {
+    const write = () => this.draftNote(draft, outcome, error);
+    if (!this.services.turns.afterTurn(draft.threadId, write)) await write();
   }
 
   /**
