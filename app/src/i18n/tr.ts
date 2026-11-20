@@ -1330,6 +1330,8 @@ export const tr = {
   'routine.notifyHint': 'Yapay zekâ çalışmaz: metin, rutinin rapor verdiği yere olduğu gibi gider.',
   'routine.slackReaction': 'Slack tepkisiyle çalıştır',
   'routine.slackReactionPlaceholder': 'eyes',
+  'routine.slackReactionNoPermission':
+    "Slack uygulamasında reactions:read izni yok: tepki verince bu rutin başlamaz. Ayarlar → Sohbet uygulamaları → Slack'te ne yapılacağı yazıyor.",
   'routine.slackReactionHint':
     "Slack'te bir mesaja bu tepkiyi (ör. eyes) siz verdiğinizde rutin o mesajla çalışır. Slack uygulamasında reactions:read izni olmalı.",
   'routine.slackReactionInvalid': "Tepkinin Slack'teki adını yazın, ör. eyes",
@@ -2256,6 +2258,8 @@ export const tr = {
   'slack.off': 'Bağlı değil',
   'slack.connectedTo': '{workspace} çalışma alanına bağlı',
   'slack.error': 'Slack bağlantısı çalışmıyor: {error}',
+  'slack.optionalMissing':
+    "Slack uygulamasında {scopes} izni yok, bu yüzden tepkiyle başlayan rutinler çalışmaz. api.slack.com/apps'te uygulamana bu izni ve reaction_added olayını ekleyip uygulamayı yeniden kur.",
   'slack.about':
     "Ekip botlarla Slack'ten konuşur. Doğrudan mesajlar kişinin kendi konuşmasına gider; bir kanalda botu etiketleyince ekibin ortak konuşması açılır: botla konuşabilen herkes onu uygulamada görür ve bot orada yalnızca ekibin paylaştıklarını kullanır. Yalnızca hesabını bağlamış kişilerin istekleri çalışır.",
   'slack.step1': "Slack'te manifestten yeni bir uygulama oluştur ve aşağıdaki manifesti yapıştır:",

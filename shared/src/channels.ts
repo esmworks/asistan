@@ -144,6 +144,8 @@ export interface SlackStatus {
   people: { userId: string; name: string; slackName: string }[];
   /** Why it stopped working, in Slack's words; null while it works. */
   error: string | null;
+  /** The optional permissions (`SLACK_OPTIONAL_SCOPES`) the bot token lacks; empty when Slack did not say. */
+  optionalMissing: string[];
 }
 
 /** One person's link to Slack. */
@@ -156,6 +158,8 @@ export interface SlackLink {
   /** The code to send the Slack app as `link <code>`; null when none is waiting. */
   code: string | null;
   codeUntil: string | null;
+  /** The optional permissions the Slack app lacks, so what needs them (a routine run by a reaction) does not work. */
+  optionalMissing: string[];
 }
 
 /** The permissions the Slack app's bot token needs; the manifest asks for them and the server checks them. */

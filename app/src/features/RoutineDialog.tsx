@@ -553,6 +553,11 @@ export function RoutineDialog({
                   className="rounded-xl"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackReactionHint')}</p>
+                {!!values.slackReaction?.trim() && slack?.optionalMissing.includes('reactions:read') && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {t('routine.slackReactionNoPermission')}
+                  </p>
+                )}
               </Field>
             )}
             <Field label={t('routine.watchUrl')} error={err.watchUrl?.message}>

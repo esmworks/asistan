@@ -1342,6 +1342,8 @@ export const en: Catalog<MessageKey> = {
   'routine.notifyHint': 'No AI runs: the text goes as it is to where the routine reports.',
   'routine.slackReaction': 'Run on a Slack reaction',
   'routine.slackReactionPlaceholder': 'eyes',
+  'routine.slackReactionNoPermission':
+    'The Slack app lacks the reactions:read permission: a reaction will not start this routine. Settings → Chat apps → Slack says what to do.',
   'routine.slackReactionHint':
     'When you react to a message in Slack with this (e.g. eyes), the routine runs on that message. The Slack app needs the reactions:read permission.',
   'routine.slackReactionInvalid': "Write the reaction's name as Slack has it, e.g. eyes",
@@ -2262,6 +2264,8 @@ export const en: Catalog<MessageKey> = {
   'slack.off': 'Not connected',
   'slack.connectedTo': 'Connected to the {workspace} workspace',
   'slack.error': 'The Slack connection is not working: {error}',
+  'slack.optionalMissing':
+    'The Slack app lacks the {scopes} permission, so routines run by a reaction do not work. At api.slack.com/apps, add it and the reaction_added event to your app, then reinstall the app.',
   'slack.about':
     "The team talks to bots from Slack. Direct messages go to the person's own conversation; mentioning a bot in a channel starts a team conversation that everyone who may talk with the bot sees in the app, where the bot uses only what the team shares. Only people who linked their account are answered.",
   'slack.step1': 'In Slack, create a new app from a manifest and paste the manifest below:',

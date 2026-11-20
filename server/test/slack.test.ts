@@ -1,6 +1,15 @@
 import { createServer as httpServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Approval, Bot, Routine, RoutineRun, SlackLink, SlackStatus, Thread } from '@yumakbot/shared';
+import {
+  SLACK_BOT_SCOPES,
+  type Approval,
+  type Bot,
+  type Routine,
+  type RoutineRun,
+  type SlackLink,
+  type SlackStatus,
+  type Thread,
+} from '@yumakbot/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { slackMessages } from '../src/channels/format';
@@ -568,5 +577,26 @@ describe('Slack', () => {
     expect(r.status).toBe(200);
     expect(r.body.error).toContain('reactions:write');
     expect(r.body.error).not.toContain('chat:write');
+  });
+
+  it('an app without reactions:read works on, and says what that leaves off', async () => {
+    slack = await fakeSlack();
+    slack.scopes(SLACK_BOT_SCOPES.join(','));
+    t = await testServer({ slackApi: slack.base });
+    const r = await t.api<SlackStatus>('PUT', '/api/slack', { appToken: APP, botToken: BOT, botId: null });
+    expect(r.status).toBe(200);
+    expect(r.body.error).toBeNull();
+    expect(r.body.optionalMissing).toEqual(['reactions:read']);
+    // A person setting up a routine is told too, not only whoever looks after the Slack app.
+    expect((await t.api<SlackLink>('GET', '/api/slack/me')).body.optionalMissing).toEqual(['reactions:read']);
+
+    // Once the app has it, nothing is said.
+    slack.scopes([...SLACK_BOT_SCOPES, 'reactions:read'].join(','));
+    const again = await t.api<SlackStatus>('PUT', '/api/slack', {
+      appToken: APP,
+      botToken: BOT,
+      botId: null,
+    });
+    expect(again.body.optionalMissing).toEqual([]);
   });
 });

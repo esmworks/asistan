@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   MAX_UPLOAD_BYTES,
   SLACK_BOT_SCOPES,
+  SLACK_OPTIONAL_SCOPES,
   questionItems,
   type Approval,
   type Bot,
@@ -156,6 +157,8 @@ export class SlackChannel {
   private tokenError: { code: string; note: string } | null = null;
   /** Permissions the app lacks, found when it connected; shown with the status, not stored. */
   private scopeNote: string | null = null;
+  /** The optional permissions the bot token lacks, as Slack last listed them. */
+  private optionalMissing: string[] = [];
   private unsubs: (() => void)[] = [];
   private stopped = false;
   /** Aborts on stop, so a wait for Slack's "slow down" does not hold the stop up. */
@@ -219,8 +222,12 @@ export class SlackChannel {
     const note = missing.length
       ? (await this.services.settings.translator())('slack.scopesMissing', { scopes: missing.join(', ') })
       : null;
-    if (note === this.scopeNote) return;
+    // An app set up before an optional permission was added works on without it; the person is
+    // told what stays off rather than shown an error.
+    const optional = scopes ? SLACK_OPTIONAL_SCOPES.filter((s) => !scopes.includes(s)) : [];
+    if (note === this.scopeNote && optional.join() === this.optionalMissing.join()) return;
     this.scopeNote = note;
+    this.optionalMissing = optional;
     this.changed();
   }
 
@@ -284,6 +291,7 @@ export class SlackChannel {
         slackName: p.slackName,
       })),
       error: row?.error ?? this.scopeNote,
+      optionalMissing: row?.secret ? this.optionalMissing : [],
     };
   }
 
@@ -364,6 +372,7 @@ export class SlackChannel {
       linked: mine ? { name: mine.name } : null,
       code: waiting?.[0] ?? null,
       codeUntil: waiting ? new Date(waiting[1].until).toISOString() : null,
+      optionalMissing: row?.secret ? this.optionalMissing : [],
     };
   }
 
