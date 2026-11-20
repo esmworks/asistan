@@ -154,13 +154,31 @@ export const OLD_AVATAR_SHAPES = ['clover', 'star', 'shield', 'leaf', 'bolt', 'm
 export type AvatarShape = (typeof AVATAR_SHAPES)[number] | (typeof OLD_AVATAR_SHAPES)[number];
 const KNOWN_SHAPES: readonly string[] = [...AVATAR_SHAPES, ...OLD_AVATAR_SHAPES];
 
-/** `shape:<name>` or an uploaded raster image as a data URL (SVG is not accepted). */
+/**
+ * Object avatars a bot can take, as `object:<id>`: things with eyes (a mug, a lightbulb), drawn
+ * with volume by the app. Only ids the app ships a drawing for are accepted, so a stored value
+ * always names something it can draw; where it cannot (the phone app), it falls back to `blob`.
+ */
+export const OBJECT_AVATARS = [
+  'controller',
+  'barbell',
+  'mug',
+  'lightbulb',
+  'chat',
+  'sprout',
+  'watering-can',
+] as const;
+export type ObjectAvatar = (typeof OBJECT_AVATARS)[number];
+const KNOWN_OBJECTS: readonly string[] = OBJECT_AVATARS;
+
+/** `shape:<name>`, `object:<id>` or an uploaded raster image as a data URL (SVG is not accepted). */
 export const Avatar = z
   .string()
   .max(400_000)
   .refine(
     (v) =>
       (v.startsWith('shape:') && KNOWN_SHAPES.includes(v.slice(6))) ||
+      (v.startsWith('object:') && KNOWN_OBJECTS.includes(v.slice(7))) ||
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v),
     'validation.avatar',
   );

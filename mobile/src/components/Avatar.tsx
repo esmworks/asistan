@@ -63,7 +63,7 @@ export function Avatar({
   name: string;
   color: string;
   size: number;
-  /** The bot's avatar field: `shape:<name>` or an uploaded picture as a data URL. */
+  /** The bot's avatar field: `shape:<name>`, `object:<id>` or an uploaded picture as a data URL. */
   avatar?: string;
   /** How a plush's eyes move; left out, they hold still. */
   motion?: EyeMotion;
@@ -76,8 +76,9 @@ export function Avatar({
   if (avatar?.startsWith('data:image/')) {
     return <Image source={{ uri: avatar }} style={round} contentFit="cover" accessible={false} />;
   }
-  if (avatar?.startsWith('shape:')) {
-    const body = BODIES[avatar.slice(6) as AvatarShape] ?? BLOB;
+  // An object avatar is drawn with volume by the desktop app; the phone shows the plain plush.
+  if (avatar?.startsWith('shape:') || avatar?.startsWith('object:')) {
+    const body = (avatar.startsWith('shape:') && BODIES[avatar.slice(6) as AvatarShape]) || BLOB;
     // The body picture has room around the shape for its fur, so it is drawn larger than the box
     // and the shape nearly fills it.
     const span = size * ART_ZOOM;
