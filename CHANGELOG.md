@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A message written while the app cannot reach the server is no longer lost or handed back as a draft: it stays in
+  the conversation marked as waiting for the connection, and goes out on its own when the connection is back (the
+  browser coming online, the live connection reconnecting, or a retry every 15 seconds). A second try of a send that
+  did arrive counts once, and the message then says it was written while offline.
 - Bots can offer work they notice (Settings → General, off by default). After answering a person, the bot's model
   looks over the conversation once more and may offer one next piece of work it could take on, on a card: "Do it"
   sends the task as the person's own message, "Not now" puts it away. It never offers to send, post, buy, book,

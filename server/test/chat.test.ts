@@ -118,6 +118,24 @@ describe('sohbet', () => {
     expect(t.engine.requests).toHaveLength(1);
   });
 
+  it('bağlantı yokken yazılıp sonra giden mesaj öyle işaretlenir; bot ona yine bir kez cevap verir', async () => {
+    const bot = await t.bot();
+    const thread = await main(bot.id);
+    const body = { clientId: 'cevrimdisi-1', text: 'trende yazdım', offline: true };
+    const a = await t.api<Message>('POST', `/api/threads/${thread.id}/messages`, body);
+    const b = await t.api<Message>('POST', `/api/threads/${thread.id}/messages`, body);
+    expect(a.status).toBe(201);
+    expect(a.body.props.sentOffline).toBe(true);
+    expect(b.body.id).toBe(a.body.id);
+    const plain = await t.api<Message>('POST', `/api/threads/${thread.id}/messages`, {
+      clientId: 'cevrimici-1',
+      text: 'şimdi',
+    });
+    expect(plain.body.props.sentOffline).toBeUndefined();
+    await t.services.turns.idle();
+    expect(t.engine.requests.some((r) => r.prompt.includes('trende yazdım'))).toBe(true);
+  });
+
   it('adım sınırına takılan turun notu kaldığı yerden devam edilebileceğini işaretler', async () => {
     const bot = await t.bot();
     const thread = await main(bot.id);

@@ -508,8 +508,21 @@ export const api = {
     http.get<Message[]>(
       `/api/threads/${threadId}/messages${before ? `?before=${encodeURIComponent(before)}` : ''}`,
     ),
-  send: (threadId: string, clientId: string, text: string, files: string[] = [], replyTo?: string) =>
-    http.post<Message>(`/api/threads/${threadId}/messages`, { clientId, text, files, replyTo }),
+  send: (
+    threadId: string,
+    clientId: string,
+    text: string,
+    files: string[] = [],
+    replyTo?: string,
+    offline?: boolean,
+  ) =>
+    http.post<Message>(`/api/threads/${threadId}/messages`, {
+      clientId,
+      text,
+      files,
+      replyTo,
+      ...(offline && { offline: true }),
+    }),
   search: (q: string, opts: { threadId?: string; limit?: number } = {}) =>
     http.get<SearchHit[]>(
       `/api/search?q=${encodeURIComponent(q)}` +

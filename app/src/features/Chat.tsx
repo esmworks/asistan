@@ -90,6 +90,7 @@ import { pickSkill, skillQuery } from '@/lib/skillTag';
 import { goalCommand, slashMatches, slashQuery, type SlashCommand } from '@/lib/slash';
 import { editAsTyped } from '@/lib/undoableEdit';
 import { useHoldReload } from '@/lib/update';
+import { isOffline, useOutbox } from '@/lib/outbox';
 import { ComputerButton } from './Computer';
 import { PlanMeter } from './PlanMeter';
 import { cn } from '@/lib/utils';
@@ -745,6 +746,10 @@ function Conversation({
   const liveState = useUi((s) => s.states[threadId]);
   const state = liveState ?? thread?.state ?? 'idle';
   const [pending, setPending] = useState<Message[]>([]);
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const loadOlder = useMutation({
@@ -831,14 +836,35 @@ function Conversation({
       .send(threadId, clientId, text)
       .then(() => qc.invalidateQueries({ queryKey: ['messages', threadId] }))
       .catch((e: Error) => {
+        if (isOffline(e)) return hold(clientId, [], undefined);
         setPending((p) => p.filter((x) => x.clientId !== clientId));
         toast.error(e.message);
       });
   };
+  // A message the server could not be reached for stays where it was written, marked as waiting
+  // for the connection, and goes out on its own when it is back.
+  const allHeld = useOutbox((s) => s.items);
+  const held = useMemo(() => allHeld.filter((h) => h.threadId === threadId), [allHeld, threadId]);
+  useHoldReload(allHeld.length > 0);
+  const hold = (clientId: string, files: string[], replyTo: string | undefined) => {
+    const m = pendingRef.current.find((x) => x.clientId === clientId);
+    setPending((p) => p.filter((x) => x.clientId !== clientId));
+    if (!m) return;
+    useOutbox.getState().hold({
+      threadId,
+      clientId,
+      text: m.text,
+      files,
+      replyTo,
+      message: { ...m, props: { ...m.props, heldOffline: true } },
+    });
+  };
   const [replyTo, setReplyTo] = useState<Message | null>(null);
 
   // Pending (optimistic) messages disappear once the server copy arrives.
-  const shown = pending.filter((p) => !messages.some((m) => m.clientId === p.clientId));
+  const shown = [...held.map((h) => h.message), ...pending].filter(
+    (p) => !messages.some((m) => m.clientId === p.clientId),
+  );
   // A sent message stays one row, keyed by its clientId, from the moment it is sent until the
   // server's copy replaces it, so it neither redraws nor moves when that copy arrives.
   const all = shown.length ? [...listed, ...shown] : listed;
@@ -1085,6 +1111,7 @@ function Conversation({
           setPending((p) => [...p, m]);
         }}
         onFailed={(clientId) => setPending((p) => p.filter((x) => x.clientId !== clientId))}
+        onHeld={hold}
       />
     </div>
   );
@@ -1202,6 +1229,7 @@ function Composer({
   onReplyChange,
   onPending,
   onFailed,
+  onHeld,
 }: {
   bot: Bot;
   threadId: string;
@@ -1212,6 +1240,8 @@ function Composer({
   onReplyChange(m: Message | null): void;
   onPending(m: Message): void;
   onFailed(clientId: string): void;
+  /** The server could not be reached: the message waits for the connection instead of failing. */
+  onHeld(clientId: string, files: string[], replyTo: string | undefined): void;
 }) {
   const t = useT();
   const [text, setText] = useState(() => readDraft(threadId));
@@ -1384,6 +1414,12 @@ function Composer({
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['messages', threadId] }),
     onError: (e, m) => {
+      if (isOffline(e))
+        return onHeld(
+          m.clientId,
+          m.files.map((f) => f.name),
+          m.replyTo?.id,
+        );
       onFailed(m.clientId);
       setText((t) => t || m.text);
       attachments.restore(m.files);

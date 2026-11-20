@@ -49,6 +49,7 @@ import {
   X,
   RotateCcw,
   Play,
+  WifiOff,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -172,10 +173,15 @@ export function MessageItem({
             )
           )}
           {/* While it is on its way the row keeps the actions' room, so nothing below it moves when they come. */}
-          {pending ? (
+          {pending && m.props.heldOffline === true ? (
+            <OfflineLine text={t('message.heldOffline')} />
+          ) : pending ? (
             <div className="h-7" aria-hidden />
           ) : (
-            m.author === 'user' && !m.props.queued && <OwnMessageActions m={m} />
+            <>
+              {m.props.sentOffline === true && <OfflineLine text={t('message.sentOffline')} />}
+              {m.author === 'user' && !m.props.queued && <OwnMessageActions m={m} />}
+            </>
           )}
         </div>
       );
@@ -1854,5 +1860,15 @@ function QuestionCard({ a, color }: { a: Approval; color: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Under a message written while the server could not be reached. */
+function OfflineLine({ text }: { text: string }) {
+  return (
+    <span className="flex items-center gap-1 px-2 pt-1 text-xs text-muted-foreground">
+      <WifiOff className="size-3" />
+      {text}
+    </span>
   );
 }

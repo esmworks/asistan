@@ -4,6 +4,7 @@ import { io, type Socket } from 'socket.io-client';
 import { browserSocketClosed, onBrowserReconnect, useBrowsers } from './browser';
 import { computerSocketClosed, onComputerReconnect, useComputers } from './computer';
 import { notice, watchAnswered } from './notify';
+import { watchOutbox } from './outbox';
 import { useUi } from './store';
 import { serverBuild } from './update';
 
@@ -20,11 +21,13 @@ export function connectRealtime(qc: QueryClient): () => void {
   let bootId: string | null = null;
   const ui = useUi.getState;
   const stopWatching = watchAnswered(qc);
+  const outbox = watchOutbox(qc);
 
   s.on('connect', () => {
     ui().setConnected(true);
     onBrowserReconnect(s);
     onComputerReconnect(s);
+    outbox.flush();
   });
   s.on('disconnect', (reason) => {
     ui().setConnected(false);
@@ -73,6 +76,7 @@ export function connectRealtime(qc: QueryClient): () => void {
   });
   return () => {
     stopWatching();
+    outbox.stop();
     s.removeAllListeners();
     s.close();
     browserSocketClosed(s);

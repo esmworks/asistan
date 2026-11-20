@@ -918,6 +918,8 @@ export const tr = {
   'message.copy': 'Kopyala',
   'message.copied': 'Kopyalandı',
   'message.queued': 'Sırasını bekliyor',
+  'message.heldOffline': 'Bağlantı bekleniyor; bağlantı gelince kendiliğinden gidecek',
+  'message.sentOffline': 'Bağlantı yokken yazıldı',
   'message.editQueued': 'Düzenle',
   'message.cancelQueued': 'Geri çek',
   'message.connectClaude': 'Claude bağlantısını aç',

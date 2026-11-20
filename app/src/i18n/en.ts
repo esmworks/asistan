@@ -951,6 +951,8 @@ export const en: Catalog<MessageKey> = {
   'message.copy': 'Copy',
   'message.copied': 'Copied',
   'message.queued': 'Waiting its turn',
+  'message.heldOffline': 'Waiting for the connection; it goes out on its own when it is back',
+  'message.sentOffline': 'Sent while offline',
   'message.editQueued': 'Edit',
   'message.cancelQueued': 'Take back',
   'message.connectClaude': 'Open the Claude connection',

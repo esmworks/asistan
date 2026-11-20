@@ -341,6 +341,8 @@ export const SendMessage = z
     files: z.array(FileName).max(MAX_MESSAGE_FILES).default([]),
     /** The id of an earlier message in the same conversation this one answers. */
     replyTo: z.string().min(1).max(64).optional(),
+    /** Written while the app had no connection, and sent once it was back. */
+    offline: z.boolean().optional(),
   })
   .refine((m) => m.text.length > 0 || m.files.length > 0, {
     message: 'validation.emptyMessage',
