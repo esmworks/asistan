@@ -91,7 +91,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
             onChange={setMode}
           />
           <Hint>{t(`whatsapp.modeHint.${mode}`)}</Hint>
-          <FormField label={t('whatsapp.phone')} hint={t(`whatsapp.phoneHint.${mode}`)}>
+          <FormField label={t(`whatsapp.phone.${mode}`)} hint={t(`whatsapp.phoneHint.${mode}`)}>
             <TextBox
               value={phone}
               onChangeText={setPhone}

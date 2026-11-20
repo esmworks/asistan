@@ -2151,7 +2151,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.state.error': 'The connection stopped',
   'whatsapp.error.expired': 'The QR code was not scanned in time. Link again to get a new code.',
   'whatsapp.error.ownNumber':
-    'The linked account is the same as "The number you write to the bots from". In this mode they must differ: scan the QR code with the number that will be the bot, and enter another number you will write from. To write to the bots from the same number, choose "My own number".',
+    'The linked account is the same as the number under "Your number". Scan the QR code with the number that will be the bot (e.g. a company line), and enter there not that number but your own phone’s, which you write to the bots from.',
   'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
   'whatsapp.error.forbidden':
     'WhatsApp refused this connection; the number may be banned. Check the account in the WhatsApp app.',
@@ -2166,9 +2166,10 @@ export const en: Catalog<MessageKey> = {
     'Recommended. A second number that will be the bot (e.g. a company line) is linked; you write to it from another number.',
   'whatsapp.mode.own': 'My own number',
   'whatsapp.modeHint.own': 'Your own account is linked; you write to the bots in "Message yourself".',
-  'whatsapp.phone': 'The number you write to the bots from',
+  'whatsapp.phone.separate': 'Your number',
+  'whatsapp.phone.own': 'The number of the account to link',
   'whatsapp.phoneHint.separate':
-    'With the country code, digits only. It must differ from the bot number you scan the QR code with; only messages from this number reach the bots as requests.',
+    'The number of your own phone, which you write to the bots from (e.g. your personal line); with the country code, digits only. Not the bot number: only messages from this number reach the bots as requests.',
   'whatsapp.phoneHint.own':
     'With the country code, digits only. The number of the account you scan the QR code with; you write to the bots in its "Message yourself" chat.',
   'whatsapp.bot': 'The bot that answers you',
@@ -2218,7 +2219,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.scan':
     'On the phone of the account you link, open WhatsApp → Settings → Linked devices → Link a device and scan this code. The code renews itself; setup must finish within 5 minutes.',
   'whatsapp.howTo.separate':
-    'Write to +{number} from the number you write to the bots from. /bot <name> switches to another bot, /stop stops work in progress.',
+    'Write to +{number} from your own number. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.howTo.own':
     'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.risk':

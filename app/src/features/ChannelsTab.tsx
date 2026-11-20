@@ -255,7 +255,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           ))}
         </div>
         <label className="block space-y-1">
-          <span className="text-sm font-medium">{t('whatsapp.phone')}</span>
+          <span className="text-sm font-medium">{t(`whatsapp.phone.${mode}`)}</span>
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}

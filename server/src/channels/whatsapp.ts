@@ -687,6 +687,10 @@ export class WhatsAppChannel {
     if (input.door) await this.services.bots.get(input.door.botId);
     const row = await this.row();
     const now = (row?.settings ?? {}) as Settings;
+    // The bot's own number as the person's would cut the link the moment it opens: said here.
+    const linked = (row?.account as { number?: string } | undefined)?.number;
+    if (input.mode === 'separate' && linked && linked === input.phone)
+      throw new HttpError(400, 'error.whatsappPhoneIsBot', { number: linked });
     // One bot per chat: the last one named wins.
     const routes = input.routes && [...new Map(input.routes.map((r) => [r.chat, r])).values()];
     const settings: Settings = {

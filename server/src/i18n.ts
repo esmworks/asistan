@@ -1327,6 +1327,8 @@ const tr = {
   'error.telegramInUse': 'Bu Telegram botu zaten {bot} için kullanılıyor.',
   'error.telegramNotConnected': 'Bu botun Telegram bağlantısı yok.',
   'error.whatsappNotSetUp': 'WhatsApp henüz ayarlanmadı.',
+  'error.whatsappPhoneIsBot':
+    '+{number} bağlı bot numarası. "Ayrı bir bot numarası"nda bu alana botlara yazacağınız kendi telefonunuzun numarasını girin.',
   'error.whatsappNotConnected': 'WhatsApp bağlı değil; grupları görmek için önce bağlayın.',
   'error.whatsappGroupNotYours': 'WhatsApp gruplarını yalnızca WhatsApp’ı bağlayan kişi seçebilir.',
   'whatsapp.groupHeader': 'WhatsApp grubu: {name}',
@@ -2824,6 +2826,8 @@ const en: Catalog<ServerKey> = {
   'error.telegramInUse': 'This Telegram bot is already used for {bot}.',
   'error.telegramNotConnected': 'This bot has no Telegram connection.',
   'error.whatsappNotSetUp': 'WhatsApp is not set up yet.',
+  'error.whatsappPhoneIsBot':
+    '+{number} is the linked bot number. With "A separate bot number", enter here your own phone’s number, which you write to the bots from.',
   'error.whatsappNotConnected': 'WhatsApp is not connected; connect it first to see its groups.',
   'error.whatsappGroupNotYours': 'Only the person who linked WhatsApp can choose its groups.',
   'whatsapp.groupHeader': 'WhatsApp group: {name}',

@@ -296,6 +296,22 @@ describe('WhatsApp', () => {
     expect(s.error).toBe('ownNumber');
   });
 
+  it('bağlı bot numarası kişinin numarası diye kaydedilmez; bağlantı kopmaz', async () => {
+    const { asistan } = await setUp('separate');
+    const refused = await t.api<{ error: string }>('PUT', '/api/whatsapp', {
+      mode: 'separate',
+      phone: BOT_NUMBER,
+      botId: asistan.id,
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain(`+${BOT_NUMBER} bağlı bot numarası`);
+    const st = (await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body;
+    expect(st).toMatchObject({ state: 'connected', phone: PERSON, mode: 'separate' });
+    // On the account's own number the two are the same, as they should be.
+    const own = await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: BOT_NUMBER, botId: asistan.id });
+    expect(own.status).toBe(200);
+  });
+
   it('botun yanıtına verilen yanıt o mesaja bağlanır; bilinmeyen mesajın metni ve dosyası gelir', async () => {
     const { wa, asistan } = await setUp();
     const thread = await main(asistan.id);
