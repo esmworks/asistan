@@ -22,6 +22,7 @@ import {
   type Routine,
   type Skill,
   type WhatsAppGroup,
+  zonedTime,
 } from '@yumakbot/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -67,6 +68,29 @@ const choiceLabel = (c: z.infer<typeof Choice>) => (typeof c === 'string' ? c : 
 /** Query parameters that carry a sign-in or a signature rather than say which page it is. */
 const SECRET_PARAM =
   /(?:^|[_.-])(?:token|secret|password|passwd|pwd|key|apikey|sig|signature|auth|session|sessionid|sid|credential|code)s?(?:$|[_.-])|^x-(?:amz|goog)-/i;
+
+/**
+ * The moment a bot says a note is true until, as an ISO time; null for none (an empty answer) and
+ * undefined for something that is not a date. A date alone means the end of that day and a time
+ * with no offset is the person's own clock, both read in `timezone`; a time with an offset
+ * (`...Z`, `...+03:00`) is taken as it stands.
+ */
+export function noteUntil(text: string, timezone: string): string | null | undefined {
+  const given = text.trim();
+  if (!given) return null;
+  const date = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(given);
+  if (date) {
+    const [, y, mo, d, h = '23', mi = '59'] = date;
+    const real = new Date(Date.UTC(+y!, +mo! - 1, +d!));
+    // A day that does not exist (the 31st of November) is no date.
+    if (real.getUTCMonth() !== +mo! - 1 || +h > 23 || +mi > 59) return undefined;
+    return zonedTime(`${y}-${mo}-${d}`, `${h}:${mi}`, timezone).toISOString();
+  }
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/.test(given))
+    return undefined;
+  const at = new Date(given.replace(' ', 'T'));
+  return Number.isNaN(at.getTime()) ? undefined : at.toISOString();
+}
 
 /**
  * The page a bot says a fact came from, as a web address the person can open; null for none and
@@ -477,6 +501,8 @@ export class ToolFactory {
      * The bots whose own notes this bot may read and change, by id with their names: itself, and for
      * a manager every bot that is not a manager, archived ones too so their notes can be cleared.
      */
+    // The clock a date a bot gives for a note is read on: the person's, or the team's in a team conversation.
+    const zone = async () => (team ? await s.settings.team() : await s.settings.all(person)).timezone;
     // The place this conversation is in, for the notes about a place; null when it is in none.
     let placeHere: Promise<string | null> | undefined;
     const place = () => (placeHere ??= placeOf(this.ctx, thread));
@@ -999,7 +1025,7 @@ export class ToolFactory {
           return found
             .map(
               (m) =>
-                `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}${m.sourceUrl ? ` (${t('tool.memorySource', { url: m.sourceUrl })})` : ''}`,
+                `- [${m.id}] (${whose(m)}${m.site ? ` · ${m.site}` : ''}) ${m.content}${m.sourceUrl ? ` (${t('tool.memorySource', { url: m.sourceUrl })})` : ''}${m.validUntil ? ` (${t('tool.memoryUntil', { date: m.validUntil })})` : ''}`,
             )
             .join('\n');
         },
@@ -1012,10 +1038,14 @@ export class ToolFactory {
           scope: z.enum(['bot', 'user', 'room']).default('bot'),
           site: z.string().max(253).optional(),
           from: z.string().max(2000).optional(),
+          until: z.string().max(40).optional(),
         },
-        async ({ content, scope, site, from }) => {
+        async ({ content, scope, site, from, until }) => {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
+          const validUntil = until === undefined ? null : noteUntil(until, await zone());
+          if (validUntil === undefined) return t('tool.memoryBadUntil', { until: until! });
+          if (validUntil && new Date(validUntil).getTime() <= Date.now()) return t('tool.memoryUntilPast');
           let host: string | null = null;
           if (site) {
             try {
@@ -1051,6 +1081,7 @@ export class ToolFactory {
             before: null,
             ...note,
             sourceUrl,
+            validUntil,
           });
           if (gate.say !== undefined) return gate.say;
           const m = await s.memory.create({
@@ -1058,6 +1089,7 @@ export class ToolFactory {
             source: `bot:${bot.id}`,
             threadId: thread.id,
             sourceUrl,
+            validUntil,
           });
           return clean.redacted
             ? `${t('tool.memorySaved', { id: m.id })} ${t('tool.memoryRedacted')}`
@@ -1073,10 +1105,15 @@ export class ToolFactory {
           id: z.string(),
           content: z.string().trim().min(1).max(2000),
           from: z.string().max(2000).optional(),
+          until: z.string().max(40).optional(),
         },
-        async ({ id, content, from }) => {
+        async ({ id, content, from, until }) => {
           const sourceUrl = from?.trim() ? sourceAddress(from) : null;
           if (sourceUrl === undefined) return t('tool.memoryBadSource', { from: from! });
+          // Left out, the note keeps its date; an empty answer takes it away.
+          const validUntil = until === undefined ? undefined : noteUntil(until, await zone());
+          if (validUntil === undefined && until !== undefined) return t('tool.memoryBadUntil', { until });
+          if (validUntil && new Date(validUntil).getTime() <= Date.now()) return t('tool.memoryUntilPast');
           const m = await s.memory.get(id);
           const here = await place();
           if (
@@ -1096,6 +1133,8 @@ export class ToolFactory {
             place: m.place,
             site: m.site,
             sourceUrl,
+            // A waiting change can give a note a date, not take it away.
+            validUntil: validUntil ?? null,
           });
           if (gate.say !== undefined) return gate.say;
           // Written against the version read above, so a change made while a card waited is not
@@ -1107,6 +1146,7 @@ export class ToolFactory {
                 content: clean.text,
                 expectedUpdatedAt: m.updatedAt,
                 ...sourceOf({ threadId: thread.id, sourceUrl }),
+                ...(validUntil !== undefined && { validUntil }),
               },
               `bot:${bot.id}`,
             );

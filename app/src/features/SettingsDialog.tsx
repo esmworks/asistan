@@ -58,7 +58,7 @@ import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { deviceName } from '@/lib/device';
 import { useFormat } from '@/lib/format';
-import { noteMatches, pinnedFirst, placeLabel, placeNoteGroups } from '@/lib/memoryNotes';
+import { noteExpired, noteMatches, pinnedFirst, placeLabel, placeNoteGroups } from '@/lib/memoryNotes';
 import { PHONE, useMedia } from '@/lib/media';
 import {
   useBots,
@@ -1393,8 +1393,8 @@ function MemoryTab() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['memory'] });
   // The server refuses a save over a note that changed meanwhile; the list is fetched again then.
   const save = useMutation({
-    mutationFn: ({ m, content }: { m: Memory; content: string }) =>
-      api.updateMemory(m.id, { content, updatedAt: m.updatedAt }),
+    mutationFn: ({ m, patch }: { m: Memory; patch: { content?: string; validUntil?: string | null } }) =>
+      api.updateMemory(m.id, { ...patch, ...(patch.content !== undefined && { updatedAt: m.updatedAt }) }),
     onSuccess: refresh,
     onError: (e) => {
       toast.error((e as Error).message);
@@ -1406,7 +1406,8 @@ function MemoryTab() {
     onSuccess: refresh,
     onError: (e) => toast.error((e as Error).message),
   });
-  const onSave = (m: Memory, content: string) => save.mutateAsync({ m, content });
+  const onSave = (m: Memory, patch: { content?: string; validUntil?: string | null }) =>
+    save.mutateAsync({ m, patch });
   const clearBot = useMutation({
     mutationFn: api.removeBotMemory,
     onSuccess: refresh,
@@ -1436,7 +1437,13 @@ function MemoryTab() {
           label: t('memory.undo'),
           onClick: () =>
             void api
-              .addMemory({ scope, botId: m.botId, content: m.content, site: m.site })
+              .addMemory({
+                scope,
+                botId: m.botId,
+                content: m.content,
+                site: m.site,
+                validUntil: m.validUntil,
+              })
               // A pinned note comes back pinned, as it was.
               .then((back) => (m.pinned ? api.updateMemory(back.id, { pinned: true }) : back))
               .then(refresh)
@@ -1454,12 +1461,16 @@ function MemoryTab() {
   });
   const searching = query.trim() !== '';
   const hit = (m: Memory) => noteMatches(m, query);
-  const user = pinnedFirst(memory.filter((m) => m.scope === 'user' && hit(m)));
-  const groups = botNoteGroups(memory.filter(hit), bots, archived).map((g) => ({
+  // A note past its "true until" date waits in its own list, not among the notes bots read.
+  const now = new Date();
+  const current = memory.filter((m) => !noteExpired(m, now));
+  const expiredHits = memory.filter((m) => noteExpired(m, now) && hit(m));
+  const user = pinnedFirst(current.filter((m) => m.scope === 'user' && hit(m)));
+  const groups = botNoteGroups(current.filter(hit), bots, archived).map((g) => ({
     ...g,
     notes: pinnedFirst(g.notes),
   }));
-  const roomGroups = placeNoteGroups(memory.filter(hit), t, rooms);
+  const roomGroups = placeNoteGroups(current.filter(hit), t, rooms);
   const staleHits = stale.filter(hit);
   const noteProps = {
     onSave,
@@ -1508,6 +1519,25 @@ function MemoryTab() {
       </div>
       <p className="mb-6 px-1 text-xs text-muted-foreground">{t('memory.pinHint')}</p>
       <PendingMemory bots={[...bots, ...archived]} />
+      {expiredHits.length > 0 && (
+        <Card title={t('memory.expired')}>
+          <p className="px-4 py-3 text-xs text-muted-foreground">{t('memory.expiredHint')}</p>
+          {expiredHits.map((m) => (
+            <NoteRow
+              key={m.id}
+              m={m}
+              hint={
+                m.scope === 'user'
+                  ? t('memory.staleShared')
+                  : m.scope === 'room'
+                    ? placeLabel(m.place, t, rooms)
+                    : botName(m.botId)
+              }
+              {...noteProps}
+            />
+          ))}
+        </Card>
+      )}
       {staleHits.length > 0 && (
         <Card title={t('memory.stale')}>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">

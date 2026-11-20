@@ -338,6 +338,10 @@ export const en: Catalog<MessageKey> = {
     other: '{count} memory notes no bot uses',
   },
   'today.staleMemoryReview': 'Review',
+  'today.expiredMemory': {
+    one: '{count} memory note has expired',
+    other: '{count} memory notes have expired',
+  },
   'sidebarMenu.clearThreads': 'Delete other conversations…',
   'sidebarMenu.clearThreadsConfirm':
     'Delete every conversation of {name} but the main one, with their files? This cannot be undone.',
@@ -1529,6 +1533,13 @@ export const en: Catalog<MessageKey> = {
   'memory.deleteAll': 'Delete all',
   'memory.deleteAllConfirm': "Delete all {count} of {name}'s notes? This cannot be undone.",
   'memory.stale': 'Notes no bot uses',
+  'memory.expired': 'Expired notes',
+  'memory.expiredHint':
+    'These notes were only true until a date that has passed, so no bot reads them any more. Delete them, or give one a new date.',
+  'memory.validUntil': 'True until',
+  'memory.validUntilClear': 'Clear',
+  'memory.validUntilOn': 'true until {date}',
+  'memory.expiredOn': 'expired {date}',
   'memory.staleHint':
     'Nobody has changed these and no bot has looked them up in {days} days, and no bot reads them on every turn. Delete the ones you no longer need; the rest stay, and bots can still find them by search.',
   'memory.staleShared': 'About you',

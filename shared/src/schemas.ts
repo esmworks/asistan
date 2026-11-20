@@ -896,6 +896,8 @@ export const Memory = z.object({
   place: z.string().nullable().optional(),
   /** The person asked for the note to go into every prompt that reaches it. Missing from older servers. */
   pinned: z.boolean().optional(),
+  /** Until when the note is true, as an ISO time; past it the note reaches no bot. Null: no end. Missing from older servers. */
+  validUntil: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -930,6 +932,8 @@ export interface MemoryChange {
   threadId: string | null;
   /** The page the bot said the fact came from. */
   sourceUrl: string | null;
+  /** Until when the bot said the fact is true. Missing on older servers. */
+  validUntil?: string | null;
   createdAt: string;
 }
 /** One thing that happened to a memory note, as `GET /api/memory-history` lists it (oldest first). */
@@ -965,19 +969,23 @@ export const MemoryCreate = z.object({
   content: z.string().trim().min(1).max(2000),
   /** The site a note is about (`example.com`), when it is a site note. */
   site: z.string().trim().max(253).nullable().optional(),
+  /** Until when the note is true (an ISO time); left out for a note with no end. */
+  validUntil: z.string().datetime({ offset: true }).nullable().optional(),
 });
 export const MemoryUpdate = z
   .object({
     content: z.string().trim().min(1).max(2000).optional(),
     /** Pin the note (it goes into the prompt first, before the rest) or let it go. */
     pinned: z.boolean().optional(),
+    /** Until when the note is true (an ISO time); null clears it. */
+    validUntil: z.string().datetime({ offset: true }).nullable().optional(),
     /**
      * The `updatedAt` of the note as the person began editing it. When the note has changed since,
      * the save is refused instead of overwriting the newer words. Older clients leave it out.
      */
     updatedAt: z.string().optional(),
   })
-  .refine((u) => u.content !== undefined || u.pinned !== undefined, {
+  .refine((u) => u.content !== undefined || u.pinned !== undefined || u.validUntil !== undefined, {
     message: 'validation.memoryUpdateEmpty',
   });
 export type MemoryUpdate = z.infer<typeof MemoryUpdate>;
@@ -1439,6 +1447,8 @@ export const TodayReport = z.object({
   ),
   /** Memory notes no bot uses any more, waiting for the user to keep or delete them. Missing from older servers. */
   staleMemory: z.number().int().optional(),
+  /** Memory notes whose "true until" date has passed, kept for the user to delete or give a new date; not counted in `staleMemory`. Missing from older servers. */
+  expiredMemory: z.number().int().optional(),
   /** Memory changes asked for while nobody watched, waiting for the user's yes. Missing from older servers. */
   pendingMemory: z.number().int().optional(),
   /** Changes bots found for skills the user owns, waiting for the user's review. Missing from older servers. */

@@ -579,10 +579,17 @@ export const api = {
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),
-  addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
-    http.post<Memory>('/api/memory', m),
-  updateMemory: (id: string, p: { content?: string; pinned?: boolean; updatedAt?: string }) =>
-    http.patch<Memory>(`/api/memory/${id}`, p),
+  addMemory: (m: {
+    scope: 'bot' | 'user';
+    botId?: string | null;
+    content: string;
+    site?: string | null;
+    validUntil?: string | null;
+  }) => http.post<Memory>('/api/memory', m),
+  updateMemory: (
+    id: string,
+    p: { content?: string; pinned?: boolean; validUntil?: string | null; updatedAt?: string },
+  ) => http.patch<Memory>(`/api/memory/${id}`, p),
   memoryHistory: () => http.get<MemoryHistoryLine[]>('/api/memory-history'),
   removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
   /** Deletes every note the bot keeps for itself. */

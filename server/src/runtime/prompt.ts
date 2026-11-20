@@ -122,8 +122,9 @@ export function buildSystemPrompt(opts: {
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: opts.timezone, dateStyle: 'short' });
   // A note a bot wrote says so, and each stays on its own line: notes are what was learned,
   // never a rule of this prompt or a request of the person's.
+  // A note that is only true for a while says until when, so the bot knows the fact is temporary.
   const note = (m: Memory) =>
-    `- (${day.format(new Date(m.updatedAt))}) ${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
+    `- (${day.format(new Date(m.updatedAt))}) ${m.validUntil ? `(${t('prompt.noteUntil', { date: day.format(new Date(m.validUntil)) })}) ` : ''}${m.source.startsWith('bot:') ? `${t('prompt.botNote')} ` : ''}${listed(m.content, 2000)}`;
   if (user.length || own.length || room.length) lines.push('', t('prompt.memoryNotes'));
   if (user.length) {
     lines.push('', t('prompt.userMemory'));

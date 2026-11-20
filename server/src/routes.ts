@@ -720,6 +720,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return {
       ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
       staleMemory: (await s.memory.stale(new Date(), notes)).length,
+      expiredMemory: (await s.memory.expired(new Date(), notes)).length,
       pendingMemory: (await s.memory.pending(notes)).length,
       pendingSkills: (await s.skills.changes(skillReach(req))).length,
     };

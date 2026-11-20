@@ -102,6 +102,23 @@ export function TodayDialog() {
                       </span>
                     </Item>
                   ) : null}
+                  {/* Notes past their "true until" date wait in the memory screen too. */}
+                  {data.expiredMemory ? (
+                    <Item
+                      onClick={() => {
+                        useUi.getState().openSettings('memory');
+                        setOpen(false);
+                      }}
+                    >
+                      <Brain className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('today.expiredMemory', { count: data.expiredMemory })}
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-amber-600 dark:text-amber-400">
+                        {t('today.staleMemoryReview')}
+                      </span>
+                    </Item>
+                  ) : null}
                   {/* Notes no bot uses wait for the person to keep or delete them in the memory screen. */}
                   {data.staleMemory ? (
                     <Item

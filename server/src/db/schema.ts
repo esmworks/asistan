@@ -417,6 +417,13 @@ export const memories = pgTable(
     threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
     /** The page the fact came from, as the bot gave it, so the person can check it. */
     sourceUrl: sealedText('source_url'),
+    /**
+     * Until when the note is true, for a fact that is only so for a while ("this week", "until
+     * Friday"). From then on it goes into no prompt and no bot's search finds it; it stays here,
+     * shown as expired, until the person deletes it or gives it a new date. Null: true until
+     * someone says otherwise.
+     */
+    validUntil: ts('valid_until'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -1213,6 +1220,8 @@ export const memoryChanges = pgTable(
     threadId: text('thread_id'),
     /** The page the bot said the fact came from; kept on the note once accepted. */
     sourceUrl: sealedText('source_url'),
+    /** The date the bot said the fact is true until; kept on the note once accepted (see `memories.validUntil`). */
+    validUntil: ts('valid_until'),
     createdAt: created(),
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],

@@ -334,6 +334,7 @@ export const tr = {
   'today.failed': '{count} hata',
   'today.staleMemory': 'Hiçbir botun kullanmadığı {count} hafıza notu',
   'today.staleMemoryReview': 'Gözden geçir',
+  'today.expiredMemory': '{count} hafıza notunun süresi doldu',
   'sidebarMenu.clearThreads': 'Diğer sohbetleri sil…',
   'sidebarMenu.clearThreadsConfirm':
     '{name} botunun ana sohbet dışındaki bütün sohbetleri dosyalarıyla silinsin mi? Geri alınamaz.',
@@ -1523,6 +1524,13 @@ export const tr = {
   'memory.deleteAll': 'Hepsini sil',
   'memory.deleteAllConfirm': '{name} botunun {count} notunun hepsi silinsin mi? Geri alınamaz.',
   'memory.stale': 'Hiçbir botun kullanmadığı notlar',
+  'memory.expired': 'Süresi dolan notlar',
+  'memory.expiredHint':
+    'Bu notlar yalnızca geçmiş bir tarihe kadar doğruydu, bu yüzden artık hiçbir bot onları okumaz. Silebilir ya da birine yeni bir tarih verebilirsiniz.',
+  'memory.validUntil': 'Şu tarihe kadar geçerli',
+  'memory.validUntilClear': 'Temizle',
+  'memory.validUntilOn': '{date} tarihine kadar geçerli',
+  'memory.expiredOn': '{date} tarihinde süresi doldu',
   'memory.staleHint':
     '{days} gündür bunları kimse değiştirmedi, hiçbir bot da bakmadı; her turda okuyan bir bot da yok. Artık gerekmeyenleri silin; kalanlar durur, botlar onları aramayla yine bulur.',
   'memory.staleShared': 'Sizin hakkınızda',

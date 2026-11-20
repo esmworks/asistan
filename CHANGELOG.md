@@ -7,6 +7,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A memory note can be true only until a date. A bot that saves a fact that will stop being true ("working from
+  home this week", "Ali is on leave until the 5th") gives the date, worked out from today's date and the person's
+  time zone, and the note carries it into the bot's prompt as "true until ...". Once the date passes the note
+  reaches no prompt and no bot's search, so the bot stops acting on it; it is not deleted but moves to an
+  "Expired notes" list in Settings → Memory, where it can be deleted or given a new date, and the Today page counts
+  them. A note's date can be set, changed or cleared when editing it.
 - A bot that finds a better way to do a skill's task while working for someone who may not change that skill now
   suggests the change to the skill's owner instead of changing it for every bot that has it. The suggestion carries
   the bot's reason; Settings → Skills shows it as a comparison with the skill as it is now, to accept or reject, and
