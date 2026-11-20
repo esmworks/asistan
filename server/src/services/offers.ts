@@ -1,5 +1,5 @@
 import type { Bot, Message } from '@yumakbot/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import type { Engine, TurnOutcome } from '../engine/types';
@@ -98,9 +98,25 @@ export class OfferService {
     if (m.props.kind !== 'offer' || typeof m.props.task !== 'string')
       throw new HttpError(400, 'error.notOffer');
     if (m.props.answer) throw new HttpError(409, 'error.offerAnswered');
-    await this.services.threads.mergeProps(m.id, { answer: take ? 'taken' : 'declined' });
+    const answer = take ? 'taken' : 'declined';
+    // Taken in one step with the check, so two answers at once (a double press, two devices) do
+    // not both get through and send the task twice.
+    const claimed = await this.ctx.db
+      .update(schema.messages)
+      .set({ props: sql`${schema.messages.props} || ${JSON.stringify({ answer })}::jsonb` })
+      .where(and(eq(schema.messages.id, m.id), sql`${schema.messages.props}->>'answer' is null`))
+      .returning({ id: schema.messages.id });
+    if (!claimed.length) throw new HttpError(409, 'error.offerAnswered');
+    // Through the usual path too, so the app hears of the answer.
+    await this.services.threads.mergeProps(m.id, { answer });
     if (take) await this.services.inbox.send(m.threadId, { text: m.props.task, userId });
     return this.services.threads.message(m.id);
+  }
+
+  /** Drops what no longer holds anything back: looks older than the gap, and other days' counts. */
+  private forget(now: number, today: string) {
+    for (const [id, at] of this.lookedAt) if (now - at >= THREAD_GAP_MS) this.lookedAt.delete(id);
+    for (const key of this.daily.keys()) if (!key.endsWith(`:${today}`)) this.daily.delete(key);
   }
 
   private async look(turn: TurnRow) {
@@ -111,8 +127,10 @@ export class OfferService {
     const settings = await this.services.settings.all(person);
     if (!settings.workOffers) return;
     const now = this.clock().getTime();
+    const today = this.clock().toISOString().slice(0, 10);
+    this.forget(now, today);
     if (now - (this.lookedAt.get(thread.id) ?? 0) < THREAD_GAP_MS) return;
-    const day = `${person}:${this.clock().toISOString().slice(0, 10)}`;
+    const day = `${person}:${today}`;
     if ((this.daily.get(day) ?? 0) >= PER_DAY) return;
     const bot = await this.services.bots.get(turn.botId).catch(() => null);
     if (!bot || bot.archivedAt || (await this.services.bots.isPaused(bot))) return;

@@ -323,6 +323,7 @@ const tr = {
   'teams.personalOnly': 'Şimdilik yalnızca benimle birebir sohbette konuşabiliyorum; bana doğrudan yaz.',
   'teams.filesInApp': "Teams'ten gelen dosyaları henüz okuyamıyorum; dosyayı Yumak Bot uygulamasından ekle.",
   'teams.filesLeftOut': "(Mesajdaki dosyalar Teams'ten okunamadı.)",
+  'teams.answer': 'Yanıtla',
   'teams.notDelivered': "Bir cevap Teams'e iletilemedi; bağlantı bilgilerini ve botun kaydını denetle.",
   'error.discordToken':
     'Bu bir Discord bot anahtarına benzemiyor; geliştirici portalında Bot > Reset Token ile al.',
@@ -2056,6 +2057,7 @@ const en: Catalog<ServerKey> = {
   'teams.personalOnly': 'For now I can only talk in a one-to-one chat; write to me directly.',
   'teams.filesInApp': "I can't read files from Teams yet; add the file in the Yumak Bot app.",
   'teams.filesLeftOut': '(The files in this message could not be read from Teams.)',
+  'teams.answer': 'Answer',
   'teams.notDelivered':
     'A reply could not be delivered to Teams; check the connection details and the bot registration.',
   'error.discordToken':

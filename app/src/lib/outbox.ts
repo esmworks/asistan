@@ -2,7 +2,7 @@ import type { Message } from '@yumakbot/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { create } from 'zustand';
-import { api, ApiError } from './api';
+import { api, ApiError, NoAnswerError } from './api';
 
 /** A message written while the app could not reach the server, waiting to be sent. */
 export interface Held {
@@ -36,11 +36,13 @@ export const useOutbox = create<Outbox>((set) => ({
 /** What a proxy in front of the server answers while the server is away (a restart, a redeploy). */
 const AWAY = [502, 503, 504];
 
-/** A send that failed because the server could not be reached, not because it said no. */
+/**
+ * A send that failed because the server could not be reached, not because it said no: no answer
+ * came, or a proxy answered for a server that is away. Any other error is a mistake that a later
+ * try would only repeat, so it is shown rather than held.
+ */
 export const isOffline = (err: unknown): boolean =>
-  !(err instanceof ApiError) ||
-  (AWAY.includes(err.status) && !err.fromServer) ||
-  (typeof navigator !== 'undefined' && navigator.onLine === false);
+  err instanceof NoAnswerError || (err instanceof ApiError && AWAY.includes(err.status) && !err.fromServer);
 
 let flushing = false;
 /** Set while the app watches the connection: tries the held messages again now. */

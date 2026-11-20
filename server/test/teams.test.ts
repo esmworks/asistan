@@ -156,6 +156,33 @@ describe('Teams sign-in check', () => {
     expect(asked).toBe(2);
   });
 
+  it('tries a failed read of the keys again after a short wait, not on every request', async () => {
+    const keys = keyPair();
+    ms = await fakeMicrosoft(keys);
+    let clock = Date.now();
+    let tries = 0;
+    let down = true;
+    const auth = new TeamsAuth(
+      `${ms.base}/openid`,
+      (async (...args: Parameters<typeof fetch>) => {
+        tries++;
+        if (down) throw new TypeError('fetch failed');
+        return fetch(...args);
+      }) as typeof fetch,
+      () => clock,
+    );
+    const activity: TeamsActivity = { channelId: 'msteams', serviceUrl: ms.serviceUrl };
+    const good = token(keys.privateKey, ms.serviceUrl);
+    expect(await auth.check(good, activity, APP_ID)).toBe(false);
+    clock += 10_000;
+    expect(await auth.check(good, activity, APP_ID)).toBe(false);
+    expect(tries).toBe(1);
+    // Microsoft is back: half a minute later Teams is answered again, not five minutes later.
+    down = false;
+    clock += 21_000;
+    expect(await auth.check(good, activity, APP_ID)).toBe(true);
+  });
+
   it('reads Teams text as plain words and splits long replies', () => {
     expect(teamsText('<at>Yumak</at> merhaba&nbsp;<b>dünya</b> &amp; &lt;siz&gt;')).toBe(
       'merhaba dünya & <siz>',
@@ -274,6 +301,12 @@ describe('Teams channel', () => {
       ms.texts('a:29:ayse').find((p) => p.body.textFormat === 'markdown'),
     );
     expect(reply.auth).toBe('Bearer connector-token');
+    // The Bot Connector is told who the message is from, who it is for and where it goes.
+    expect(reply.body).toMatchObject({
+      from: { id: `28:${APP_ID}` },
+      recipient: { id: '29:ayse' },
+      conversation: { id: 'a:29:ayse' },
+    });
     expect(msgs.some((m) => m.role === 'assistant' && m.text === reply.body.text)).toBe(true);
   });
 
@@ -311,6 +344,32 @@ describe('Teams channel', () => {
     expect((await ayse.api<Approval>('GET', `/api/approvals/${pending[0]!.id}`)).body.answer).toBe(
       'İstanbul',
     );
+    await t.services.turns.idle();
+  });
+
+  it('a question with more choices than Teams shows as buttons comes as a list', async () => {
+    await setUp();
+    const { code } = (await ayse.api<TeamsLink>('POST', '/api/teams/me/code')).body;
+    await deliver('29:ayse', `link ${code}`);
+    await said('29:ayse', 'Bağlandın');
+    const options = ['Adana', 'Bursa', 'Çorum', 'Denizli', 'Edirne', 'Fethiye', 'Giresun', 'Hatay'];
+    const call = { questions: [{ question: 'Hangi şehir?', options }] };
+    await deliver('29:ayse', `[araç:ask_user ${JSON.stringify(call)}]`);
+    const card = await waitFor(async () =>
+      ms.texts('a:29:ayse').find((p) => Array.isArray(p.body.attachments)),
+    );
+    const content = (
+      card.body.attachments as {
+        content: { body: { type: string; id?: string; choices?: { value: string }[] }[]; actions: unknown[] };
+      }[]
+    )[0]!.content;
+    const list = content.body.find((b) => b.type === 'Input.ChoiceSet')!;
+    expect(list.id).toBe('choice');
+    expect(list.choices).toHaveLength(8);
+    expect(content.actions).toHaveLength(1);
+    // What Teams sends back for the list is the chosen value under the list's id.
+    await deliver('29:ayse', '', { value: { choice: list.choices![7]!.value } });
+    await said('29:ayse', '✓ Hatay');
     await t.services.turns.idle();
   });
 

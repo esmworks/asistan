@@ -1675,7 +1675,8 @@ export class TurnManager {
       // On the person's own computer the line is narrower: a bot that asks first writes and edits
       // files in its own folders without a card, and nothing more. No model judges it; the path
       // alone decides, so it costs no wait. Commands still ask, as they run with the person's own
-      // rights, and so does the group's shared folder, which other bots read.
+      // rights; so does the group's shared folder, which other bots read, and so does a project
+      // folder the bot was pointed at, which is the person's own.
       if (
         this.ctx.config.onUserComputer &&
         mode === 'ask' &&
@@ -1684,7 +1685,7 @@ export class TurnManager {
         confinedWrite(
           ask.toolName,
           ask.input,
-          sandbox.writable.filter((d) => d !== paths.groupFiles),
+          [paths.botFiles, paths.threadDir].filter((d) => sandbox.writable.includes(d)),
         ) &&
         !(await approvals.refusedLately(bot.id, ask.toolName, ask.input))
       ) {

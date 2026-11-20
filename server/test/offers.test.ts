@@ -71,6 +71,27 @@ describe('work offers', () => {
     expect(usage.offers).toMatchObject({ checks: 1, found: 1 });
   });
 
+  it('two answers at once: one gets through, and the task is sent once', async () => {
+    await t.api('PATCH', '/api/settings', { workOffers: true });
+    t.engine.completer = (req) => (isOffer(req.system) ? OFFER : '{"operations":[]}');
+    const bot = await t.bot();
+    const th = await thread(bot.id);
+    await t.send(th.id, 'geçen ayın faturasında bir yanlışlık var');
+    await settle();
+    const [card] = await offers(th.id);
+    // Both start before either has written its answer.
+    const answers = await Promise.allSettled([
+      t.services.offers.answer(card!.id, true, 'owner'),
+      t.services.offers.answer(card!.id, true, 'owner'),
+    ]);
+    expect(answers.map((a) => a.status).sort()).toEqual(['fulfilled', 'rejected']);
+    await settle();
+    const sent = (await t.messages(th.id)).filter(
+      (m) => m.role === 'user' && m.text.includes('itiraz e-postası taslağı'),
+    );
+    expect(sent).toHaveLength(1);
+  });
+
   it('turning an offer down only marks the card; a look with nothing to offer leaves no card', async () => {
     await t.api('PATCH', '/api/settings', { workOffers: true });
     t.engine.completer = (req) => (isOffer(req.system) ? OFFER : '{"operations":[]}');
