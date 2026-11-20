@@ -178,6 +178,16 @@ export const useSecondYes = () => {
   const api = useApi();
   return useQuery({ queryKey: ['second-yes', useOrigin()], queryFn: api.secondYes });
 };
+/** The turns of a conversation that changed something and can be taken back, by turn id. */
+export const useTurnChanges = (threadId: string) => {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['turn-changes', useOrigin(), threadId],
+    queryFn: () => api.turnChangesPending(threadId),
+    // Rarely changes, and only while a turn runs or after one is taken back.
+    staleTime: 30_000,
+  });
+};
 export const usePromises = () => {
   const api = useApi();
   return useQuery({ queryKey: ['promises', useOrigin()], queryFn: api.promises });

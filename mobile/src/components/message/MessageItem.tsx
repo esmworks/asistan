@@ -16,10 +16,11 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { Avatar } from '@/components/Avatar';
 import { confirm, toast, toastError } from '@/components/overlay';
 import { PillButton, Sheet, type SheetItem } from '@/components/page';
-import { t } from '@/i18n';
+import { locale, t } from '@/i18n';
 import { mixWithBlack } from '@/lib/color';
+import { formatters } from '@/lib/format';
 import { nav } from '@/lib/nav';
-import { useConnections } from '@/lib/queries';
+import { useConnections, usePromises, useTurnChanges } from '@/lib/queries';
 import { useLiveTool } from '@/lib/realtime';
 import { useApi, useServer } from '@/lib/server';
 import { newClientId } from '@/lib/stream';
@@ -38,6 +39,7 @@ import {
 import { MessageFiles } from './Files';
 import { BotPage, McpAppView } from './Frames';
 import { Marker } from './Marker';
+import { UndoTurnSheet } from './UndoTurn';
 import { ON_TINT, bubblePalette, isLocal, messageFiles, replyQuoteOf, toolLabel, useBotMap } from './util';
 
 /**
@@ -62,6 +64,8 @@ export interface MessageItemProps {
   /** Brings a message of this conversation into view; a quote uses it to go back to its message. */
   onJump?: (messageId: string) => void;
 }
+
+const fmt = formatters(locale, t);
 
 const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '🙏', '🔥', '👏', '🎉'];
 
@@ -165,6 +169,13 @@ function NoteRow({ m, botId, retry, room }: { m: Message; botId?: string; retry:
     return <OpenedThread threadId={m.props.openedThread} text={m.text} room={room} />;
   if (typeof m.props.suggestApp === 'string')
     return <AppSuggestion catalogId={m.props.suggestApp} reason={m.text} botId={botId} />;
+  // What taking a turn back put back and left: several lines, kept as lines.
+  if (m.props.kind === 'turnUndo')
+    return (
+      <View style={[styles.undoNote, { borderColor: c.border, backgroundColor: c.card }]}>
+        <Text style={[styles.undoText, { color: c.foreground }]}>{m.text}</Text>
+      </View>
+    );
   return (
     <View style={styles.note}>
       <Text style={[styles.noteText, { color: c.mutedForeground }]}>{m.text}</Text>
@@ -236,6 +247,9 @@ function MessageSheet({
   const qc = useQueryClient();
   const react = useReact(m);
   const [picking, setPicking] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  // Only turns that changed something, and only for the person whose turn it was.
+  const { data: undoable } = useTurnChanges(m.threadId);
   const reaction =
     typeof m.props.userReaction === 'string' && m.props.userReaction ? m.props.userReaction : null;
   const invalidate = () => qc.invalidateQueries({ queryKey: ['messages', origin, m.threadId] });
@@ -302,6 +316,9 @@ function MessageSheet({
       items.push({ icon: 'git-branch', label: t('message.fork'), onPress: () => void fork() });
       items.push({ icon: 'bookmark', label: t('message.pin'), onPress: () => void pin() });
     }
+    if (m.turnId && undoable?.[m.turnId]) {
+      items.push({ icon: 'rotate-ccw', label: t('message.undoTurn'), onPress: () => setUndoing(true) });
+    }
   }
   return (
     <>
@@ -336,6 +353,14 @@ function MessageSheet({
         </View>
       ) : null}
       <Sheet open={open} onClose={onClose} items={items} />
+      {m.turnId ? (
+        <UndoTurnSheet
+          turnId={m.turnId}
+          threadId={m.threadId}
+          open={undoing}
+          onClose={() => setUndoing(false)}
+        />
+      ) : null}
       <Sheet open={picking} onClose={() => setPicking(false)} title={t('message.react')}>
         <View style={styles.emojis}>
           {QUICK_EMOJIS.map((e) => (
@@ -692,6 +717,7 @@ function AssistantRow({
       ) : (
         card
       )}
+      {typeof m.props.promiseId === 'string' ? <PromiseLine id={m.props.promiseId} /> : null}
       {/* With a card the reaction leads its row of actions; bare files show it here. */}
       {reaction && !card ? (
         <Pressable
@@ -703,6 +729,48 @@ function AssistantRow({
           <Text style={styles.reactionText}>{reaction}</Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The small line under a bot's reply that made a promise: where it stands on the calendar, and a
+ * way to take it back. Nothing is shown once the promise is closed.
+ */
+function PromiseLine({ id }: { id: string }) {
+  const c = useColors();
+  const api = useApi();
+  const { origin } = useServer();
+  const qc = useQueryClient();
+  const { data: promises = [] } = usePromises();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['promises', origin] });
+  const drop = useMutation({
+    mutationFn: api.promiseDrop,
+    onSuccess: refresh,
+    onError: (e) => {
+      toastError(e);
+      void refresh();
+    },
+  });
+  const p = promises.find((x) => x.id === id);
+  if (!p) return null;
+  const due = p.scheduled ? p.dueAt : null;
+  return (
+    <View style={styles.promise}>
+      <Feather name="calendar" size={13} color={c.mutedForeground} />
+      <Text style={[styles.small, { color: c.mutedForeground }]}>
+        {due ? t('promise.lineKept', { when: fmt.dayLabel(due) }) : t('promise.lineNoted', { what: p.text })}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={drop.isPending}
+        hitSlop={8}
+        onPress={() => drop.mutate(p.id)}
+      >
+        <Text style={[styles.small, styles.strongText, { color: c.foreground }]}>
+          {due ? t('promise.cancel') : t('promise.drop')}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -973,11 +1041,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   action: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  strongText: { fontWeight: '600' },
   small: { fontSize: 15, lineHeight: 20 },
   underline: { textDecorationLine: 'underline' },
   plain: { fontSize: 17, lineHeight: 26 },
   mono: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 15, lineHeight: 22 },
   note: { alignItems: 'center', gap: 8, paddingVertical: 4 },
+  undoNote: { alignSelf: 'stretch', borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: 14 },
+  undoText: { fontSize: 15, lineHeight: 22 },
+  promise: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   noteText: { fontSize: 16, lineHeight: 22, textAlign: 'center', paddingHorizontal: 24 },
   userCol: { alignItems: 'flex-end', gap: 4 },
   user: {

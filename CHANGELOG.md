@@ -14,6 +14,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
   editing, and lists expired notes; the permission rules list shows a rule's second person, rules can be added for
   one bot and with a second person's yes (offered when two or more people could give it), and a chat card waiting for
   a second person says who said yes first and offers no "always allow".
+- The phone app's bot-reply menu offers "Undo this turn" under the web app's conditions, listing what will be put back
+  and, apart, what cannot be, and shows the note it leaves as separate lines; a reply that made a promise shows the
+  promise line with Cancel; the routine screen has "Rehearse", with the instructions as typed, a replay of one of the
+  last runs, and the result beside that run's own report.
 - A routine can be rehearsed before it runs for real. A new or changed routine runs unattended and the person only
   learned what it does from what it already did, so "Rehearse" in the routine's dialog runs it once, with the
   instruction as typed (saved or not) and, for a routine something else starts, with what started one of its last

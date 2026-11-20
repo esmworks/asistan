@@ -19,6 +19,10 @@ import type {
   AccountSet,
   TodayReport,
   Pledge,
+  TurnChanges,
+  Rehearsal,
+  RehearsalStart,
+  ReplayableRun,
   SecondYes,
   PersonInfo,
   RoutineSuggestion,
@@ -525,6 +529,17 @@ export function apiFor(origin: string) {
     runRoutine: (id: string) => http.post<RoutineRun | null>(`/api/routines/${id}/run`),
     routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
     routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
+    /** Tries a routine once without doing anything; the server decides who may. */
+    rehearseRoutine: (id: string, body: RehearsalStart) =>
+      http.post<Rehearsal>(`/api/routines/${id}/rehearse`, body),
+    routineRehearsals: (id: string) => http.get<Rehearsal[]>(`/api/routines/${id}/rehearsals`),
+    /** The routine's latest runs, with whether what started each was kept so it can be replayed. */
+    routineReplayable: (id: string) => http.get<ReplayableRun[]>(`/api/routines/${id}/replayable`),
+    /** The turns of a conversation with something to put back, with how many changes each made. */
+    turnChangesPending: (threadId: string) =>
+      http.get<Record<string, number>>(`/api/threads/${threadId}/turn-changes`),
+    turnChanges: (turnId: string) => http.get<TurnChanges>(`/api/turns/${turnId}/changes`),
+    undoTurn: (turnId: string) => http.post<TurnChanges>(`/api/turns/${turnId}/undo`, {}),
 
     library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),
     /** `inline`: an image to show on the page rather than a download. */
