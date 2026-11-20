@@ -60,7 +60,7 @@ describe('botların e-posta adresi', () => {
     const { body: settings } = await t.api<EmailSettings>('POST', '/api/email/secret');
     const claimed = await t.api<EmailSettings>('POST', `/api/bots/${bot.id}/email`, { name: 'Arastirma' });
     expect(claimed.body.addresses).toEqual([
-      { botId: bot.id, name: 'arastirma', address: 'arastirma@bots.example.com' },
+      { botId: bot.id, name: 'arastirma', address: 'arastirma@bots.example.com', codes: false },
     ]);
     return { bot, secret: settings.secret! };
   };

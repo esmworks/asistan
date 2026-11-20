@@ -605,6 +605,14 @@ export function browserTools(opts: {
   siteNotes?: (host: string) => Promise<string[]>;
   /** Where the browser's traffic now leaves, if that changed since the bot last heard. */
   exitNote?: () => 'computer' | 'server' | null;
+  /**
+   * A sign-in code from mail the site sent to the bot's own address, waited for up to `waitMs`;
+   * only when a person let the bot take codes from that mailbox.
+   */
+  mailCode?: {
+    address: string;
+    wait(site: string, waitMs: number): Promise<{ code: string; from: string } | { unclear: true } | null>;
+  };
 }): AppTool[] {
   const { def, bot, dataDir, threadId, t, browser, vault, person, askLogin } = opts;
   /**
@@ -1580,6 +1588,54 @@ export function browserTools(opts: {
       },
       'internal',
     ),
+    ...(opts.mailCode
+      ? [
+          def(
+            'browser_email_code',
+            {
+              ref: ref.describe('ref of the field that asks for the code'),
+              wait_seconds: z.number().int().min(0).max(120).default(60),
+              submit: z.boolean().default(true),
+            },
+            async ({ ref: r, wait_seconds, submit }) => {
+              const mail = opts.mailCode!;
+              let site: string;
+              try {
+                const url = await browser.use(bot.id, async (page) => new URL(page.url()));
+                if (!secure(url)) return t('browser.loginInsecure');
+                site = registrableSite(url.hostname);
+              } catch (err) {
+                return browserErrorText(err, t);
+              }
+              // Waited for outside the browser's queue, so the bot's other browser calls go on.
+              const found = await mail.wait(site, wait_seconds * 1000);
+              if (!found) return t('browser.emailCodeNone', { site, address: mail.address });
+              if ('unclear' in found) return t('browser.emailCodeUnclear', { site });
+              return step(async (page) => {
+                const now = new URL(page.url());
+                // The page moved on while the mail was awaited: the code is for the site it came from.
+                if (!siteMatches(now.hostname, site)) {
+                  return t('browser.loginMoved', { host: now.hostname, site });
+                }
+                if (!secure(now)) return t('browser.loginInsecure');
+                const f = await secretField(page, r, 'code', site);
+                if ('refused' in f) return f.refused;
+                try {
+                  browser.rememberSecret(bot.id, found.code, CODE_HIDDEN_MS);
+                  await f.field.fill(found.code);
+                  if (submit) await f.field.press('Enter');
+                } finally {
+                  await f.field.dispose().catch(() => {});
+                }
+                await settle(page);
+                const out = await outline(browser.pages(bot.id)?.active ?? page);
+                return `${t('browser.emailCodeTyped', { site, from: found.from })}\n\n${out}`;
+              });
+            },
+            'internal',
+          ),
+        ]
+      : []),
     ...(opts.cards && opts.askCard
       ? [
           def(

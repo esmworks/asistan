@@ -665,6 +665,9 @@ export const tr = {
   'email.namePlaceholder': 'ad',
   'email.name': '{bot} için adres',
   'email.claim': 'Ver',
+  'email.codes': '{bot} giriş kodlarını postadan alsın',
+  'email.codesHint':
+    'Bir site giriş kodunu bu adrese gönderdiğinde bot kodu o sitenin kendi alanına yazar. Yalnızca açık sayfanın sitesinden gelen, son 10 dakikadaki okunmamış posta kullanılır. Kendi posta kutundan kod postalarını bu adrese yönlendirebilirsin.',
   'email.release': 'Bırak',
   'email.releaseConfirm':
     '{address} bırakılsın mı? Oraya gelen posta artık bota ulaşmaz ve bu adı başka bir bot da alamaz.',

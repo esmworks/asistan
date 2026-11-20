@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A bot with a mail address can type the one-time sign-in code a site mails to it into that site's own field
+  (`browser_email_code`), once a person turns this on for its mailbox (Settings → Mail). Only unread mail from the
+  open page's own site, from the last ten minutes, gives a code, and each mail gives it once; a code that cannot be
+  told apart is not guessed. The person can forward code mails from their own mailbox to the bot's address.
 - A task taught by showing it in the browser keeps its steps with the skill, and can be done again without the model:
   from the play button by the skill in the bot's panel, or by the bot itself with `skill_replay`, which it tries
   first for a shown task. Each step finds what it acts on by the words the person saw. The replay stops at the first

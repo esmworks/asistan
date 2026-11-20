@@ -689,6 +689,8 @@ export const api = {
   renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
   claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),
   releaseEmail: (botId: string) => http.del<EmailSettings>(`/api/bots/${botId}/email`),
+  setEmailCodes: (botId: string, on: boolean) =>
+    http.put<EmailSettings>(`/api/bots/${botId}/email/codes`, { on }),
   apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),
   addApiKey: (input: ApiCredentialCreate) => http.post<ApiCredential>('/api/api-keys', input),
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>

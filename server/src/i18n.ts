@@ -531,6 +531,7 @@ const tr = {
   'error.emailNameTaken': 'Bu adres başka bir botun ya da daha önce kullanıldı; başka bir ad seç',
   'error.emailSecret': 'E-posta anahtarı yanlış',
   'error.emailNoDomain': 'Önce botların e-posta alacağı alan adını gir',
+  'error.emailNoAddress': 'Botun e-posta adresi yok',
   'prompt.cwd': '- Çalışma klasörün (cwd): {path}',
   'prompt.botFiles': '- Kalıcı klasörün (sohbetler arası kalır): {path}',
   'prompt.groupFiles': '- Grup klasörü (gruptaki botlarla paylaşılır): {path}',
@@ -781,6 +782,8 @@ const tr = {
     'Kullanıcının kaydettiği ödeme kartını ödeme sayfasındaki alanlara doldur: kart numarası alanının (number_ref) ve varsa son kullanma (expiry_ref ya da month_ref ile year_ref), güvenlik kodu (cvc_ref) ve kart sahibi (name_ref) alanlarının ref değerlerini ver. Kart bilgilerini sen görmezsin; kart sunucuda doldurulur. Kart bir sitede ilk kez kullanılacaksa kullanıcıya sorulur. Yalnızca kullanıcının başlattığı bir konuşmada çalışır. Ödemeyi tamamlayan düğmeye basmak ayrı bir adımdır ve sends: true ister.',
   'tool.browser_code':
     'Bir sitenin iki adımlı doğrulama kodunu kasadan kod alanına yaz (kodu sen görmezsin). Kasada kod kaydı yoksa kullanıcıdan iste.',
+  'tool.browser_email_code':
+    'Sitenin e-postayla gönderdiği tek kullanımlık giriş kodunu, posta adresine gelen postadan kod alanına (ref) yaz. Yalnızca açık sayfanın sitesinden gelen, son 10 dakikada gelmiş ve daha önce kullanılmamış posta kullanılır; posta yoksa wait_seconds kadar (varsayılan 60) beklenir. Bir site kodu e-postayla gönderdiğinde postayı okumak yerine bunu kullan.',
   'tool.browser_login':
     'Açık sayfadaki siteye giriş yap: kullanıcı adı alanının (username_ref) ve şifre alanının (password_ref) ref değerlerini ver; iki adımlı girişte yalnızca o adımdaki alanı ver. Bilgiler kasadan doldurulur; kasada yoksa kullanıcıya giriş kartı gösterilir. Şifre sana hiç gösterilmez. submit: true (varsayılan) Enter tuşuna basar.',
   'tool.browser_upload':
@@ -1027,6 +1030,11 @@ const tr = {
   'error.cardCvc': 'Güvenlik kodu 3 ya da 4 rakamdır',
   'browser.codeNone': '{site} için kasada iki adımlı kod kaydı yok; kullanıcıdan kodu girmesini iste.',
   'browser.codeTyped': '{site} için iki adımlı kod kasadan yazıldı.',
+  'browser.emailCodeNone':
+    'Son 10 dakikada {address} adresine {site} sitesinden kod içeren okunmamış bir posta gelmedi. Site kodu gönderdiyse biraz sonra yeniden dene; gelmiyorsa kullanıcıya sor.',
+  'browser.emailCodeUnclear':
+    '{site} sitesinden bir posta geldi ama içindeki kod ayırt edilemedi. email_inbox ve email_read ile postayı oku, ya da kullanıcıya sor.',
+  'browser.emailCodeTyped': '{site} sitesinin postasındaki kod ({from}) alana yazıldı.',
   'browser.loginInsecure':
     'Bu sayfa şifrelenmemiş bir bağlantı (http) kullanıyor; yoldaki herkes okuyabileceği için giriş bilgileri ve kodlar yazılmaz. Sitenin https adresini dene ya da kullanıcıya söyle.',
   'browser.loginNotPassword':
@@ -1988,6 +1996,7 @@ const en: Catalog<ServerKey> = {
   'error.emailNameTaken': 'This address belongs to another bot or was used before; pick another name',
   'error.emailSecret': 'The mail secret is wrong',
   'error.emailNoDomain': 'First enter the domain bots receive mail at',
+  'error.emailNoAddress': 'The bot has no mail address',
   'prompt.cwd': '- Your working folder (cwd): {path}',
   'prompt.botFiles': '- Your persistent folder (kept across conversations): {path}',
   'prompt.groupFiles': '- Group folder (shared with the bots in your group): {path}',
@@ -2238,6 +2247,8 @@ const en: Catalog<ServerKey> = {
     "Fill the user's saved payment card into a checkout page: give the ref of the card number field (number_ref) and, where there are any, of the expiry (expiry_ref, or month_ref and year_ref), security code (cvc_ref) and name on card (name_ref) fields. You never see the card details; the server fills them in. The first time a card is used on a site the user is asked. It works only in a conversation the user started. Pressing the button that completes the payment is a separate step and needs sends: true.",
   'tool.browser_code':
     "Type a site's two-step verification code from the vault into the code field (you never see the code). When the vault keeps none, ask the user.",
+  'tool.browser_email_code':
+    "Type the one-time sign-in code a site sent by e-mail into the code field (ref), from mail to your mail address. Only mail from the open page's own site, that came in the last 10 minutes and was not used before, is taken; with none yet it waits up to wait_seconds (60 by default). When a site sends a code by e-mail, use this rather than reading the mail.",
   'tool.browser_login':
     'Sign in to the site on the open page: give the refs of the username field (username_ref) and the password field (password_ref); in a two-step sign-in, give only the field on that step. The details are filled from the vault; if it has none, the user is shown a sign-in card. You never see the password. submit: true (the default) presses Enter.',
   'tool.browser_upload':
@@ -2481,6 +2492,11 @@ const en: Catalog<ServerKey> = {
   'error.cardCvc': 'The security code is 3 or 4 digits',
   'browser.codeNone': 'The vault keeps no two-step code for {site}; ask the user to enter the code.',
   'browser.codeTyped': 'The two-step code for {site} was typed from the vault.',
+  'browser.emailCodeNone':
+    'No unread mail with a code from {site} came to {address} in the last 10 minutes. If the site sent it, try again a little later; if it does not come, ask the user.',
+  'browser.emailCodeUnclear':
+    'A mail from {site} came, but its code could not be told apart. Read it with email_inbox and email_read, or ask the user.',
+  'browser.emailCodeTyped': "The code in {site}'s mail ({from}) was typed into the field.",
   'browser.loginInsecure':
     'This page uses an unencrypted connection (http): anyone along the way could read sign-in details and codes, so they are not typed in. Try the site’s https address, or tell the user.',
   'browser.loginNotPassword':

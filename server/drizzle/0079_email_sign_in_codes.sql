@@ -1,0 +1,1 @@
+ALTER TABLE "email_addresses" ADD COLUMN "sign_in_codes" boolean DEFAULT false NOT NULL;

@@ -87,6 +87,7 @@ import {
   ApiKeyImport,
   ApiCredentialUpdate,
   EmailClaim,
+  EmailCodes,
   AI_KINDS,
   AiEndpointSet,
   PluginInstall,
@@ -880,6 +881,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (!skill.steps?.length) throw new HttpError(409, 'error.notTaught');
     if (!d.services.ctx.browser.available) throw new HttpError(409, 'error.teachNoBrowser');
     if (await s.bots.isPaused(bot)) throw new HttpError(409, 'error.botPaused', { bot: bot.name });
+    // The steps would cross the bot's own browser calls in a turn under way.
+    if (s.turns.botWorking(bot.id) || d.services.ctx.browser.state(bot.id).status === 'bot') {
+      throw new HttpError(409, 'browser.busy');
+    }
     const t = await s.settings.translator();
     const tr = t as unknown as (key: string, params?: Record<string, string | number>) => string;
     await s.skills.markUsed(skill.id);
@@ -2330,6 +2335,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (!(await s.email.domain())) throw new HttpError(409, 'error.emailNoDomain');
     return s.email.claim(IdParams.parse(req.params).id, EmailClaim.parse(req.body).name);
   });
+  // Lets the bot type sign-in codes from its mail into the site that sent them, or stops it.
+  app.put('/api/bots/:id/email/codes', async (req) =>
+    s.email.setCodes(IdParams.parse(req.params).id, EmailCodes.parse(req.body).on),
+  );
   app.delete('/api/bots/:id/email', async (req) => {
     await s.email.release(IdParams.parse(req.params).id);
     return s.email.settings();

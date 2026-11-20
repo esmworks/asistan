@@ -224,6 +224,7 @@ export type ToolName =
   | 'message_read'
   | 'skill_read'
   | 'skill_replay'
+  | 'browser_email_code'
   | 'my_activity'
   | 'skill_save'
   | 'routine_create'
@@ -317,6 +318,8 @@ export class ToolFactory {
     skills?: Skill[];
     /** The bot's mail address; with one, it gets its inbox. */
     email?: string | null;
+    /** Whether a person let the bot type sign-in codes from that mailbox into the site that sent them. */
+    emailCodes?: boolean;
     /** OpenAPI documents the bot may call operations of. */
     apiSources?: ApiSource[];
     /** Shows the bot's plan in the chat; given to engines without a to-do tool of their own. */
@@ -1531,6 +1534,13 @@ export class ToolFactory {
               ? (await s.memory.forSite(bot.id, host, own, await place())).map((m) => m.content)
               : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
+          ...(opts.email &&
+            opts.emailCodes && {
+              mailCode: {
+                address: opts.email,
+                wait: (site: string, waitMs: number) => s.email.waitForCode(bot.id, site, waitMs, signal),
+              },
+            }),
         }),
       );
       const taught = skills.filter((k) => k.steps?.length);

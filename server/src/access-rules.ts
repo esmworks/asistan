@@ -150,6 +150,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'DELETE /api/bots/:id/telegram': edit(),
   'POST /api/bots/:id/email': edit(),
   'DELETE /api/bots/:id/email': edit(),
+  'PUT /api/bots/:id/email/codes': edit(),
   'GET /api/bots/:id/emails': edit(),
   // A bot's folders hold every conversation's files: only those who may change the bot list them;
   // those who talk with it open the files of their own conversations (checked by the route).

@@ -601,6 +601,11 @@ export class TurnManager {
     return [...this.running.values()].some((r) => r.turn.threadId === threadId);
   }
 
+  /** Whether a turn of the bot is under way, in any of its conversations. */
+  botWorking(botId: string) {
+    return [...this.running.values()].some((r) => r.turn.botId === botId);
+  }
+
   private emits = new Set<Promise<void>>();
 
   async shutdown() {
@@ -947,6 +952,7 @@ export class TurnManager {
         t,
         skills,
         email,
+        emailCodes: !!email && (await this.services.email.codesAllowed(bot.id)),
         apiSources,
         hasTables: await this.services.tables.any(bot.id),
         // Claude keeps its plan with its own to-do tool; other engines get this one.

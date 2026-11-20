@@ -667,6 +667,9 @@ export const en: Catalog<MessageKey> = {
   'email.namePlaceholder': 'name',
   'email.name': 'Address for {bot}',
   'email.claim': 'Give',
+  'email.codes': 'Let {bot} take sign-in codes from mail',
+  'email.codesHint':
+    "When a site sends a sign-in code to this address, the bot types it into that site's own field. Only unread mail from the open page's site, from the last 10 minutes, is used. You can forward code mails from your own mailbox to this address.",
   'email.release': 'Give up',
   'email.releaseConfirm':
     'Give up {address}? Mail to it will no longer reach the bot, and no other bot can take the name.',

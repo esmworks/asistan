@@ -1759,9 +1759,18 @@ export const EmailSettings = z.object({
   domain: z.string(),
   /** What the relay sends as its bearer token; null until one is made. */
   secret: z.string().nullable(),
-  addresses: z.array(z.object({ botId: Id, name: z.string(), address: z.string().nullable() })),
+  addresses: z.array(
+    z.object({
+      botId: Id,
+      name: z.string(),
+      address: z.string().nullable(),
+      /** Whether the bot may type sign-in codes from this mailbox into the site that sent them. */
+      codes: z.boolean(),
+    }),
+  ),
 });
 export type EmailSettings = z.infer<typeof EmailSettings>;
+export const EmailCodes = z.object({ on: z.boolean() });
 export const EmailClaim = z.object({ name: z.string().trim().min(1).max(64) });
 
 /** What a plugin would add, read before anything is installed. */

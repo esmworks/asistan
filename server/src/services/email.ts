@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import type { BotEmail, EmailSettings } from '@yumakbot/shared';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import PostalMime from 'postal-mime';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -10,6 +10,7 @@ import { safeFileName } from '../uploads';
 import { HttpError, newId, truncate } from '../util';
 import { sameSecret } from '../auth';
 import type { Services } from './index';
+import { registrableSite } from './vault';
 
 type EmailRow = typeof schema.emails.$inferSelect;
 
@@ -25,6 +26,28 @@ const SECRET_KEY = 'email.inboundSecret';
 const SECRET_BINDING = ['kv', SECRET_KEY];
 /** The part before the @: lowercase letters, digits and . _ -, not at either end. */
 const NAME = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
+
+/** How old a mail may be for its sign-in code to be taken; codes expire within minutes. */
+const CODE_FRESH_MINUTES = 10;
+/** A line that speaks of a code, and what follows it on the line, where the code itself is. */
+const CODE_WORDS =
+  /(?:code|kod|otp|pin|passcode|verification|verify|doğrulama|onay|güvenlik|security|şifre|password)[^\n]{0,80}/giu;
+/** A code: 4 to 8 capital letters and digits, with at least one digit (so not a plain word). */
+const CODE = /\b(?=[A-Z0-9]*\d)[A-Z0-9]{4,8}\b/g;
+
+/**
+ * The one sign-in code a mail gives: first one near a word that names it ("Your code is 482913"),
+ * else the one six-digit number in it. Null when there is none, or more than one could be it, so a
+ * guess is never typed into a sign-in page.
+ */
+export function codeIn(subject: string, text: string): string | null {
+  const body = `${subject}\n${text}`;
+  const near = new Set<string>();
+  for (const line of body.matchAll(CODE_WORDS)) for (const c of line[0].matchAll(CODE)) near.add(c[0]);
+  if (near.size) return near.size === 1 ? [...near][0]! : null;
+  const six = new Set([...body.matchAll(/\b\d{6}\b/g)].map((m) => m[0]));
+  return six.size === 1 ? [...six][0]! : null;
+}
 
 /** An HTML mail as plain text: no tags, styles or scripts, entities read, blank runs closed up. */
 export function htmlToText(html: string): string {
@@ -132,7 +155,12 @@ export class EmailService {
       secret: await this.secret(),
       addresses: rows
         .filter((r) => r.botId)
-        .map((r) => ({ botId: r.botId!, name: r.name, address: domain ? `${r.name}@${domain}` : null })),
+        .map((r) => ({
+          botId: r.botId!,
+          name: r.name,
+          address: domain ? `${r.name}@${domain}` : null,
+          codes: r.signInCodes,
+        })),
     };
   }
 
@@ -168,6 +196,71 @@ export class EmailService {
     }
     this.ctx.bus.refresh({ scope: 'info' });
     return this.settings();
+  }
+
+  /** Lets the bot take sign-in codes from its mail, or stops it. */
+  async setCodes(botId: string, on: boolean): Promise<EmailSettings> {
+    const [row] = await this.ctx.db
+      .update(schema.emailAddresses)
+      .set({ signInCodes: on })
+      .where(eq(schema.emailAddresses.botId, botId))
+      .returning();
+    if (!row) throw new HttpError(409, 'error.emailNoAddress');
+    this.ctx.bus.refresh({ scope: 'info' });
+    return this.settings();
+  }
+
+  /** Whether the bot has an address and may take sign-in codes from mail to it. */
+  async codesAllowed(botId: string): Promise<boolean> {
+    const [row] = await this.ctx.db
+      .select({ on: schema.emailAddresses.signInCodes })
+      .from(schema.emailAddresses)
+      .where(eq(schema.emailAddresses.botId, botId))
+      .limit(1);
+    return !!row?.on && !!(await this.domain());
+  }
+
+  /**
+   * The code in the newest unread mail from `site` (by the sender's domain) that came in the last
+   * few minutes; that mail is marked read, so a code is taken once. The sender of a mail can be
+   * forged, so this only keeps a code from one site out of another site's page: the code is
+   * typed into that site's own field, where a forged one only fails. Null when there is no such
+   * mail; `unclear` when one came but its code could not be told apart.
+   */
+  async takeCode(
+    botId: string,
+    site: string,
+  ): Promise<{ code: string; from: string } | { unclear: true } | null> {
+    if (!(await this.codesAllowed(botId))) return null;
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.emails)
+      .where(
+        and(
+          eq(schema.emails.botId, botId),
+          isNull(schema.emails.readAt),
+          // The database's own clock, the one that stamped the mail.
+          gt(schema.emails.receivedAt, sql`now() - make_interval(mins => ${CODE_FRESH_MINUTES})`),
+        ),
+      )
+      .orderBy(desc(schema.emails.receivedAt))
+      .limit(20);
+    const mail = rows.find((r) => registrableSite(r.from.split('@')[1] ?? '') === site);
+    if (!mail) return null;
+    await this.ctx.db.update(schema.emails).set({ readAt: new Date() }).where(eq(schema.emails.id, mail.id));
+    this.ctx.bus.refresh({ scope: 'info' });
+    const code = codeIn(mail.subject, mail.text);
+    return code ? { code, from: mail.from } : { unclear: true };
+  }
+
+  /** Waits for `takeCode` to find a code, up to `waitMs`; the turn being stopped ends the wait. */
+  async waitForCode(botId: string, site: string, waitMs: number, signal?: AbortSignal) {
+    const until = Date.now() + waitMs;
+    for (;;) {
+      const found = await this.takeCode(botId, site);
+      if (found || Date.now() >= until || signal?.aborted) return found;
+      await new Promise((r) => setTimeout(r, Math.min(1000, Math.max(0, until - Date.now()))));
+    }
   }
 
   async release(botId: string): Promise<void> {

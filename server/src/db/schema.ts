@@ -1287,6 +1287,11 @@ export const emailAddresses = pgTable('email_addresses', {
   name: text('name').primaryKey(),
   /** Null once its bot gave it up or was deleted; the name stays taken. */
   botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+  /**
+   * Whether the bot may take sign-in codes from mail to this address and type them into the site
+   * that sent them; off until a person allows it.
+   */
+  signInCodes: boolean('sign_in_codes').notNull().default(false),
   createdAt: created(),
 });
 

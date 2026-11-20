@@ -3,6 +3,7 @@ import type { Locator, Page } from 'playwright-core';
 import type { z } from 'zod';
 import { BrowserError, type BrowserManager, webUrl } from './manager';
 import { stepsText } from './teach';
+import { browserErrorText } from './text';
 
 type T = (key: string, params?: Record<string, string | number>) => string;
 type Target = z.infer<typeof TaughtTarget>;
@@ -103,20 +104,8 @@ async function run(page: Page, step: TaughtStep, t: T) {
 
 /** A browser's own problem, in the words the bot's browser tools use for it. */
 function failure(err: unknown, t: T): string {
-  if (err instanceof BrowserError) {
-    switch (err.code) {
-      case 'userControl':
-      case 'unavailable':
-      case 'full':
-        return t(`browser.${err.code}`);
-      case 'hung':
-        return t('browser.hung', { seconds: err.message });
-      case 'badUrl':
-        return t('browser.badUrl', { url: err.message });
-      case 'launch':
-        return t('browser.launchFailed', { message: err.message });
-    }
-  }
+  if (err instanceof BrowserError)
+    return browserErrorText(err, t as unknown as Parameters<typeof browserErrorText>[1]);
   // Playwright's messages carry a call log after the first line; the first line says what went wrong.
   return t('replay.failed', { message: (err instanceof Error ? err.message : String(err)).split('\n')[0]! });
 }
