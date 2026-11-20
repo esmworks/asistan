@@ -1,4 +1,6 @@
-import { BRAND_COLOR, type AvatarShape } from '@yumakbot/shared';
+import { BRAND_COLOR, type AvatarShape, type ObjectAvatar } from '@yumakbot/shared';
+import { getExample, type AvatarState } from 'open-bot-avatar';
+import { mountAvatar, type MountedAvatar } from 'open-bot-avatar/dom';
 import { POSES, type ExpressionId } from '@norbert_bodziony/bloub';
 import {
   PlushBot,
@@ -271,6 +273,78 @@ export function ShapeArt({
   return <span ref={host} className="block size-full" aria-hidden />;
 }
 
+/**
+ * How each activity shows on an object avatar. The engine's own states fit what the bot does: three
+ * dots while it thinks, ribbons sweeping round it while it writes or reads a page, an exclamation
+ * mark when it needs someone, and a quiet wait while its turn has not come.
+ */
+const OBJECT_STATES: Record<BotActivity, AvatarState> = {
+  idle: 'idle',
+  queued: 'waiting',
+  thinking: 'thinking',
+  writing: 'working',
+  browsing: 'working',
+  waiting: 'blocked',
+};
+
+/**
+ * An object bot (a mug, a lightbulb with eyes), drawn with volume. Unlike the plush it does not wait
+ * to be pointed at: while the window has the focus it breathes, blinks and looks at the pointer
+ * wherever it is on the page, which is what makes these avatars feel alive. The engine itself stops
+ * one that is off screen and follows the system's reduced motion setting; `still` draws one picture.
+ */
+export function ObjectArt({
+  id,
+  color,
+  activity = 'idle',
+  motion = 'still',
+}: {
+  id: ObjectAvatar;
+  color: string;
+  activity?: BotActivity;
+  motion?: AvatarMotion;
+}) {
+  const host = useRef<HTMLSpanElement>(null);
+  const avatar = useRef<MountedAvatar | null>(null);
+  const [focused, setFocused] = useState(true);
+  const moving = motion !== 'still' && focused;
+  const definition = getExample(id);
+
+  // It rests while another app has the focus.
+  useEffect(() => {
+    if (motion === 'still') return;
+    const sync = () => setFocused(document.hasFocus());
+    sync();
+    window.addEventListener('focus', sync);
+    window.addEventListener('blur', sync);
+    return () => {
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('blur', sync);
+    };
+  }, [motion]);
+
+  useEffect(() => {
+    const el = host.current;
+    if (!el || !definition) return;
+    avatar.current = mountAvatar(el, { definition, label: '' });
+    return () => {
+      avatar.current?.destroy();
+      avatar.current = null;
+    };
+  }, [definition]);
+
+  useEffect(() => {
+    avatar.current?.update({
+      color: hexColor(color),
+      state: OBJECT_STATES[activity],
+      still: !moving,
+      followPointer: moving,
+    });
+  });
+
+  return <span ref={host} className="block size-full" aria-hidden />;
+}
+
 export function BotAvatar({
   avatar,
   color,
@@ -306,6 +380,13 @@ export function BotAvatar({
             activity && activity !== 'idle' && `av-${activity}`,
           )}
           draggable={false}
+        />
+      ) : avatar.startsWith('object:') ? (
+        <ObjectArt
+          id={avatar.slice(7) as ObjectAvatar}
+          color={color}
+          activity={activity}
+          motion={lively ? motion : 'still'}
         />
       ) : (
         <ShapeArt

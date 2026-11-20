@@ -18,6 +18,7 @@ minimumReleaseAgeExclude:
   - framer-motion@14.13.0
   - motion-dom@14.13.0
   - motion@14.13.0
+  - open-bot-avatar@0.3.0
   - prettier@3.10.1
 patchedDependencies:
   '@norbert_bodziony/bloub@0.6.4': patches/@norbert_bodziony__bloub@0.6.4.patch

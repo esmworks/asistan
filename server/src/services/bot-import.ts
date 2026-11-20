@@ -34,10 +34,13 @@ const MAGIC: Record<string, (b: Buffer) => boolean> = {
     b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP',
 };
 
-/** One of the app's own avatar shapes, or a data URL whose bytes are the image type it names. */
+/**
+ * One of the app's own avatar shapes or objects, or a data URL whose bytes are the image type it
+ * names.
+ */
 function validAvatar(value: unknown): string | null {
   if (typeof value !== 'string' || !Avatar.safeParse(value).success) return null;
-  if (value.startsWith('shape:')) return value;
+  if (value.startsWith('shape:') || value.startsWith('object:')) return value;
   if (!value.startsWith('data:')) return null;
   const type = /^data:image\/(png|jpeg|webp);base64,/.exec(value)?.[1];
   if (!type) return null;

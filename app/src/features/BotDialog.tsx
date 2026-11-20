@@ -2,6 +2,7 @@ import {
   BRAND_COLOR,
   AVATAR_SHAPES,
   EFFORTS,
+  OBJECT_AVATARS,
   PERMISSION_MODES,
   shownMode,
   selectorLines,
@@ -16,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { BotAvatar, ShapeArt } from '@/components/BotAvatar';
+import { BotAvatar, ObjectArt, ShapeArt } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -739,12 +740,20 @@ function AvatarEditor({
   return (
     <div className="flex flex-col gap-4 rounded-3xl bg-secondary/50 p-4 sm:flex-row">
       <div className="flex shrink-0 items-center justify-center sm:w-36">
-        <BotAvatar avatar={avatar} color={color} size={96} />
+        <BotAvatar avatar={avatar} color={color} size={96} activity="idle" motion="always" />
       </div>
-      <Tabs defaultValue={avatar.startsWith('data:') ? 'upload' : 'shape'} className="flex-1">
+      <Tabs
+        defaultValue={
+          avatar.startsWith('data:') ? 'upload' : avatar.startsWith('object:') ? 'object' : 'shape'
+        }
+        className="flex-1"
+      >
         <TabsList className="rounded-full">
           <TabsTrigger value="shape" className="rounded-full">
             {t('bot.shape')}
+          </TabsTrigger>
+          <TabsTrigger value="object" className="rounded-full">
+            {t('bot.object')}
           </TabsTrigger>
           <TabsTrigger value="upload" className="rounded-full">
             {t('bot.upload')}
@@ -764,6 +773,26 @@ function AvatarEditor({
                 aria-label={s}
               >
                 <ShapeArt shape={s} color={color} />
+              </button>
+            ))}
+          </div>
+          <ColorRow color={color} onColor={onColor} />
+        </TabsContent>
+        <TabsContent value="object" className="space-y-3">
+          <div className="grid grid-cols-6 gap-1.5">
+            {OBJECT_AVATARS.map((o) => (
+              <button
+                type="button"
+                key={o}
+                onClick={() => onAvatar(`object:${o}`)}
+                className={cn(
+                  'aspect-square rounded-xl p-1.5 transition-colors hover:bg-accent',
+                  avatar === `object:${o}` && 'bg-accent ring-2 ring-ring/40',
+                )}
+                aria-label={t(`bot.object.${o}`)}
+                title={t(`bot.object.${o}`)}
+              >
+                <ObjectArt id={o} color={color} motion="always" />
               </button>
             ))}
           </div>
