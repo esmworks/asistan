@@ -28,6 +28,7 @@ import { ApiSourceService } from './api-sources';
 import { TicketService } from './tickets';
 import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
+import { DoctorService } from './doctor';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { MeetingService } from './meetings';
@@ -93,6 +94,7 @@ export class Services {
   readonly tickets: TicketService;
   readonly tables: TableService;
   readonly contentSeal: ContentSealService;
+  readonly doctor: DoctorService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
@@ -152,6 +154,7 @@ export class Services {
     this.tickets = new TicketService(ctx, this);
     this.tables = new TableService(ctx);
     this.contentSeal = new ContentSealService(ctx);
+    this.doctor = new DoctorService(ctx, this);
     this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
     this.memoryReview = new MemoryReviewService(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));

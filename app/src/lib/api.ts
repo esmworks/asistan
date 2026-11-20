@@ -1,5 +1,7 @@
 import type {
   BotAction,
+  DoctorCheckId,
+  DoctorReport,
   ReplayResult,
   TaughtStep,
   PermissionSuggestions,
@@ -689,6 +691,8 @@ export const api = {
   renewEmailSecret: () => http.post<EmailSettings>('/api/email/secret'),
   claimEmail: (botId: string, name: string) => http.post<EmailSettings>(`/api/bots/${botId}/email`, { name }),
   releaseEmail: (botId: string) => http.del<EmailSettings>(`/api/bots/${botId}/email`),
+  doctor: () => http.get<DoctorReport>('/api/doctor'),
+  repairDoctor: (checks: DoctorCheckId[]) => http.post<DoctorReport>('/api/doctor/repair', { checks }),
   setEmailCodes: (botId: string, on: boolean) =>
     http.put<EmailSettings>(`/api/bots/${botId}/email/codes`, { on }),
   apiKeys: () => http.get<ApiCredential[]>('/api/api-keys'),

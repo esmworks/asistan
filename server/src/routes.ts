@@ -86,6 +86,7 @@ import {
   ApiCredentialCreate,
   ApiKeyImport,
   ApiCredentialUpdate,
+  DoctorRepair,
   EmailClaim,
   EmailCodes,
   AI_KINDS,
@@ -2329,6 +2330,9 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const status = await s.email.receive(relayToken(req), to, Buffer.concat(chunks));
     return reply.code(200).send({ ok: true, status });
   });
+  // The server's own check of its data, and the repairs that lose nothing.
+  app.get('/api/doctor', () => s.doctor.check());
+  app.post('/api/doctor/repair', async (req) => s.doctor.repair(DoctorRepair.parse(req.body).checks));
   app.get('/api/email', () => s.email.settings());
   app.post('/api/email/secret', () => s.email.renewSecret());
   app.post('/api/bots/:id/email', async (req) => {

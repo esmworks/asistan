@@ -218,19 +218,7 @@ export class TurnManager {
       .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
       .where(eq(schema.turns.status, 'running'))
       .returning();
-    for (const turn of stale) {
-      await this.services.threads.addMessage({
-        threadId: turn.threadId,
-        role: 'system',
-        author: 'system',
-        text: t('turn.interruptedByRestart'),
-        // A person's request is marked as a stop, so it can be run again from the note; other work
-        // (a routine, a ticket, another bot's request) is not run again that way.
-        ...(turn.source === 'user' && { props: { kind: 'interrupted' } }),
-        turnId: turn.id,
-      });
-      await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
-    }
+    await this.endLeft(stale, t);
     await this.services.approvals.expireAllPending();
     await this.resumeRetries();
     this.schedule();
@@ -595,6 +583,47 @@ export class TurnManager {
     ]);
     clearTimeout(timer);
     this.schedule();
+  }
+
+  /** Turns marked running that nothing runs: said in their conversations, and their hooks run. */
+  private async endLeft(rows: TurnRow[], t: T) {
+    for (const turn of rows) {
+      await this.services.threads.addMessage({
+        threadId: turn.threadId,
+        role: 'system',
+        author: 'system',
+        text: t('turn.interruptedByRestart'),
+        // A person's request is marked as a stop, so it can be run again from the note; other work
+        // (a routine, a ticket, another bot's request) is not run again that way.
+        ...(turn.source === 'user' && { props: { kind: 'interrupted' } }),
+        turnId: turn.id,
+      });
+      this.emitState(turn.threadId, turn.botId);
+      await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
+    }
+  }
+
+  /** The turns this server is running now. */
+  liveTurnIds(): Set<string> {
+    return new Set(this.running.keys());
+  }
+
+  /**
+   * Ends turns the database says are running but this server does not run (a crash that the
+   * start did not see, a failure that skipped the finish), as a restart would. A turn running
+   * here is never touched, even if it is among `ids`.
+   */
+  async endStuck(ids: string[]): Promise<number> {
+    const left = ids.filter((id) => !this.running.has(id));
+    if (!left.length) return 0;
+    const t = await this.services.settings.translator();
+    const stale = await this.ctx.db
+      .update(schema.turns)
+      .set({ status: 'interrupted', finishedAt: new Date(), error: t('turn.serverRestarted') })
+      .where(and(inArray(schema.turns.id, left), eq(schema.turns.status, 'running')))
+      .returning();
+    await this.endLeft(stale, t);
+    return stale.length;
   }
 
   isRunning(threadId: string) {

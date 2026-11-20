@@ -123,6 +123,7 @@ import { AccountForm } from './AccountSetup';
 import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
 import { ApnsCard } from './PhoneSettings';
+import { DoctorCard } from './DoctorCard';
 import { Chip } from './onboarding/Chip';
 import {
   AddProviderForm,
@@ -1813,6 +1814,7 @@ function issueUrl(version: string | undefined): string {
 function About() {
   const t = useT();
   const { data: info } = useInfo();
+  const managesServer = useManagesServer();
   const link = (href: string, label: string, hint = href.replace('https://', '')) => (
     <Row label={label} hint={hint}>
       <Button asChild variant="secondary" size="sm" className="rounded-full">
@@ -1846,6 +1848,7 @@ function About() {
         {link(`${REPO_URL}/blob/main/NOTICE`, t('about.notice'))}
         {link(issueUrl(info?.version), t('about.report'), t('about.reportHint'))}
       </Card>
+      {managesServer && <DoctorCard />}
       {desktop?.showLogs && (
         <Card title={t('about.logs')}>
           <Row label={t('about.logsHint')}>

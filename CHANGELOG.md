@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Settings → About has a check of the server's data for those who look after it: work that looks under way but that
+  nothing runs, approval cards waiting on such work, folders of deleted bots, conversations and groups, sealed content
+  that does not open, and the free disk space. A safe repair ends the hanging work as a restart would, marks the cards
+  expired, and moves the stray folders into `doctor-trash` in the data folder instead of deleting them.
 - A bot with a mail address can type the one-time sign-in code a site mails to it into that site's own field
   (`browser_email_code`), once a person turns this on for its mailbox (Settings → Mail). Only unread mail from the
   open page's own site, from the last ten minutes, gives a code, and each mail gives it once; a code that cannot be

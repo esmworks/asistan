@@ -1915,3 +1915,27 @@ export const TicketUpdate = z.object({
 });
 export type TicketUpdate = z.input<typeof TicketUpdate>;
 export const TicketCommentCreate = z.object({ text: z.string().trim().min(1).max(20_000) });
+
+/** What the server's own check looks at; each has its text in the app by this name. */
+export const DOCTOR_CHECKS = ['stuckTurns', 'staleApprovals', 'strayFolders', 'unreadable', 'disk'] as const;
+export const DoctorCheckId = z.enum(DOCTOR_CHECKS);
+export type DoctorCheckId = z.infer<typeof DoctorCheckId>;
+/** One finding of the server's check: how it stands, how many things it found, and if it can mend them. */
+export const DoctorCheck = z.object({
+  id: DoctorCheckId,
+  status: z.enum(['ok', 'warn', 'error']),
+  count: z.number().int(),
+  /** Bytes it is about: what stray folders take, or the free disk space. */
+  bytes: z.number().optional(),
+  /** Whether a repair can mend it without losing anything. */
+  repairable: z.boolean(),
+});
+export type DoctorCheck = z.infer<typeof DoctorCheck>;
+export const DoctorReport = z.object({
+  checkedAt: z.string(),
+  checks: z.array(DoctorCheck),
+  /** Where a repair put the folders it moved aside, when it moved any. */
+  movedTo: z.string().optional(),
+});
+export type DoctorReport = z.infer<typeof DoctorReport>;
+export const DoctorRepair = z.object({ checks: z.array(DoctorCheckId).min(1) });

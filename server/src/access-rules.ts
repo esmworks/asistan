@@ -330,6 +330,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'PUT /api/discord': 'admin',
   'PATCH /api/discord': 'admin',
   'DELETE /api/discord': 'admin',
+  'GET /api/doctor': 'admin',
+  'POST /api/doctor/repair': 'admin',
   'GET /api/email': 'admin',
   'POST /api/email/secret': 'admin',
 };
