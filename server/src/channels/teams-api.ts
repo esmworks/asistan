@@ -102,8 +102,9 @@ export class TeamsAuth {
       return false;
     const key = await this.key(head.kid);
     if (!key) return false;
-    // A key the Bot Framework lists with endorsements signs only for the channels it names.
-    if (key.endorsements && !key.endorsements.includes(activity.channelId ?? '')) return false;
+    // A key signs only for the channels the Bot Framework endorses it for; one without any is not
+    // taken as endorsed for Teams.
+    if (activity.channelId !== 'msteams' || !key.endorsements?.includes('msteams')) return false;
     if (!verify('RSA-SHA256', Buffer.from(`${h}.${p}`), key.key, b64url(sig))) return false;
     if (claims.iss !== TEAMS_ISSUER) return false;
     const aud = claims.aud;
@@ -125,8 +126,15 @@ export class TeamsAuth {
     return this.keys.get(kid) ?? null;
   }
 
+  /**
+   * Reads the keys again. The time counts from the try, not from a success, so while Microsoft
+   * cannot be reached a stream of made-up tokens does not make the server ask on each one.
+   */
   private read(): Promise<void> {
-    this.reading ??= this.load().finally(() => (this.reading = null));
+    if (!this.reading) {
+      this.readAt = this.now();
+      this.reading = this.load().finally(() => (this.reading = null));
+    }
     return this.reading;
   }
 
@@ -152,7 +160,6 @@ export class TeamsAuth {
       }
     }
     this.keys = keys;
-    this.readAt = this.now();
   }
 
   private async get(url: string): Promise<unknown> {
@@ -218,21 +225,28 @@ export class TeamsConnector {
   }
 }
 
+const TAGS =
+  /<\/?(?:p|div|span|b|i|u|s|strong|em|code|pre|ul|ol|li|a|img|h[1-6]|blockquote|table|thead|tbody|tr|td|th|strike|del|ins|sup|sub|hr)(?:\s+[\w-]+(?:="[^"]*"|='[^']*'|=[^\s>]+)?)*\s*\/?>/gi;
+
 /** What a person wrote in Teams, as plain text: mentions of the bot and markup taken out. */
 export function teamsText(raw: string | undefined): string {
-  return (raw ?? '')
-    .replace(/<at>[^<]*<\/at>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>\s*<p>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
+  return (
+    (raw ?? '')
+      .replace(/<at>[^<]*<\/at>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(?:p|div|li)>\s*<(?:p|div|li)(?:\s[^>]*)?>/gi, '\n')
+      // Only the markup Teams puts around formatted text; anything else that looks like a tag is
+      // what the person wrote.
+      .replace(TAGS, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/[ \t]+/g, ' ')
+      .trim()
+  );
 }
 
 /** Teams takes about 28 KB in one message; longer replies go out in parts, split between lines. */

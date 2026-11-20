@@ -131,11 +131,37 @@ describe('Teams sign-in check', () => {
     expect(await auth.check(good, { ...activity, channelId: 'webchat' }, APP_ID)).toBe(false);
   });
 
+  it('refuses a key that is not endorsed for Teams, and does not ask again on each token while away', async () => {
+    const keys = keyPair();
+    ms = await fakeMicrosoft(keys, null);
+    const auth = new TeamsAuth(`${ms.base}/openid`);
+    const activity: TeamsActivity = { channelId: 'msteams', serviceUrl: ms.serviceUrl };
+    expect(await auth.check(token(keys.privateKey, ms.serviceUrl), activity, APP_ID)).toBe(false);
+    await ms.close();
+    ms = await fakeMicrosoft(keys);
+    // The keys' address is gone: one try, then made-up tokens do not make the server ask again.
+    const away = new TeamsAuth('http://127.0.0.1:9/openid');
+    for (let i = 0; i < 3; i++)
+      expect(
+        await away.check(token(keys.privateKey, ms.serviceUrl, {}, { kid: `k${i + 2}` }), activity, APP_ID),
+      ).toBe(false);
+    let asked = 0;
+    const counting = new TeamsAuth(`${ms.base}/openid`, (async (...args: Parameters<typeof fetch>) => {
+      asked++;
+      return fetch(...args);
+    }) as typeof fetch);
+    for (let i = 0; i < 3; i++)
+      await counting.check(token(keys.privateKey, ms.serviceUrl, {}, { kid: `x${i}` }), activity, APP_ID);
+    // The description and the keys, read once.
+    expect(asked).toBe(2);
+  });
+
   it('reads Teams text as plain words and splits long replies', () => {
     expect(teamsText('<at>Yumak</at> merhaba&nbsp;<b>dünya</b> &amp; &lt;siz&gt;')).toBe(
       'merhaba dünya & <siz>',
     );
     expect(teamsText('<p>bir</p><p>iki</p>')).toBe('bir\niki');
+    expect(teamsText('a<b && c>d')).toBe('a<b && c>d');
     const long = `${'a'.repeat(15_000)}\n${'b'.repeat(15_000)}`;
     const parts = teamsParts(long);
     expect(parts).toHaveLength(2);
@@ -174,11 +200,11 @@ describe('Teams channel', () => {
   const deliver = async (
     from: string,
     text: string,
-    opts: { auth?: string | null; tenant?: string; type?: string; value?: unknown } = {},
+    opts: { auth?: string | null; tenant?: string; type?: string; value?: unknown; id?: string } = {},
   ) => {
     const activity = {
       type: 'message',
-      id: `m${++n}`,
+      id: opts.id ?? `m${++n}`,
       channelId: 'msteams',
       serviceUrl: ms.serviceUrl,
       from: { id: from, name: from === '29:ayse' ? 'Ayşe S.' : from },
@@ -293,10 +319,15 @@ describe('Teams channel', () => {
     const { code } = (await ayse.api<TeamsLink>('POST', '/api/teams/me/code')).body;
     await deliver('29:ayse', `link ${code}`);
     await said('29:ayse', 'Bağlandın');
+    // Teams delivers a message again when it heard no answer in time: it is read once.
+    await deliver('29:ayse', 'iki kez', { id: 'same' });
+    await deliver('29:ayse', 'iki kez', { id: 'same' });
+    await t.services.turns.idle();
+    expect(t.engine.requests).toHaveLength(1);
     await ayse.api('DELETE', '/api/teams/me');
     await deliver('29:ayse', 'selam');
     await said('29:ayse', 'link KOD');
-    expect(t.engine.requests).toHaveLength(0);
+    expect(t.engine.requests).toHaveLength(1);
     await t.api('DELETE', '/api/teams');
     expect((await t.api<TeamsStatus>('GET', '/api/teams')).body.connected).toBe(false);
     expect(await deliver('29:ayse', 'selam')).toBe(404);

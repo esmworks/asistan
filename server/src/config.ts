@@ -216,9 +216,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     telegramPollSeconds: 50,
     slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
     discordApi: (env.YUMAKBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
-    teamsLogin: (env.YUMAKBOT_TEAMS_LOGIN || 'https://login.microsoftonline.com').replace(/\/+$/, ''),
-    teamsOpenId:
-      env.YUMAKBOT_TEAMS_OPENID || 'https://login.botframework.com/v1/.well-known/openidconfiguration',
+    // Fixed, not read from the environment: where the keys come from decides whose requests are
+    // believed, so it is not something a setting swaps.
+    teamsLogin: 'https://login.microsoftonline.com',
+    teamsOpenId: 'https://login.botframework.com/v1/.well-known/openidconfiguration',
     channelsEnabled: true,
     modelCatalogUrl: modelCatalogUrl(env.YUMAKBOT_MODEL_CATALOG_URL),
     aiEndpoints: aiEndpointsFrom(env),
