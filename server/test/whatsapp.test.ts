@@ -508,6 +508,26 @@ describe('WhatsApp', () => {
     expect(said.filter((m) => m.text === '1')).toHaveLength(0);
   });
 
+  it('önce çözülemeden gelen mesaj, düzgün hâli aynı kimlikle gelince bota gider', async () => {
+    const { wa, asistan } = await setUp();
+    // The stand-in WhatsApp hands over while it asks the sender's phone for the message again.
+    wa.socket().emit('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: `${PERSON}@s.whatsapp.net`, fromMe: false, id: 'sifreli-1' },
+          messageStubType: 2,
+        },
+      ],
+    });
+    wa.message(PERSON, { conversation: 'faturayı gönder' }, { id: 'sifreli-1' });
+    const thread = await main(asistan.id);
+    await waitFor(async () =>
+      (await t.messages(thread.id)).find((m) => m.role === 'user' && m.text === 'faturayı gönder'),
+    );
+    await t.services.turns.idle();
+  });
+
   it('yeniden başlatmadan sonra kendi gönderdiği mesajı kayıttan tanır', async () => {
     const { wa, asistan } = await setUp('own');
     wa.message(PERSON, { conversation: 'kendime not' }, { fromMe: true });

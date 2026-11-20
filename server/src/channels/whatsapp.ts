@@ -232,6 +232,8 @@ export interface WaMessage {
     participantAlt?: string | null;
   };
   message?: Record<string, unknown> | null;
+  /** Set on a stand-in with no message of its own, such as one WhatsApp could not decrypt. */
+  messageStubType?: number | null;
   messageTimestamp?: number | { toNumber(): number } | null;
   /** The name the writer gave themselves on WhatsApp. */
   pushName?: string | null;
@@ -396,6 +398,9 @@ export function isAssociatedChild(m: WaMessage): boolean {
  * The text and the kind of file a WhatsApp message carries, whether it was forwarded, and the
  * message it answers when the person replied to one.
  */
+/** Baileys' `proto.WebMessageInfo.StubType.CIPHERTEXT`: a message that could not be decrypted yet. */
+const CIPHERTEXT_STUB = 2;
+
 export function contentOf(m: WaMessage): {
   text: string;
   media: WaMedia | null;
@@ -1115,6 +1120,10 @@ export class WhatsAppChannel {
     // The HD copy of a photo or video already received: not a message of its own, so it neither
     // counts toward the flood guard nor gets a second answer.
     if (isAssociatedChild(m)) return;
+    // A message that could not be decrypted comes first as an empty stand-in, while WhatsApp asks
+    // the sender's phone for it again; the message itself follows under the same id, so the
+    // stand-in must not mark that id as already read.
+    if (m.messageStubType === CIPHERTEXT_STUB) return;
     const row = await this.row();
     if (!row) return;
     const settings = row.settings as Settings;
