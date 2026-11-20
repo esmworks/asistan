@@ -828,7 +828,7 @@ export class TurnManager {
             sql`${schema.threads.engineSessionTokens} >= ${full}`,
             // Quiet: no turn waiting, running, or finished since.
             sql`not exists (select 1 from ${schema.turns} where ${schema.turns.threadId} = ${schema.threads.id}
-              and (${schema.turns.status} in ('queued', 'running') or ${schema.turns.finishedAt} > ${quietSince}))`,
+              and (${schema.turns.status} in ('queued', 'running') or ${schema.turns.finishedAt} > ${quietSince.toISOString()}::timestamptz))`,
             // Folded once since the last turn, whether it worked: a fold that fails is not paid for
             // again on every sweep, only after the conversation has moved on.
             sql`coalesce((select ${schema.turns.source} from ${schema.turns}
