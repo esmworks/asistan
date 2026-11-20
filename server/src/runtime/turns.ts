@@ -936,6 +936,21 @@ export class TurnManager {
             turnId: turn.id,
           });
         },
+        async (c) => {
+          // Someone with no account here cannot sign in to the team's connections.
+          if (turn.guest) return false;
+          await threads.addMessage({
+            threadId: thread.id,
+            role: 'system',
+            author: `bot:${bot.id}`,
+            text: t(c.auth === 'token' ? 'connection.needsKeyCardText' : 'connection.signInAgainCard', {
+              name: c.name,
+            }),
+            props: { connectionSignIn: c.id },
+            turnId: turn.id,
+          });
+          return true;
+        },
       )),
     ];
     const connectionNames = await this.services.connections.names();

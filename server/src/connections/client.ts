@@ -1,6 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { auth, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import {
+  auth,
+  discoverOAuthServerInfo,
+  extractResourceMetadataUrl,
+  type OAuthClientProvider,
+} from '@modelcontextprotocol/sdk/client/auth.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type {
   OAuthClientInformationMixed,
@@ -43,6 +48,11 @@ export interface OwnClient {
 /** What a connection keeps sealed. */
 export interface ConnectionSecrets {
   token?: string;
+  /**
+   * Request headers the person set for this server (an API key under the name the service wants),
+   * by name. Sealed like the token: they never go back to a client or into a bot's context.
+   */
+  headers?: Record<string, string>;
   ownClient?: OwnClient;
   /** What the person called `ownClient`, so accounts can pick it by name. */
   ownClientName?: string;
@@ -530,6 +540,31 @@ export function authFetch(target: ClientTarget): typeof fetch {
   };
 }
 
+// ----------------------------------------------------------------------------------- sign-in offer
+
+/**
+ * Whether a server that refused a request without a sign-in offers one: its refusal names where
+ * its sign-in metadata is, or that metadata can be found by the usual addresses. A server that
+ * wants a key on every path offers neither, and no Sign in button could work for it. When this
+ * cannot be told (the server did not answer), it counts as offering one, as before.
+ */
+export async function offersSignIn(target: ClientTarget): Promise<boolean> {
+  const send = authFetch(target);
+  try {
+    const probe = await send(target.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+    });
+    await probe.body?.cancel();
+    if (probe.status === 401 && extractResourceMetadataUrl(probe)) return true;
+    const found = await discoverOAuthServerInfo(target.url, { fetchFn: send });
+    return !!(found.resourceMetadata || found.authorizationServerMetadata);
+  } catch {
+    return true;
+  }
+}
+
 // ---------------------------------------------------------------------------------------- scope
 
 /**
@@ -614,6 +649,54 @@ async function renew(target: ClientTarget, refused: string | undefined) {
   });
 }
 
+// ------------------------------------------------------------------------------ custom headers
+
+/** How many redirects of the server's own address a request with custom headers follows. */
+const HEADER_REDIRECTS = 5;
+
+/**
+ * Puts the headers the person set on a request, never over one already there and never over the
+ * sign-in's own `Authorization`: with a token or OAuth, that header is the connection's.
+ */
+function applyCustomHeaders(target: ClientTarget, headers: Headers) {
+  for (const [name, value] of Object.entries(target.store.get().headers ?? {})) {
+    if (headers.has(name)) continue;
+    if (name.toLowerCase() === 'authorization' && target.auth !== 'none') continue;
+    headers.set(name, value);
+  }
+}
+
+/**
+ * Sends a request of the transport with the connection's custom headers. A redirect is followed
+ * here, not by `fetch`: `fetch` takes off only its own few headers when a redirect leads to
+ * another site, so the person's headers would go along with it. Redirects within the server's own
+ * address keep them; one that leads elsewhere ends the request.
+ */
+async function withCustomHeaders(
+  target: ClientTarget,
+  endpoint: URL,
+  input: string | URL | Request,
+  init: RequestInit & { headers: Headers },
+): Promise<Response> {
+  if (!Object.keys(target.store.get().headers ?? {}).length) return reach(target, input, init);
+  let url = new URL(input instanceof Request ? input.url : String(input));
+  let next = init;
+  for (let hop = 0; ; hop++) {
+    if (url.origin !== endpoint.origin) {
+      throw new ConnectionClientError('unreachable', `${endpoint.host} redirected to ${url.host}`);
+    }
+    const headers = new Headers(next.headers);
+    applyCustomHeaders(target, headers);
+    const res = await reach(target, url, { ...next, headers, redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !location || hop >= HEADER_REDIRECTS) return res;
+    await res.body?.cancel();
+    url = new URL(location, url);
+    // Only 307 and 308 send the same request on; the others go on as a GET.
+    if (res.status !== 307 && res.status !== 308) next = { ...next, method: 'GET', body: null };
+  }
+}
+
 // ---------------------------------------------------------------------------------------- pool
 
 /** Answers a server's question in the middle of a tool call; set only while such a call runs. */
@@ -675,7 +758,7 @@ function connectionFetch(endpoint: URL, holder: Holder): typeof fetch {
     const send = (token: string | undefined) => {
       const headers = new Headers(init?.headers);
       if (token) headers.set('Authorization', `Bearer ${token}`);
-      return reach(target, input, { ...init, headers });
+      return withCustomHeaders(target, endpoint, input, { ...init, headers });
     };
     const used = bearerOf(target);
     let res = await send(used);

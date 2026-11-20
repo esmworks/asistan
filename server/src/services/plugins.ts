@@ -229,7 +229,7 @@ export class PluginService {
         userId,
       );
       // A server that turns away a call without sign-in signs in through OAuth instead.
-      if (!token && conn.status !== 'connected')
+      if (!token && conn.status !== 'connected' && conn.auth === 'none')
         await this.services.connections.update(conn.id, { auth: 'oauth' });
       made++;
     }

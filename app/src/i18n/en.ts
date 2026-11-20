@@ -1947,6 +1947,13 @@ export const en: Catalog<MessageKey> = {
   'apps.auth.none': 'No sign-in needed',
   'apps.token': 'API key',
   'apps.newToken': 'New API key',
+  'apps.headers': 'Request headers',
+  'apps.headersHint':
+    'Sent with every request to this server, for a service that wants its key under another name. Values are kept sealed and never shown again.',
+  'apps.headerName': 'Header name',
+  'apps.headerValue': 'Value',
+  'apps.headerAdd': 'Add header',
+  'apps.headerSaved': 'saved',
   'apps.tokenHint': 'Sent as an Authorization: Bearer header; never shown again.',
   'apps.tokenHelp': 'Create a {name} key',
   'apps.clientNeeded':

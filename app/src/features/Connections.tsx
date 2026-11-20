@@ -1018,12 +1018,83 @@ function Detail({
           </form>
         )}
 
+        <RequestHeaders connection={c} onSaved={done} />
         <Owned connection={c} />
         <BotAccess connection={c} bots={live} />
         <AppViews connection={c} />
         <Tools connection={c} />
       </div>
     </>
+  );
+}
+
+/**
+ * Extra request headers for the server, such as an API key under the name the service wants. Only
+ * the names come back from the server: each shows as saved, and one is changed by adding it again.
+ */
+function RequestHeaders({ connection, onSaved }: { connection: Connection; onSaved: () => unknown }) {
+  const t = useT();
+  const names = connection.headerNames ?? [];
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  // The whole list goes each time; a name sent with no value keeps what is saved under it.
+  const save = useMutation({
+    mutationFn: (headers: { name: string; value: string }[]) =>
+      api.updateConnection(connection.id, { headers }),
+    onSuccess: () => {
+      setName('');
+      setValue('');
+      void onSaved();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const kept = (except?: string) =>
+    names.filter((n) => n.toLowerCase() !== except?.toLowerCase()).map((n) => ({ name: n, value: '' }));
+  return (
+    <section className="space-y-2">
+      <div className="text-sm font-medium">{t('apps.headers')}</div>
+      <p className="text-xs text-muted-foreground">{t('apps.headersHint')}</p>
+      {names.map((n) => (
+        <div key={n} className="flex items-center gap-2 text-sm">
+          <span className="min-w-0 flex-1 truncate font-medium">{n}</span>
+          <span className="text-xs text-muted-foreground">{t('apps.headerSaved')}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('common.remove')}
+            disabled={save.isPending}
+            onClick={() => save.mutate(kept(n))}
+          >
+            <Trash2 />
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim() && value) save.mutate([...kept(name.trim()), { name: name.trim(), value }]);
+        }}
+      >
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('apps.headerName')}
+          autoComplete="off"
+        />
+        <Input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={t('apps.headerValue')}
+          autoComplete="off"
+        />
+        <Button type="submit" className="rounded-full" disabled={!name.trim() || !value || save.isPending}>
+          {t('apps.headerAdd')}
+        </Button>
+      </form>
+    </section>
   );
 }
 

@@ -637,17 +637,19 @@ export class ToolFactory {
           // The person's own, open to this bot only; they can open it to others in the apps window.
           let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] }, person);
           if (c.status === 'signed-out') {
-            // The server wants a sign-in: it becomes an OAuth connection for the person to sign in to.
-            c = await s.connections.update(c.id, { auth: 'oauth' });
+            // The server wants a sign-in: it became an OAuth connection for the person to sign in
+            // to, or, when it offers no sign-in and wants a key, one they enter the key for.
+            const needsKey = c.auth === 'token';
+            if (!needsKey && c.auth !== 'oauth') c = await s.connections.update(c.id, { auth: 'oauth' });
             await s.threads.addMessage({
               threadId: thread.id,
               role: 'system',
               author: `bot:${bot.id}`,
-              text: t('tool.appSignInCard', { name: c.name }),
+              text: t(needsKey ? 'connection.needsKeyCardText' : 'tool.appSignInCard', { name: c.name }),
               props: { connectionSignIn: c.id },
               turnId: turn.id,
             });
-            return t('tool.appNeedsSignIn', { name: c.name });
+            return t(needsKey ? 'tool.appNeedsKey' : 'tool.appNeedsSignIn', { name: c.name });
           }
           if (c.status === 'error') return t('tool.appFailed', { name: c.name, message: c.error ?? '' });
           const tools = c.tools.map((x) => x.name).join(', ') || '-';

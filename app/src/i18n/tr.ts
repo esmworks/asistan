@@ -1942,6 +1942,13 @@ export const tr = {
   'apps.auth.none': 'Giriş gerekmiyor',
   'apps.token': 'API anahtarı',
   'apps.newToken': 'Yeni API anahtarı',
+  'apps.headers': 'İstek başlıkları',
+  'apps.headersHint':
+    'Bu sunucuya giden her istekle gönderilir; anahtarını başka bir adla isteyen servisler için. Değerler şifreli saklanır ve bir daha gösterilmez.',
+  'apps.headerName': 'Başlık adı',
+  'apps.headerValue': 'Değer',
+  'apps.headerAdd': 'Başlık ekle',
+  'apps.headerSaved': 'kayıtlı',
   'apps.tokenHint': 'Authorization: Bearer başlığıyla gönderilir; bir daha gösterilmez.',
   'apps.tokenHelp': '{name} anahtarını oluştur',
   'apps.clientNeeded':

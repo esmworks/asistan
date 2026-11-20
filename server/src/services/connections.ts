@@ -3,6 +3,7 @@ import {
   MAX_CONNECTIONS,
   catalogEntry,
   connectionSlug,
+  headerNameAllowed,
   sharesApp,
   type Connection,
   type ConnectionAuthStart,
@@ -21,6 +22,7 @@ import {
   finishOAuth,
   joinScopes,
   listTools,
+  offersSignIn,
   onToolsChanged,
   readAppResource,
   startOAuth,
@@ -314,6 +316,8 @@ export class ConnectionService {
       status: row.status,
       error: row.error,
       hasToken: !!secrets.token,
+      // The names only: what each is set to stays sealed.
+      headerNames: Object.keys(secrets.headers ?? {}),
       clientId: secrets.ownClient?.client_id ?? null,
       clientName: (secrets.ownClient && secrets.ownClientName) || null,
       tools: row.tools.map((t) => ({
@@ -383,7 +387,10 @@ export class ConnectionService {
 
   private target(row: Row): ClientTarget {
     let current = this.secretsOf(row);
-    const version = `${row.url}|${row.auth}|${row.auth === 'token' ? (row.secrets ?? '') : ''}`;
+    const headers = Object.keys(current.headers ?? {}).length
+      ? createHash('sha256').update(JSON.stringify(current.headers)).digest('hex')
+      : '';
+    const version = `${row.url}|${row.auth}|${row.auth === 'token' ? (row.secrets ?? '') : ''}|${headers}`;
     let publicOnly: Promise<boolean> | undefined;
     return {
       id: row.id,
@@ -413,6 +420,36 @@ export class ConnectionService {
     };
   }
 
+  /**
+   * The request headers to keep for a connection: the list the person gave, each with the value
+   * given or, when that is empty, the one saved under the same name (values never come back to be
+   * shown, so an unchanged one is sent empty). Refuses a name the transport or the sign-in owns.
+   */
+  private headersOf(
+    // As the request gives them: a value left out keeps the saved one.
+    given: { name: string; value?: string }[],
+    saved: Record<string, string>,
+    auth: Row['auth'],
+  ): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const h of given) {
+      if (!headerNameAllowed(h.name, auth)) {
+        throw new HttpError(
+          400,
+          h.name.toLowerCase() === 'authorization'
+            ? 'error.connectionHeaderAuth'
+            : 'error.connectionHeaderReserved',
+          { name: h.name },
+        );
+      }
+      const keptName = Object.keys(saved).find((k) => k.toLowerCase() === h.name.toLowerCase());
+      const value = h.value || (keptName ? saved[keptName] : '');
+      if (!value) throw new HttpError(400, 'error.connectionHeaderValue');
+      out[h.name] = value;
+    }
+    return out;
+  }
+
   private sealed(secrets: ConnectionSecrets): string | null {
     return Object.keys(secrets).length ? this.vault.seal(JSON.stringify(secrets)) : null;
   }
@@ -438,6 +475,7 @@ export class ConnectionService {
       if (!input.token) throw new HttpError(400, 'error.connectionToken');
       secrets.token = input.token;
     }
+    if (input.headers?.length) secrets.headers = this.headersOf(input.headers, {}, input.auth);
     if (input.auth === 'oauth' && input.clientId) {
       secrets.ownClient = {
         client_id: input.clientId,
@@ -480,10 +518,12 @@ export class ConnectionService {
   async update(id: string, patch: ConnectionUpdate): Promise<Connection> {
     const row = await this.row(id);
     const secrets = this.secretsOf(row);
-    const moved =
-      (patch.url !== undefined && patch.url !== row.url) || (patch.auth && patch.auth !== row.auth);
-    // Another server, or another way in: nothing of the old sign-in goes to it.
+    const urlMoved = patch.url !== undefined && patch.url !== row.url;
+    const moved = urlMoved || (patch.auth && patch.auth !== row.auth);
+    // Another server, or another way in: nothing of the old sign-in goes to it. The headers belong
+    // to the server, so another way in to the same one keeps them.
     const next: ConnectionSecrets = moved ? {} : { ...secrets };
+    if (moved && !urlMoved && secrets.headers) next.headers = secrets.headers;
     if (patch.token !== undefined) {
       if (patch.token) next.token = patch.token;
       else delete next.token;
@@ -502,6 +542,16 @@ export class ConnectionService {
       }
     }
     const auth = patch.auth ?? row.auth;
+    if (patch.headers !== undefined) {
+      const headers = this.headersOf(patch.headers, next.headers ?? {}, auth);
+      if (Object.keys(headers).length) next.headers = headers;
+      else delete next.headers;
+    } else if (next.headers) {
+      // Another way in may make a header the sign-in's own: it goes rather than fight the sign-in.
+      const kept = Object.entries(next.headers).filter(([name]) => headerNameAllowed(name, auth));
+      if (kept.length) next.headers = Object.fromEntries(kept);
+      else delete next.headers;
+    }
     if (auth === 'token' && !next.token) throw new HttpError(400, 'error.connectionToken');
     await this.ctx.db
       .update(schema.connections)
@@ -519,7 +569,8 @@ export class ConnectionService {
     dropClient(id);
     // Another server's tools, not the same server reached another way: the rules go only then.
     if (patch.url !== undefined && patch.url !== row.url) await this.dropAllowRules(row.slug);
-    const changedAccess = moved || patch.token !== undefined || patch.clientId !== undefined;
+    const changedAccess =
+      moved || patch.token !== undefined || patch.clientId !== undefined || patch.headers !== undefined;
     if (changedAccess && auth !== 'oauth') await this.refresh(id);
     else if (changedAccess && auth === 'oauth') await this.setStatus(id, 'signed-out', null);
     this.changed();
@@ -621,6 +672,7 @@ export class ConnectionService {
       (s.oauth?.client as OwnClientLike | undefined)?.client_secret,
       s.oauth?.tokens?.access_token,
       s.oauth?.tokens?.refresh_token,
+      ...Object.values(s.headers ?? {}),
       ...extra,
     ]);
   }
@@ -686,14 +738,22 @@ export class ConnectionService {
   /**
    * Marks a connection as one to sign in to again, with why. A server added as needing no sign-in
    * that asks for one becomes a sign-in connection, so the person gets a Sign in button rather
-   * than a sign-out nothing can undo.
+   * than a sign-out nothing can undo; unless it offers no sign-in at all (it wants an API key on
+   * every path), when it becomes a connection that asks for a key, which a button could not give.
+   * Gives the kind the connection has now.
    */
-  private async signInNeeded(row: Row, e: ConnectionClientError) {
-    const auth = row.auth === 'none' ? 'oauth' : row.auth;
+  private async signInNeeded(row: Row, e: ConnectionClientError): Promise<Row['auth']> {
+    const auth =
+      row.auth === 'none' ? ((await offersSignIn(this.target(row))) ? 'oauth' : 'token') : row.auth;
     if (auth !== row.auth) {
       await this.ctx.db.update(schema.connections).set({ auth }).where(eq(schema.connections.id, row.id));
     }
-    await this.setStatus(row.id, 'signed-out', await this.signOutReason({ ...row, auth }, e));
+    const keyNeeded = auth === 'token' && row.auth === 'none';
+    const reason = keyNeeded
+      ? (await serverTranslator(this.ctx))('connection.needsKey', { host: new URL(row.url).host })
+      : await this.signOutReason({ ...row, auth }, e);
+    await this.setStatus(row.id, 'signed-out', reason);
+    return auth;
   }
 
   /**
@@ -874,12 +934,16 @@ export class ConnectionService {
     const row = await this.row(id);
     const secrets = this.secretsOf(row);
     // The person's own OAuth app is a setting of theirs and stays.
-    const next: ConnectionSecrets = secrets.ownClient
-      ? {
-          ownClient: secrets.ownClient,
-          ...(secrets.ownClientName ? { ownClientName: secrets.ownClientName } : {}),
-        }
-      : {};
+    const next: ConnectionSecrets = {
+      ...(secrets.ownClient
+        ? {
+            ownClient: secrets.ownClient,
+            ...(secrets.ownClientName ? { ownClientName: secrets.ownClientName } : {}),
+          }
+        : {}),
+      // The headers are the person's setting for the server, not part of a sign-in.
+      ...(secrets.headers ? { headers: secrets.headers } : {}),
+    };
     await this.ctx.db
       .update(schema.connections)
       .set({ secrets: this.sealed(next), status: 'signed-out', error: null, updatedAt: new Date() })
@@ -1082,6 +1146,8 @@ export class ConnectionService {
     keep?: KeepResult,
     /** Shows a tool's own view (an MCP app) in the conversation after it was called. */
     showApp?: ShowApp,
+    /** Puts a Sign-in card in the conversation when a call finds its connection signed out. */
+    showSignIn?: ShowSignIn,
   ): Promise<AppTool[]> {
     const chosen = this.ctx.db
       .select({ id: schema.botConnections.connectionId })
@@ -1098,6 +1164,18 @@ export class ConnectionService {
         ),
       )
       .orderBy(asc(schema.connections.createdAt));
+    // One card per connection for the turn: a bot that calls several tools in a row, or at once,
+    // meets the same sign-out each time.
+    const carded = new Set<string>();
+    const signIn: ShowSignIn | undefined =
+      showSignIn &&
+      (async (c) => {
+        if (carded.has(c.id)) return true;
+        carded.add(c.id);
+        const shown = await showSignIn(c).catch(() => false);
+        if (!shown) carded.delete(c.id);
+        return shown;
+      });
     const out: AppTool[] = [];
     for (const row of rows) {
       // Named over the whole list, so turning one tool off never renames another.
@@ -1108,7 +1186,7 @@ export class ConnectionService {
       // A tool meant for its view alone is not the bot's to call.
       const tools = row.tools.filter((x) => x.enabled && !x.appOnly);
       for (const tool of tools)
-        out.push(this.appTool(row, tool, names.get(tool.name)!, t, signal, elicit, keep, showApp));
+        out.push(this.appTool(row, tool, names.get(tool.name)!, t, signal, elicit, keep, showApp, signIn));
     }
     return out;
   }
@@ -1122,6 +1200,7 @@ export class ConnectionService {
     elicit?: TurnElicit,
     keep?: KeepResult,
     showApp?: ShowApp,
+    showSignIn?: ShowSignIn,
   ): AppTool {
     // A tool this server adds sends or changes mail: it always counts as a change, whatever it was set to.
     const kind = tool.local ? 'write' : (tool.kind ?? tool.hinted);
@@ -1181,8 +1260,14 @@ export class ConnectionService {
           if (e.code === 'unauthorized') {
             // A server that lists its tools to anyone but wants a sign-in for calls becomes a
             // sign-in connection (see signInNeeded).
-            await this.signInNeeded(current, e);
+            const auth = await this.signInNeeded(current, e);
             this.changed();
+            // The person is told in the conversation, where the card is the way to fix it.
+            const card = await showSignIn?.({ id: row.id, name: row.name, auth }).catch(() => false);
+            if (card)
+              return t(auth === 'token' ? 'connection.needsKeyCard' : 'connection.signedOutCard', {
+                name: row.name,
+              });
             return t('connection.signedOutCall', { name: row.name });
           }
           return t('connection.callFailed', { name: row.name, message: await this.failureText(row, e) });
@@ -1218,6 +1303,12 @@ export interface AppView {
   result: CallToolResult;
 }
 export type ShowApp = (view: AppView) => Promise<void>;
+
+/**
+ * Puts a card in the conversation where the person can sign in to a connection (or enter its
+ * key, for `token`). Says whether one was shown.
+ */
+export type ShowSignIn = (c: { id: string; name: string; auth: Row['auth'] }) => Promise<boolean>;
 
 /** Puts a connection's question to the person in the chat of the turn that made the call. */
 export type TurnElicit = (form: ElicitForm, connection: string) => Promise<ElicitResult>;
