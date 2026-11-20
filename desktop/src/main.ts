@@ -29,6 +29,7 @@ import {
 } from './desktop-config';
 import { createCrashGuard, isCrash } from './crash-guard';
 import { startEgress } from './egress';
+import { readSpellingOn, spellingEntries, spellingLanguages, writeSpellingOn } from './spelling';
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
 import { LINK_SCHEME, linkInArgs, parseLink, type AppLink } from './links';
@@ -169,6 +170,7 @@ async function boot() {
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(assets(), 'icon.png'));
   loadLocale(userData, app.getPreferredSystemLanguages());
   hardenSessions();
+  setUpSpelling();
   registerIpc();
   registerLinks();
   createTray();
@@ -333,7 +335,7 @@ function showWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      spellcheck: false,
+      spellcheck: true,
     },
   });
   if (restored.maximized) win.maximize();
@@ -411,6 +413,21 @@ function showContextMenu(target: BrowserWindow, params: Electron.ContextMenuPara
   const items: Electron.MenuItemConstructorOptions[] = [];
   const { editFlags } = params;
   if (params.isEditable) {
+    const spelling = spellingEntries(params.misspelledWord, params.dictionarySuggestions, {
+      none: t('spelling.none'),
+      learn: t('spelling.learn'),
+    });
+    for (const e of spelling) {
+      items.push({
+        label: e.label,
+        enabled: e.enabled ?? true,
+        click: () => {
+          if (e.replace) target.webContents.replaceMisspelling(e.replace);
+          if (e.learn) target.webContents.session.addWordToSpellCheckerDictionary(e.learn);
+        },
+      });
+    }
+    if (spelling.length) items.push({ type: 'separator' });
     items.push(
       { role: 'undo', label: t('edit.undo'), enabled: editFlags.canUndo },
       { role: 'redo', label: t('edit.redo'), enabled: editFlags.canRedo },
@@ -419,6 +436,13 @@ function showContextMenu(target: BrowserWindow, params: Electron.ContextMenuPara
       { role: 'copy', label: t('edit.copy'), enabled: editFlags.canCopy },
       { role: 'paste', label: t('edit.paste'), enabled: editFlags.canPaste },
       { role: 'selectAll', label: t('edit.selectAll') },
+      { type: 'separator' },
+      {
+        label: t('spelling.check'),
+        type: 'checkbox',
+        checked: session.defaultSession.isSpellCheckerEnabled(),
+        click: (item) => setSpelling(item.checked),
+      },
     );
   } else if (params.selectionText.trim()) {
     items.push({ role: 'copy', label: t('edit.copy') });
@@ -474,7 +498,7 @@ function toggleQuick() {
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
-        spellcheck: false,
+        spellcheck: true,
       },
     });
     // It floats over full-screen apps too, on whichever desktop the person is on.
@@ -696,6 +720,26 @@ async function switchTo(next: DesktopConfig) {
   await connect();
 }
 
+/**
+ * Words misspelled in a field the person types in are underlined, with what they could be on a
+ * right-click. On by default; turned off from the same menu, and remembered.
+ */
+function setUpSpelling() {
+  const ses = session.defaultSession;
+  ses.setSpellCheckerEnabled(readSpellingOn(userData));
+  // macOS uses the system's checker, which picks the language itself and needs no list.
+  if (process.platform !== 'darwin') {
+    const langs = spellingLanguages(app.getPreferredSystemLanguages(), ses.availableSpellCheckerLanguages);
+    if (langs.length) ses.setSpellCheckerLanguages(langs);
+  }
+}
+
+function setSpelling(on: boolean) {
+  writeSpellingOn(userData, on);
+  session.defaultSession.setSpellCheckerEnabled(on);
+  rebuildMenu();
+}
+
 function hardenSessions() {
   // Everything is refused except, for the app's own page, writing to the clipboard (copying a
   // picture has no other route there) and the microphone alone (speaking a message instead of
@@ -781,6 +825,13 @@ function buildAppMenu() {
           { role: 'copy', label: t('edit.copy') },
           { role: 'paste', label: t('edit.paste') },
           { role: 'selectAll', label: t('edit.selectAll') },
+          { type: 'separator' },
+          {
+            label: t('spelling.check'),
+            type: 'checkbox',
+            checked: session.defaultSession.isSpellCheckerEnabled(),
+            click: (item) => setSpelling(item.checked),
+          },
         ],
       },
       {

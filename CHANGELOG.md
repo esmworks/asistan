@@ -7,6 +7,10 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- The desktop app checks spelling as you type: a misspelled word is underlined, and a right-click on it offers what it
+  could be and "Add to dictionary". It is on by default and turned off with "Check spelling" in the same menu or in
+  the Edit menu. On a Mac it uses the system's checker; on Windows and Linux it checks the system's languages it has
+  a dictionary for, then Turkish and English, which Electron downloads from Google the first time.
 - A message written while the app cannot reach the server is no longer lost or handed back as a draft: it stays in
   the conversation marked as waiting for the connection, and goes out on its own when the connection is back (the
   browser coming online, the live connection reconnecting, or a retry every 15 seconds). A second try of a send that
