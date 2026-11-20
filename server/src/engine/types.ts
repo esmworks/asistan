@@ -288,6 +288,8 @@ export type TurnOutcome = (
       crashed?: boolean;
       /** The provider's balance is spent or its billing failed: another provider's model may carry the turn. */
       billing?: boolean;
+      /** For `interrupted`: the person stopped it, an ending they chose rather than a failure. */
+      byPerson?: boolean;
       /** What the turn spent before it failed, when the engine knows: it counts toward the limit. */
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */

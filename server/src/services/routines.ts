@@ -1610,7 +1610,6 @@ export class RoutineService {
 
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.routineRunId) return;
-    const t = await this.services.settings.translator();
     const [run] = await this.ctx.db
       .select({
         failedByBot: schema.routineRuns.failedByBot,
@@ -1653,8 +1652,7 @@ export class RoutineService {
         .catch((err: unknown) => console.warn('slack report', err));
     }
     // The person's stop is an ending they chose, not a failure, and is not tried again.
-    const stopped =
-      !outcome.ok && outcome.kind === 'interrupted' && outcome.message === t('turn.stoppedByUser');
+    const stopped = !outcome.ok && outcome.kind === 'interrupted' && outcome.byPerson === true;
     await this.ctx.db
       .update(schema.routineRuns)
       .set(

@@ -135,12 +135,13 @@ interface Running {
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
 
-const interrupted = (message: string): TurnOutcome => ({
+const interrupted = (message: string, byPerson = false): TurnOutcome => ({
   ok: false,
   kind: 'interrupted',
   message,
   text: '',
   sessionId: null,
+  ...(byPerson && { byPerson: true }),
 });
 
 /**
@@ -424,7 +425,7 @@ export class TurnManager {
       .returning();
     for (const turn of dropped) {
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     }
     return found || dropped.length > 0;
   }
@@ -512,7 +513,7 @@ export class TurnManager {
       r.steers = r.steers.filter((st) => !dropped.some((d) => d.id === st.turnId));
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return dropped.length;
   }
 
@@ -540,7 +541,7 @@ export class TurnManager {
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return found;
   }
 
@@ -1603,7 +1604,7 @@ export class TurnManager {
     const kind = (await threads.row(turn.threadId)).kind;
     // The engine words an abort its own way; a stop the person asked for is worded as theirs.
     if (this.stoppedByPerson.delete(turn.id) && !outcome.ok && outcome.kind === 'interrupted') {
-      outcome = { ...outcome, message: t('turn.stoppedByUser') };
+      outcome = { ...outcome, message: t('turn.stoppedByUser'), byPerson: true };
     }
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
