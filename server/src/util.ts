@@ -37,6 +37,7 @@ export type NotFoundKind =
   | 'vault'
   | 'skill'
   | 'apiKey'
+  | 'canaryAlarm'
   | 'apiSource'
   | 'ticket'
   | 'table'

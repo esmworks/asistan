@@ -84,6 +84,12 @@ export function buildSystemPrompt(opts: {
   contact?: 'route' | 'door';
   /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
   recall?: boolean;
+  /**
+   * The bot's private token: a line it is told never to repeat or write anywhere. Seeing it in a
+   * tool's input or a reply means text the bot read is making it copy its prompt out. The same
+   * for every turn of the bot, so the prompt keeps its cache.
+   */
+  canary?: string;
 }): string {
   const { bot, paths, memory, peers } = opts;
   const t = translator(opts.locale);
@@ -191,6 +197,7 @@ export function buildSystemPrompt(opts: {
     '',
     t('prompt.rules'),
     t('prompt.ruleData'),
+    ...(opts.canary ? [t('prompt.canary', { token: opts.canary })] : []),
     t('prompt.ruleApproval'),
     t('prompt.ruleAsk'),
     t('prompt.ruleMemory'),

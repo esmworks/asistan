@@ -1,6 +1,6 @@
 import type { ApiAuth, ApiCredential } from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileUp, KeySquare, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileUp, KeySquare, Pencil, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ type AuthType = ApiAuth['type'];
 export function ApiKeys() {
   const t = useT();
   const { data: keys = [] } = useQuery({ queryKey: ['api-keys'], queryFn: api.apiKeys });
-  const [editing, setEditing] = useState<ApiCredential | 'new' | null>(null);
+  const [editing, setEditing] = useState<ApiCredential | 'new' | 'trap' | null>(null);
   const [importing, setImporting] = useState(false);
   return (
     <section className="space-y-2">
@@ -39,12 +39,23 @@ export function ApiKeys() {
         >
           <FileUp />
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-full"
+          onClick={() => setEditing('trap')}
+          aria-label={t('apiKeys.trapAdd')}
+          title={t('apiKeys.trapAdd')}
+        >
+          <ShieldAlert />
+        </Button>
         <Button size="sm" variant="secondary" className="rounded-full" onClick={() => setEditing('new')}>
           <Plus /> {t('common.add')}
         </Button>
       </div>
       {importing && <EnvImport onDone={() => setImporting(false)} />}
       {editing === 'new' && <KeyForm onDone={() => setEditing(null)} />}
+      {editing === 'trap' && <TrapForm onDone={() => setEditing(null)} />}
       <div className="divide-y rounded-2xl border bg-card/50">
         {!keys.length && (
           <div className="flex flex-col items-center gap-2 px-6 py-8 text-center text-sm text-muted-foreground">
@@ -53,7 +64,7 @@ export function ApiKeys() {
           </div>
         )}
         {keys.map((k) =>
-          editing !== 'new' && editing?.id === k.id ? (
+          typeof editing === 'object' && editing?.id === k.id ? (
             <div key={k.id} className="p-3">
               <KeyForm current={k} onDone={() => setEditing(null)} />
             </div>
@@ -73,6 +84,8 @@ function KeyRow({ k, onEdit }: { k: ApiCredential; onEdit(): void }) {
   const qc = useQueryClient();
   const manages = useManagesServer();
   const mayChange = manages || !!k.userId;
+  // A trap key is only added or removed: what it is made as is what makes it a trap.
+  const mayEdit = mayChange && !k.trap;
   const remove = useMutation({
     mutationFn: () => api.removeApiKey(k.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['api-keys'] }),
@@ -84,6 +97,7 @@ function KeyRow({ k, onEdit }: { k: ApiCredential; onEdit(): void }) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">
           {k.name}
+          {k.trap && <span className="font-normal text-destructive"> · {t('apiKeys.trapBadge')}</span>}
           {k.label && <span className="font-normal text-muted-foreground"> · {k.label}</span>}
         </div>
         <div className="truncate text-xs text-muted-foreground">
@@ -95,15 +109,17 @@ function KeyRow({ k, onEdit }: { k: ApiCredential; onEdit(): void }) {
       </div>
       {mayChange && (
         <>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
-            onClick={onEdit}
-            aria-label={t('vault.edit')}
-          >
-            <Pencil />
-          </Button>
+          {mayEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              onClick={onEdit}
+              aria-label={t('vault.edit')}
+            >
+              <Pencil />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -231,6 +247,47 @@ function KeyForm({ current, onDone }: { current?: ApiCredential; onDone(): void 
       />
       <BotAccess botIds={botIds} onChange={setBotIds} />
       {manages && <TeamChoice team={team} onChange={setTeam} />}
+      <div className="flex justify-end gap-2 pt-1">
+        <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" className="rounded-full" disabled={save.isPending}>
+          {t('common.save')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Adds a trap key: a name and the bots that see it; the server makes up the rest. */
+function TrapForm({ onDone }: { onDone(): void }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+  const [botIds, setBotIds] = useState<string[] | null>(null);
+  const save = useMutation({
+    mutationFn: () => api.addTrapKey({ name, botIds }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['api-keys'] });
+      onDone();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    save.mutate();
+  };
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-2xl border bg-background p-3">
+      <p className="text-xs text-muted-foreground">{t('apiKeys.trapHint')}</p>
+      <Input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('apiKeys.trapName')}
+        aria-label={t('apiKeys.trapName')}
+        required
+      />
+      <BotAccess botIds={botIds} onChange={setBotIds} />
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" className="rounded-full" onClick={onDone}>
           {t('common.cancel')}

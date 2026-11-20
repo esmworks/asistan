@@ -7,6 +7,14 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A bot that is being steered by text it read (a page, a mail, a webhook, another bot) is now caught by two
+  trip-wires that nothing the person asks for would ever touch. Every bot's prompt carries a private line it is told
+  never to repeat; if that line shows up in a tool's input (as it is, percent-encoded, in hex or in base64) or in
+  its reply, the step is refused and the reply is cleaned. And in Settings → API keys a person can add a "trap key":
+  a made-up key with a made-up address that guards nothing and is shown to their bots like any other key; naming it
+  in a request, asking for a key of that name, or reaching its address trips the wire. A trip stops the turn and the
+  work it handed to other bots, moves the bot to "Ask" if it was freer, says in plain words in the conversation what
+  happened and what the turn had read before, tells the person, and stays on the Today page until they mark it seen.
 - A memory note can be true only until a date. A bot that saves a fact that will stop being true ("working from
   home this week", "Ali is on leave until the 5th") gives the date, worked out from today's date and the person's
   time zone, and the note carries it into the bot's prompt as "true until ...". Once the date passes the note

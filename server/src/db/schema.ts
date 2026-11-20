@@ -1284,6 +1284,12 @@ export const apiCredentials = pgTable(
     secret: text('secret').notNull(),
     /** The bots that may use it; null lets every bot. */
     botIds: jsonb('bot_ids').$type<string[]>(),
+    /**
+     * A trap key: it holds no real secret and no real service answers at its origin. It is shown
+     * to bots like any other key, and any use of it is a sign that something a bot read is
+     * steering it. Always a person's own.
+     */
+    trap: boolean('trap').notNull().default(false),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastUsedAt: ts('last_used_at'),
@@ -1447,4 +1453,36 @@ export const botTableRows = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [index('bot_table_rows_table_idx').on(t.tableId, t.createdAt)],
+);
+
+/**
+ * Trip-wires that caught a bot being steered by text it read: the bot repeated its private
+ * canary token, or touched a trap key. Kept until the person marks the alarm seen. Holds no
+ * input of the call that tripped it, so the token itself is never stored.
+ */
+export const canaryAlarms = pgTable(
+  'canary_alarms',
+  {
+    id: text('id').primaryKey(),
+    /** Which wire: the prompt's private token, or a trap key. */
+    wire: text('wire', { enum: ['prompt', 'key'] }).notNull(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    turnId: text('turn_id'),
+    /** Whose turn it was; the alarm is theirs. Null when no one's own (a team conversation). */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** The tool that was refused, or `reply` for an answer that carried the token. */
+    tool: text('tool').notNull(),
+    /** For a trap key: its name. */
+    keyName: text('key_name'),
+    /** What the turn had read from outside before the trip, as people name it. */
+    sources: sealedJson('sources').$type<string[]>().notNull().default([]),
+    /** The bot's approval level before it was moved to Ask; null when it was not changed. */
+    movedFrom: text('moved_from'),
+    createdAt: created(),
+    seenAt: ts('seen_at'),
+  },
+  (t) => [index('canary_alarms_open_idx').on(t.seenAt, t.createdAt)],
 );

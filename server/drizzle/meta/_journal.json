@@ -547,6 +547,13 @@
       "when": 1795194481283,
       "tag": "0077_memory_valid_until",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795195062182,
+      "tag": "0078_canary_alarms_and_trap_keys",
+      "breakpoints": true
     }
   ]
 }

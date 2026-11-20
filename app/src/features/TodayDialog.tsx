@@ -1,6 +1,6 @@
-import type { TodayReport } from '@yumakbot/shared';
-import { useQuery } from '@tanstack/react-query';
-import { Brain, CircleAlert, CircleCheck, Clock, Loader2, Sparkles } from 'lucide-react';
+import type { CanaryAlarm, TodayReport } from '@yumakbot/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Brain, CircleAlert, CircleCheck, Clock, Loader2, ShieldAlert, Sparkles } from 'lucide-react';
 import { BotAvatar } from '@/components/BotAvatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useT } from '@/i18n';
@@ -24,6 +24,12 @@ export function TodayDialog() {
     queryFn: api.today,
     enabled: open,
     refetchOnMount: 'always',
+  });
+  const qc = useQueryClient();
+  // An alarm stays on this page until the person says they saw it.
+  const seen = useMutation({
+    mutationFn: (id: string) => api.canaryAlarmSeen(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['today'] }),
   });
   const { data: summaries = [] } = useSummaries();
   const { data: bots = [] } = useBots();
@@ -62,6 +68,26 @@ export function TodayDialog() {
                 cost: f.usd(data.costUsd),
               })}
             </p>
+            {/* A bot caught steered by text it read: stopped and moved to "Ask" until the person has seen it. */}
+            {data.canaryAlarms?.length ? (
+              <section>
+                <h3 className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-medium text-destructive">
+                  <ShieldAlert className="size-3.5" />
+                  {t('today.canary')}
+                </h3>
+                <div className="divide-y rounded-2xl border border-destructive/40 bg-destructive/5">
+                  {data.canaryAlarms.map((a) => (
+                    <CanaryItem
+                      key={a.id}
+                      alarm={a}
+                      onOpen={() => go(a.botId, a.threadId)}
+                      onSeen={() => seen.mutate(a.id)}
+                      busy={seen.isPending}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
             <Section
               title={t('today.waiting')}
               empty={t('today.waitingNone')}
@@ -235,4 +261,53 @@ function RunIcon({ status }: { status: TodayReport['runs'][number]['status'] }) 
   if (status === 'done') return <CircleCheck className={cn(cls, 'text-emerald-500')} />;
   if (status === 'error') return <CircleAlert className={cn(cls, 'text-destructive')} />;
   return <Clock className={cn(cls, 'text-muted-foreground')} />;
+}
+
+/** One alarm: what tripped, what the bot had read, and that it now asks first. */
+function CanaryItem({
+  alarm: a,
+  onOpen,
+  onSeen,
+  busy,
+}: {
+  alarm: CanaryAlarm;
+  onOpen(): void;
+  onSeen(): void;
+  busy: boolean;
+}) {
+  const t = useT();
+  const f = useFormat();
+  return (
+    <div className="space-y-1 px-3 py-2">
+      <div className="font-medium">
+        {a.wire === 'key'
+          ? t('today.canaryKey', { bot: a.botName, key: a.keyName ?? '' })
+          : t('today.canaryPrompt', { bot: a.botName })}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {f.shortTime(a.createdAt)}
+        {a.movedFrom ? ` · ${t('today.canaryMoved')}` : ''}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {a.sources.length
+          ? t('today.canarySources', { sources: a.sources.join(', ') })
+          : t('today.canaryNoSources')}
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        {a.threadId && (
+          <button type="button" onClick={onOpen} className="text-xs font-medium hover:underline">
+            {t('today.canaryOpen')}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onSeen}
+          disabled={busy}
+          className="text-xs font-medium text-destructive hover:underline"
+        >
+          {t('today.canarySeen')}
+        </button>
+      </div>
+    </div>
+  );
 }

@@ -482,6 +482,19 @@ export class ClaudeEngine implements Engine {
             hooks: [
               async (input) => {
                 if (input.hook_event_name === 'PreToolUse') {
+                  const refused = await req.screen?.({
+                    toolName: input.tool_name,
+                    input: (input.tool_input ?? {}) as Record<string, unknown>,
+                  });
+                  if (refused) {
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: 'PreToolUse' as const,
+                        permissionDecision: 'deny' as const,
+                        permissionDecisionReason: refused,
+                      },
+                    };
+                  }
                   req.onActivity?.({ id: input.tool_use_id, name: input.tool_name, running: true });
                 }
                 return {};

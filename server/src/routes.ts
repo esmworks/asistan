@@ -86,6 +86,7 @@ import {
   ApiCredentialCreate,
   ApiKeyImport,
   ApiCredentialUpdate,
+  TrapKeyCreate,
   EmailClaim,
   AI_KINDS,
   AiEndpointSet,
@@ -723,6 +724,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
       expiredMemory: (await s.memory.expired(new Date(), notes)).length,
       pendingMemory: (await s.memory.pending(notes)).length,
       pendingSkills: (await s.skills.changes(skillReach(req))).length,
+      canaryAlarms: await s.canary.open(me(req).userId),
     };
   });
 
@@ -1616,6 +1618,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const owner = ownerFor(req, team ?? managesServer(me(req).role));
     if (owner) await checkOwnBots(req, body.botIds);
     return s.apiCredentials.create(body, owner ?? null);
+  });
+  // A trap key: always the person's own, with an address the server makes up.
+  app.post('/api/api-keys/trap', async (req) => {
+    const body = TrapKeyCreate.parse(req.body);
+    await checkOwnBots(req, body.botIds);
+    return s.apiCredentials.createTrap(body, me(req).userId);
+  });
+  // Alarms of a bot caught steered by text it read: the person's own, marked seen once read.
+  app.post('/api/canary-alarms/:id/seen', async (req) => {
+    await s.canary.seen(IdParams.parse(req.params).id, me(req).userId);
+    return { ok: true };
   });
   app.post('/api/api-keys/import', async (req) => {
     const { team, ...body } = ApiKeyImport.parse(req.body);

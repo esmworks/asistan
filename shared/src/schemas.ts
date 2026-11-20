@@ -1420,6 +1420,29 @@ export const UsageReport = z.object({
 });
 export type UsageReport = z.infer<typeof UsageReport>;
 
+/**
+ * A trip-wire that caught a bot steered by text it read: the bot repeated the private line of its
+ * prompt (`prompt`) or touched a trap key (`key`). The bot was stopped and moved to "Ask".
+ */
+export const CanaryAlarm = z.object({
+  id: Id,
+  wire: z.enum(['prompt', 'key']),
+  botId: Id,
+  botName: z.string(),
+  threadId: Id.nullable(),
+  /** The tool that was refused, or `reply` for an answer that carried the private line. */
+  tool: z.string(),
+  /** For a trap key: its name. */
+  keyName: z.string().nullable(),
+  /** What the turn had read from outside before the trip (pages, mail, apps). */
+  sources: z.array(z.string()),
+  /** The level the bot had before it was moved to "Ask"; null when it was not changed. */
+  movedFrom: z.string().nullable(),
+  createdAt: z.string(),
+  seenAt: z.string().nullable(),
+});
+export type CanaryAlarm = z.infer<typeof CanaryAlarm>;
+
 /** What happened today, in the bot owner's time zone: what each bot did and what its routines ran. */
 export const TodayReport = z.object({
   date: z.string(),
@@ -1453,6 +1476,8 @@ export const TodayReport = z.object({
   pendingMemory: z.number().int().optional(),
   /** Changes bots found for skills the user owns, waiting for the user's review. Missing from older servers. */
   pendingSkills: z.number().int().optional(),
+  /** Trip-wire alarms the user has not marked seen. Missing from older servers. */
+  canaryAlarms: z.array(CanaryAlarm).optional(),
 });
 export type TodayReport = z.infer<typeof TodayReport>;
 
@@ -1615,11 +1640,25 @@ export const ApiCredential = z.object({
    * Missing on older servers, where every key was the team's.
    */
   userId: z.string().nullable().optional(),
+  /** A trap key (see `TrapKeyCreate`). Missing on older servers, where there were none. */
+  trap: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
 });
 export type ApiCredential = z.infer<typeof ApiCredential>;
+
+/**
+ * A trap key: a name for a key that does not exist. It is offered to the bots like a real one, and
+ * a bot that touches it is being steered by something it read, since nothing the person asks for
+ * would use it. The server makes up its address.
+ */
+export const TrapKeyCreate = z.object({
+  name: ApiCredentialName,
+  /** The bots it is shown to; null shows it to every bot the person has. */
+  botIds: z.array(Id).max(500).nullable().optional(),
+});
+export type TrapKeyCreate = z.input<typeof TrapKeyCreate>;
 
 export const ApiCredentialCreate = z.object({
   name: ApiCredentialName,

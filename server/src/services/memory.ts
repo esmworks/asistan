@@ -26,6 +26,7 @@ import { matchInServer } from '../db/sealed';
 import { lastActive, MEMORY_PROMPT_CHARS, PINNED_MEMORY_CHARS, withinBudget } from '../runtime/prompt';
 import { DOTTED_AND_DOTLESS_I, foldText, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
+import { scrubCanary } from './canary';
 import { noteKey } from './secrets';
 import { siteMatches } from './vault';
 import { MIN_SCORE, type EmbeddingService } from './embeddings';
@@ -394,7 +395,13 @@ export class MemoryService {
     if (same) return same;
     const [row] = await this.ctx.db
       .insert(schema.memoryChanges)
-      .values({ id: newId(), ...input, validUntil: input.validUntil ? new Date(input.validUntil) : null })
+      .values({
+        id: newId(),
+        ...input,
+        // A bot's private token is never kept in a note, whatever asked for it.
+        content: scrubCanary(input.content),
+        validUntil: input.validUntil ? new Date(input.validUntil) : null,
+      })
       .returning();
     this.ctx.bus.refresh({ scope: 'memory' });
     return toMemoryChange(row!);
@@ -506,7 +513,7 @@ export class MemoryService {
         botId: input.scope === 'bot' ? input.botId : null,
         userId: input.scope === 'user' ? (input.userId ?? OWNER_ID) : null,
         place: input.scope === 'room' ? input.place : null,
-        content: input.content,
+        content: scrubCanary(input.content),
         site: input.site ?? null,
         source: input.source,
         threadId: input.threadId ?? null,
@@ -610,7 +617,8 @@ export class MemoryService {
     ) {
       throw new HttpError(409, 'error.memoryChanged');
     }
-    const { expectedUpdatedAt: _seen, content, pinned, validUntil, ...source } = patch;
+    const { expectedUpdatedAt: _seen, content: written, pinned, validUntil, ...source } = patch;
+    const content = written === undefined ? undefined : scrubCanary(written);
     const nowPinned = pinned ?? !!before.pinned;
     if (
       nowPinned &&

@@ -18,6 +18,7 @@ import { WhatsAppChannel } from '../channels/whatsapp';
 import { Inbox } from './inbox';
 import { PageShareService } from './page-shares';
 import { ApiCredentialService } from './api-credentials';
+import { CanaryService } from './canary';
 import { EmailService } from './email';
 import { AiEndpointService } from './ai-endpoints';
 import { EmbeddingService } from './embeddings';
@@ -83,6 +84,7 @@ export class Services {
   readonly inbox: Inbox;
   readonly pageShares: PageShareService;
   readonly apiCredentials: ApiCredentialService;
+  readonly canary: CanaryService;
   readonly email: EmailService;
   readonly ai: AiEndpointService;
   readonly embeddings: EmbeddingService;
@@ -141,6 +143,7 @@ export class Services {
     this.inbox = new Inbox(ctx, this);
     this.pageShares = new PageShareService(ctx);
     this.apiCredentials = new ApiCredentialService(ctx, this.vault);
+    this.canary = new CanaryService(ctx, this);
     this.email = new EmailService(ctx, this);
     this.ai = new AiEndpointService(ctx, this.vault);
     this.embeddings = new EmbeddingService(ctx, this.ai);

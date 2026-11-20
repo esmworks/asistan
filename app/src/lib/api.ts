@@ -89,6 +89,7 @@ import type {
   ApiCredentialCreate,
   ApiCredentialUpdate,
   ApiKeyImport,
+  TrapKeyCreate,
   ApiKeyImportResult,
   EmailSettings,
   AiEndpoint,
@@ -690,6 +691,8 @@ export const api = {
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>
     http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
   removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
+  addTrapKey: (input: TrapKeyCreate) => http.post<ApiCredential>('/api/api-keys/trap', input),
+  canaryAlarmSeen: (id: string) => http.post<{ ok: true }>(`/api/canary-alarms/${id}/seen`, {}),
   importApiKeys: (input: ApiKeyImport) => http.post<ApiKeyImportResult>('/api/api-keys/import', input),
   /** The page opened on its own, with the print dialog, to save it as a PDF. */
   pagePrintUrl: (botId: string, path: string) =>

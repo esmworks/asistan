@@ -34,10 +34,12 @@ import {
   modeFor,
   READ_ONLY_TOOLS,
 } from '../services/approvals';
+import { carriesToken, scrubCanary, type CanaryHit } from '../services/canary';
 import { publicHost } from '../services/skill-link';
 import type { PlanItem, SubagentState } from '../engine/types';
 import { isUniqueViolation, newId, readableError, truncate } from '../util';
 import { markedOutside, outsideRead, outsideSource, resembledSite } from './outside';
+import { MAX_SOURCES } from '../services/canary';
 import { ownerWords, requestedBy } from './owner-words';
 import { elicitContent, elicitQuestions } from '../connections/elicit';
 import { askPerson } from '../tools';
@@ -851,6 +853,8 @@ export class TurnManager {
       : toolPicker(bot.toolSelection);
     // Whether it can look earlier talk up, which the prompts point it to.
     const recall = pickTool(toolPermName({ name: 'conversations_search' }));
+    // The bot's private line; the same every turn.
+    const canaryToken = this.services.canary.token(bot.id);
     const systemPrompt = buildSystemPrompt({
       bot,
       goal: thread.goal,
@@ -879,6 +883,7 @@ export class TurnManager {
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
       recall,
+      canary: canaryToken,
     });
     const allTools = [
       ...this.services.tools.forTurn({
@@ -963,6 +968,55 @@ export class TurnManager {
       )),
     ];
     const connectionNames = await this.services.connections.names();
+    // What this turn has read from outside, as people name it, for an alarm to say. The marks
+    // above keep only the first kind; this keeps each place.
+    const readFrom = new Set<string>();
+    const noteSource = (label: string) => {
+      if (readFrom.size < MAX_SOURCES) readFrom.add(label);
+    };
+    // A trip-wire fired: the first one stops the turn, and every later step is refused.
+    let tripped: { hit: CanaryHit; tool: string } | null = null;
+    let tripping: Promise<void> | null = null;
+    const trip = (hit: CanaryHit, toolName: string): Promise<void> => {
+      if (tripped) return tripping ?? Promise.resolve();
+      // Set before anything is awaited, so steps running side by side see it at once.
+      tripped = { hit, tool: toolName };
+      controller.abort();
+      const sources = [...new Set([...(reads ? [t(`outside.trigger.${reads}`)] : []), ...readFrom])].slice(
+        0,
+        MAX_SOURCES,
+      );
+      tripping = this.services.canary
+        .trip({
+          bot,
+          thread,
+          turnId: turn.id,
+          person,
+          hit,
+          tool: toolName === 'reply' ? 'reply' : (toolName.split('__').at(-1) ?? toolName),
+          sources,
+          t,
+        })
+        .then(
+          () => undefined,
+          (err: unknown) => console.warn(`Could not record a trip-wire: ${String(err)}`),
+        );
+      return tripping;
+    };
+    /** The reason to refuse a step when it trips a wire (or one already did); null to go on. */
+    const screen = async (ask: { toolName: string; input: Record<string, unknown> }) => {
+      if (tripped) return t('turn.canaryRefused');
+      const hit = await this.services.canary.screen({
+        bot,
+        own,
+        toolName: ask.toolName,
+        input: ask.input,
+        tool: allTools.find((x) => toolPermName(x) === ask.toolName),
+      });
+      if (!hit) return null;
+      await trip(hit, ask.toolName);
+      return t('turn.canaryRefused');
+    };
     // What a connected app or a web page returns reaches the model marked as data, not instructions,
     // and the run has read outside text from then on.
     const tools = allTools
@@ -971,12 +1025,13 @@ export class TurnManager {
         const source = outsideSource(x, connectionNames, t);
         const kind = outsideRead(x, !!source, present);
         const marked = markedOutside(x, source, t);
-        if (!kind) return marked;
+        if (!kind && !source) return marked;
         return {
           ...marked,
           handler: async (args: Record<string, unknown>) => {
             const r = await marked.handler(args);
-            await readOutside(kind);
+            noteSource(source ?? t(`outside.trigger.${kind!}`));
+            if (kind) await readOutside(kind);
             return r;
           },
         };
@@ -1415,7 +1470,12 @@ export class TurnManager {
         shell,
         tools,
         ...((door || selectsTools(bot.toolSelection)) && { pickTool }),
+        screen,
         canUseTool: async (ask) => {
+          // Before anything else, so a step that trips a wire makes no card and no line in the
+          // list of what the bot did.
+          const refused = await screen(ask);
+          if (refused) return { behavior: 'deny', message: refused };
           const { let: letThrough, ...answer } = await canUseTool(ask);
           // A step that changes something goes into the bot's list, with what let it through.
           if (answer.behavior === 'allow' && letThrough) {
@@ -1442,7 +1502,11 @@ export class TurnManager {
               .catch((err: unknown) => console.warn(`Could not keep a bot's step: ${String(err)}`));
           }
           // A page, a search or a host a command reaches answers with text from outside.
-          if (answer.behavior === 'allow' && WEB_READS.includes(ask.toolName)) await readOutside('web');
+          if (answer.behavior === 'allow' && WEB_READS.includes(ask.toolName)) {
+            const host = ask.toolName === 'WebSearch' ? '' : urlHost(ask.input.url ?? ask.input.host);
+            noteSource(host ? `${t('outside.trigger.web')}: ${host}` : t('outside.trigger.web'));
+            await readOutside('web');
+          }
           if (
             answer.behavior === 'allow' &&
             !READ_ONLY_TOOLS.has(ask.toolName) &&
@@ -1451,7 +1515,10 @@ export class TurnManager {
             acted = true;
           return answer;
         },
-        onReach: () => void readOutside('web'),
+        onReach: (host) => {
+          noteSource(`${t('outside.trigger.web')}: ${host}`);
+          void readOutside('web');
+        },
         onRepeatedFailure: (tool, count) => {
           looped ??= { tool, count };
           controller.abort();
@@ -1465,8 +1532,23 @@ export class TurnManager {
           streamed += delta;
           // The start of an answer that may still be the silent reply is held back until it is not.
           if (maybeSilentReply(streamed)) return;
-          this.ctx.bus.delta({ threadId: thread.id, turnId: turn.id, text: streamed.slice(shown) });
-          shown = streamed.length;
+          // So is an end that may become the private token, which is never shown.
+          // Only the end is looked at: what came before was looked at when it came.
+          if (carriesToken(canaryToken, streamed.slice(-(delta.length + 200)))) {
+            void trip({ wire: 'prompt' }, 'reply');
+            return;
+          }
+          let held = 0;
+          for (let n = Math.min(canaryToken.length - 1, streamed.length); n > 0; n--) {
+            if (canaryToken.startsWith(streamed.slice(-n).toLowerCase())) {
+              held = n;
+              break;
+            }
+          }
+          const upto = streamed.length - held;
+          if (upto <= shown) return;
+          this.ctx.bus.delta({ threadId: thread.id, turnId: turn.id, text: streamed.slice(shown, upto) });
+          shown = upto;
         },
         onSession: (sessionId) => {
           if (backup) return;
@@ -1618,7 +1700,22 @@ export class TurnManager {
     }
     if (!outcome.ok && !outcome.text && streamed) outcome.text = streamed;
     if (spent) outcome = { ...outcome, costUsd: (outcome.costUsd ?? 0) + spent };
+    // An answer that carries the private token is a wire too (the turn is over, so nothing is
+    // refused); `finish` takes the token out of it either way.
+    if (!tripped && carriesToken(canaryToken, outcome.text)) await trip({ wire: 'prompt' }, 'reply');
+    await tripping;
+    const alarm = tripped as { hit: CanaryHit; tool: string } | null;
+    if (alarm && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.canaryStopped') };
+    }
     await this.finish(turn, outcome, { acted });
+    // The work this conversation handed to other bots stops with it. Not waited for: it waits for
+    // this very turn to end.
+    if (alarm) {
+      void this.services.jobs
+        .stopFrom(thread.id)
+        .catch((err: unknown) => console.warn(`Could not stop handed-over work: ${String(err)}`));
+    }
   }
 
   /** `acted`: a step that changes something (not a read) was let through during the turn. */
@@ -1626,6 +1723,10 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // A private token never reaches a stored message, a chat app or a hook, whatever the reply was.
+    outcome = outcome.ok
+      ? { ...outcome, text: scrubCanary(outcome.text) }
+      : { ...outcome, text: scrubCanary(outcome.text), message: scrubCanary(outcome.message) };
     // The engine words an abort its own way; a stop the person asked for is worded as theirs.
     if (this.stoppedByPerson.delete(turn.id) && !outcome.ok && outcome.kind === 'interrupted') {
       outcome = { ...outcome, message: t('turn.stoppedByUser'), byPerson: true };

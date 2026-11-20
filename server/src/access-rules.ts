@@ -291,6 +291,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/api-keys': 'self',
   'POST /api/api-keys': 'self',
   'POST /api/api-keys/import': 'self',
+  'POST /api/api-keys/trap': 'self',
+  'POST /api/canary-alarms/:id/seen': 'self',
   'PATCH /api/api-keys/:id': 'self',
   'DELETE /api/api-keys/:id': 'self',
   'GET /api/vault': 'self',
