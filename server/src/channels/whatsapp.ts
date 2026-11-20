@@ -8,7 +8,10 @@ import {
   type Message,
   type NoticeEvent,
   type TurnEvent,
+  type WhatsAppDoor,
   type WhatsAppGroup,
+  type WhatsAppReplyMode,
+  type WhatsAppRoute,
   type WhatsAppSet,
   type WhatsAppStatus,
 } from '@yumakbot/shared';
@@ -25,6 +28,7 @@ import {
   lt,
   lte,
   ne,
+  notInArray,
   not,
   notExists,
   or,
@@ -32,6 +36,7 @@ import {
 } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
+import { isSilentReply, SILENT_REPLY, type TurnOutcome } from '../engine/types';
 import type { ServerKey, T } from '../i18n';
 import type { Services } from '../services';
 import type { VaultService } from '../services/vault';
@@ -65,6 +70,12 @@ type Settings = {
   chats?: boolean;
   /** Whether a bot at full access may send a message without its card. */
   autoSend?: boolean;
+  /** Chats given to bots: a person by number, a group by address. */
+  routes?: WhatsAppRoute[];
+  /** The bot that answers people with no chat given to a bot. */
+  door?: WhatsAppDoor | null;
+  /** Route suggestions already acted on, so a card's answer counts once. */
+  routeAnswers?: string[];
   threadId?: string;
   /** When the newest message read here was written, in seconds: older ones handed again are not new. */
   seenAt?: number;
@@ -92,6 +103,46 @@ const CHAT_KEEP_MS = 30 * 24 * 3600_000;
  * automatic replies stop here, and the next one waits on a card.
  */
 const AUTO_SEND_MAX = 5;
+/**
+ * Turns a chat given to a bot, or the front door, may start in an hour: someone writing on and on
+ * (or another bot answering every answer) stops costing more here; the rest is kept unread.
+ */
+const CONTACT_TURNS_MAX = 10;
+/** Earlier lines of a group handed with a mention of the account, for what it refers to. */
+const MENTION_CONTEXT = 10;
+
+/** The chat address a route names: a person's number, or a group as it is. */
+const routeChat = (chat: string) => (chat.includes('@') ? chat : `${chat}@s.whatsapp.net`);
+
+/** Where a chat given to a bot, or the front door, keeps its conversation, in the chat's threads. */
+type ContactRole = 'door' | 'route';
+const contactKey = (role: ContactRole, botId: string) => `${role}:${botId}`;
+
+/**
+ * Whether a group message names the linked account (an @mention) or answers one of its messages:
+ * only that starts the bot a group is given to.
+ */
+export function mentionsAccount(m: WaMessage, ids: string[]): boolean {
+  const ours = new Set(ids.filter(Boolean).map((id) => bareJid(id)));
+  if (!ours.size) return false;
+  let msg = (m.message ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  for (const wrap of [
+    'ephemeralMessage',
+    'viewOnceMessage',
+    'viewOnceMessageV2',
+    'documentWithCaptionMessage',
+  ]) {
+    const inner = msg[wrap]?.message as typeof msg | undefined;
+    if (inner) msg = inner;
+  }
+  return Object.values(msg).some((part) => {
+    const info = part?.contextInfo as { mentionedJid?: unknown; participant?: unknown } | undefined;
+    if (!info) return false;
+    const named = Array.isArray(info.mentionedJid) ? info.mentionedJid : [];
+    if (named.some((j) => typeof j === 'string' && ours.has(bareJid(j)))) return true;
+    return typeof info.participant === 'string' && ours.has(bareJid(info.participant));
+  });
+}
 /** How often what is older than that is dropped. */
 const PRUNE_EVERY_MS = 6 * 3600_000;
 /** Where a Status post goes. */
@@ -473,6 +524,22 @@ export class WhatsAppChannel {
   private allChats = false;
   private groupNames = new Map<string, string>();
   private groupNamesAt = 0;
+  /** Chats given to bots, by chat address. */
+  private routes = new Map<string, WhatsAppRoute>();
+  /** The front door, when one is set. */
+  private door: WhatsAppDoor | null = null;
+  /** Messages of chats given to a bot, or at the front door, waiting for the chat to go quiet. */
+  private contactWaits = new Map<
+    string,
+    {
+      kind: 'person' | 'group';
+      lines: string[];
+      firstSeq: number;
+      firstId: string;
+      startedAt: number;
+      timer: NodeJS.Timeout | null;
+    }
+  >();
   /** Names the person saved for contacts, by chat address, for chats kept later. */
   private savedNames = new Map<string, string>();
   /** Answers of someone a bot wrote to, waiting for the chat to go quiet before they reach that bot. */
@@ -510,8 +577,10 @@ export class WhatsAppChannel {
     this.unsubs.push(
       this.ctx.bus.on('refresh', (e) => {
         if (e.scope === 'routines') void this.loadFollowed().catch(() => {});
-        if (e.scope === 'approvals')
+        if (e.scope === 'approvals') {
           void this.settleDrafts().catch((err: unknown) => console.warn('whatsapp draft', err));
+          void this.settleRoutes().catch((err: unknown) => console.warn('whatsapp route', err));
+        }
       }),
     );
     await this.loadFollowed();
@@ -563,6 +632,8 @@ export class WhatsAppChannel {
     this.waits.clear();
     for (const r of this.replies.values()) if (r.timer) clearTimeout(r.timer);
     this.replies.clear();
+    for (const r of this.contactWaits.values()) if (r.timer) clearTimeout(r.timer);
+    this.contactWaits.clear();
     await this.reading;
     await this.credsChain;
     this.socket?.end();
@@ -582,6 +653,8 @@ export class WhatsAppChannel {
       notices: s.notices !== false,
       chats: s.chats === true,
       autoSend: s.autoSend === true,
+      routes: await this.routesShown(s.routes ?? []),
+      door: s.door ?? null,
       linked: (row?.account as { number?: string } | undefined)?.number ?? null,
       qr: this.state === 'linking' && this.qr ? await qrImage(this.qr) : null,
       error: row?.error ?? null,
@@ -591,8 +664,12 @@ export class WhatsAppChannel {
   /** Sets the chat up for `userId`: what comes in through it is theirs. */
   async configure(input: WhatsAppSet, userId: string): Promise<WhatsAppStatus> {
     if (input.botId) await this.services.bots.get(input.botId);
+    for (const r of input.routes ?? []) await this.services.bots.get(r.botId);
+    if (input.door) await this.services.bots.get(input.door.botId);
     const row = await this.row();
     const now = (row?.settings ?? {}) as Settings;
+    // One bot per chat: the last one named wins.
+    const routes = input.routes && [...new Map(input.routes.map((r) => [r.chat, r])).values()];
     const settings: Settings = {
       ...now,
       mode: input.mode,
@@ -600,6 +677,8 @@ export class WhatsAppChannel {
       notices: input.notices,
       chats: input.chats ?? now.chats === true,
       autoSend: input.autoSend ?? now.autoSend === true,
+      routes: routes ?? now.routes ?? [],
+      door: input.door === undefined ? (now.door ?? null) : input.door,
     };
     if (row) {
       await this.ctx.db
@@ -612,6 +691,7 @@ export class WhatsAppChannel {
         .values({ id: newId(), kind: 'whatsapp', botId: input.botId, settings, userId });
     }
     this.allChats = settings.chats === true;
+    this.loadRoutes(settings);
     this.changed();
     return this.status();
   }
@@ -770,7 +850,8 @@ export class WhatsAppChannel {
     const socket = lib.connect(auth, {
       ...(version && { version }),
       getMessage: async (key) => this.sentMessage(key.id),
-      ignore: (jid) => jid.endsWith('@g.us') && !this.allChats && !this.followed.has(jid),
+      ignore: (jid) =>
+        jid.endsWith('@g.us') && !this.allChats && !this.followed.has(jid) && !this.routes.has(jid),
     });
     this.socket = socket;
     socket.ev.on('creds.update', (update) => {
@@ -1015,16 +1096,18 @@ export class WhatsAppChannel {
     // A followed group's messages never reach the person's chat with the bots, its commands or its cards.
     const remote = m.key.remoteJid;
     if (remote?.endsWith('@g.us')) {
-      if (this.allChats || this.followed.has(remote)) await this.chatMessage(socket, m, remote, 'group');
+      if (this.allChats || this.followed.has(remote) || this.routes.has(remote))
+        await this.chatMessage(socket, m, remote, 'group');
       return;
     }
     const jid = await this.from(socket, m, settings, row.id);
     if (!jid) {
-      // Someone else's chat with the account: read when a routine reads people's chats, or the
-      // bots may read every chat.
-      if (!this.people && !this.allChats) return;
+      // Someone else's chat with the account: read when a routine reads people's chats, the bots
+      // may read every chat, the chat is given to a bot, or a front door answers people.
+      if (!this.people && !this.allChats && !this.door && !this.routes.size) return;
       const chat = await this.personChat(socket, m, settings);
-      if (chat) await this.chatMessage(socket, m, chat, 'person');
+      if (chat && (this.people || this.allChats || this.door || this.routes.has(chat)))
+        await this.chatMessage(socket, m, chat, 'person');
       return;
     }
     // Before any command or download: a message WhatsApp hands again must not run twice.
@@ -1092,6 +1175,8 @@ export class WhatsAppChannel {
    */
   async replyOwner(chat: string): Promise<{ botId: string; threadId: string } | null> {
     const at = sql`coalesce(${schema.whatsappDrafts.sentAt}, ${schema.whatsappDrafts.createdAt})`;
+    // What a bot said as the chat's own bot, or at the front door, is answered there, not here.
+    const contacts = await this.contactThreads(chat);
     const [row] = await this.ctx.db
       .select({ botId: schema.whatsappDrafts.botId, threadId: schema.whatsappDrafts.threadId })
       .from(schema.whatsappDrafts)
@@ -1101,6 +1186,7 @@ export class WhatsAppChannel {
           eq(schema.whatsappDrafts.kind, 'message'),
           eq(schema.whatsappDrafts.status, 'sent'),
           gte(at, new Date(Date.now() - REPLY_WINDOW_MS)),
+          contacts.length ? notInArray(schema.whatsappDrafts.threadId, contacts) : undefined,
         ),
       )
       .orderBy(desc(at))
@@ -1109,11 +1195,11 @@ export class WhatsAppChannel {
   }
 
   /** Holds an answer for the bot that wrote to the chat; it goes out when the chat is quiet. */
-  private async queueReply(chat: string, line: string, t: T) {
+  private async queueReply(chat: string, line: string, t: T): Promise<boolean> {
     const owner = await this.replyOwner(chat);
-    if (!owner) return;
+    if (!owner) return false;
     // A routine of that bot reading people's chats already hands it the answer in its own way.
-    if ((await this.services.routines.chatReaders(chat, 'person')).includes(owner.botId)) return;
+    if ((await this.services.routines.chatReaders(chat, 'person')).includes(owner.botId)) return true;
     const wait = this.replies.get(chat);
     if (wait && wait.botId !== owner.botId) {
       // Another bot wrote since: what waits goes to the one it was for, then this one starts.
@@ -1135,6 +1221,7 @@ export class WhatsAppChannel {
         .catch((err: unknown) => console.warn('whatsapp reply', err));
     }, left);
     this.replies.set(chat, open);
+    return true;
   }
 
   /** Gives the waiting answers of a chat to the bot's conversation, as outside text. */
@@ -1184,7 +1271,7 @@ export class WhatsAppChannel {
    * Whether someone wrote in a chat by hand from the account since a bot's message last went out
    * to it: the person answering it themselves, whom a bot must not talk over without a card.
    */
-  private async typedSince(chat: string): Promise<boolean> {
+  private async typedSince(chat: string, otherwise?: Date): Promise<boolean> {
     const at = sql`coalesce(${schema.whatsappDrafts.sentAt}, ${schema.whatsappDrafts.createdAt})`;
     const sent = await this.ctx.db
       .select({ text: schema.whatsappDrafts.text, at: sql<Date>`${at}` })
@@ -1192,7 +1279,8 @@ export class WhatsAppChannel {
       .where(and(eq(schema.whatsappDrafts.chat, chat), eq(schema.whatsappDrafts.status, 'sent')))
       .orderBy(desc(at))
       .limit(50);
-    if (!sent[0]) return false;
+    const since = sent[0] ? new Date(sent[0].at) : otherwise;
+    if (!since) return false;
     const mine = await this.ctx.db
       .select({ text: schema.whatsappMessages.text })
       .from(schema.whatsappMessages)
@@ -1202,11 +1290,464 @@ export class WhatsAppChannel {
           eq(schema.whatsappMessages.fromMe, true),
           eq(schema.whatsappMessages.hidden, false),
           // A message's time is kept to the second.
-          gte(schema.whatsappMessages.at, new Date(Math.floor(new Date(sent[0].at).getTime() / 1000) * 1000)),
+          gte(schema.whatsappMessages.at, new Date(Math.floor(since.getTime() / 1000) * 1000)),
         ),
       );
     const texts = new Set(sent.map((d) => d.text));
     return mine.some((r) => !texts.has(r.text));
+  }
+
+  // Chats given to bots, and the front door
+
+  private loadRoutes(settings: Settings) {
+    this.routes = new Map((settings.routes ?? []).map((r) => [routeChat(r.chat), r]));
+    this.door = settings.door ?? null;
+  }
+
+  /** The routes as the settings show them, with the name each chat goes by here. */
+  private async routesShown(routes: WhatsAppRoute[]) {
+    if (!routes.length) return [];
+    const rows = await this.ctx.db
+      .select({
+        jid: schema.whatsappChats.jid,
+        name: schema.whatsappChats.name,
+        savedName: schema.whatsappChats.savedName,
+      })
+      .from(schema.whatsappChats)
+      .where(
+        inArray(
+          schema.whatsappChats.jid,
+          routes.map((r) => routeChat(r.chat)),
+        ),
+      );
+    const names = new Map(rows.map((r) => [r.jid, shownName(r)]));
+    return routes.map((r) => ({ ...r, name: names.get(routeChat(r.chat)) ?? '' }));
+  }
+
+  /** Who answers a chat now: the bot it is given to, else the front door for a person. */
+  private contactTarget(chat: string, kind: 'person' | 'group') {
+    const route = this.routes.get(chat);
+    if (route) return { role: 'route' as const, botId: route.botId, mode: route.mode };
+    if (kind === 'person' && this.door) return { role: 'door' as const, ...this.door };
+    return null;
+  }
+
+  /** Holds a message for the chat's own bot, or the front door; it goes when the chat is quiet. */
+  private queueContact(chat: string, kind: 'person' | 'group', line: string, seq: number) {
+    const target = this.contactTarget(chat, kind);
+    if (!target || target.mode === 'off') return;
+    const open = this.contactWaits.get(chat) ?? {
+      kind,
+      lines: [],
+      firstSeq: seq,
+      firstId: newId().slice(0, 12),
+      startedAt: Date.now(),
+      timer: null,
+    };
+    open.lines.push(line);
+    if (open.timer) clearTimeout(open.timer);
+    const left = Math.max(0, Math.min(this.chatQuietMs, open.startedAt + this.chatMaxWaitMs - Date.now()));
+    open.timer = setTimeout(() => {
+      this.reading = this.reading
+        .then(() => this.flushContact(chat))
+        .catch((err: unknown) => console.warn('whatsapp contact', err));
+    }, left);
+    this.contactWaits.set(chat, open);
+  }
+
+  /**
+   * Gives a chat's waiting messages to the bot that answers it, in that bot's conversation for the
+   * chat. They are someone else's words, written by someone with no account here: the turn works
+   * with no one's own data and asks before anything but its answer, and its answer is what goes
+   * back to the chat (`onTurnFinished`).
+   */
+  private async flushContact(chat: string) {
+    const wait = this.contactWaits.get(chat);
+    if (!wait) return;
+    this.contactWaits.delete(chat);
+    if (wait.timer) clearTimeout(wait.timer);
+    const target = this.contactTarget(chat, wait.kind);
+    const owner = await this.ownerId();
+    if (!target || target.mode === 'off' || !owner) return;
+    const bot = await this.services.bots.get(target.botId).catch(() => null);
+    if (!bot || bot.archivedAt) return;
+    const t = await this.services.settings.translator();
+    const [row] = await this.ctx.db
+      .select()
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, chat))
+      .limit(1);
+    if (!row) return;
+    const label = shownName(row);
+    const who =
+      wait.kind === 'group'
+        ? label || chat
+        : label
+          ? `${label} (+${numberOf(chat) ?? chat})`
+          : `+${numberOf(chat) ?? chat}`;
+    const thread = await this.contactThread(chat, target.role, bot.id, owner, who, t);
+    // Someone writing on and on starts only so many turns an hour; what is past that stays kept.
+    const [{ n }] = (await this.ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, thread),
+          sql`${schema.messages.props}->>'whatsappContact' is not null`,
+          gt(schema.messages.createdAt, new Date(Date.now() - 3600_000)),
+        ),
+      )) as [{ n: number }];
+    if (n >= CONTACT_TURNS_MAX) return;
+    // In a group, the lines before the mention say what it is about.
+    const before =
+      wait.kind === 'group'
+        ? (
+            await this.ctx.db
+              .select()
+              .from(schema.whatsappMessages)
+              .where(
+                and(eq(schema.whatsappMessages.chat, chat), lt(schema.whatsappMessages.seq, wait.firstSeq)),
+              )
+              .orderBy(desc(schema.whatsappMessages.seq))
+              .limit(MENTION_CONTEXT)
+          )
+            .reverse()
+            .map((r) => `[${r.at.toISOString()}] ${r.writer}: ${r.text}`)
+        : [];
+    const lead =
+      wait.kind === 'group'
+        ? t('whatsapp.contactGroupLead', { name: who, silent: SILENT_REPLY })
+        : t(target.role === 'door' ? 'whatsapp.doorLead' : 'whatsapp.contactLead', {
+            name: who,
+            silent: SILENT_REPLY,
+          });
+    await this.services.inbox.send(thread, {
+      text: [
+        t(wait.kind === 'group' ? 'whatsapp.groupHeader' : 'whatsapp.chatHeader', { name: who }),
+        ...(before.length ? ['', t('whatsapp.chatBefore'), ...before, '', t('whatsapp.chatNew')] : ['']),
+        ...wait.lines,
+      ].join('\n'),
+      clientId: `whatsapp-contact:${chat}:${wait.firstId}`.slice(0, 120),
+      userId: owner,
+      guest: true,
+      props: { via: 'whatsapp', outside: 'whatsapp', lead, whatsappContact: chat },
+    });
+  }
+
+  /** The conversation a bot keeps for a chat it answers, made the first time; the person's own. */
+  private async contactThread(
+    chat: string,
+    role: ContactRole,
+    botId: string,
+    owner: string,
+    who: string,
+    t: T,
+  ): Promise<string> {
+    const key = contactKey(role, botId);
+    const [row] = await this.ctx.db
+      .select({ threads: schema.whatsappChats.threads })
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, chat))
+      .limit(1);
+    const kept = row?.threads[key];
+    if (kept) {
+      const thread = await this.services.threads.row(kept).catch(() => null);
+      if (thread && !thread.archivedAt) return kept;
+    }
+    const made = await this.services.threads.create(botId, {
+      title: truncate(
+        t(role === 'door' ? 'whatsapp.doorTitle' : 'whatsapp.contactTitle', { name: who }),
+        120,
+      ),
+      userId: owner,
+    });
+    await this.moveOn(chat, 0, { [key]: made.id }, null);
+    return made.id;
+  }
+
+  /** The conversations kept for a chat by its own bot and the front door. */
+  private async contactThreads(chat: string): Promise<string[]> {
+    const [row] = await this.ctx.db
+      .select({ threads: schema.whatsappChats.threads })
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, chat))
+      .limit(1);
+    return Object.entries(row?.threads ?? {})
+      .filter(([k]) => k.startsWith('door:') || k.startsWith('route:'))
+      .map(([, v]) => v);
+  }
+
+  /**
+   * The chat a conversation answers, when it is one a bot keeps for a chat given to it (`route`)
+   * or at the front door (`door`). Every turn there works with no one's own data, and at the front
+   * door with no tool but suggesting a bot for the chat.
+   */
+  async contactOf(
+    threadId: string,
+  ): Promise<{ chat: string; kind: 'person' | 'group'; role: ContactRole; botId: string } | null> {
+    const [row] = await this.ctx.db
+      .select({
+        jid: schema.whatsappChats.jid,
+        kind: schema.whatsappChats.kind,
+        threads: schema.whatsappChats.threads,
+      })
+      .from(schema.whatsappChats)
+      .where(
+        sql`exists (select 1 from jsonb_each_text(${schema.whatsappChats.threads}) e where e.value = ${threadId} and (e.key like 'door:%' or e.key like 'route:%'))`,
+      )
+      .limit(1);
+    if (!row) return null;
+    const key = Object.entries(row.threads).find(
+      ([k, v]) => v === threadId && (k.startsWith('door:') || k.startsWith('route:')),
+    )?.[0];
+    if (!key) return null;
+    const [role, botId] = key.split(':') as [ContactRole, string];
+    return { chat: row.jid, kind: row.kind, role, botId };
+  }
+
+  /**
+   * The answer of a turn the chat's own messages started goes back to the chat: at once when its
+   * mode says so and nobody answered there by hand, else on a card. A group is never written to:
+   * the answer stays in the conversation, for the person. A failed, stopped or silent turn sends
+   * nothing.
+   */
+  async onTurnFinished(
+    turn: { id: string; threadId: string; botId: string },
+    outcome: TurnOutcome,
+  ): Promise<void> {
+    if (!outcome.ok) return;
+    const text = outcome.text.trim();
+    if (!text || isSilentReply(text)) return;
+    const contact = await this.contactOf(turn.threadId);
+    if (!contact || contact.kind === 'group' || contact.botId !== turn.botId) return;
+    const [started] = await this.ctx.db
+      .select({ at: schema.messages.createdAt })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, turn.threadId),
+          eq(schema.messages.turnId, turn.id),
+          sql`${schema.messages.props}->>'whatsappContact' is not null`,
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAt))
+      .limit(1);
+    if (!started) return;
+    // The mode as it is now: a route taken away or a door changed since asks first.
+    const target = this.contactTarget(contact.chat, contact.kind);
+    const mode: WhatsAppReplyMode =
+      target && target.role === contact.role && target.botId === contact.botId ? target.mode : 'draft';
+    if (mode === 'off') return;
+    const typed = await this.typedSince(contact.chat, new Date(started.at.getTime() - 3600_000));
+    if (mode === 'auto' && !typed) {
+      const sent = await this.sendNow({
+        botId: contact.botId,
+        threadId: turn.threadId,
+        chat: contact.chat,
+        text,
+      });
+      if (sent !== 'card') return;
+    }
+    const t = await this.services.settings.translator();
+    // One answer waits at a time: a newer one takes the place of the one not yet answered.
+    const open = await this.ctx.db
+      .select({ approvalId: schema.whatsappDrafts.approvalId })
+      .from(schema.whatsappDrafts)
+      .where(
+        and(
+          eq(schema.whatsappDrafts.chat, contact.chat),
+          eq(schema.whatsappDrafts.threadId, turn.threadId),
+          eq(schema.whatsappDrafts.status, 'pending'),
+        ),
+      );
+    for (const d of open) {
+      await this.services.approvals
+        .answer(d.approvalId, { decision: 'deny', remember: false })
+        .catch((err: unknown) => console.warn('whatsapp draft', errorText(err)));
+    }
+    const known = await this.knownChat(contact.chat);
+    const number = contact.chat.replace(/@.*$/, '');
+    await this.putOnCard({
+      botId: contact.botId,
+      threadId: turn.threadId,
+      kind: 'message',
+      chat: contact.chat,
+      text,
+      file: null,
+      summary: t('whatsapp.draftCard', {
+        to: known?.name ? `${known.name} (${number})` : `+${number}`,
+        text,
+      }),
+      approve: t('whatsapp.send'),
+      reject: t('whatsapp.dontSend'),
+    });
+  }
+
+  /**
+   * Puts a draft on a card in a conversation and keeps it; the answer is handled when it comes
+   * (`settleDrafts`), not by whoever drafted it, who does not wait for it.
+   */
+  async putOnCard(d: {
+    botId: string;
+    threadId: string;
+    kind: 'message' | 'status';
+    chat: string | null;
+    text: string;
+    file: string | null;
+    summary: string;
+    approve: string;
+    reject: string;
+  }): Promise<void> {
+    let made!: () => void;
+    const created = new Promise<void>((done) => (made = done));
+    const id = newId();
+    const asked = this.services.approvals.ask({
+      threadId: d.threadId,
+      botId: d.botId,
+      turnId: null,
+      kind: 'question',
+      toolName: d.kind === 'status' ? 'whatsapp_status' : 'whatsapp_send',
+      input: { chat: d.chat, text: d.text, file: d.file },
+      summary: d.summary,
+      options: [d.approve, d.reject],
+      onCreated: async (ap) => {
+        await this.ctx.db.insert(schema.whatsappDrafts).values({
+          id,
+          approvalId: ap.id,
+          botId: d.botId,
+          threadId: d.threadId,
+          kind: d.kind,
+          chat: d.chat,
+          text: d.text,
+          file: d.file,
+          approve: d.approve,
+        });
+        await this.services.threads.addMessage({
+          threadId: d.threadId,
+          role: 'approval',
+          author: `bot:${d.botId}`,
+          text: ap.summary,
+          props: { approvalId: ap.id },
+        });
+        made();
+      },
+    });
+    void asked.catch((err: unknown) => console.warn('whatsapp draft card', err));
+    await Promise.race([created, asked.then(() => undefined)]);
+  }
+
+  /**
+   * The front door suggests a bot for the chat it answers: a card to the person, who gives the
+   * chat to that bot (its answers on cards) or not. The chat is the door's own; one suggestion
+   * waits at a time.
+   */
+  async suggestRoute(
+    d: { threadId: string; botId: string; ref: string; reason: string },
+    t: T,
+  ): Promise<string> {
+    const contact = await this.contactOf(d.threadId);
+    if (!contact || contact.role !== 'door' || contact.kind !== 'person')
+      return t('tool.whatsappRouteNotHere');
+    const owner = await this.ownerId();
+    if (!owner) return t('tool.whatsappRouteNotHere');
+    const reached = new Set(
+      await this.services.access.botIds(await this.services.access.viewerOf(owner), 'chat'),
+    );
+    const bots = (await this.services.bots.list()).filter(
+      (b) => reached.has(b.id) && !b.archivedAt && b.id !== d.botId,
+    );
+    const ref = d.ref.trim().toLocaleLowerCase();
+    const bot = bots.find((b) => b.id === d.ref.trim() || b.name.toLocaleLowerCase() === ref);
+    if (!bot) return t('tool.whatsappRouteUnknown', { names: bots.map((b) => b.name).join(', ') || '-' });
+    const waiting = await this.ctx.db
+      .select({ id: schema.approvals.id })
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.toolName, 'whatsapp_route'),
+          eq(schema.approvals.status, 'pending'),
+          sql`${schema.approvals.input}->>'chat' = ${contact.chat}`,
+        ),
+      )
+      .limit(1);
+    if (waiting.length) return t('tool.whatsappRouteWaiting');
+    const [row] = await this.ctx.db
+      .select({ name: schema.whatsappChats.name, savedName: schema.whatsappChats.savedName })
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, contact.chat))
+      .limit(1);
+    const number = `+${numberOf(contact.chat) ?? contact.chat}`;
+    // The name a person gives themselves on WhatsApp is theirs to choose: shown as theirs.
+    const who = row?.savedName
+      ? `${row.savedName} (${number})`
+      : row?.name
+        ? t('whatsapp.routeWho', { number, name: row.name })
+        : number;
+    const yes = t('whatsapp.routeYes');
+    let made!: () => void;
+    const created = new Promise<void>((done) => (made = done));
+    const asked = this.services.approvals.ask({
+      threadId: d.threadId,
+      botId: d.botId,
+      turnId: null,
+      kind: 'question',
+      toolName: 'whatsapp_route',
+      input: { chat: contact.chat, botId: bot.id, yes },
+      summary: t('whatsapp.routeCard', {
+        who,
+        bot: bot.name,
+        reason: truncate(d.reason.trim().replace(/\s+/g, ' '), 300),
+      }),
+      options: [yes, t('whatsapp.routeNo')],
+      onCreated: async (ap) => {
+        await this.services.threads.addMessage({
+          threadId: d.threadId,
+          role: 'approval',
+          author: `bot:${d.botId}`,
+          text: ap.summary,
+          props: { approvalId: ap.id },
+        });
+        made();
+      },
+    });
+    void asked.catch((err: unknown) => console.warn('whatsapp route card', err));
+    await Promise.race([created, asked.then(() => undefined)]);
+    return t('tool.whatsappRouteAsked', { bot: bot.name });
+  }
+
+  /** Gives a chat to the bot a front-door card named, once the person said yes; each card once. */
+  private async settleRoutes() {
+    const row = await this.row();
+    if (!row) return;
+    const settings = row.settings as Settings;
+    const done = new Set(settings.routeAnswers ?? []);
+    const answered = await this.ctx.db
+      .select({
+        id: schema.approvals.id,
+        status: schema.approvals.status,
+        answer: schema.approvals.answer,
+        input: schema.approvals.input,
+      })
+      .from(schema.approvals)
+      .where(and(eq(schema.approvals.toolName, 'whatsapp_route'), ne(schema.approvals.status, 'pending')));
+    const fresh = answered.filter((a) => !done.has(a.id));
+    if (!fresh.length) return;
+    const routes = [...(settings.routes ?? [])];
+    for (const a of fresh) {
+      const input = a.input as { chat?: unknown; botId?: unknown; yes?: unknown };
+      if (a.status !== 'allowed' || a.answer !== input.yes) continue;
+      if (typeof input.chat !== 'string' || typeof input.botId !== 'string') continue;
+      const chat = numberOf(input.chat) ?? input.chat;
+      const at = routes.findIndex((r) => routeChat(r.chat) === input.chat);
+      // What the door suggested asks first: the person decides later whether it goes at once.
+      const route: WhatsAppRoute = { chat, botId: input.botId, mode: 'draft' };
+      if (at >= 0) routes[at] = route;
+      else routes.push(route);
+    }
+    const kept = [...done, ...fresh.map((a) => a.id)].slice(-200);
+    await this.saveSettings(row, { routes, routeAnswers: kept });
+    this.loadRoutes({ ...settings, routes });
+    this.changed();
   }
 
   // Chats routines read: people who write to the account, and followed groups
@@ -1215,7 +1756,9 @@ export class WhatsAppChannel {
     const reads = await this.services.routines.whatsappReads();
     this.followed = reads.groups;
     this.people = reads.people;
-    this.allChats = ((await this.row())?.settings as Settings | undefined)?.chats === true;
+    const settings = ((await this.row())?.settings ?? {}) as Settings;
+    this.allChats = settings.chats === true;
+    this.loadRoutes(settings);
     // A chat no longer read keeps what was stored, but no batch goes out for it.
     for (const [jid, wait] of this.waits) {
       if (jid.endsWith('@g.us') ? this.followed.has(jid) : this.people) continue;
@@ -1443,9 +1986,18 @@ export class WhatsAppChannel {
     // Handed again, or sent from here: already kept.
     if (!stored) return;
     // An answer from someone a bot wrote to reaches that bot, whether or not a routine reads the chat.
-    if (kind === 'person' && !m.key.fromMe && !hidden) {
-      const line = `[${at.toISOString()}] ${writer}: ${quote}${truncate(text, CHAT_TEXT_MAX)}`;
-      await this.queueReply(chat, media ? `${line}\n  ${t('whatsapp.fileNotKept')}` : line, t);
+    if (!m.key.fromMe && !hidden) {
+      const said = `[${at.toISOString()}] ${writer}: ${quote}${truncate(text, CHAT_TEXT_MAX)}`;
+      const line = media ? `${said}\n  ${t('whatsapp.fileNotKept')}` : said;
+      // The bot that wrote to the person lately has their answer; else the bot the chat is given
+      // to, or the front door. In a group, only a message to the account.
+      const taken = kind === 'person' && (await this.queueReply(chat, line, t));
+      if (
+        !taken &&
+        (kind === 'person' ||
+          (this.routes.has(chat) && mentionsAccount(m, [socket.user?.id ?? '', socket.user?.lid ?? ''])))
+      )
+        this.queueContact(chat, kind, line, stored.seq);
     }
     // A chat no routine reads is kept for the bots to look at, not handed over: its place moves on
     // at once, so a routine that starts reading it later gets what comes next, not 30 days of it.

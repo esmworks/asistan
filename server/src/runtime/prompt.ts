@@ -77,6 +77,11 @@ export function buildSystemPrompt(opts: {
   email?: string | null;
   /** A team conversation: several people, and no one's own data. */
   team?: boolean;
+  /**
+   * A WhatsApp chat the bot answers for the person: one given to it (`route`) or at the front
+   * door (`door`). Like a team conversation it has no one's own data, but it is not the team's.
+   */
+  contact?: 'route' | 'door';
   /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
   recall?: boolean;
 }): string {
@@ -93,7 +98,9 @@ export function buildSystemPrompt(opts: {
       lines.push(`- ${m.name}${m.description ? `: ${listed(m.description)}` : ''}`);
     lines.push(t('prompt.roomHow', { silent: SILENT_REPLY }));
   }
-  if (opts.team) lines.push('', t('prompt.team'));
+  if (opts.contact)
+    lines.push('', t(opts.contact === 'door' ? 'prompt.whatsappDoor' : 'prompt.whatsappContact'));
+  else if (opts.team) lines.push('', t('prompt.team'));
 
   // The time itself comes with each message (see `nowLine`): here it would change the prompt on
   // every turn and void the model's cache of the whole conversation.

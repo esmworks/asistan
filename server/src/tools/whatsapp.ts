@@ -3,11 +3,9 @@ import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import { PhoneNumber, type Bot, type WhatsAppGroup } from '@yumakbot/shared';
 import type { ChatReads } from '../channels/whatsapp';
 import { z } from 'zod';
-import { schema } from '../db';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
 import type { Services } from '../services';
-import { newId } from '../util';
 import { realPath } from '../workspace';
 import type { Define } from './index';
 
@@ -122,43 +120,7 @@ export function whatsappTools(opts: {
     reject: string;
   }) => {
     const thread = await s.threads.main(bot.id, person);
-    let made!: () => void;
-    const created = new Promise<void>((done) => (made = done));
-    const id = newId();
-    const asked = s.approvals.ask({
-      threadId: thread.id,
-      botId: bot.id,
-      turnId: null,
-      kind: 'question',
-      toolName: d.kind === 'status' ? 'whatsapp_status' : 'whatsapp_send',
-      input: { chat: d.chat, text: d.text, file: d.file },
-      summary: d.summary,
-      options: [d.approve, d.reject],
-      onCreated: async (ap) => {
-        await s.ctx.db.insert(schema.whatsappDrafts).values({
-          id,
-          approvalId: ap.id,
-          botId: bot.id,
-          threadId: thread.id,
-          kind: d.kind,
-          chat: d.chat,
-          text: d.text,
-          file: d.file,
-          approve: d.approve,
-        });
-        await s.threads.addMessage({
-          threadId: thread.id,
-          role: 'approval',
-          author: `bot:${bot.id}`,
-          text: ap.summary,
-          props: { approvalId: ap.id },
-        });
-        made();
-      },
-    });
-    // The answer is handled by the channel when it comes, not by this turn.
-    void asked.catch((err: unknown) => console.warn('whatsapp draft card', err));
-    await Promise.race([created, asked.then(() => undefined)]);
+    await wa.putOnCard({ ...d, botId: bot.id, threadId: thread.id });
     return t('tool.whatsappDrafted');
   };
 
