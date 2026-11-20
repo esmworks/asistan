@@ -1314,6 +1314,7 @@ export class ToolFactory {
           // Every chat is reached only for the person's own message or a routine they saved, not
           // for a run a mail, a webhook, a watched page or a WhatsApp chat started.
           asked: async () => (await requestedBy(this.ctx, turn)) !== null,
+          woken: () => s.whatsapp.wokenBy(turn),
           // Reading someone's chats starts only on the person's own word, whatever the bot's level.
           askOpen: async () => {
             const yes = t('tool.whatsappFollowYes');

@@ -30,6 +30,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { Ctx } from '../context';
+import { SILENT_REPLY } from '../engine/types';
 import { schema } from '../db';
 import type { ServerKey, T } from '../i18n';
 import type { Services } from '../services';
@@ -84,6 +85,11 @@ const CHAT_CONTEXT = 20;
 const CHAT_TEXT_MAX = 4000;
 /** How long the messages of chats routines read are kept. */
 const CHAT_KEEP_MS = 30 * 24 * 3600_000;
+/**
+ * How long after a bot's message went out a reply in that chat wakes the bot, where no routine
+ * reads the chat: the answer to what it asked comes back to it.
+ */
+const REPLY_WAKE_MS = 7 * 24 * 3600_000;
 /** How often what is older than that is dropped. */
 const PRUNE_EVERY_MS = 6 * 3600_000;
 /** Where a Status post goes. */
@@ -981,12 +987,8 @@ export class WhatsAppChannel {
     this.followed = reads.groups;
     this.people = reads.people;
     this.allChats = ((await this.row())?.settings as Settings | undefined)?.chats === true;
-    // A chat no longer read keeps what was stored, but no batch goes out for it.
-    for (const [jid, wait] of this.waits) {
-      if (jid.endsWith('@g.us') ? this.followed.has(jid) : this.people) continue;
-      if (wait.timer) clearTimeout(wait.timer);
-      this.waits.delete(jid);
-    }
+    // A chat no longer read keeps what was stored; its batch, when it comes, goes only where the
+    // hand-over finds a reader (a routine, or the bot that wrote to it).
   }
 
   /** Whose WhatsApp is linked: who set it up; null when it is not set up. */
@@ -1006,6 +1008,77 @@ export class WhatsAppChannel {
     await this.saveSettings(row, { chats: on });
     this.allChats = on;
     this.changed();
+  }
+
+  /**
+   * The bot whose message went out to a person's chat lately, and the conversation it drafted it
+   * in: a reply there goes back to it. Null when no bot wrote to the chat in that time.
+   */
+  async drafter(chat: string): Promise<{ botId: string; threadId: string } | null> {
+    const [row] = await this.ctx.db
+      .select({ botId: schema.whatsappDrafts.botId, threadId: schema.whatsappDrafts.threadId })
+      .from(schema.whatsappDrafts)
+      .where(
+        and(
+          eq(schema.whatsappDrafts.chat, chat),
+          eq(schema.whatsappDrafts.kind, 'message'),
+          eq(schema.whatsappDrafts.status, 'sent'),
+          gt(schema.whatsappDrafts.createdAt, new Date(Date.now() - REPLY_WAKE_MS)),
+        ),
+      )
+      .orderBy(desc(schema.whatsappDrafts.createdAt))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Wakes the bot that wrote to a chat with the reply, in the conversation it wrote from. The
+   * reply is someone else's words: the turn is marked as outside text, so nothing it does goes
+   * without the person's card, and it reaches only this chat (`wokenBy`).
+   */
+  private async wake(
+    to: { botId: string; threadId: string },
+    chat: string,
+    title: string,
+    payload: string,
+    t: T,
+  ) {
+    const owner = await this.ownerId();
+    const bot = await this.services.bots.get(to.botId).catch(() => null);
+    const thread = await this.services.threads.row(to.threadId).catch(() => null);
+    if (!owner || !bot || bot.archivedAt || !thread) return;
+    const turn = await this.services.turns.enqueue({
+      threadId: thread.id,
+      botId: bot.id,
+      source: 'bot',
+      prompt: t('whatsapp.replyWake', { name: title, chat, payload, silent: SILENT_REPLY }),
+      outside: 'whatsapp',
+      userId: owner,
+    });
+    await this.services.threads.addMessage({
+      threadId: thread.id,
+      role: 'assistant',
+      author: `bot:${bot.id}`,
+      text: t('whatsapp.replyNote', { name: title }),
+      props: { whatsappReply: chat, wakeTurn: turn.id, outside: 'whatsapp' },
+    });
+  }
+
+  /** The chat whose reply started a turn, when one did: that turn reaches only this chat. */
+  async wokenBy(turn: { id: string; threadId: string; source: string; jobId: string | null }) {
+    if (turn.source !== 'bot' || turn.jobId) return null;
+    const [row] = await this.ctx.db
+      .select({ props: schema.messages.props })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.threadId, turn.threadId),
+          sql`${schema.messages.props}->>'wakeTurn' = ${turn.id}`,
+        ),
+      )
+      .limit(1);
+    const chat = (row?.props as { whatsappReply?: unknown } | undefined)?.whatsappReply;
+    return typeof chat === 'string' ? chat : null;
   }
 
   /**
@@ -1129,7 +1202,10 @@ export class WhatsAppChannel {
     if (!stored) return;
     // A chat no routine reads is kept for the bots to look at, not handed over: its place moves on
     // at once, so a routine that starts reading it later gets what comes next, not 30 days of it.
-    if (!(kind === 'group' ? this.followed.has(chat) : this.people)) {
+    // One a bot wrote to lately waits for the bot instead: the reply goes to it.
+    const routineRead = kind === 'group' ? this.followed.has(chat) : this.people;
+    const drafter = routineRead || kind === 'group' ? null : await this.drafter(chat);
+    if (!routineRead && !drafter) {
       if (media && !hidden) {
         await this.ctx.db
           .update(schema.whatsappMessages)
@@ -1142,7 +1218,15 @@ export class WhatsAppChannel {
     if (hidden) return;
     if (media) {
       const name = receivedName(media.kind, id, media.mime, media.name);
-      const file = await this.chatFile(socket, chat, kind, m, name, media.size);
+      const file = await this.chatFile(
+        socket,
+        chat,
+        kind,
+        m,
+        name,
+        media.size,
+        drafter ? [drafter.botId] : [],
+      );
       await this.ctx.db
         .update(schema.whatsappMessages)
         .set({ file })
@@ -1166,9 +1250,11 @@ export class WhatsAppChannel {
     m: WaMessage,
     name: string,
     size: number | undefined,
+    /** Bots a reply goes to besides the routines' (the one that wrote to the chat). */
+    also: string[] = [],
   ): Promise<{ name: string; size: number } | { failed: string }> {
     if ((size ?? 0) > RECEIVE_MAX) return { failed: 'whatsapp.groupFileTooLarge' };
-    const bots = await this.services.routines.chatReaders(chat, kind);
+    const bots = [...new Set([...(await this.services.routines.chatReaders(chat, kind)), ...also])];
     if (!bots.length) return { failed: 'whatsapp.groupFileFailed' };
     // The message id keeps two files of the same name apart.
     const file = `${(m.key.id ?? newId()).slice(0, 24)}-${safeFileName(name) || 'file'}`;
@@ -1224,7 +1310,10 @@ export class WhatsAppChannel {
       .where(eq(schema.whatsappChats.jid, chat))
       .limit(1);
     if (!row) return;
-    if (row.kind === 'group' ? !this.followed.has(chat) : !this.people) return;
+    const routineRead = row.kind === 'group' ? this.followed.has(chat) : this.people;
+    // A chat no routine reads goes to the bot that wrote to it lately, if any.
+    const drafter = routineRead || row.kind === 'group' ? null : await this.drafter(chat);
+    if (!routineRead && !drafter) return;
     // A batch a busy routine did not take goes out again as it was, nothing added to it.
     const held = row.heldSeq !== null && row.heldSeq > row.batchedSeq ? row.heldSeq : null;
     const fresh = await this.ctx.db
@@ -1279,6 +1368,12 @@ export class WhatsAppChannel {
         t('whatsapp.chatNew'),
         ...batch.map((r) => this.chatLine(r, botId, t)),
       ].join('\n');
+    if (drafter) {
+      await this.wake(drafter, chat, title, payloadFor(drafter.botId), t);
+      await this.moveOn(chat, last, {}, null);
+      if (more) this.waitForQuiet(chat, 0);
+      return;
+    }
     const handed = await this.services.routines.runFromWhatsApp(
       { jid: chat, kind: row.kind, name: row.name || chat, threads: row.threads },
       `${chat}:${batch[0]!.seq}-${last}`,
@@ -1375,6 +1470,7 @@ export class WhatsAppChannel {
       : or(
           reads.people ? eq(schema.whatsappChats.kind, 'person') : undefined,
           groups.length ? inArray(schema.whatsappChats.jid, groups) : undefined,
+          reads.chats?.size ? inArray(schema.whatsappChats.jid, [...reads.chats]) : undefined,
         );
     if (!covered) return [];
     return this.ctx.db
@@ -2227,10 +2323,12 @@ export interface ChatReads {
   people: boolean;
   /** Every chat kept here: the bots may read them all. */
   all?: boolean;
+  /** Chats reached one by one: the one whose reply woke the bot. */
+  chats?: Set<string>;
 }
 
 function covers(reads: ChatReads, chat: { jid: string; kind: 'person' | 'group' }): boolean {
-  if (reads.all) return true;
+  if (reads.all || reads.chats?.has(chat.jid)) return true;
   return chat.kind === 'group' ? reads.groups.has(chat.jid) : reads.people;
 }
 

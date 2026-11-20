@@ -37,6 +37,8 @@ export function whatsappTools(opts: {
    * may the bot reach chats beyond its routines', or ask to.
    */
   asked: () => Promise<boolean>;
+  /** The chat whose reply started this turn, if one did: the turn reaches it too. */
+  woken: () => Promise<string | null>;
   /** Asks the person on a card whether the bots may read every chat. */
   askOpen: () => Promise<'yes' | 'no' | 'timeout'>;
   t: T;
@@ -47,7 +49,10 @@ export function whatsappTools(opts: {
   /** The chats the bot sees: all of them once the person allowed it, else its routines'; null for none. */
   const reach = async (): Promise<ChatReads | null> => {
     if ((await wa.chatsOpen()) && (await opts.asked())) return every;
-    return opts.reader ? s.routines.whatsappReadsOf(bot.id) : null;
+    const own = opts.reader ? await s.routines.whatsappReadsOf(bot.id) : null;
+    const woke = await opts.woken();
+    if (!woke) return own;
+    return { groups: own?.groups ?? new Set(), people: own?.people ?? false, chats: new Set([woke]) };
   };
   /**
    * The chats the bot sees, or the person is asked first; a string is what the tool answers when
