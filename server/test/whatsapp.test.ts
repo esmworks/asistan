@@ -949,6 +949,47 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect((await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.chats).toBe(true);
   });
 
+  it('aynı turda sohbeti okuyup cevap taslağı hazırlar', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Akşam geliyor musun?' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 1);
+    const thread = (await t.api<Thread>('GET', `/api/bots/${asistan.id}/main-thread`)).body;
+    await t.send(
+      thread.id,
+      `[araç:whatsapp_history {"chat":"${CUSTOMER}@s.whatsapp.net"}] [araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"Geliyorum"}]`,
+    );
+    const card = await waitFor(async () =>
+      (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+        (a) => a.toolName === 'whatsapp_send',
+      ),
+    );
+    expect(card.summary).toContain('Ahmet (905001112233)');
+    expect(card.summary).toContain('Geliyorum');
+  });
+
+  it('dışarıdan başlayan bir çalışma, izin açıkken de rutinlerin okumadığı sohbete bakamaz', async () => {
+    const { wa, asistan } = await setUp();
+    wa.groups[GROUP] = { id: GROUP, subject: 'Finans' };
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'özel konu' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 1);
+    // A group message starts this run: nobody asked for it, so it sees only the group it follows.
+    const r = await routine(asistan.id, {
+      whatsappGroup: GROUP,
+      prompt: `[araç:whatsapp_history {"chat":"${CUSTOMER}@s.whatsapp.net"}] [araç:whatsapp_chats {}]`,
+    });
+    await waitFor(async () => reads().followed.has(GROUP));
+    wa.chat(GROUP, { conversation: 'ödeme geldi' }, { participant: `${CUSTOMER}@s.whatsapp.net` });
+    const [run] = await runs(r.id);
+    await t.services.turns.idle();
+    const said = (await t.messages(run!.threadId!)).map((m) => m.text).join('\n');
+    expect(said).toContain('Bu WhatsApp sohbeti burada saklanmıyor');
+    expect(said).not.toContain('özel konu');
+    expect(said).not.toContain(`${CUSTOMER}@s.whatsapp.net · person`);
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toEqual([]);
+  });
+
   it('izinle saklanan eski mesajlar, sonradan açılan rutine yeni diye gitmez', async () => {
     const { wa, asistan } = await setUp();
     await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });

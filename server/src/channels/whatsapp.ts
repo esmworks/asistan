@@ -367,10 +367,10 @@ export function contentOf(m: WaMessage): {
  * the account that will carry the messages. With their own number they write to the bots in
  * "Message yourself"; with a separate number they write to it from their own. Messages go to one
  * bot at a time, and `/bot <name>` changes which. Nobody else's chats are read unless a routine of
- * the person who linked WhatsApp reads them: people's chats with the account when one has that
- * switch on, and the groups one follows. Their messages are kept 30 days and start that routine as
- * outside text; a reply goes only once the person approves its draft, and nothing is ever written
- * to a group.
+ * the person who linked WhatsApp reads them (people's chats with the account when one has that
+ * switch on, and the groups one follows), or the person let the bots read every chat. Their
+ * messages are kept 30 days; only the chats routines read start a routine, as outside text. A
+ * message goes only once the person approves its draft, and nothing is ever written to a group.
  */
 export class WhatsAppChannel {
   /** How Baileys is reached; tests replace it. */
@@ -420,7 +420,7 @@ export class WhatsAppChannel {
   linkMs = LINK_MS;
   private version: { value: WaVersion; at: number } | null = null;
   private requestTimes: number[] = [];
-  /** Groups an enabled routine follows; every other group is dropped unread. */
+  /** Groups an enabled routine follows; every other group is dropped unread unless the bots read every chat. */
   private followed = new Set<string>();
   /** Whether a routine reads what people write to the account in chats of their own. */
   private people = false;
@@ -1224,17 +1224,7 @@ export class WhatsAppChannel {
       .where(eq(schema.whatsappChats.jid, chat))
       .limit(1);
     if (!row) return;
-    if (row.kind === 'group' ? !this.followed.has(chat) : !this.people) {
-      // No routine reads it any more: what waited is not handed over later all at once either.
-      const [last] = await this.ctx.db
-        .select({ seq: schema.whatsappMessages.seq })
-        .from(schema.whatsappMessages)
-        .where(eq(schema.whatsappMessages.chat, chat))
-        .orderBy(desc(schema.whatsappMessages.seq))
-        .limit(1);
-      if (last) await this.moveOn(chat, last.seq, {}, null);
-      return;
-    }
+    if (row.kind === 'group' ? !this.followed.has(chat) : !this.people) return;
     // A batch a busy routine did not take goes out again as it was, nothing added to it.
     const held = row.heldSeq !== null && row.heldSeq > row.batchedSeq ? row.heldSeq : null;
     const fresh = await this.ctx.db

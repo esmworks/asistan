@@ -29,6 +29,7 @@ import type { Ctx } from '../context';
 import { schema } from '../db';
 import { planItems, type AppTool, type PlanItem, type ToolResult } from '../engine/types';
 import { attended, type TurnRow } from '../runtime/turns';
+import { requestedBy } from '../runtime/owner-words';
 import { STRICTNESS } from '../services/approvals';
 import type { Services } from '../services';
 import { isServerKey, type T } from '../i18n';
@@ -1310,6 +1311,9 @@ export class ToolFactory {
           cwd: bot.projectDir ?? workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, null).threadDir,
           drafts: bot.permissionMode !== 'readonly',
           reader: !!opts.whatsappReader,
+          // Every chat is reached only for the person's own message or a routine they saved, not
+          // for a run a mail, a webhook, a watched page or a WhatsApp chat started.
+          asked: async () => (await requestedBy(this.ctx, turn)) !== null,
           // Reading someone's chats starts only on the person's own word, whatever the bot's level.
           askOpen: async () => {
             const yes = t('tool.whatsappFollowYes');

@@ -1349,6 +1349,8 @@ const tr = {
   'tool.whatsappOpenQuestion':
     'Botlarınız istediğinizde bağlı WhatsApp hesabının sohbetlerini (kişiler ve gruplar) listeleyip okuyabilir ve mesaj taslağı hazırlayabilir; bir mesaj yalnızca kartında onaylarsanız gider, gruplara hiçbir şey yazılmaz. Sohbetler bundan sonra saklanır; daha eski mesajlar görünmez. Kanallar sayfasından kapatabilirsiniz.',
   'tool.whatsappOpenSkipped': 'Kişi izin vermedi; WhatsApp sohbetleri okunamıyor.',
+  'tool.whatsappNotAsked':
+    'Bu çalışmayı kişi istemedi (bir e-posta, web kancası, izlenen sayfa ya da WhatsApp sohbeti başlattı); bu yüzden rutinlerin okumadığı WhatsApp sohbetlerine bakılmaz.',
   'tool.whatsappBadFile': 'Dosya botun kendi klasöründe değil ya da yok: {file}',
   'tool.whatsappEmpty': 'Gönderilecek bir metin ya da dosya yok.',
   'tool.whatsappDrafted': 'Taslak kişiye kartla sunuldu; onaylarsa gönderilecek. Kartın sonucunu bekleme.',
@@ -2773,6 +2775,8 @@ const en: Catalog<ServerKey> = {
   'tool.whatsappOpenQuestion':
     'Your bots can list and read the chats of the linked WhatsApp account (people and groups) when you ask, and draft messages; a message goes only if you approve it on its card, and nothing is ever written to a group. Chats are kept from now on; older messages are not seen. You can turn this off on the Channels page.',
   'tool.whatsappOpenSkipped': 'The person did not allow it; the WhatsApp chats cannot be read.',
+  'tool.whatsappNotAsked':
+    'The person did not ask for this work (a mail, a webhook, a watched page or a WhatsApp chat started it), so WhatsApp chats no routine reads are not looked at.',
   'tool.whatsappBadFile': 'The file is not in the bot’s own folder, or does not exist: {file}',
   'tool.whatsappEmpty': 'There is no text or file to send.',
   'tool.whatsappDrafted':

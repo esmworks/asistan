@@ -32,6 +32,11 @@ export function whatsappTools(opts: {
   drafts: boolean;
   /** Whether a routine of the bot reads WhatsApp: it sees those chats without the bots reading all. */
   reader: boolean;
+  /**
+   * Whether the person asked for this work (their message, or a routine they saved): only then
+   * may the bot reach chats beyond its routines', or ask to.
+   */
+  asked: () => Promise<boolean>;
   /** Asks the person on a card whether the bots may read every chat. */
   askOpen: () => Promise<'yes' | 'no' | 'timeout'>;
   t: T;
@@ -41,7 +46,7 @@ export function whatsappTools(opts: {
   const every: ChatReads = { groups: new Set(), people: true, all: true };
   /** The chats the bot sees: all of them once the person allowed it, else its routines'; null for none. */
   const reach = async (): Promise<ChatReads | null> => {
-    if (await wa.chatsOpen()) return every;
+    if ((await wa.chatsOpen()) && (await opts.asked())) return every;
     return opts.reader ? s.routines.whatsappReadsOf(bot.id) : null;
   };
   /**
@@ -51,6 +56,7 @@ export function whatsappTools(opts: {
   const reachOrAsk = async (others = false): Promise<ChatReads | string> => {
     const r = await reach();
     if (r && (r.all || !others)) return r;
+    if (!(await opts.asked())) return r ?? t('tool.whatsappNotAsked');
     const answer = await opts.askOpen();
     if (answer === 'timeout') return t('tool.questionTimedOut');
     if (answer !== 'yes') return r ?? t('tool.whatsappOpenSkipped');
