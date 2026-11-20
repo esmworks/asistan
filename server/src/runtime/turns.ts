@@ -154,6 +154,10 @@ interface Running {
   steers: { turnId: string; messageId: string; prompt: string; outside: OutsideTrigger | null }[];
   /** Hand-overs still being written down; the turn waits for them before it ends. */
   handing: Promise<void>[];
+  /** Words held until the turn has said its last (see `afterTurn`). */
+  after: (() => Promise<void>)[];
+  /** Set once the held words are being written: later ones go in at once. */
+  ended: boolean;
 }
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
@@ -993,7 +997,15 @@ export class TurnManager {
 
   private launch(turn: TurnRow) {
     const controller = new AbortController();
-    const entry: Running = { turn, controller, done: Promise.resolve(), steers: [], handing: [] };
+    const entry: Running = {
+      turn,
+      controller,
+      done: Promise.resolve(),
+      steers: [],
+      handing: [],
+      after: [],
+      ended: false,
+    };
     this.running.set(turn.id, entry);
     this.emitState(turn.threadId, turn.botId);
     entry.done = this.execute(turn, controller)
@@ -1009,6 +1021,11 @@ export class TurnManager {
       })
       .then(async () => {
         await Promise.allSettled(entry.handing);
+        // Before the next turn here starts, so it reads them (see `withPosts`).
+        entry.ended = true;
+        for (let fn = entry.after.shift(); fn; fn = entry.after.shift()) {
+          await fn().catch((err: unknown) => console.warn('after turn', err));
+        }
       })
       .finally(() => {
         this.running.delete(turn.id);
@@ -1038,6 +1055,18 @@ export class TurnManager {
       entry.steers.push({ turnId, messageId, prompt: queued.prompt, outside: queued.outside });
     }
     await this.services.threads.markSteering(messageId, true);
+    return true;
+  }
+
+  /**
+   * Holds `write` until the turn running in the conversation has posted its reply; false when
+   * none runs there, and the caller writes at once. A reply is posted only when its turn ends, so
+   * a note written while the bot is still at work would land above an answer written without it.
+   */
+  afterTurn(threadId: string, write: () => Promise<void>): boolean {
+    const entry = [...this.running.values()].find((r) => r.turn.threadId === threadId && !r.ended);
+    if (!entry) return false;
+    entry.after.push(write);
     return true;
   }
 
@@ -1564,11 +1593,15 @@ export class TurnManager {
     const engine = this.engineFor(bot);
     const roomPrompt = (fresh: boolean) =>
       this.services.rooms.prompt({ roomId: thread.id, bot, turn, fresh, t, note });
+    const started = turn.startedAt ?? turn.createdAt;
+    const isPost = (m: { props: Record<string, unknown> }) =>
+      Boolean(m.props.posted || m.props.routineReport || m.props.whatsappDraft);
     // A turn that starts a new session in a thread with a past hands the recent exchange over.
     const handoff = async (summary?: string) => {
       if (inRoom) return roomPrompt(true);
+      // Posts that landed while the turn waited to start come along too (see `withPosts`).
       const messages = (await threads.messages(thread.id, { limit: 2 * HANDOFF_MESSAGES })).filter(
-        (m) => new Date(m.createdAt) <= turn.createdAt,
+        (m) => new Date(m.createdAt) <= (isPost(m) ? started : turn.createdAt),
       );
       // Outside text among them is read again by the new session.
       for (const m of messages) note(outsideIn(m.props));
@@ -1590,23 +1623,21 @@ export class TurnManager {
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
     // Webhook posts, routine reports and what became of a WhatsApp draft land in the conversation
-    // without a turn, so a live session never saw them; the ones since the bot last ran here come with this message. A handoff
-    // carries them already.
+    // without a turn, so a live session never saw them; the ones since the bot last ran here come
+    // with this message. A handoff carries them already. Counted from when turns started, not when
+    // they were asked: a note held until the last turn's reply (`afterTurn`) is written after a
+    // message queued meanwhile, and that message's turn is the one that must read it.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
-        .select({ createdAt: schema.turns.createdAt })
+        .select({ startedAt: schema.turns.startedAt })
         .from(schema.turns)
-        .where(and(eq(schema.turns.threadId, thread.id), lt(schema.turns.createdAt, turn.createdAt)))
-        .orderBy(desc(schema.turns.createdAt))
+        .where(and(eq(schema.turns.threadId, thread.id), lt(schema.turns.startedAt, started)))
+        .orderBy(desc(schema.turns.startedAt))
         .limit(1);
       const posts = (await threads.messages(thread.id, { limit: 50 }))
         .filter((m) => {
           const at = new Date(m.createdAt);
-          return (
-            (m.props.posted || m.props.routineReport || m.props.whatsappDraft) &&
-            at <= turn.createdAt &&
-            (!before || at > before.createdAt)
-          );
+          return isPost(m) && at <= started && (!before?.startedAt || at > before.startedAt);
         })
         .slice(-5);
       if (!posts.length) return prompt;
