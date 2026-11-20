@@ -2158,7 +2158,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.chats': 'Let the bots look at my chats',
   'whatsapp.autoSend': 'Let the bots send without asking',
   'whatsapp.autoSendHint':
-    'A bot at full access sends without a card when it works on something you asked for, or answers a reply that came to it; every message that goes is written in the conversation. Messages with a file, to another chat, or more than 5 an hour to one chat still ask on a card.',
+    'A bot at full access sends without a card in work you asked for. Woken by the reply of someone it wrote to, it answers only that chat without a card, unless you wrote there by hand; so it may answer their questions with words you did not see. Every message that goes is written in the conversation. Messages with a file, to a number never written to, or more than 5 an hour to one chat still ask on a card.',
   'whatsapp.chatsHint':
     "When you ask, your bots read this account's chats with people and groups and draft messages; a message goes only once you approve it. Messages are kept encrypted for 30 days from when this is on.",
   'whatsapp.qrAlt': 'QR code of the WhatsApp link',

@@ -1299,6 +1299,7 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    let askedOnce: Promise<boolean> | null = null;
     // Someone's WhatsApp chats are theirs alone: not in a team conversation, nor for a guest.
     if (opts.whatsappOwner && opts.whatsappOwner === person && !team && !guest) {
       tools.push(
@@ -1313,8 +1314,11 @@ export class ToolFactory {
           reader: !!opts.whatsappReader,
           // Every chat is reached only for the person's own message or a routine they saved, not
           // for a run a mail, a webhook, a watched page or a WhatsApp chat started.
-          asked: async () => (await requestedBy(this.ctx, turn)) !== null,
+          // Read once: a run that reads a chat is marked as outside text from then on, which must
+          // not make the person's own work look like nobody asked for it.
+          asked: () => (askedOnce ??= requestedBy(this.ctx, turn).then((x) => x !== null)),
           woken: () => s.whatsapp.wokenBy(turn),
+          unwatched: () => !attended(turn.source) && !!reads(),
           // Reading someone's chats starts only on the person's own word, whatever the bot's level.
           askOpen: async () => {
             const yes = t('tool.whatsappFollowYes');

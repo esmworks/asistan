@@ -1351,12 +1351,14 @@ const tr = {
   'tool.whatsappOpenQuestion':
     'Botlarınız istediğinizde bağlı WhatsApp hesabının sohbetlerini (kişiler ve gruplar) listeleyip okuyabilir ve mesaj taslağı hazırlayabilir; bir mesaj, onay sormadan göndermeye ayrıca izin vermediyseniz yalnızca kartında onaylarsanız gider, gruplara hiçbir şey yazılmaz. Sohbetler bundan sonra saklanır; daha eski mesajlar görünmez. Kanallar sayfasından kapatabilirsiniz.',
   'tool.whatsappOpenSkipped': 'Kişi izin vermedi; WhatsApp sohbetleri okunamıyor.',
-  'tool.whatsappSentNow': 'Mesaj {to} kişisine gönderildi (kişi onay sormadan göndermeye izin verdi).',
+  'tool.whatsappSentNow':
+    'Mesaj {to} kişisine gönderildi (kişi onay sormadan göndermeye izin verdi). Bir hafta içinde gelen yanıt sana bu sohbette kendiliğinden gelir; bunun için rutin kurmaya gerek yok.',
   'tool.whatsappNotAsked':
     'Bu çalışmayı kişi istemedi (bir e-posta, web kancası, izlenen sayfa ya da WhatsApp sohbeti başlattı); bu yüzden rutinlerin okumadığı WhatsApp sohbetlerine bakılmaz.',
   'tool.whatsappBadFile': 'Dosya botun kendi klasöründe değil ya da yok: {file}',
   'tool.whatsappEmpty': 'Gönderilecek bir metin ya da dosya yok.',
-  'tool.whatsappDrafted': 'Taslak kişiye kartla sunuldu; onaylarsa gönderilecek. Kartın sonucunu bekleme.',
+  'tool.whatsappDrafted':
+    'Taslak kişiye kartla sunuldu; onaylarsa gönderilecek ve sonucu bu sohbetteki bir sonraki mesajla sana söylenecek. Kartın sonucunu bekleme. Gönderildikten sonra bir hafta içinde gelen yanıt sana kendiliğinden gelir; bunun için rutin kurmaya gerek yok.',
   'tool.whatsappNoAudience': 'Durum’u görecek kimse yok: henüz saklanan bir kişi sohbeti yok.',
   'outside.whatsapp': 'bir WhatsApp sohbeti',
   'whatsapp.groupYou': 'Siz',
@@ -2783,13 +2785,14 @@ const en: Catalog<ServerKey> = {
   'tool.whatsappOpenQuestion':
     'Your bots can list and read the chats of the linked WhatsApp account (people and groups) when you ask, and draft messages; unless you also let them send without asking, a message goes only if you approve it on its card, and nothing is ever written to a group. Chats are kept from now on; older messages are not seen. You can turn this off on the Channels page.',
   'tool.whatsappOpenSkipped': 'The person did not allow it; the WhatsApp chats cannot be read.',
-  'tool.whatsappSentNow': 'The message was sent to {to} (the person lets messages go without asking).',
+  'tool.whatsappSentNow':
+    'The message was sent to {to} (the person lets messages go without asking). A reply within a week comes to you in this conversation by itself; no routine is needed for it.',
   'tool.whatsappNotAsked':
     'The person did not ask for this work (a mail, a webhook, a watched page or a WhatsApp chat started it), so WhatsApp chats no routine reads are not looked at.',
   'tool.whatsappBadFile': 'The file is not in the bot’s own folder, or does not exist: {file}',
   'tool.whatsappEmpty': 'There is no text or file to send.',
   'tool.whatsappDrafted':
-    'The draft is on a card for the person; it goes if they approve. Do not wait for the card.',
+    'The draft is on a card for the person; it goes if they approve, and you are told what became of it with the next message here. Do not wait for the card. A reply within a week of it going out comes to you by itself; no routine is needed for it.',
   'tool.whatsappNoAudience': 'Nobody would see the Status: no person’s chat is kept yet.',
   'outside.whatsapp': 'a WhatsApp chat',
   'whatsapp.groupYou': 'You',

@@ -37,8 +37,13 @@ export function whatsappTools(opts: {
    * may the bot reach chats beyond its routines', or ask to.
    */
   asked: () => Promise<boolean>;
-  /** The chat whose reply started this turn, if one did: the turn reaches it too. */
-  woken: () => Promise<string | null>;
+  /**
+   * The chat whose reply started this turn, if one did: the turn reaches it too. `typed` when
+   * someone also wrote in it by hand.
+   */
+  woken: () => Promise<{ chat: string; typed: boolean } | null>;
+  /** Whether the turn read outside text with nobody there to see what it does. */
+  unwatched: () => boolean;
   /** Asks the person on a card whether the bots may read every chat. */
   askOpen: () => Promise<'yes' | 'no' | 'timeout'>;
   t: T;
@@ -52,7 +57,11 @@ export function whatsappTools(opts: {
     const own = opts.reader ? await s.routines.whatsappReadsOf(bot.id) : null;
     const woke = await opts.woken();
     if (!woke) return own;
-    return { groups: own?.groups ?? new Set(), people: own?.people ?? false, chats: new Set([woke]) };
+    return {
+      groups: own?.groups ?? new Set(),
+      people: own?.people ?? false,
+      chats: new Set([woke.chat]),
+    };
   };
   /**
    * The chats the bot sees, or the person is asked first; a string is what the tool answers when
@@ -73,8 +82,12 @@ export function whatsappTools(opts: {
   const sendsAtOnce = async (chat: string) => {
     if (bot.permissionMode !== 'auto' && bot.permissionMode !== 'review') return false;
     if (!(await wa.autoSendOn())) return false;
-    if (await opts.asked()) return true;
-    return (await opts.woken()) === chat;
+    // A reply's turn answers only that chat, and not over someone who answered it by hand.
+    const woke = await opts.woken();
+    if (woke) return woke.chat === chat && !woke.typed;
+    // Outside text read on the way (a mail, a page, a chat) with nobody watching: on a card.
+    if (opts.unwatched()) return false;
+    return opts.asked();
   };
 
   /** A file the bot names, when it is inside one of its own folders. */
@@ -184,6 +197,7 @@ export function whatsappTools(opts: {
         let r = await reachOrAsk();
         if (typeof r === 'string') return r;
         let chat = ref.trim();
+        let fresh = false;
         let known = await wa.knownChat(chat, r);
         // A number, or a chat the bot's routines do not read: the person may let it reach every chat.
         const phone = PhoneNumber.safeParse(chat);
@@ -203,6 +217,7 @@ export function whatsappTools(opts: {
             if (found === null) return t('tool.whatsappNotOnWhatsApp', { phone: phone.data });
             chat = asChat;
             known = { name: '', kind: 'person' };
+            fresh = true;
           }
         }
         if (!known) return t(r.all ? 'tool.whatsappUnknownChatOpen' : 'tool.whatsappUnknownChat', { chat });
@@ -215,7 +230,8 @@ export function whatsappTools(opts: {
         const to = known.name ? `${known.name} (${number})` : `+${number}`;
         // Without a card only when the person let the bots send so, the bot is at full access, no
         // file goes along, and it is the person's own work or the answer to the chat that woke it.
-        if (!path && (await sendsAtOnce(chat))) {
+        // A first message to a number goes on a card: many at once is how a linked number gets barred.
+        if (!path && !fresh && (await sendsAtOnce(chat))) {
           const thread = await s.threads.main(bot.id, person);
           const sent = await wa.sendNow({ botId: bot.id, threadId: thread.id, chat, text: text.trim() });
           if (sent === 'sent') return t('tool.whatsappSentNow', { to });

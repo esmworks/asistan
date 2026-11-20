@@ -1104,6 +1104,7 @@ export class WhatsAppChannel {
     chat: string,
     title: string,
     payload: string,
+    typed: boolean,
     t: T,
   ) {
     const owner = await this.ownerId();
@@ -1123,12 +1124,20 @@ export class WhatsAppChannel {
       role: 'assistant',
       author: `bot:${bot.id}`,
       text: t('whatsapp.replyNote', { name: title }),
-      props: { whatsappReply: chat, wakeTurn: turn.id, outside: 'whatsapp' },
+      props: { whatsappReply: chat, wakeTurn: turn.id, outside: 'whatsapp', ...(typed && { typed }) },
     });
   }
 
-  /** The chat whose reply started a turn, when one did: that turn reaches only this chat. */
-  async wokenBy(turn: { id: string; threadId: string; source: string; jobId: string | null }) {
+  /**
+   * The chat whose reply started a turn, when one did: that turn reaches only this chat. `typed`
+   * when someone also wrote in it by hand from the account.
+   */
+  async wokenBy(turn: {
+    id: string;
+    threadId: string;
+    source: string;
+    jobId: string | null;
+  }): Promise<{ chat: string; typed: boolean } | null> {
     if (turn.source !== 'bot' || turn.jobId) return null;
     const [row] = await this.ctx.db
       .select({ props: schema.messages.props })
@@ -1140,8 +1149,10 @@ export class WhatsAppChannel {
         ),
       )
       .limit(1);
-    const chat = (row?.props as { whatsappReply?: unknown } | undefined)?.whatsappReply;
-    return typeof chat === 'string' ? chat : null;
+    const props = row?.props as { whatsappReply?: unknown; typed?: unknown } | undefined;
+    return typeof props?.whatsappReply === 'string'
+      ? { chat: props.whatsappReply, typed: props.typed === true }
+      : null;
   }
 
   /**
@@ -1432,7 +1443,18 @@ export class WhatsAppChannel {
         ...batch.map((r) => this.chatLine(r, botId, t)),
       ].join('\n');
     if (drafter) {
-      await this.wake(drafter, chat, title, payloadFor(drafter.botId), t);
+      // Someone answered in the chat themselves (on the phone): the bot hears of it but does not
+      // talk over them without a card.
+      const sent = new Set(
+        (
+          await this.ctx.db
+            .select({ text: schema.whatsappDrafts.text })
+            .from(schema.whatsappDrafts)
+            .where(and(eq(schema.whatsappDrafts.chat, chat), eq(schema.whatsappDrafts.status, 'sent')))
+        ).map((d) => d.text),
+      );
+      const typed = batch.some((r) => r.fromMe && !r.hidden && !sent.has(r.text));
+      await this.wake(drafter, chat, title, payloadFor(drafter.botId), typed, t);
       await this.moveOn(chat, last, {}, null);
       if (more) this.waitForQuiet(chat, 0);
       return;

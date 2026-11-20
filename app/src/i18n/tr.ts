@@ -2155,7 +2155,7 @@ export const tr = {
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
   'whatsapp.autoSend': 'Botlar onay sormadan gönderebilsin',
   'whatsapp.autoSendHint':
-    'Tam erişimdeki bir bot, sizin istediğiniz işte ya da kendisine gelen bir yanıta cevap verirken mesajı kart açmadan gönderir; giden her mesaj konuşmaya yazılır. Dosya eklenen, başka bir sohbete giden ya da bir sohbete saatte 5’ten fazla giden mesajlar yine kartla sorulur.',
+    'Tam erişimdeki bir bot, sizin istediğiniz işte mesajı kart açmadan gönderir. Yazdığı kişinin yanıtıyla uyandığında yalnızca o sohbete, siz oraya elle yazmadıysanız, kartsız cevap verir; bu yüzden yazdığı kişilerin sorularına sizin görmediğiniz cevaplar verebilir. Giden her mesaj konuşmaya yazılır. Dosya eklenen, daha önce yazışılmamış bir numaraya giden ya da bir sohbete saatte 5’ten fazla giden mesajlar yine kartla sorulur.',
   'whatsapp.chatsHint':
     'İstediğinizde botlarınız bu hesabın kişi ve grup sohbetlerini okur, mesaj taslağı hazırlar; mesaj ancak siz onaylayınca gider. Mesajlar açıldığı andan itibaren 30 gün şifreli saklanır.',
   'whatsapp.qrAlt': 'WhatsApp bağlantısının QR kodu',
