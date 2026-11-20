@@ -999,6 +999,8 @@ export const tr = {
   'activity.tool.shell': 'Komut çalıştırıyor',
   'activity.tool.files': 'Dosyalara bakıyor',
   'activity.tool.image': 'Resim oluşturuyor',
+  'activity.tool.video': 'Video oluşturuyor',
+  'activity.tool.slides': 'Slayt hazırlıyor',
   'activity.tool.pageImage': 'Sayfayı resme çeviriyor',
   'activity.tool.write': 'Dosya yazıyor',
   'activity.tool.web': "Web'de arıyor",

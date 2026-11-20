@@ -64,6 +64,8 @@ export function toolLabel(tool: string, apps: ReadonlyMap<string, string>): stri
     return t('activity.tool.write');
   if (name === 'WebFetch' || name === 'WebSearch') return t('activity.tool.web');
   if (name === 'image_create') return t('activity.tool.image');
+  if (name === 'video_create') return t('activity.tool.video');
+  if (name === 'slides_create') return t('activity.tool.slides');
   if (name === 'page_to_image') return t('activity.tool.pageImage');
   if (name === 'Task' || name === 'Agent') return t('activity.tool.agent');
   if (name.startsWith('memory_')) return t('activity.tool.memory');

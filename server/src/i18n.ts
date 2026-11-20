@@ -879,6 +879,29 @@ const tr = {
   'tool.imageFailed.tooLarge': '{provider} çok büyük bir dosya döndürdü; kaydedilmedi.',
   'tool.imageLimit': 'Bir turda en çok {max} resim oluşturulabilir; bu turda daha fazlası yapılmaz.',
   'tool.imageFileBase': 'resim',
+  'tool.video_create':
+    'Yazılı bir tariften kısa bir video oluştur ve kullanıcıya gönder; ayrıca send_file çağırma. prompt: videonun ayrıntılı tarifi (konu, hareket, kamera, ışık, üslup; ses ya da konuşma istenirse onu da yaz), seconds: 1 ile 15 arası süre (varsayılan 6), shape: landscape, portrait ya da square, caption: isteğe bağlı kısa not. Video birkaç dakika sürer ve kullanıcının xAI hesabından saniye başına ücretlendirilir: yalnızca istendiğinde yap, bir turda en çok bir video.',
+  'tool.videoCreated':
+    '{seconds} saniyelik video oluşturuldu ({provider}) ve kullanıcıya gönderildi: {name}. Dosya: {path}',
+  'tool.videoCreatedMain':
+    '{seconds} saniyelik video oluşturuldu ({provider}): {name}. Bu konuşma botlar arasında; video senin kullanıcıyla olan sohbetine kondu, karşıdaki bot görmez. Dosya: {path}',
+  'tool.videoNoKey':
+    'Video oluşturmak için kayıtlı bir xAI API anahtarı yok. Kullanıcıya Ayarlar → Bağlantı bölümünden eklemesini söyle.',
+  'tool.videoFailed.failed': '{provider} videoyu oluşturamadı: {message}',
+  'tool.videoFailed.filtered':
+    '{provider} videoyu kendi içerik kuralları yüzünden vermedi; tarifi değiştirmek gerekebilir.',
+  'tool.videoFailed.notVideo': '{provider} video yerine başka bir şey döndürdü; video oluşturulamadı.',
+  'tool.videoFailed.tooLarge': '{provider} çok büyük bir dosya döndürdü; kaydedilmedi.',
+  'tool.videoFailed.timeout': '{provider} videoyu on dakikada bitiremedi; video oluşturulamadı.',
+  'tool.videoLimit': 'Bir turda en çok {max} video oluşturulabilir; bu turda daha fazlası yapılmaz.',
+  'tool.videoFileBase': 'video',
+  'tool.slides_create':
+    'Bir slayt destesi (sunum) hazırla ve kullanıcıya PowerPoint dosyası (.pptx) olarak gönder; Keynote ve Google Slaytlar da açar, kullanıcı düzenleyebilir. Ayrıca send_file çağırma. title: destenin adı (dosya adı da olur), slides: slaytlar; her biri layout (title: kapak, section: bölüm arası, content: başlık ve maddeler, image: başlık ve büyük resim; verilmezse ilk slayt kapak olur), title, subtitle, bullets (en çok 12 kısa madde), text (paragraf), image (botun klasöründeki PNG, JPEG ya da GIF yolu; image_create ile yaptığın resimler de olur), notes (konuşmacı notu). theme: light ya da dark, accent: vurgu rengi (#RRGGBB), caption: isteğe bağlı kısa not. Slayt başına az ve kısa madde yaz; ayrıntıyı notlara koy. Ücretsizdir.',
+  'tool.slidesCreated': '{count} slaytlık deste hazırlandı ve kullanıcıya gönderildi: {name}. Dosya: {path}',
+  'tool.slidesCreatedMain':
+    '{count} slaytlık deste hazırlandı: {name}. Bu konuşma botlar arasında; dosya senin kullanıcıyla olan sohbetine kondu, karşıdaki bot görmez. Dosya: {path}',
+  'tool.slidesPictureType': '{path} bir PNG, JPEG ya da GIF resmi değil; desteye konamadı.',
+  'tool.slidesPictureLarge': '{path} desteye koymak için çok büyük (en çok 10 MB).',
   'tool.page_to_image':
     "Yaptığın bir HTML sayfasını istenen boyutta PNG resme çevir ve kullanıcıya resim olarak gönder; ayrıca send_file çağırma. Afiş, kapak görseli, sosyal medya kartı, davetiye, logo yazısı gibi yazı ve düzen içeren tasarımlar için image_create yerine bunu kullan: yazılar kusursuz çıkar ve ücretsizdir. Önce sayfayı tam o boyutta tasarla (body'nin genişliğini ve yüksekliğini ver, kenar boşluğunu sıfırla). path: .html dosyası ya da index.html'li klasör, width ve height: piksel (en çok 4096; height verilmezse sayfanın boyu), scale: daha keskin resim için 2, caption: isteğe bağlı kısa not. Resim kullanacaksan (image_create ile yaptığın ya da kayıtlı bir PNG) dosyayı sayfanın klasörüne koy ve img ya da CSS url() ile göreli yoluyla ver; internetten resim yüklenmez. Kitaplıklar ve Google Fonts yazı tipleri sohbetteki gibi yüklenir; başka adreslere ulaşılmaz.",
   'tool.pageImageSent':
@@ -2573,6 +2596,29 @@ const en: Catalog<ServerKey> = {
   'tool.imageFailed.tooLarge': '{provider} returned a file too large to keep; it was not saved.',
   'tool.imageLimit': 'At most {max} pictures can be created in one turn; no more in this one.',
   'tool.imageFileBase': 'image',
+  'tool.video_create':
+    "Make a short video from a written description and send it to the user; do not call send_file as well. prompt: a detailed description of the video (subject, motion, camera, light, style; say so if sound or speech is wanted), seconds: length from 1 to 15 (default 6), shape: landscape, portrait or square, caption: an optional short note. A video takes a few minutes and is billed per second to the user's xAI account: make one only when asked, at most one in a turn.",
+  'tool.videoCreated':
+    'A {seconds}-second video was created ({provider}) and sent to the user: {name}. File: {path}',
+  'tool.videoCreatedMain':
+    'A {seconds}-second video was created ({provider}): {name}. This conversation is between bots; the video went to your chat with the user, and the other bot does not see it. File: {path}',
+  'tool.videoNoKey':
+    'There is no saved xAI API key to create videos with. Tell the user to add one under Settings → Connection.',
+  'tool.videoFailed.failed': '{provider} could not create the video: {message}',
+  'tool.videoFailed.filtered':
+    '{provider} held the video back under its content rules; the description may need changing.',
+  'tool.videoFailed.notVideo': '{provider} returned something other than a video; nothing was created.',
+  'tool.videoFailed.tooLarge': '{provider} returned a file too large to keep; it was not saved.',
+  'tool.videoFailed.timeout': '{provider} did not finish the video within ten minutes; nothing was created.',
+  'tool.videoLimit': 'At most {max} video can be created in one turn; no more in this one.',
+  'tool.videoFileBase': 'video',
+  'tool.slides_create':
+    "Make a slide deck (a presentation) and send it to the user as a PowerPoint file (.pptx), which Keynote and Google Slides open too and the user can edit. Do not call send_file as well. title: the deck's name (also its file name), slides: the slides; each has layout (title: the cover, section: a divider, content: a title with points, image: a title with a large picture; without it the first slide is the cover), title, subtitle, bullets (at most 12 short points), text (a paragraph), image (the path of a PNG, JPEG or GIF in the bot's folders, pictures made with image_create included), notes (speaker notes). theme: light or dark, accent: the accent colour (#RRGGBB), caption: an optional short note. Keep few, short points on a slide and put the detail in the notes. It costs nothing.",
+  'tool.slidesCreated': 'A deck of {count} slides was made and sent to the user: {name}. File: {path}',
+  'tool.slidesCreatedMain':
+    'A deck of {count} slides was made: {name}. This conversation is between bots; the file went to your chat with the user, and the other bot does not see it. File: {path}',
+  'tool.slidesPictureType': '{path} is not a PNG, JPEG or GIF picture; it could not go in the deck.',
+  'tool.slidesPictureLarge': '{path} is too large to put in the deck (at most 10 MB).',
   'tool.page_to_image':
     'Turn an HTML page you made into a PNG picture of the size asked for and send it to the user as a picture; do not call send_file as well. For designs with text and layout (a banner, a cover, a social card, an invitation, a wordmark) use this instead of image_create: the text comes out exact and it costs nothing. Design the page at exactly that size first (give the body its width and height, zero margins). path: an .html file or a folder with index.html, width and height: pixels (at most 4096; without height, the height of the page), scale: 2 for a sharper picture, caption: an optional short note. To use a picture (one made with image_create, or a saved PNG), put the file in the folder of the page and give its relative path in an img or a CSS url(); pictures from the internet do not load. Libraries and Google Fonts load as in the chat; no other address is reached.',
   'tool.pageImageSent':

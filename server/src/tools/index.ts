@@ -43,6 +43,8 @@ import { browserTools, type AskCard, type AskLogin } from './browser';
 import { computerTools } from './computer';
 import { handFiles, pageImageTool, sendFileTool, showPageTool } from './files';
 import { imageTool } from './images';
+import { videoTool } from './videos';
+import { slidesTool } from './slides';
 import { apiTools } from './api';
 import { emailTools } from './email';
 import { pickGroup, whatsappRoots, whatsappTools } from './whatsapp';
@@ -225,6 +227,8 @@ export type ToolName =
   | 'send_file'
   | 'show_page'
   | 'image_create'
+  | 'video_create'
+  | 'slides_create'
   | 'api_keys_list'
   | 'credential_request'
   | 'api_request'
@@ -1531,6 +1535,7 @@ export class ToolFactory {
     tools.push(
       sendFileTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
       showPageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
+      slidesTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, t }),
     );
     // A page becomes a picture in a browser program on this server; without one there is none.
     const executable = this.ctx.browser.executable;
@@ -1568,6 +1573,7 @@ export class ToolFactory {
     // Listed without a saved key too: the bot then tells the person which key to add.
     if (bot.internet) {
       tools.push(imageTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
+      tools.push(videoTool({ def, services: s, dataDir: this.ctx.config.dataDir, bot, thread, signal, t }));
       tools.push(
         ...apiTools({
           def,

@@ -7,6 +7,14 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Bots make slide decks: a bot writes the slides (a cover, section dividers, titles with points, a paragraph, pictures
+  from its folders, speaker notes) and gets a PowerPoint file in the conversation, which Keynote and Google Slides
+  open too and the person can edit. Light or dark, with an accent colour; it costs nothing and reaches nothing
+  outside the server.
+- Bots make short videos (1 to 15 seconds, landscape, portrait or square) with the person's saved xAI key, the same
+  way they make pictures: the video is made as a job the server waits on (up to ten minutes), kept in the
+  conversation's folder and sent as a file. One video a turn, since each is billed by the second; it asks first like
+  a picture does. OpenAI's video API was shut down in September 2026, so xAI is the only provider for now.
 - Link previews: holding the pointer on a web link in a conversation shows the page's title, description and site,
   and a GitHub pull request or issue also shows its state (open, draft, merged, closed) as an icon beside the link
   and its author. The server reads the page the first time the link is hovered (only its start, without its query

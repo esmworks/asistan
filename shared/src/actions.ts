@@ -205,6 +205,11 @@ function phraseFor(name: string, input: Record<string, unknown>): Phrase {
         tr: ['bir resim', 'bu resmi', CREATE],
         en: ['create a picture', 'create this picture', 'create pictures'],
       };
+    case 'video_create':
+      return {
+        tr: ['bir video', 'bu videoyu', CREATE],
+        en: ['create a video', 'create this video', 'create videos'],
+      };
     case 'memory_write':
       return {
         tr: ['bir bilgiyi hafızaya', 'bu bilgiyi hafızaya', SAVE],
@@ -362,6 +367,7 @@ function detailFor(name: string, input: Record<string, unknown>, locale: Locale)
     case 'memory_update':
       return str(input.content);
     case 'image_create':
+    case 'video_create':
       return str(input.prompt);
     case 'api_call':
       return (

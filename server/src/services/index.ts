@@ -47,6 +47,7 @@ import { SubscriptionService } from './subscriptions';
 import { ProviderKeyService } from './keys';
 import { ModelCatalogService } from './model-catalog';
 import { ImageService } from './images';
+import { VideoService } from './videos';
 import { SkillService } from './skills';
 import { ReactionNotifier } from './reactions';
 import { RoomService } from './rooms';
@@ -83,6 +84,7 @@ export class Services {
   readonly keys: ProviderKeyService;
   readonly modelCatalog: ModelCatalogService;
   readonly images: ImageService;
+  readonly videos: VideoService;
   readonly skills: SkillService;
   readonly jobs: JobService;
   readonly routines: RoutineService;
@@ -146,6 +148,7 @@ export class Services {
     ]);
     this.keys = new ProviderKeyService(ctx, this.vault, fetch, this.subscriptions, this.modelCatalog);
     this.images = new ImageService(this.keys);
+    this.videos = new VideoService(this.keys);
     this.skills = new SkillService(ctx);
     this.jobs = new JobService(ctx, this);
     this.routines = new RoutineService(ctx, this, engineFor, clock);
