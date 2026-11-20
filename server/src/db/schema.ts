@@ -571,6 +571,12 @@ export const routines = pgTable('routines', {
   whatsappGroup: text('whatsapp_group'),
   /** Also runs when someone writes to the linked WhatsApp account in a chat of their own. */
   whatsappPeople: boolean('whatsapp_people').notNull().default(false),
+  /**
+   * The connection a run found signed out. Its scheduled runs are skipped while it stays signed
+   * out, since each would only stop at the same sign-in card; the first run after the person signs
+   * in again clears it. Null when nothing waits.
+   */
+  signInWait: text('sign_in_wait').references(() => connections.id, { onDelete: 'set null' }),
 });
 
 export const routineRuns = pgTable(

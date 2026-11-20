@@ -591,7 +591,15 @@ export class RoutineService {
     const occurrence = occurrenceKey(routine.nextRunAt!);
     try {
       const late = now.getTime() - routine.nextRunAt!.getTime() > MISSED_GRACE_MS;
-      if (late && routine.missed === 'skip') {
+      const waitingOn = await this.signInStillWaiting(routine);
+      if (waitingOn) {
+        await this.record(
+          toRoutine(routine),
+          occurrence,
+          'skipped',
+          t('routine.signInSkipped', { name: waitingOn }),
+        );
+      } else if (late && routine.missed === 'skip') {
         await this.record(toRoutine(routine), occurrence, 'skipped', t('routine.missedSkipped'));
       } else if (routine.watchUrl || routine.check) {
         // A watched page and an app's check are read with no AI; the bot runs only when one of
@@ -646,6 +654,57 @@ export class RoutineService {
     await this.advance(routine).catch((err) =>
       console.error(`Routine ${routine.id} could not move to its next run`, err),
     );
+  }
+
+  /**
+   * The name of the connection a run of this routine found signed out, while it still is; null
+   * when nothing waits. Once the person has signed in again (or the connection is gone) the wait
+   * is cleared, so the slot runs.
+   */
+  private async signInStillWaiting(r: RoutineRow): Promise<string | null> {
+    if (!r.signInWait) return null;
+    const [c] = await this.ctx.db
+      .select({ name: schema.connections.name, status: schema.connections.status })
+      .from(schema.connections)
+      .where(eq(schema.connections.id, r.signInWait));
+    if (c?.status === 'signed-out') return c.name;
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ signInWait: null })
+      .where(and(eq(schema.routines.id, r.id), eq(schema.routines.signInWait, r.signInWait)));
+    this.ctx.bus.refresh({ scope: 'routines' });
+    return null;
+  }
+
+  /**
+   * A run of a routine found one of its connections signed out. Its next scheduled runs are skipped
+   * until the person signs in again, and the person is told where they are rather than only in the
+   * routine's conversation, which they may not open for days: on the phone, in Telegram or
+   * WhatsApp (through the notice), and in a direct message from the Slack app when they linked it.
+   * Told once per sign-out: a run that finds the same wait says nothing new.
+   */
+  async signInLost(runId: string, connection: { id: string; name: string }): Promise<void> {
+    const [row] = await this.ctx.db
+      .select({ routine: schema.routines, threadId: schema.routineRuns.threadId })
+      .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(eq(schema.routineRuns.id, runId));
+    if (!row) return;
+    const { routine, threadId } = row;
+    if (routine.signInWait === connection.id) return;
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ signInWait: connection.id })
+      .where(eq(schema.routines.id, routine.id));
+    this.ctx.bus.refresh({ scope: 'routines' });
+    const t = await this.services.settings.translator();
+    const text = t('routine.signInLost', { routine: routine.name, name: connection.name });
+    if (threadId) {
+      this.ctx.bus.notice({ kind: 'needsYou', need: 'login', botId: routine.botId, threadId, text });
+    }
+    // A routine posting to a Slack channel works for the team; its person is still the one to sign in.
+    const person = routine.createdByUserId ?? (await this.services.access.botOwner(routine.botId));
+    if (person) await this.services.slack.tellPerson(person, text);
   }
 
   /**

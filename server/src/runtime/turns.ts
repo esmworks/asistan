@@ -1358,6 +1358,13 @@ export class TurnManager {
             props: { connectionSignIn: c.id },
             turnId: turn.id,
           });
+          // A routine's later runs would only stop at the same card, and nobody may be looking at
+          // its conversation: the routine waits for the sign-in and the person is told elsewhere.
+          if (turn.source === 'routine' && turn.routineRunId && !turn.rehearsalId) {
+            await this.services.routines
+              .signInLost(turn.routineRunId, { id: c.id, name: c.name })
+              .catch((err: unknown) => console.warn(`Routine sign-in wait not kept: ${String(err)}`));
+          }
           return true;
         },
       )),

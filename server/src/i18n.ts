@@ -559,6 +559,10 @@ const tr = {
   'routine.gateSkippedNoReason': 'Ön kontrol yeni bir iş görmedi.',
   'routine.prompt':
     'Rutin "{name}" zamanı geldi.\n\n{prompt}\n\n(Bu çalıştırmada bildirmeye değer bir şey yoksa yalnızca {silent} yaz; sohbete bir şey eklenmez. Hatırlatma rutininde her zaman hatırlatmayı yaz.)',
+  'routine.signInSkipped':
+    '{name} bağlantısının oturumu kapalı; yeniden oturum açılana kadar zamanlanmış çalışmalar atlanıyor.',
+  'routine.signInLost':
+    '"{routine}" rutini {name} bağlantısının oturumu kapandığı için durdu. Uygulamada Ayarlar → Bağlantılar\'dan yeniden oturum açın; o zamana kadar zamanlanmış çalışmaları atlanacak.',
   'routine.missedSkipped':
     'Sunucu bu saatte kapalıydı; rutin kaçırılan çalışmaları atlayacak biçimde ayarlı.',
   'routine.waitingForBot': 'Bot başka bir işi bitirince başlayacak.',
@@ -2241,6 +2245,10 @@ const en: Catalog<ServerKey> = {
   'routine.gateSkippedNoReason': 'The pre-check found nothing new to work on.',
   'routine.prompt':
     'Time for the routine "{name}".\n\n{prompt}\n\n(If this run has nothing worth reporting, write only {silent}; nothing is added to the chat. A reminder routine always writes the reminder.)',
+  'routine.signInSkipped':
+    'The {name} connection is signed out; scheduled runs are skipped until someone signs in again.',
+  'routine.signInLost':
+    'The routine "{routine}" stopped because the {name} connection signed out. Sign in again in the app under Settings → Connections; until then its scheduled runs are skipped.',
   'routine.missedSkipped': 'The server was off at this time; the routine is set to skip missed runs.',
   'routine.waitingForBot': 'Starts once the bot finishes what it is doing.',
   'routine.payload':

@@ -1026,6 +1026,31 @@ export class SlackChannel {
     }
   }
 
+  /**
+   * A short note to one person, in the Slack app's direct messages with them, when they linked
+   * their Slack account. False when they did not, when Slack is not connected, or it refused; the
+   * note is then only where the app shows it.
+   */
+  async tellPerson(userId: string, text: string): Promise<boolean> {
+    const row = await this.row();
+    if (!row?.secret || this.stopped) return false;
+    const [linked] = await this.ctx.db
+      .select({ slackUserId: schema.slackPeople.slackUserId })
+      .from(schema.slackPeople)
+      .where(eq(schema.slackPeople.userId, userId))
+      .limit(1);
+    if (!linked || !(await this.person(linked.slackUserId))) return false;
+    const api = this.botApi(row);
+    try {
+      return await this.sends.run(linked.slackUserId, async () => {
+        await api.post(linked.slackUserId, slackPlain(text));
+      });
+    } catch (err) {
+      console.warn('slack tell person', (err as Error).message);
+      return false;
+    }
+  }
+
   /** The bot stopped working on a conversation: its 👀 becomes a mark of how it went. */
   private async turnState(e: TurnEvent) {
     if (e.state !== 'idle') return;

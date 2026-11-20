@@ -15,7 +15,10 @@ import {
   type Approval,
   type Connection,
   type ConnectionAuthStart,
+  type NoticeEvent,
   type PermissionRule,
+  type Routine,
+  type RoutineRun,
   type Thread,
 } from '@yumakbot/shared';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -23,7 +26,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { schema } from '../src/db';
 import {
@@ -1336,6 +1339,60 @@ describe('bağlantılar', () => {
     const gone = await t.api<Connection>('PATCH', `/api/connections/${c.id}`, { headers: [] });
     expect(gone.body.headerNames).toEqual([]);
     expect(gone.body.status).toBe('signed-out');
+  });
+
+  it('a routine whose connection signed out tells the person and skips its scheduled runs until a sign-in', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    const bot = await t.bot({ permissionMode: 'auto' });
+    const notices: NoticeEvent[] = [];
+    t.services.ctx.bus.on('notice', (e) => notices.push(e));
+    const told: string[] = [];
+    vi.spyOn(t.services.slack, 'tellPerson').mockImplementation(async (userId, text) => {
+      told.push(`${userId}: ${text}`);
+      return true;
+    });
+    const r = (
+      await t.api<Routine>('POST', '/api/routines', {
+        botId: bot.id,
+        name: 'Sabah özeti',
+        prompt: '[araç:search {"query":"x"}]',
+        schedule: { type: 'interval', minutes: 30 },
+      })
+    ).body;
+    const runs = async () =>
+      (await t.api<RoutineRun[]>('GET', `/api/routines/${r.id}/runs`)).body.map((x) => [x.status, x.reason]);
+    const routine = async () =>
+      (await t.api<Routine[]>('GET', '/api/routines')).body.find((x) => x.id === r.id)!;
+    f.oauth.expire();
+    f.oauth.refreshRefused = true;
+    t.now.value = new Date(t.now.value.getTime() + 31 * 60_000);
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await routine()).signInWait).toBe(id);
+    const login = notices.filter((n) => n.need === 'login');
+    expect(login).toHaveLength(1);
+    expect(login[0]!.text).toContain('Sabah özeti');
+    expect(told).toEqual([expect.stringContaining(`${OWNER_ID}: `)]);
+
+    // The next slot does not run: it would only stop at the same card. Nobody is told again.
+    t.now.value = new Date(t.now.value.getTime() + 31 * 60_000);
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await runs())[0]).toEqual(['skipped', expect.stringContaining('oturumu kapalı')]);
+    expect(notices.filter((n) => n.need === 'login')).toHaveLength(1);
+
+    // Signed in again: the wait clears and the slot runs.
+    await t.db.db
+      .update(schema.connections)
+      .set({ status: 'connected' })
+      .where(eq(schema.connections.id, id));
+    f.oauth.refreshRefused = false;
+    t.now.value = new Date(t.now.value.getTime() + 31 * 60_000);
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await routine()).signInWait).toBeNull();
+    expect((await runs())[0]![0]).not.toBe('skipped');
   });
 
   it('a call that finds its sign-in gone puts one Sign-in card in the conversation, and says so', async () => {

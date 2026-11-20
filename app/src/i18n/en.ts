@@ -1316,6 +1316,7 @@ export const en: Catalog<MessageKey> = {
   'panel.noRoutines': 'Nothing scheduled. Add a routine and the bot will work on its own at that time.',
   'panel.nextRun': 'next {when}',
   'panel.lastRunFailed': 'last run failed',
+  'panel.signInWait': 'waiting for a sign-in',
   'panel.runNow': 'Run now',
   'panel.toggle': 'On/off',
   'panel.bot': 'Bot',

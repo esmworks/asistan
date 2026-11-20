@@ -1,0 +1,2 @@
+ALTER TABLE "routines" ADD COLUMN "sign_in_wait" text;--> statement-breakpoint
+ALTER TABLE "routines" ADD CONSTRAINT "routines_sign_in_wait_connections_id_fk" FOREIGN KEY ("sign_in_wait") REFERENCES "public"."connections"("id") ON DELETE set null ON UPDATE no action;

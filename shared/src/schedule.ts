@@ -193,6 +193,11 @@ export const Routine = z.object({
   /** Also runs when someone writes to the linked WhatsApp account. Missing on older servers. */
   whatsappPeople: z.boolean().optional(),
   /**
+   * The id of the connection a run found signed out: its scheduled runs are skipped until the
+   * person signs in to it again. Null when nothing waits; missing on older servers.
+   */
+  signInWait: z.string().nullable().optional(),
+  /**
    * The secret part of the address that starts the routine from another service (a webhook);
    * null when it has none.
    */

@@ -209,7 +209,11 @@ function Upcoming({ bot }: { bot: Bot }) {
             >
               <div className="truncate text-sm font-medium">{r.name}</div>
               <div className="truncate text-[13px] text-muted-foreground">
-                {failed.has(r.id) && <span className="text-destructive">{t('panel.lastRunFailed')} · </span>}
+                {r.signInWait ? (
+                  <span className="text-destructive">{t('panel.signInWait')} · </span>
+                ) : (
+                  failed.has(r.id) && <span className="text-destructive">{t('panel.lastRunFailed')} · </span>
+                )}
                 {describeSchedule(r.schedule, locale)}
                 {r.enabled && r.nextRunAt ? ` · ${t('panel.nextRun', { when: dayLabel(r.nextRunAt) })}` : ''}
               </div>
