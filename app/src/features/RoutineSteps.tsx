@@ -19,12 +19,14 @@ import {
   LoaderCircle,
   Plus,
   RotateCcw,
+  Send,
   Trash2,
   UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
@@ -35,6 +37,7 @@ import { cn } from '@/lib/utils';
 export type StepForm =
   | { id: string; kind: 'agent'; prompt: string; model: string }
   | { id: string; kind: 'approval'; question: string; timeoutDays: number }
+  | { id: string; kind: 'notify'; text: string; withBefore: boolean }
   | {
       id: string;
       kind: 'wait';
@@ -61,6 +64,10 @@ export function newAgentStep(): StepForm {
 
 function newApprovalStep(): StepForm {
   return { id: newStepId(), kind: 'approval', question: '', timeoutDays: 7 };
+}
+
+function newNotifyStep(): StepForm {
+  return { id: newStepId(), kind: 'notify', text: '', withBefore: true };
 }
 
 function newWaitStep(): StepForm {
@@ -107,6 +114,8 @@ export function StepsEditor({
               <UserCheck className="size-3.5" aria-hidden />
             ) : s.kind === 'wait' ? (
               <Hourglass className="size-3.5" aria-hidden />
+            ) : s.kind === 'notify' ? (
+              <Send className="size-3.5" aria-hidden />
             ) : (
               <BotIcon className="size-3.5" aria-hidden />
             )}
@@ -166,6 +175,22 @@ export function StepsEditor({
             </>
           ) : s.kind === 'wait' ? (
             <WaitFields step={s} onChange={(next) => set(i, next)} />
+          ) : s.kind === 'notify' ? (
+            <>
+              <Textarea
+                value={s.text}
+                onChange={(e) => set(i, { ...s, text: e.target.value })}
+                rows={2}
+                placeholder={t('routine.notifyPlaceholder')}
+                className="scroll-thin max-h-40 overflow-y-auto rounded-xl"
+                aria-label={t('routine.step.notify')}
+              />
+              <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>{t('routine.notifyWithBefore')}</span>
+                <Switch checked={s.withBefore} onCheckedChange={(v) => set(i, { ...s, withBefore: v })} />
+              </label>
+              <p className="text-xs text-muted-foreground">{t('routine.notifyHint')}</p>
+            </>
           ) : (
             <>
               <Textarea
@@ -223,6 +248,15 @@ export function StepsEditor({
           onClick={() => onChange([...steps, newWaitStep()])}
         >
           <Hourglass /> {t('routine.addWaitStep')}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="rounded-full"
+          onClick={() => onChange([...steps, newNotifyStep()])}
+        >
+          <Send /> {t('routine.addNotifyStep')}
         </Button>
       </div>
     </div>
@@ -411,6 +445,79 @@ function EndWait({ run }: { run: RoutineRun }) {
     >
       {t('routine.endWait')}
     </Button>
+  );
+}
+
+/** A routine to start from: what it is called, its instruction and its steps, ready to change. */
+export interface RoutineTemplate {
+  key: 'reply' | 'issue' | 'weekly';
+  name: string;
+  prompt: string;
+  steps: StepForm[];
+  weekly?: boolean;
+}
+
+/** Workflows people often build, each a few steps a routine can do as they are. */
+export function routineTemplates(t: ReturnType<typeof useT>): RoutineTemplate[] {
+  return [
+    {
+      key: 'reply',
+      name: t('routine.template.reply.name'),
+      prompt: t('routine.template.reply.prompt'),
+      steps: [
+        { id: 'onay', kind: 'approval', question: t('routine.template.reply.ask'), timeoutDays: 3 },
+        { id: 'gonder', kind: 'agent', prompt: t('routine.template.reply.send'), model: '' },
+      ],
+    },
+    {
+      key: 'issue',
+      name: t('routine.template.issue.name'),
+      prompt: t('routine.template.issue.prompt'),
+      steps: [
+        {
+          id: 'kapanis',
+          kind: 'wait',
+          on: 'webhook',
+          minutes: 60,
+          filter: 'event=issues\naction=closed\nissue.number={{issue}}',
+          timeoutDays: 30,
+        },
+        { id: 'taslak', kind: 'agent', prompt: t('routine.template.issue.draft'), model: '' },
+        { id: 'onay', kind: 'approval', question: t('routine.template.issue.ask'), timeoutDays: 7 },
+        { id: 'gonder', kind: 'agent', prompt: t('routine.template.issue.send'), model: '' },
+      ],
+    },
+    {
+      key: 'weekly',
+      name: t('routine.template.weekly.name'),
+      prompt: t('routine.template.weekly.prompt'),
+      steps: [{ id: 'bildir', kind: 'notify', text: t('routine.template.weekly.notify'), withBefore: true }],
+      weekly: true,
+    },
+  ];
+}
+
+/** Buttons that fill a new routine from one of the templates. */
+export function TemplatePicker({ onPick }: { onPick(template: RoutineTemplate): void }) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm text-muted-foreground">{t('routine.templates')}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {routineTemplates(t).map((tpl) => (
+          <Button
+            key={tpl.key}
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7 rounded-full px-3 text-xs"
+            onClick={() => onPick(tpl)}
+          >
+            {tpl.name}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 

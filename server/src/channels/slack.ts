@@ -416,11 +416,43 @@ export class SlackChannel {
         this.tokenState(ev.type === 'app_uninstalled' ? 'app_uninstalled' : 'token_revoked');
         return;
       }
+      if (ev?.type === 'reaction_added') return this.reacted(ev as unknown as Reaction);
       if (!ev || (ev.type !== 'message' && ev.type !== 'app_mention')) return;
       await this.received(ev);
     } else if (e.type === 'interactive') {
       await this.pressed(e.payload as Pressed);
     }
+  }
+
+  /**
+   * A linked person reacted to a message: their routines set to run on that reaction run on the
+   * message. It needs the optional `reactions:read` permission; without it Slack sends nothing.
+   */
+  private async reacted(ev: Reaction) {
+    const row = await this.row();
+    const item = ev.item;
+    if (!row?.secret || !ev.user || !ev.reaction || item?.type !== 'message' || !item.channel || !item.ts)
+      return;
+    const account = row.account as unknown as Account;
+    if (ev.user === account.botUserId) return;
+    if (!this.once(`reaction:${item.channel}:${item.ts}:${ev.reaction}:${ev.user}`)) return;
+    const person = await this.person(ev.user);
+    if (!person) return;
+    const api = this.botApi(row);
+    // A thread's replies come with the message they answer: the one reacted to is found by its time.
+    const found = await api.replies(item.channel, item.ts, 200, 1).catch(() => []);
+    const raw = found.find((m) => m.ts === item.ts)?.text ?? '';
+    if (!raw.trim()) return;
+    const text = slackText(raw, account.botUserId, await this.namesIn(api, raw));
+    await this.services.routines
+      .runFromSlackReaction({
+        userId: person.userId,
+        reaction: ev.reaction,
+        channel: item.channel,
+        ts: item.ts,
+        text,
+      })
+      .catch((err: unknown) => console.warn('slack reaction routine', err));
   }
 
   /** Whether this message was handled already (Slack sends a mention as two events). */
@@ -1093,6 +1125,14 @@ export class SlackChannel {
   private changed() {
     this.ctx.bus.refresh({ scope: 'channels' });
   }
+}
+
+/** A reaction someone added, as the Events API hands it over. */
+interface Reaction {
+  type: 'reaction_added';
+  user?: string;
+  reaction?: string;
+  item?: { type?: string; channel?: string; ts?: string };
 }
 
 /** A button press as Slack's interactivity sends it. */

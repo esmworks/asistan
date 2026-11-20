@@ -142,6 +142,34 @@ describe('a routine with steps', () => {
     expect(retried.status).toBe(409);
   });
 
+  it('sends a notify step as it is, with no AI, and goes on', async () => {
+    const bot = await t.bot();
+    const save = JSON.stringify({ name: 'issue', value: '42' });
+    const r = await make(bot.id, `issue aç [araç:routine_set ${save}]`, [
+      { id: 'bildir', kind: 'notify', text: 'Issue {{issue}} açıldı; {{yok}}bitti.' },
+      { id: 'son', kind: 'agent', prompt: 'son iş' },
+    ]);
+    await t.api('POST', `/api/routines/${r.id}/run`);
+    await t.services.turns.idle();
+    const [run] = await runs(r.id);
+    expect(run!.status).toBe('done');
+    expect(run!.steps?.map((s) => [s.kind, s.status])).toEqual([
+      ['prompt', 'done'],
+      ['notify', 'done'],
+      ['agent', 'done'],
+    ]);
+    // Two turns of the bot: the notify step asked none.
+    expect(t.engine.requests).toHaveLength(2);
+    const sent = await reports(bot.id);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]!.text).toContain('Issue 42 açıldı; bitti.');
+    // What the bot step ended with comes after the step's own text.
+    expect(sent[0]!.text).toContain('kaydedildi');
+    // The step after it builds on the bot step before it, not on the message.
+    expect(t.engine.requests[1]!.prompt).toContain('kaydedildi');
+    expect(t.engine.requests[1]!.prompt).not.toContain('Issue 42');
+  });
+
   it('turns away two steps with the same id', async () => {
     const bot = await t.bot();
     const res = await t.api('POST', '/api/routines', {

@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "slack_reaction" text DEFAULT '' NOT NULL;

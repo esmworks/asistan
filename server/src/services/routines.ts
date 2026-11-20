@@ -1190,6 +1190,8 @@ export class RoutineService {
     check?: { trigger: GateRequest['trigger']; input: string },
     /** The conversation to work in, when it is not the routine's usual one (a WhatsApp chat's). */
     threadId?: string,
+    /** Outside text the run is started on with no pre-check (a message handed over in Slack). */
+    outside?: OutsideTrigger,
   ): Promise<RoutineRun | null> {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
@@ -1215,7 +1217,7 @@ export class RoutineService {
           promptSnapshot: routine.prompt,
           stepsSnapshot: stepsOf(routine),
           // Text from outside starts it: its turns change nothing without a card.
-          trigger: check?.trigger ?? null,
+          trigger: check?.trigger ?? outside ?? null,
         })
         .returning()) as [typeof schema.routineRuns.$inferSelect];
     } catch (err) {
@@ -1231,11 +1233,12 @@ export class RoutineService {
       if (dup) return null;
       // An earlier run stuck on a question nobody answered gives way to this one, once.
       if (!retried && (await this.endStaleWait(routine.id, t, STALE_WAIT_MS, 'routine.staleWait')))
-        return this.fire(routine, occurrence, payload, true, check, threadId);
+        return this.fire(routine, occurrence, payload, true, check, threadId, outside);
       // A mail or a changed page does not come again: it waits for the run going now to end. A
       // webhook caller is told to send it again instead.
-      if (check && !occurrence.startsWith('hook:'))
-        return this.queue(routine, thread?.id ?? null, occurrence, payload, check.trigger, t);
+      const brought = check?.trigger ?? outside;
+      if (brought && !occurrence.startsWith('hook:'))
+        return this.queue(routine, thread?.id ?? null, occurrence, payload, brought, t);
       return this.recordBusy(routine, retriable(occurrence), t);
     }
     const threadOf = thread?.id ?? (await this.ownThread(routine, bot.id, run.id));
@@ -1592,6 +1595,7 @@ export class RoutineService {
     const step = steps[position - 1]!;
     if (step.kind === 'approval') return this.askApproval(run, step, position, before, t);
     if (step.kind === 'wait') return this.holdForWait(run, step, position, t);
+    if (step.kind === 'notify') return this.notify(run, routineName, steps, step, position, before, t);
     await this.ctx.db
       .update(schema.routineRuns)
       .set({ stepModel: step.model || null })
@@ -1771,6 +1775,122 @@ export class RoutineService {
       .where(eq(schema.routineRuns.id, run.id));
     this.ctx.bus.refresh({ scope: 'routines' });
     await this.startQueued(run.routineId);
+  }
+
+  /**
+   * A notify step: with no AI, its text and what the step before it ended with go where the routine
+   * reports, and the run goes on to its next step, or ends there.
+   */
+  private async notify(
+    run: StepRun,
+    routineName: string,
+    steps: readonly RoutineStep[],
+    step: Extract<RoutineStep, { kind: 'notify' }>,
+    position: number,
+    before: string | null,
+    t: T,
+  ) {
+    const now = this.clock();
+    const [row] = await this.ctx.db
+      .select({
+        vars: schema.routineRuns.vars,
+        trigger: schema.routineRuns.trigger,
+        slackChannel: schema.routines.slackChannel,
+      })
+      .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(eq(schema.routineRuns.id, run.id));
+    // A value never saved is left out rather than stopping the message.
+    const own = step.text.replace(/\{\{\s*([A-Za-z][A-Za-z0-9_]{0,39})\s*\}\}/g, (_, name: string) =>
+      (row?.vars[name] ?? '').trim(),
+    );
+    const text = [own.trim(), step.withBefore ? (before?.trim() ?? '') : ''].filter(Boolean).join('\n\n');
+    const done = {
+      status: 'done' as const,
+      output: text || null,
+      reason: null,
+      turnId: null,
+      startedAt: now,
+      finishedAt: now,
+    };
+    await this.ctx.db
+      .insert(schema.routineStepRuns)
+      .values({ id: newId(), runId: run.id, position, kind: step.kind, ...done })
+      .onConflictDoUpdate({
+        target: [schema.routineStepRuns.runId, schema.routineStepRuns.position],
+        set: done,
+      });
+    const thread = await this.services.threads.row(run.threadId).catch(() => null);
+    if (text) {
+      // A routine working in the main conversation shows it there; the others report to it.
+      if (thread && thread.kind !== 'routine' && thread.kind !== 'team') {
+        await this.services.threads.addMessage({
+          threadId: run.threadId,
+          role: 'assistant',
+          author: `bot:${run.botId}`,
+          text,
+          props: { routineRunId: run.id, routineName, ...(row?.trigger ? { outside: row.trigger } : {}) },
+        });
+      } else {
+        await this.deliver(run.botId, run.threadId, text, {
+          id: run.id,
+          routineName,
+          outside: row?.trigger ?? null,
+          slackChannel: row?.slackChannel ?? null,
+        });
+      }
+    }
+    if (position < steps.length) {
+      const rows = await this.ctx.db
+        .select()
+        .from(schema.routineStepRuns)
+        .where(eq(schema.routineStepRuns.runId, run.id));
+      await this.startStep(run, routineName, steps, position + 1, handedOn(steps, rows, position + 1), t);
+      return;
+    }
+    await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status: 'done', stepModel: null, finishedAt: now })
+      .where(eq(schema.routineRuns.id, run.id));
+    this.ctx.bus.refresh({ scope: 'routines' });
+    await this.startQueued(run.routineId);
+  }
+
+  /**
+   * Runs the routines whose person reacted in Slack with their reaction, on the message reacted
+   * to. Only the routine's own person: a reaction is how they hand a message over, and nobody else
+   * may start their routines. The message is someone's outside text; a message reacted to twice
+   * runs a routine once.
+   */
+  async runFromSlackReaction(e: {
+    userId: string;
+    reaction: string;
+    channel: string;
+    ts: string;
+    text: string;
+  }): Promise<(RoutineRun | null)[]> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.routines)
+      .where(and(eq(schema.routines.enabled, true), eq(schema.routines.slackReaction, e.reaction)));
+    const runs: (RoutineRun | null)[] = [];
+    for (const row of rows) {
+      const routine = toRoutine(row);
+      if ((await this.personOf(routine)) !== e.userId) continue;
+      runs.push(
+        await this.fire(
+          routine,
+          `slack:${e.channel}:${e.ts}`,
+          e.text,
+          false,
+          undefined,
+          undefined,
+          'forward',
+        ),
+      );
+    }
+    if (runs.length) this.ctx.bus.refresh({ scope: 'routines' });
+    return runs;
   }
 
   /** A bot step saves a value for a later wait step to put in its filter. */

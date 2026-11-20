@@ -111,7 +111,8 @@ export function fillFilter(filter: string, vars: Readonly<Record<string, string>
  * unanswered for `timeoutDays`, the run ends. `wait`: the run waits `minutes`, or for the routine's
  * webhook to be called or a mail to come to the bot whose content passes `filter` (the run's saved
  * values put in for `{{name}}`); what came is handed to the next step. No event in `timeoutDays`
- * ends the run.
+ * ends the run. `notify`: with no AI, `text` (the run's saved values put in for `{{name}}`) and,
+ * with `withBefore`, what the step before it ended with go where the routine reports.
  */
 export const RoutineStep = z.discriminatedUnion('kind', [
   z.object({
@@ -125,6 +126,12 @@ export const RoutineStep = z.discriminatedUnion('kind', [
     kind: z.literal('approval'),
     question: z.string().trim().min(1, 'validation.stepQuestion').max(2000),
     timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('notify'),
+    text: z.string().trim().max(4000).default(''),
+    withBefore: z.boolean().default(true),
   }),
   z.object({
     id: stepId,
@@ -160,6 +167,11 @@ export const Routine = z.object({
   inMain: z.boolean(),
   /** The Slack channel its reports go to; it then works only with what the team shares. */
   slackChannel: z.string().nullable().optional(),
+  /**
+   * The Slack reaction (an emoji's name) that runs it on the message its person reacts to; empty
+   * for none. Missing on older servers.
+   */
+  slackReaction: z.string().optional(),
   /** Also runs once each time the server starts. */
   onStartup: z.boolean(),
   /** A page checked before each scheduled run, without the AI; the bot runs only when it changed. */
@@ -223,6 +235,16 @@ export const RoutineCreate = z.object({
     .regex(/^[CG][A-Z0-9]{6,20}$/, 'validation.slackChannel')
     .nullable()
     .default(null),
+  /**
+   * The emoji name (`eyes`, `white_check_mark`) whose reaction in Slack, by the routine's own person
+   * on a message the bot can read, runs it on that message; empty for none.
+   */
+  slackReaction: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/^:|:$/g, '').toLowerCase())
+    .pipe(z.string().regex(/^[a-z0-9_+'-]{0,80}$/, 'validation.slackReaction'))
+    .default(''),
   /** Also runs once each time the server starts: on a desktop, when the computer is turned on. */
   onStartup: z.boolean().default(false),
   /**

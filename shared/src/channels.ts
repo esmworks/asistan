@@ -133,6 +133,12 @@ export const SLACK_BOT_SCOPES = [
 ] as const;
 
 /**
+ * Permissions the manifest asks for that the server does without: an app set up before they were
+ * added is not told it lacks them, and only what needs one (a routine run by a reaction) stays off.
+ */
+export const SLACK_OPTIONAL_SCOPES = ['reactions:read'] as const;
+
+/**
  * What to paste into Slack's "Create an app from a manifest": Socket Mode (no public address),
  * the events and permissions the server uses, and the buttons on cards.
  */
@@ -147,12 +153,19 @@ export function slackManifest(name: string): string {
       },
       oauth_config: {
         scopes: {
-          bot: [...SLACK_BOT_SCOPES],
+          bot: [...SLACK_BOT_SCOPES, ...SLACK_OPTIONAL_SCOPES],
         },
       },
       settings: {
         event_subscriptions: {
-          bot_events: ['app_mention', 'message.channels', 'message.groups', 'message.im', 'message.mpim'],
+          bot_events: [
+            'app_mention',
+            'message.channels',
+            'message.groups',
+            'message.im',
+            'message.mpim',
+            'reaction_added',
+          ],
         },
         interactivity: { is_enabled: true },
         org_deploy_enabled: false,

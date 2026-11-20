@@ -38,7 +38,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
-import { RunSteps, StepsEditor, type StepForm } from './RoutineSteps';
+import { RunSteps, StepsEditor, TemplatePicker, type StepForm } from './RoutineSteps';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -79,6 +79,12 @@ const Form = z.object({
       }),
       z.object({
         id: z.string(),
+        kind: z.literal('notify'),
+        text: z.string().max(4000),
+        withBefore: z.boolean(),
+      }),
+      z.object({
+        id: z.string(),
         kind: z.literal('wait'),
         on: z.enum(['time', 'webhook', 'email']),
         minutes: z.number().int().min(1).max(ROUTINE_WAIT_MAX_MINUTES),
@@ -109,6 +115,10 @@ const Form = z.object({
     .string()
     .trim()
     .regex(/^([CG][A-Z0-9]{6,20})?$/, 'routine.slackChannelInvalid'),
+  slackReaction: z
+    .string()
+    .trim()
+    .regex(/^:?[a-zA-Z0-9_+'-]{0,80}:?$/, 'routine.slackReactionInvalid'),
   watchUrl: z
     .string()
     .trim()
@@ -184,6 +194,7 @@ function fromRoutine(r?: Routine): Form {
     onStartup: r?.onStartup ?? false,
     watchUrl: r?.watchUrl ?? '',
     slackChannel: r?.slackChannel ?? '',
+    slackReaction: r?.slackReaction ?? '',
     webhookFilter: r?.webhookFilter ?? '',
     webhookPost: r?.webhookPost ?? false,
     emailTrigger: r?.emailTrigger ?? false,
@@ -237,7 +248,9 @@ export function RoutineDialog({
             ? { ...x, prompt: x.prompt.trim(), model: x.model.trim() }
             : x.kind === 'approval'
               ? { ...x, question: x.question.trim() }
-              : { ...x, filter: x.filter.trim() },
+              : x.kind === 'notify'
+                ? { ...x, text: x.text.trim() }
+                : { ...x, filter: x.filter.trim() },
         ),
         schedule: toSchedule(f),
         missed: f.missed,
@@ -246,6 +259,7 @@ export function RoutineDialog({
         onStartup: f.onStartup,
         watchUrl: f.watchUrl.trim() || null,
         slackChannel: f.slackChannel.trim() || null,
+        slackReaction: f.slackReaction.trim(),
         webhookFilter: f.webhookFilter.trim(),
         webhookPost: f.webhookPost,
         emailTrigger: f.emailTrigger,
@@ -291,6 +305,17 @@ export function RoutineDialog({
         </DialogHeader>
         <form onSubmit={form.handleSubmit((f) => save.mutate(f))} className="flex min-h-0 flex-1 flex-col">
           <div className="scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pt-1 pb-6">
+            {!routine && (
+              <TemplatePicker
+                onPick={(tpl) => {
+                  const opts = { shouldDirty: true } as const;
+                  form.setValue('name', tpl.name, opts);
+                  form.setValue('prompt', tpl.prompt, opts);
+                  form.setValue('steps', tpl.steps, opts);
+                  if (tpl.weekly) form.setValue('type', 'weekly', opts);
+                }}
+              />
+            )}
             <Field label={t('routine.name')} error={err.name?.message}>
               <Input
                 {...form.register('name')}
@@ -518,6 +543,16 @@ export function RoutineDialog({
               <Field label={t('routine.slackChannel')} error={err.slackChannel?.message}>
                 <Input {...form.register('slackChannel')} placeholder="C0123456789" className="rounded-xl" />
                 <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackChannelHint')}</p>
+              </Field>
+            )}
+            {(slack?.available || !!values.slackReaction) && (
+              <Field label={t('routine.slackReaction')} error={err.slackReaction?.message}>
+                <Input
+                  {...form.register('slackReaction')}
+                  placeholder={t('routine.slackReactionPlaceholder')}
+                  className="rounded-xl"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">{t('routine.slackReactionHint')}</p>
               </Field>
             )}
             <Field label={t('routine.watchUrl')} error={err.watchUrl?.message}>

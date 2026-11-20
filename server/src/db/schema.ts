@@ -493,6 +493,8 @@ export const routines = pgTable('routines', {
    * what goes to a channel is written from what the team shares, never from one person's own data.
    */
   slackChannel: text('slack_channel'),
+  /** The Slack reaction that runs the routine on the message its person reacts to; empty for none. */
+  slackReaction: text('slack_reaction').notNull().default(''),
   /** Also runs once each time the server starts (the computer was turned on, the app opened). */
   onStartup: boolean('on_startup').notNull().default(false),
   /** A page checked before each scheduled run; the bot runs only when its text changed. */

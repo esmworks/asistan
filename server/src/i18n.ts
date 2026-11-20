@@ -336,6 +336,7 @@ const tr = {
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
   'validation.slackChannel': 'Slack kanalının kimliği C ya da G ile başlar (kanal ayrıntılarının en altında)',
+  'validation.slackReaction': "Tepkinin Slack'teki adını yazın, ör. eyes ya da white_check_mark",
   'validation.whatsappGroup': 'Bir WhatsApp grubu seçin',
   'validation.toolSelector':
     'Araç adı harf, rakam, _ . - içerebilir; sonda tek bir * ile o adla başlayan bütün araçları seçer',
@@ -1836,6 +1837,7 @@ const en: Catalog<ServerKey> = {
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
+  'validation.slackReaction': "Write the reaction's name as Slack has it, e.g. eyes or white_check_mark",
   'validation.slackChannel':
     "A Slack channel's id starts with C or G (at the bottom of the channel's details)",
   'validation.whatsappGroup': 'Choose a WhatsApp group',

@@ -707,6 +707,7 @@ export class ToolFactory {
               prompt: a.prompt.trim(),
               // Steps after the instruction are set in the routine's window, where the person sees them.
               steps: [],
+              slackReaction: '',
               schedule: a.schedule,
               timezone: settings.timezone,
               enabled: true,
