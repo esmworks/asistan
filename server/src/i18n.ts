@@ -185,6 +185,7 @@ const tr = {
   'error.vaultImportTooMany': 'Dosyada çok fazla satır var (en çok 5.000)',
   'error.loginRequired': 'Kullanıcı adı ve şifre gerekli',
   'error.noBotNamed': '"{ref}" adında bot yok',
+  'error.noBotNamedDidYouMean': '"{ref}" adında bot yok. Şunu mu demek istedin: {names}?',
   'error.botArchived': 'Bot arşivli',
   'error.notOneEmoji': 'Tek bir emoji gerekli',
   'error.reactBotOnly': 'Yalnızca botun mesajlarına tepki verilebilir',
@@ -565,7 +566,7 @@ const tr = {
   'prompt.peers': '## Yazabileceğin botlar',
   'prompt.sameGroup': ' (senin grubundan; işi önce bunlara ver)',
   'prompt.peersHow':
-    'Bir bota iş vermek için `bot_send` aracını kullan; cevabı sana yeni bir mesaj olarak gelir, beklemene gerek yok.',
+    'Bir bota iş vermek için `bot_send` aracını kullan; cevabı sana yeni bir mesaj olarak gelir, beklemene gerek yok. Gönderdiğin isteklerin durumunu `bot_requests` ile görebilirsin.',
   'prompt.room': '## Oda',
   'prompt.roomIntro':
     'Şu an "{room}" adlı bir odadasın: kullanıcıyla ({user}) ve başka botlarla aynı sohbettesin. Odadakiler:',
@@ -873,6 +874,8 @@ const tr = {
   'tool.bot_send':
     'Başka bir bota mesaj/iş gönder. O bot bu sohbeti görmez: mesaj işi yapması için gereken her şeyi (bağlam, adlar, dosya yolları, beklenen sonuç) kendi içinde taşımalı. Hemen döner; cevap sana yeni bir mesaj olarak gelir. Yalnızca bilgi veriyorsan ve cevap gerekmiyorsa expect_reply: false ver; o zaman cevap gelmez. Kullanıcının verdiği bir onayı iletmek için approval_id ver (sunucu doğrular).',
   'tool.bot_status': 'Bir botun şu an çalışıp çalışmadığını gör.',
+  'tool.bot_requests':
+    'Başka botlara gönderdiğin istekleri listele: açık olanlar önce, sonra en son gönderdiklerin (istek kimliği, durum, ne zaman gönderildi, istek ve varsa cevap). Bir isteği durdurmak için kimliğini `bot_stop` ile ver.',
   'tool.bot_stop': 'Gönderdiğin bir işi durdur.',
   'tool.bot_conversations_read': 'Bir botun son yazışmalarını oku (yönetici).',
   'tool.my_activity':
@@ -1171,6 +1174,14 @@ const tr = {
   'tool.busy': '{name} çalışıyor ({count} bekleyen iş).',
   'tool.idle': '{name} boşta.',
   'tool.jobStopped': 'İş {id} durduruldu.',
+  'tool.requestsNone': 'Başka bota gönderdiğin bir istek yok.',
+  'tool.requestLine': '- {id} · {to} · {status} · {at} · İstek: {request}',
+  'tool.requestLineReply': '- {id} · {to} · {status} · {at} · İstek: {request} · Cevap: {reply}',
+  'tool.requestStatus.pending': 'cevap bekliyor',
+  'tool.requestStatus.done': 'cevaplandı',
+  'tool.requestStatus.error': 'başarısız',
+  'tool.requestStatus.stopped': 'durduruldu',
+  'tool.requestStatus.notified': 'bildirildi',
   'tool.conversationRef': '{title} (sohbet {thread}, mesaj {message})',
   'tool.conversation': '## Sohbet {title} ({id})',
   'tool.noConversations': 'Yazışma yok.',
@@ -1617,6 +1628,7 @@ const en: Catalog<ServerKey> = {
   'error.vaultImportTooMany': 'The file has too many rows (5,000 at most)',
   'error.loginRequired': 'Username and password are required',
   'error.noBotNamed': 'No bot named "{ref}"',
+  'error.noBotNamedDidYouMean': 'No bot named "{ref}". Did you mean {names}?',
   'error.botArchived': 'Bot is archived',
   'error.notOneEmoji': 'Give a single emoji',
   'error.reactBotOnly': 'Only the bot’s messages can be reacted to',
@@ -1993,7 +2005,7 @@ const en: Catalog<ServerKey> = {
   'prompt.peers': '## Bots you can write to',
   'prompt.sameGroup': ' (your group; give work to these first)',
   'prompt.peersHow':
-    "To give a bot work, use the `bot_send` tool; its reply comes to you as a new message, so you don't need to wait.",
+    "To give a bot work, use the `bot_send` tool; its reply comes to you as a new message, so you don't need to wait. See the state of the requests you sent with `bot_requests`.",
   'prompt.room': '## Room',
   'prompt.roomIntro':
     'You are in a room called "{room}": one conversation with the user ({user}) and other bots. In the room:',
@@ -2300,6 +2312,8 @@ const en: Catalog<ServerKey> = {
   'tool.bot_send':
     'Send a message/task to another bot. That bot does not see this chat: the message must carry everything it needs for the work (context, names, file paths, the result you expect). Returns at once; the reply comes to you as a new message. When you only pass on information and need no answer, set expect_reply: false; then no reply comes back. To pass on an approval the user gave, include approval_id (the server verifies it).',
   'tool.bot_status': 'See whether a bot is working right now.',
+  'tool.bot_requests':
+    'List the requests you sent to other bots: open ones first, then the latest you sent (request id, status, when it was sent, the request and the reply if any). To stop one, give its id to `bot_stop`.',
   'tool.bot_stop': 'Stop a job you sent.',
   'tool.bot_conversations_read': "Read a bot's recent conversations (manager).",
   'tool.my_activity':
@@ -2602,6 +2616,14 @@ const en: Catalog<ServerKey> = {
   'tool.busy': '{name} is working ({count} pending jobs).',
   'tool.idle': '{name} is idle.',
   'tool.jobStopped': 'Job {id} stopped.',
+  'tool.requestsNone': 'You have sent no requests to other bots.',
+  'tool.requestLine': '- {id} · {to} · {status} · {at} · Request: {request}',
+  'tool.requestLineReply': '- {id} · {to} · {status} · {at} · Request: {request} · Reply: {reply}',
+  'tool.requestStatus.pending': 'waiting for a reply',
+  'tool.requestStatus.done': 'answered',
+  'tool.requestStatus.error': 'failed',
+  'tool.requestStatus.stopped': 'stopped',
+  'tool.requestStatus.notified': 'notified',
   'tool.conversationRef': '{title} (conversation {thread}, message {message})',
   'tool.conversation': '## Conversation {title} ({id})',
   'tool.noConversations': 'No conversations.',

@@ -1236,6 +1236,7 @@ export const tr = {
   'routine.run.waiting': 'sırada',
   'routine.run.done': 'tamamlandı',
   'routine.run.error': 'başarısız',
+  'routine.run.stopped': 'durduruldu',
   'routine.run.skipped': 'atlandı',
   'routine.run.queued': 'sırada',
   'routine.gateWouldSkip': 'Ön kontrol bunu atlardı: {reason}',

@@ -406,6 +406,7 @@ export class TurnManager {
     let found = false;
     for (const r of this.running.values()) {
       if (r.turn.jobId === jobId && (!threadId || r.turn.threadId === threadId)) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
@@ -515,6 +516,12 @@ export class TurnManager {
     return dropped.length;
   }
 
+  /**
+   * Turns the person told to stop and that are still ending, so what follows the end (a routine
+   * run) can tell their stop from an interruption they did not ask for, such as a restart.
+   */
+  private stoppedByPerson = new Set<string>();
+
   /** Stop the running turn of a thread and drop its queued turns. */
   async interrupt(threadId: string): Promise<boolean> {
     const t = await this.services.settings.translator();
@@ -526,6 +533,7 @@ export class TurnManager {
     let found = dropped.length > 0;
     for (const r of this.running.values()) {
       if (r.turn.threadId === threadId) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
@@ -1593,6 +1601,10 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // The engine words an abort its own way; a stop the person asked for is worded as theirs.
+    if (this.stoppedByPerson.delete(turn.id) && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.stoppedByUser') };
+    }
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

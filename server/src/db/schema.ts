@@ -528,7 +528,7 @@ export const routineRuns = pgTable(
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
     // `queued`: outside text that arrived while another run was going, kept until that one ends.
-    status: text('status', { enum: ['running', 'done', 'error', 'skipped', 'waiting', 'queued'] }).notNull(),
+    status: text('status', { enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued'] }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
     /** What a queued run carries in, kept until it starts. */

@@ -191,7 +191,7 @@ export const ROUTINE_GATE_MODES = ['off', 'shadow', 'on'] as const;
 export type RoutineGateMode = (typeof ROUTINE_GATE_MODES)[number];
 export const RoutineGateDecision = z.enum(['run', 'skip']);
 
-export const RoutineRunStatus = z.enum(['running', 'done', 'error', 'skipped', 'waiting', 'queued']);
+export const RoutineRunStatus = z.enum(['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued']);
 export const RoutineRun = z.object({
   id: z.string(),
   routineId: z.string(),

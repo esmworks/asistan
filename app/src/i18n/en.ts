@@ -1245,6 +1245,7 @@ export const en: Catalog<MessageKey> = {
   'routine.run.waiting': 'waiting',
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
+  'routine.run.stopped': 'stopped',
   'routine.run.skipped': 'skipped',
   'routine.run.queued': 'queued',
   'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
