@@ -1,0 +1,1 @@
+ALTER TABLE "threads" ADD COLUMN "title_auto" boolean DEFAULT false NOT NULL;

@@ -95,6 +95,11 @@ export const Settings = z.object({
     .refine((n) => (MEMORY_REVIEW_STEPS as readonly number[]).includes(n))
     .default(20),
   /**
+   * A conversation's title is written by the bot's model once its first answer is in, instead of
+   * staying the first message's opening words.
+   */
+  modelTitles: z.boolean().default(true),
+  /**
    * How many turns may run at the same time across every bot; 0 leaves it to the server's
    * `YUMAKBOT_MAX_TURNS`. Fewer at once spends more slowly; more gets more done together.
    */

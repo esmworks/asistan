@@ -105,6 +105,11 @@ export const threads = pgTable(
       .notNull()
       .references(() => bots.id, { onDelete: 'cascade' }),
     title: sealedText('title').notNull().default(''),
+    /**
+     * The title was made from the opening words of the first message, not chosen by the person: once
+     * the first answer is in, a model may write a better one.
+     */
+    titleAuto: boolean('title_auto').notNull().default(false),
     // `room`: a conversation of the person with several bots; `botId` is then only its first member.
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the

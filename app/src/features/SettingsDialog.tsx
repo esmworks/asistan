@@ -609,6 +609,15 @@ function General() {
               onChange={(timezone) => save.mutate({ timezone })}
             />
           </Row>
+          {settings?.modelTitles !== undefined && (
+            <Row label={t('general.modelTitles')} hint={t('general.modelTitlesHint')}>
+              <Switch
+                checked={settings.modelTitles}
+                onCheckedChange={(v) => save.mutate({ modelTitles: v })}
+                aria-label={t('general.modelTitles')}
+              />
+            </Row>
+          )}
         </Card>
       )}
     </>

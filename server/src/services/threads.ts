@@ -421,9 +421,10 @@ export class ThreadService {
     this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
   }
 
-  async rename(id: string, title: string) {
+  /** `auto`: made from the first message's words, so a model may name the conversation better later. */
+  async rename(id: string, title: string, auto = false) {
     const row = await this.row(id);
-    await this.ctx.db.update(schema.threads).set({ title }).where(eq(schema.threads.id, id));
+    await this.ctx.db.update(schema.threads).set({ title, titleAuto: auto }).where(eq(schema.threads.id, id));
     this.ctx.bus.refresh({ scope: 'threads', botId: row.botId });
   }
 

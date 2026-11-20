@@ -29,6 +29,7 @@ import { TicketService } from './tickets';
 import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
 import { DoctorService } from './doctor';
+import { TitleService } from './titles';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
 import { MeetingService } from './meetings';
@@ -95,6 +96,7 @@ export class Services {
   readonly tables: TableService;
   readonly contentSeal: ContentSealService;
   readonly doctor: DoctorService;
+  readonly titles: TitleService;
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
@@ -158,6 +160,8 @@ export class Services {
     this.turns.onFinished((t, o) => this.tickets.onTurnFinished(t, o));
     this.memoryReview = new MemoryReviewService(ctx, this, engineFor);
     this.turns.onFinished((t, o) => this.memoryReview.onTurnFinished(t, o));
+    this.titles = new TitleService(ctx, this, engineFor);
+    this.turns.onFinished((t, o) => this.titles.onTurnFinished(t, o));
     this.threads.onContextReset((id) => this.memoryReview.onContextReset(id));
     this.meetings = new MeetingService(ctx, this, engineFor, clock);
     this.turns.onFinished((t) => this.meetings.onTurnFinished(t));

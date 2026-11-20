@@ -1503,6 +1503,9 @@ export const en: Catalog<MessageKey> = {
     "The interface, the bots' prompt and the system messages in conversations use this language.",
   'general.bots': 'Bots',
   'general.useDeviceZone': "Use this device's: {zone}",
+  'general.modelTitles': 'Let the model name conversations',
+  'general.modelTitlesHint':
+    "After the first answer, the bot's model writes a short title saying what the conversation is about. While this is off the title stays the first message's opening words; a title you give is never changed.",
   'general.timezone': 'Time zone',
   'general.timezoneHint': 'The clock routines and bots use.',
 

@@ -1493,6 +1493,9 @@ export const tr = {
   'general.languageHint': 'Arayüz, botların istemi ve sohbete yazılan sistem mesajları bu dilde olur.',
   'general.bots': 'Botlar',
   'general.useDeviceZone': 'Bu cihazınkini kullan: {zone}',
+  'general.modelTitles': 'Sohbetlere model ad versin',
+  'general.modelTitlesHint':
+    'İlk cevaptan sonra botun modeli sohbete neyle ilgili olduğunu söyleyen kısa bir başlık yazar. Kapalıyken başlık ilk mesajın başı kalır; kendi verdiğin başlık hiç değişmez.',
   'general.timezone': 'Saat dilimi',
   'general.timezoneHint': 'Rutinlerin ve botların kullandığı saat.',
 

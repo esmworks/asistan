@@ -7,6 +7,9 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A conversation is named by the bot's model once its first answer is in: a few words on what it is about, in place
+  of the first message's opening words. A title the person gives is never changed, a bot that is paused or past its
+  spending limit is not asked, and it can be turned off (Settings → General).
 - Settings → About has a check of the server's data for those who look after it: work that looks under way but that
   nothing runs, approval cards waiting on such work, folders of deleted bots, conversations and groups, sealed content
   that does not open, and the free disk space. A safe repair ends the hanging work as a restart would, marks the cards

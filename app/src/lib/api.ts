@@ -276,6 +276,7 @@ export interface Settings {
   memoryReviewEvery?: number;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
+  modelTitles?: boolean;
   /** The domain bots receive mail at; empty when mail is off. Missing on older servers. */
   emailDomain?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
