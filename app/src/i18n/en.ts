@@ -86,6 +86,7 @@ export const en: Catalog<MessageKey> = {
   'room.goalPlaceholder': 'What is this room for? Every bot knows it.',
   'room.members': 'Bots',
   'room.membersHint': 'They speak in the order you pick them.',
+  'room.archivedMembers': 'Archived bots in this room ({count}) leave it when you save.',
   'room.pickOne': 'Pick at least one bot',
   'room.nameRequired': 'Give the room a name',
   'room.noBots': 'Create a bot first.',

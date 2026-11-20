@@ -90,6 +90,7 @@ export const tr = {
   'room.goalPlaceholder': 'Bu odada ne konuşulacak? Her bot bunu bilir.',
   'room.members': 'Botlar',
   'room.membersHint': 'Seçtiğin sırayla konuşurlar.',
+  'room.archivedMembers': 'Bu odadaki arşivlenmiş botlar ({count}) kaydedince odadan çıkar.',
   'room.pickOne': 'En az bir bot seç',
   'room.nameRequired': 'Odaya bir ad ver',
   'room.noBots': 'Önce bir bot oluştur.',

@@ -305,13 +305,19 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
   const [rounds, setRounds] = useState(room?.rounds ?? 0);
   const [minutes, setMinutes] = useState<RoomMinutes>(room?.minutes ?? 'ask');
   const [tried, setTried] = useState(false);
+  // An archived bot stays a member until the room is saved, but it is not in the list to pick from
+  // and the server takes no archived bot, so only bots still in the list count as chosen.
+  const chosen = bots.length ? picked.filter((id) => bots.some((b) => b.id === id)) : picked;
+  const dropped =
+    room && bots.length ? room.members.filter((id) => !bots.some((b) => b.id === id)).length : 0;
   const toggle = (id: string) =>
-    setPicked((p) =>
-      p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_ROOM_MEMBERS ? p : [...p, id],
-    );
+    setPicked((all) => {
+      const p = all.filter((x) => bots.some((b) => b.id === x));
+      return p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_ROOM_MEMBERS ? p : [...p, id];
+    });
   const save = useMutation({
     mutationFn: () => {
-      const input = { title: title.trim(), goal: goal.trim(), botIds: picked, responders, rounds, minutes };
+      const input = { title: title.trim(), goal: goal.trim(), botIds: chosen, responders, rounds, minutes };
       return room ? api.updateRoom(room.id, input) : api.createRoom(input);
     },
     onSuccess: (saved) => {
@@ -332,7 +338,7 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
     },
     onError: (e) => toast.error((e as Error).message),
   });
-  const valid = !!title.trim() && picked.length > 0;
+  const valid = !!title.trim() && chosen.length > 0;
   return (
     <form
       // A grid item is as wide as its longest line by default; bot descriptions would push it out.
@@ -357,12 +363,12 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
           autoFocus
         />
       </Field>
-      <Field label={t('room.members')} error={tried && !picked.length ? 'room.pickOne' : undefined}>
+      <Field label={t('room.members')} error={tried && !chosen.length ? 'room.pickOne' : undefined}>
         {bots.length ? (
           <>
             <div className="scroll-thin max-h-56 space-y-0.5 overflow-y-auto rounded-2xl border p-1">
               {bots.map((b) => {
-                const at = picked.indexOf(b.id);
+                const at = chosen.indexOf(b.id);
                 return (
                   <button
                     key={b.id}
@@ -394,6 +400,9 @@ function RoomForm({ room, onDone }: { room?: Room; onDone(): void }) {
               })}
             </div>
             <p className="text-xs text-muted-foreground">{t('room.membersHint')}</p>
+            {dropped > 0 && (
+              <p className="text-xs text-muted-foreground">{t('room.archivedMembers', { count: dropped })}</p>
+            )}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">{t('room.noBots')}</p>
