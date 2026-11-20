@@ -1608,6 +1608,41 @@ export class RoutineService {
     return !!next;
   }
 
+  /**
+   * Ends the run of a turn that asked other bots, when the answer cannot reach it any more: its bot
+   * was archived while the request was open, so no turn will read the answer and write the report.
+   */
+  async abandonAsked(fromTurnId: string) {
+    const [turn] = await this.ctx.db
+      .select({ routineRunId: schema.turns.routineRunId })
+      .from(schema.turns)
+      .where(eq(schema.turns.id, fromTurnId));
+    if (!turn?.routineRunId) return;
+    const t = await this.services.settings.translator();
+    const [ended] = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status: 'error', reason: t('routine.botMissing'), finishedAt: this.clock() })
+      .where(
+        and(
+          eq(schema.routineRuns.id, turn.routineRunId),
+          inArray(schema.routineRuns.status, ['running', 'waiting']),
+          notExists(
+            this.ctx.db
+              .select({ id: schema.turns.id })
+              .from(schema.turns)
+              .where(
+                and(
+                  eq(schema.turns.routineRunId, schema.routineRuns.id),
+                  inArray(schema.turns.status, ['queued', 'running']),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: schema.routineRuns.id });
+    if (ended) this.ctx.bus.refresh({ scope: 'routines' });
+  }
+
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.routineRunId) return;
     const [run] = await this.ctx.db

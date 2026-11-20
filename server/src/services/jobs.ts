@@ -151,7 +151,11 @@ export class JobService {
       .set({ reply, status, finishedAt: new Date() })
       .where(and(eq(schema.jobs.id, job.id), eq(schema.jobs.status, 'pending')));
     const from = await this.services.bots.get(job.fromBotId).catch(() => null);
-    if (!from || from.archivedAt) return;
+    if (!from || from.archivedAt) {
+      // The routine run that asked would wait for this answer forever.
+      if (job.fromTurnId) await this.services.routines.abandonAsked(job.fromTurnId);
+      return;
+    }
     await this.markReplied(job);
     if (job.kind === 'notify') return;
     await this.deliver(job);
@@ -203,7 +207,10 @@ export class JobService {
           .returning();
         if (!ended) continue;
         const from = await this.services.bots.get(ended.fromBotId).catch(() => null);
-        if (!from || from.archivedAt) continue;
+        if (!from || from.archivedAt) {
+          if (ended.fromTurnId) await this.services.routines.abandonAsked(ended.fromTurnId);
+          continue;
+        }
         await this.markReplied(ended);
         if (ended.kind !== 'notify' && !ended.deliveredAt) await this.deliver(ended);
       } catch (err) {
