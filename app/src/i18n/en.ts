@@ -2152,6 +2152,9 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
   'whatsapp.notices': 'Also tell me about other conversations',
   'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
+  'whatsapp.chats': 'Let the bots look at my chats',
+  'whatsapp.chatsHint':
+    "When you ask, your bots read this account's chats with people and groups and draft messages; a message goes only once you approve it. Messages are kept encrypted for 30 days from when this is on.",
   'whatsapp.qrAlt': 'QR code of the WhatsApp link',
   'whatsapp.qrWaiting': 'Preparing the QR code…',
   'whatsapp.scan':

@@ -31,6 +31,8 @@ function fakeLibrary() {
   const flags = { failDownload: false, dropOnSend: false };
   /** The groups the linked account is in. */
   const groups: Record<string, { id: string; subject: string }> = {};
+  /** The numbers that are on WhatsApp. */
+  const onWa = new Set<string>();
   /** Every send tried, with the id it carried, including those the connection dropped under. */
   const tried: { content: Record<string, unknown>; id?: string }[] = [];
   const lib: WaLibrary = {
@@ -61,6 +63,8 @@ function fakeLibrary() {
           presence.push(type);
         },
         groupFetchAllParticipating: async () => groups,
+        onWhatsApp: async (...jids) =>
+          jids.map((jid) => ({ jid, exists: onWa.has(jid.replace(/@.*$/, '')) })),
         logout: async () => {},
         end: () => {},
       };
@@ -108,6 +112,7 @@ function fakeLibrary() {
     },
     texts: () => sent.map((s) => s.content.text).filter((x): x is string => typeof x === 'string'),
     groups,
+    onWa,
     /** A message in any chat: someone else's, or a group's (`participant` says who wrote it). */
     chat(
       remoteJid: string,
@@ -855,6 +860,109 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     await t.services.turns.idle();
     expect((await t.services.routines.get(r.id)).whatsappGroup).toBeNull();
     expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toEqual([]);
+  });
+
+  it('sohbette WhatsApp’a bakmak önce kart sorar; izinle her sohbet saklanır ve okunur, rutin başlamaz', async () => {
+    const { wa, asistan } = await setUp();
+    wa.groups[GROUP] = { id: GROUP, subject: 'Aile' };
+    const thread = (await t.api<Thread>('GET', `/api/bots/${asistan.id}/main-thread`)).body;
+    const card = () =>
+      waitFor(async () =>
+        (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+          (a) => a.toolName === 'ask_user',
+        ),
+      );
+    // No routine reads WhatsApp: the bot has the tools anyway, and asks before the first look.
+    await t.send(thread.id, '[araç:whatsapp_chats {}]');
+    const first = await card();
+    await t.api('POST', `/api/approvals/${first.id}`, { decision: 'allow', answer: 'Hayır' });
+    await t.services.turns.idle();
+    expect((await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.chats).toBe(false);
+    expect(wa.options().ignore(GROUP)).toBe(true);
+
+    await t.send(thread.id, '[araç:whatsapp_chats {}]');
+    const second = await card();
+    await t.api('POST', `/api/approvals/${second.id}`, { decision: 'allow', answer: 'Evet, okusun' });
+    await t.services.turns.idle();
+    expect((await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.chats).toBe(true);
+    expect((await t.messages(thread.id)).map((m) => m.text).join('\n')).toContain(
+      'Henüz saklanan WhatsApp sohbeti yok',
+    );
+    expect(wa.options().ignore(GROUP)).toBe(false);
+
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Akşam geliyor musun?' }, {}, 'Ahmet');
+    wa.chat(
+      GROUP,
+      { imageMessage: { caption: 'Tatil fotoğrafı', mimetype: 'image/jpeg' } },
+      { participant: `${CUSTOMER}@s.whatsapp.net` },
+    );
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 2);
+    await t.send(thread.id, `[araç:whatsapp_history {"chat":"${CUSTOMER}@s.whatsapp.net"}]`);
+    await t.send(thread.id, `[araç:whatsapp_history {"chat":"${GROUP}"}]`);
+    await t.services.turns.idle();
+    const said = (await t.messages(thread.id)).map((m) => m.text).join('\n');
+    expect(said).toContain('Akşam geliyor musun?');
+    expect(said).toContain('Tatil fotoğrafı');
+    // A chat no routine reads keeps no files and starts no run; its place moves on at once.
+    expect(said).toContain('dosyalar yalnızca bir rutinin okuduğu sohbetlerde saklanır');
+    expect(existsSync(join(t.dataDir, 'workspaces', 'bots', asistan.id, 'files', 'whatsapp'))).toBe(false);
+    expect(await t.db.db.select().from(schema.routineRuns)).toEqual([]);
+    const chats = await t.db.db.select().from(schema.whatsappChats);
+    const messages = await t.db.db.select().from(schema.whatsappMessages);
+    for (const c of chats) {
+      expect(c.batchedSeq).toBe(Math.max(...messages.filter((m) => m.chat === c.jid).map((m) => m.seq)));
+    }
+    // Writing to the group is still not done.
+    await t.send(thread.id, `[araç:whatsapp_send {"chat":"${GROUP}","text":"selam"}]`);
+    await t.services.turns.idle();
+    expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toEqual([]);
+  });
+
+  it('bot, hiç yazmamış bir numaraya kartla mesaj taslağı hazırlar; WhatsApp’ta olmayana hazırlamaz', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.onWa.add('905004445566');
+    const thread = (await t.api<Thread>('GET', `/api/bots/${asistan.id}/main-thread`)).body;
+    await t.send(thread.id, '[araç:whatsapp_send {"chat":"+90 500 111 0000","text":"Merhaba"}]');
+    await t.services.turns.idle();
+    expect((await t.messages(thread.id)).map((m) => m.text).join('\n')).toContain(
+      'WhatsApp kullanmıyor: +905001110000',
+    );
+    await t.send(
+      thread.id,
+      '[araç:whatsapp_send {"chat":"+90 500 444 55 66","text":"Yarın 10’da uygun musunuz?"}]',
+    );
+    const card = await waitFor(async () =>
+      (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+        (a) => a.toolName === 'whatsapp_send',
+      ),
+    );
+    expect(card.summary).toContain('+905004445566');
+    expect(wa.sent.filter((x) => x.jid.startsWith('905004445566'))).toHaveLength(0);
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: 'Gönder' });
+    await waitFor(async () => wa.sent.some((x) => x.jid === '905004445566@s.whatsapp.net'));
+    expect(wa.sent.find((x) => x.jid === '905004445566@s.whatsapp.net')!.content.text).toBe(
+      'Yarın 10’da uygun musunuz?',
+    );
+    // Saving the form without the switch keeps it as it is.
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id });
+    expect((await t.api<WhatsAppStatus>('GET', '/api/whatsapp')).body.chats).toBe(true);
+  });
+
+  it('izinle saklanan eski mesajlar, sonradan açılan rutine yeni diye gitmez', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'eski konu' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 1);
+    const r = await routine(asistan.id, { whatsappPeople: true });
+    await waitFor(async () => reads().people);
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'yeni konu' }, {}, 'Ahmet');
+    await runs(r.id);
+    await t.services.turns.idle();
+    const prompt = t.engine.requests.at(-1)!.prompt;
+    const fresh = prompt.slice(prompt.indexOf('Yeni mesajlar:'));
+    expect(fresh).toContain('yeni konu');
+    expect(fresh).not.toContain('eski konu');
   });
 
   it('WhatsApp başkası tarafından bağlanınca öncekinin rutinleri onu okumaz', async () => {

@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
-import type { Bot, WhatsAppGroup } from '@yumakbot/shared';
+import { PhoneNumber, type Bot, type WhatsAppGroup } from '@yumakbot/shared';
+import type { ChatReads } from '../channels/whatsapp';
 import { z } from 'zod';
 import { schema } from '../db';
 import type { AppTool } from '../engine/types';
@@ -11,10 +12,12 @@ import { realPath } from '../workspace';
 import type { Define } from './index';
 
 /**
- * WhatsApp for a bot working for the person who linked it: the chats routines read, kept 30 days,
- * and drafts. A draft (a reply, a Status post) goes to the person on a card and nothing is sent
- * until they answer "send"; the card is kept, so it works whenever they answer, and the bot does
- * not wait for it.
+ * WhatsApp for a bot working for the person who linked it, used in a conversation like any
+ * connected app: the chats kept here (30 days) and drafts. Once the person lets the bots read
+ * their chats, every chat is kept and seen; until then only the chats the bot's routines read, and
+ * the first look asks the person on a card. A draft (a message, a Status post) goes to the person
+ * on a card and nothing is sent until they answer "send"; the card is kept, so it works whenever
+ * they answer, and the bot does not wait for it.
  */
 export function whatsappTools(opts: {
   def: Define;
@@ -27,14 +30,33 @@ export function whatsappTools(opts: {
   cwd: string;
   /** Whether the bot may draft at all: a read-only bot only reads. */
   drafts: boolean;
-  /** Whether a routine of the bot reads WhatsApp: only then does it see chats and answer them. */
+  /** Whether a routine of the bot reads WhatsApp: it sees those chats without the bots reading all. */
   reader: boolean;
+  /** Asks the person on a card whether the bots may read every chat. */
+  askOpen: () => Promise<'yes' | 'no' | 'timeout'>;
   t: T;
 }): AppTool[] {
   const { def, services: s, bot, person, roots, cwd, t } = opts;
   const wa = s.whatsapp;
-  /** The chats this bot's routines read: the only ones it sees and answers. */
-  const covered = () => s.routines.whatsappReadsOf(bot.id);
+  const every: ChatReads = { groups: new Set(), people: true, all: true };
+  /** The chats the bot sees: all of them once the person allowed it, else its routines'; null for none. */
+  const reach = async (): Promise<ChatReads | null> => {
+    if (await wa.chatsOpen()) return every;
+    return opts.reader ? s.routines.whatsappReadsOf(bot.id) : null;
+  };
+  /**
+   * The chats the bot sees, or the person is asked first; a string is what the tool answers when
+   * they did not allow it. A bot whose routines read some chats asks only once it needs others.
+   */
+  const reachOrAsk = async (others = false): Promise<ChatReads | string> => {
+    const r = await reach();
+    if (r && (r.all || !others)) return r;
+    const answer = await opts.askOpen();
+    if (answer === 'timeout') return t('tool.questionTimedOut');
+    if (answer !== 'yes') return r ?? t('tool.whatsappOpenSkipped');
+    await wa.openChats(true);
+    return every;
+  };
 
   /** A file the bot names, when it is inside one of its own folders. */
   const ownFile = async (name: string): Promise<string | null> => {
@@ -100,8 +122,10 @@ export function whatsappTools(opts: {
       'whatsapp_chats',
       { limit: z.number().int().min(1).max(100).default(30) },
       async ({ limit }) => {
-        const rows = await wa.chats(limit, await covered());
-        if (!rows.length) return t('tool.whatsappNoChats');
+        const r = await reachOrAsk();
+        if (typeof r === 'string') return r;
+        const rows = await wa.chats(limit, r);
+        if (!rows.length) return t(r.all ? 'tool.whatsappNoChatsYet' : 'tool.whatsappNoChats');
         return rows
           .map((r) => `- ${r.jid} · ${r.kind} · ${r.name || '-'} · ${r.lastAt.toISOString()}`)
           .join('\n');
@@ -111,49 +135,82 @@ export function whatsappTools(opts: {
     def(
       'whatsapp_history',
       { chat: z.string().min(3).max(120), limit: z.number().int().min(1).max(200).default(50) },
-      async ({ chat, limit }) =>
-        (await wa.history(chat, limit, bot.id, await covered())) ?? t('tool.whatsappUnknownChat', { chat }),
+      async ({ chat, limit }) => {
+        let r = await reachOrAsk();
+        if (typeof r === 'string') return r;
+        // A chat the bot's routines do not read: the person may let it see every chat.
+        if (!r.all && !(await wa.knownChat(chat, r)) && (await wa.knownChat(chat))) {
+          r = await reachOrAsk(true);
+          if (typeof r === 'string') return r;
+        }
+        return (
+          (await wa.history(chat, limit, bot.id, r)) ??
+          t(r.all ? 'tool.whatsappUnknownChatOpen' : 'tool.whatsappUnknownChat', { chat })
+        );
+      },
       'read',
     ),
   ];
-  const tools: AppTool[] = opts.reader ? reads : [];
+  const tools: AppTool[] = [...reads];
   if (!opts.drafts) return tools;
-  if (opts.reader) {
-    tools.push(
-      def(
-        'whatsapp_send',
-        {
-          chat: z.string().min(3).max(120),
-          text: z.string().max(4000).default(''),
-          file: z.string().max(1000).optional(),
-        },
-        async ({ chat, text, file }) => {
-          const known = await wa.knownChat(chat, await covered());
-          if (!known) return t('tool.whatsappUnknownChat', { chat });
-          // Groups are only read.
-          if (known.kind === 'group') return t('tool.whatsappNoGroupReply');
-          const path = file ? await ownFile(file) : null;
-          if (file && !path) return t('tool.whatsappBadFile', { file });
-          if (!text.trim() && !path) return t('tool.whatsappEmpty');
-          const to = known.name ? `${known.name} (${chat.replace(/@.*$/, '')})` : chat;
-          const summary = [
-            t('whatsapp.draftCard', { to, text: text.trim() }),
-            ...(path ? ['', t('whatsapp.draftCardFile', { name: basename(path) })] : []),
-          ].join('\n');
-          return draft({
-            kind: 'message',
-            chat,
-            text: text.trim(),
-            file: path,
-            summary,
-            approve: t('whatsapp.send'),
-            reject: t('whatsapp.dontSend'),
-          });
-        },
-        'internal',
-      ),
-    );
-  }
+  tools.push(
+    def(
+      'whatsapp_send',
+      {
+        chat: z.string().min(3).max(120),
+        text: z.string().max(4000).default(''),
+        file: z.string().max(1000).optional(),
+      },
+      async ({ chat: ref, text, file }) => {
+        let r = await reachOrAsk();
+        if (typeof r === 'string') return r;
+        let chat = ref.trim();
+        let known = await wa.knownChat(chat, r);
+        // A number, or a chat the bot's routines do not read: the person may let it reach every chat.
+        const phone = PhoneNumber.safeParse(chat);
+        if (!known && !r.all && (phone.success || (await wa.knownChat(chat)))) {
+          r = await reachOrAsk(true);
+          if (typeof r === 'string') return r;
+          known = await wa.knownChat(chat, r);
+        }
+        if (!known && r.all && phone.success) {
+          const asChat = `${phone.data}@s.whatsapp.net`;
+          known = await wa.knownChat(asChat, r);
+          if (known) chat = asChat;
+          else {
+            // Someone who never wrote: only a number that is on WhatsApp. When that cannot be
+            // checked now, the draft waits for the connection like any other.
+            const found = await wa.numberChat(phone.data);
+            if (found === null) return t('tool.whatsappNotOnWhatsApp', { phone: phone.data });
+            chat = asChat;
+            known = { name: '', kind: 'person' };
+          }
+        }
+        if (!known) return t(r.all ? 'tool.whatsappUnknownChatOpen' : 'tool.whatsappUnknownChat', { chat });
+        // Groups are only read.
+        if (known.kind === 'group') return t('tool.whatsappNoGroupReply');
+        const path = file ? await ownFile(file) : null;
+        if (file && !path) return t('tool.whatsappBadFile', { file });
+        if (!text.trim() && !path) return t('tool.whatsappEmpty');
+        const number = chat.replace(/@.*$/, '');
+        const to = known.name ? `${known.name} (${number})` : `+${number}`;
+        const summary = [
+          t('whatsapp.draftCard', { to, text: text.trim() }),
+          ...(path ? ['', t('whatsapp.draftCardFile', { name: basename(path) })] : []),
+        ].join('\n');
+        return draft({
+          kind: 'message',
+          chat,
+          text: text.trim(),
+          file: path,
+          summary,
+          approve: t('whatsapp.send'),
+          reject: t('whatsapp.dontSend'),
+        });
+      },
+      'internal',
+    ),
+  );
   // A Status post reads no chat: any of the person's bots (a social one) may draft one.
   tools.push(
     def(

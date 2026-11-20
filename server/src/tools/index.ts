@@ -1310,6 +1310,27 @@ export class ToolFactory {
           cwd: bot.projectDir ?? workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, null).threadDir,
           drafts: bot.permissionMode !== 'readonly',
           reader: !!opts.whatsappReader,
+          // Reading someone's chats starts only on the person's own word, whatever the bot's level.
+          askOpen: async () => {
+            const yes = t('tool.whatsappFollowYes');
+            const c = await askPerson(s, {
+              bot,
+              thread,
+              turn,
+              signal,
+              timeoutMs: unattended,
+              title: t('tool.whatsappOpenTitle', { bot: bot.name }),
+              items: [
+                {
+                  question: t('tool.whatsappOpenQuestion'),
+                  context: t('tool.whatsappFollowKeep'),
+                  options: [yes, t('tool.whatsappFollowNo')],
+                },
+              ],
+            });
+            if (c.timedOut) return 'timeout';
+            return c.status === 'allowed' && c.answers[0] === yes ? 'yes' : 'no';
+          },
           t,
         }),
         def(

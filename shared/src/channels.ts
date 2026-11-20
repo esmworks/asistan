@@ -49,6 +49,12 @@ export const WhatsAppSet = z.object({
   /** The bot its messages go to first; `/bot <name>` changes it from WhatsApp. */
   botId: z.string().min(1).nullable(),
   notices: z.boolean().default(true),
+  /**
+   * Whether the bots may read the account's chats and draft messages in a conversation, as they
+   * use any connected app; off, only the chats routines read are kept and seen. Left out, it
+   * stays as it is.
+   */
+  chats: z.boolean().optional(),
 });
 export type WhatsAppSet = z.infer<typeof WhatsAppSet>;
 
@@ -59,6 +65,8 @@ export interface WhatsAppStatus {
   phone: string | null;
   botId: string | null;
   notices: boolean;
+  /** Whether the bots may read the account's chats and draft messages in a conversation. */
+  chats: boolean;
   /** The linked account's number, once linked. */
   linked: string | null;
   /** The QR code to scan while linking, as a PNG data URL. */
