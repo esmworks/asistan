@@ -13,6 +13,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { translator } from '../i18n';
 import { BASH_MAX_TIMEOUT_MS } from '../runtime/watchdog';
+import { readableError } from '../util';
 import { failureStreak } from './failures';
 import { fitResult } from './fit-image';
 import { gatePrompt, parseGate } from './gate';
@@ -199,6 +200,21 @@ export function eventWindows(info: {
   const own = eventWindow(info);
   if (own && own.used !== null) byKind.set(own.kind, own);
   return [...byKind.values()].filter((w) => w.used !== null);
+}
+
+/** How the SDK words a Claude Code process that died: it exited with a code or was killed by a signal. */
+const CLI_CRASH = /^Claude Code process (exited with code|terminated by signal)\b/;
+
+/**
+ * A rejected event whose overage is still allowed does not stop the run: the CLI carries on with
+ * the extra usage, so a later, unrelated error is not the plan's limit.
+ */
+function overageCarries(info: { overageStatus?: string; isUsingOverage?: boolean }): boolean {
+  return (
+    info.isUsingOverage === true ||
+    info.overageStatus === 'allowed' ||
+    info.overageStatus === 'allowed_warning'
+  );
 }
 
 /** What was last kept from the events, so the same windows are not written after every call. */
@@ -569,6 +585,8 @@ export class ClaudeEngine implements Engine {
     let limited: { resetsAt: Date | null } | null = null;
     // What a failed API call said, when the CLI reported one.
     let apiError: string | null = null;
+    // The CLI named a billing failure itself, whatever words its text used.
+    let billingFailed = false;
     // Subagents the bot started this run, by the id of the call that started each.
     const subagents = new Map<string, SubagentState>();
     try {
@@ -582,7 +600,8 @@ export class ClaudeEngine implements Engine {
             lastEventPlan = seen;
             req.onPlanUsage(windows);
           }
-          if (info.status === 'rejected') limited = { resetsAt: resetTime(info.resetsAt) };
+          if (info.status === 'rejected' && !overageCarries(info))
+            limited = { resetsAt: resetTime(info.resetsAt) };
           else if (info.status === 'allowed_warning') {
             req.onLimitNear?.({ used: info.utilization ?? null, resetsAt: resetTime(info.resetsAt) });
           }
@@ -624,6 +643,7 @@ export class ClaudeEngine implements Engine {
           const err = (m as { error?: string }).error;
           if (err === 'authentication_failed') authFailed = true;
           if (err === 'rate_limit') limited ??= { resetsAt: null };
+          if (err === 'billing_error') billingFailed = true;
           // The CLI reports a failed API call as an assistant message carrying the error's text:
           // that text is the cause of the failure, not the bot's reply.
           if (err) {
@@ -746,13 +766,21 @@ export class ClaudeEngine implements Engine {
       // An API failure in words the person can act on: an empty balance, an overloaded server.
       const cause = errorMessage ?? apiError;
       const said = apiError && cause ? providerTrouble(cause, 'Claude', t) : null;
+      const billing = billingFailed || said?.billing === true;
+      // The CLI's own words for a crash: its process exited or was killed, with nothing from the API.
+      const crashed = !apiError && !!cause && CLI_CRASH.test(cause);
       return {
         ok: false,
         kind: 'engine',
-        message: said?.message ?? cause ?? t('engine.unfinished'),
+        message:
+          billingFailed && cause && !said?.billing
+            ? `${t('engine.providerBilling', { provider: 'Claude' })} (${readableError(cause.trim(), 300)})`
+            : (said?.message ?? cause ?? t('engine.unfinished')),
         text,
         sessionId,
-        ...(((cause && OVERLOADED.test(cause)) || said?.transient) && { transient: true }),
+        ...(((cause && OVERLOADED.test(cause)) || said?.transient || crashed) && { transient: true }),
+        ...(crashed && { crashed: true }),
+        ...(billing && { billing: true }),
         ...(outOfSteps && { stepLimit: true }),
         costUsd,
         sessionCostUsd,

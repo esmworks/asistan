@@ -1,4 +1,4 @@
-import { getDomain } from 'tldts';
+import { getDomain, getDomainWithoutSuffix } from 'tldts';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { openWith, sealWith } from '../crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -468,6 +468,43 @@ export class VaultService {
       return true;
     });
     return [...own, ...others];
+  }
+
+  /**
+   * Why `forHost` found nothing, as far as the bot may be told without handing it anything of the
+   * vault: how many of the person's own logins for this site are kept for other bots only (a count,
+   * never a name), and the sites this bot may use that carry the same name under another ending
+   * (a page at example.org when the login is for example.com). Sites with nothing to do with the
+   * page are never named, so a page cannot make the bot list the vault. Another person's logins
+   * and the team's are not counted.
+   */
+  async whyNone(
+    host: string,
+    botId: string | undefined,
+    userId: string | null,
+  ): Promise<{ notShared: number; otherSites: string[] }> {
+    await this.ready();
+    const rows = await this.ctx.db.select().from(schema.vaultLogins).where(usableBy(userId));
+    const mayUse = (r: Row) => !r.botIds || (botId !== undefined && r.botIds.includes(botId));
+    const notShared = rows.filter(
+      (r) => userId !== null && r.userId === userId && siteMatches(host, r.site) && !mayUse(r),
+    ).length;
+    const name = getDomainWithoutSuffix(siteOf(host), { allowPrivateDomains: true });
+    const otherSites = name
+      ? [
+          ...new Set(
+            rows
+              .filter(
+                (r) =>
+                  mayUse(r) &&
+                  !siteMatches(host, r.site) &&
+                  getDomainWithoutSuffix(r.site, { allowPrivateDomains: true }) === name,
+              )
+              .map((r) => r.site),
+          ),
+        ].slice(0, 3)
+      : [];
+    return { notShared, otherSites };
   }
 
   async used(id: string) {

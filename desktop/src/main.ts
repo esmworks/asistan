@@ -27,6 +27,7 @@ import {
   writeDesktopConfig,
   type DesktopConfig,
 } from './desktop-config';
+import { createCrashGuard, isCrash } from './crash-guard';
 import { startEgress } from './egress';
 import { isLocale } from '@yumakbot/shared/i18n';
 import { loadLocale, locale, saveLocale, setLocale, t, type DesktopKey } from './i18n';
@@ -268,6 +269,19 @@ function watchForUpdates() {
       });
       return response === 0;
     },
+    confirmInstall: async () => {
+      const count = await runningBotCount();
+      if (count < 1) return true;
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        message: t('dialog.quitWorking', { count }),
+        detail: t('update.workingDetail'),
+        buttons: [t('update.restart'), t('update.later')],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
     // The installer replaces the app's files, the server's among them, so the server is stopped
     // the usual way first instead of being cut off mid-write.
     beforeInstall: async () => {
@@ -285,6 +299,8 @@ function watchForUpdates() {
     warn: (message) => log.warn(message),
   });
 }
+
+const crashGuard = createCrashGuard();
 
 function showWindow() {
   if (!origin) return;
@@ -325,6 +341,28 @@ function showWindow() {
   showUnread();
   win.once('ready-to-show', () => win?.show());
   win.webContents.on('context-menu', (_e, params) => showContextMenu(win!, params));
+  // A dead page is reloaded; one that dies again and again is left to the person to decide.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`window renderer gone: ${details.reason} (exit code ${details.exitCode})`);
+    if (!isCrash(details.reason)) return;
+    if (crashGuard.record() === 'reload') {
+      win?.webContents.reload();
+      return;
+    }
+    void dialog
+      .showMessageBox({
+        type: 'error',
+        message: t('dialog.pageCrashed'),
+        detail: t('dialog.pageCrashedDetail'),
+        buttons: [t('dialog.reload'), t('dialog.quit')],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) win?.webContents.reload();
+        else app.quit();
+      });
+  });
   // Closing the window keeps the bots running; only "Quit" stops the server.
   win.on('close', (e) => {
     if (!quitting) {
@@ -819,17 +857,23 @@ app.on('activate', () => showWindow());
 app.on('will-quit', () => globalShortcut.unregisterAll());
 // Keep running in the menu bar when every window is closed.
 app.on('window-all-closed', () => {});
+/** How many bots are working on the local server; a server that does not answer counts as none. */
+async function runningBotCount(): Promise<number> {
+  if (config.mode !== 'local' || !origin) return 0;
+  const count = await session.defaultSession
+    .fetch(`${origin}/api/turns/running`, { signal: AbortSignal.timeout(2000) })
+    .then(async (res) => (res.ok ? ((await res.json()) as { count?: unknown }).count : 0))
+    .catch(() => 0);
+  return typeof count === 'number' ? count : 0;
+}
+
 /**
  * Whether quitting may stop the local server now: with bots at work, the person is asked first,
  * since their work would stop with it. A server that does not answer in time does not hold it up.
  */
 async function confirmQuit(): Promise<boolean> {
-  if (config.mode !== 'local' || !origin) return true;
-  const count = await session.defaultSession
-    .fetch(`${origin}/api/turns/running`, { signal: AbortSignal.timeout(2000) })
-    .then(async (res) => (res.ok ? ((await res.json()) as { count?: unknown }).count : 0))
-    .catch(() => 0);
-  if (typeof count !== 'number' || count < 1) return true;
+  const count = await runningBotCount();
+  if (count < 1) return true;
   const { response } = await dialog.showMessageBox({
     type: 'warning',
     message: t('dialog.quitWorking', { count }),

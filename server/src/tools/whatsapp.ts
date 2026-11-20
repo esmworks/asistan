@@ -41,7 +41,7 @@ export function whatsappTools(opts: {
    * The chat whose reply started this turn, if one did: the turn reaches it too. `typed` when
    * someone also wrote in it by hand.
    */
-  woken: () => Promise<{ chat: string; typed: boolean } | null>;
+  woken: () => Promise<{ chat: string; typed: boolean }[]>;
   /** Whether the turn read outside text with nobody there to see what it does. */
   unwatched: () => boolean;
   /** Asks the person on a card whether the bots may read every chat. */
@@ -56,11 +56,11 @@ export function whatsappTools(opts: {
     if ((await wa.chatsOpen()) && (await opts.asked())) return every;
     const own = opts.reader ? await s.routines.whatsappReadsOf(bot.id) : null;
     const woke = await opts.woken();
-    if (!woke) return own;
+    if (!woke.length) return own;
     return {
       groups: own?.groups ?? new Set(),
       people: own?.people ?? false,
-      chats: new Set([woke.chat]),
+      chats: new Set(woke.map((w) => w.chat)),
     };
   };
   /**
@@ -84,10 +84,23 @@ export function whatsappTools(opts: {
     if (!(await wa.autoSendOn())) return false;
     // A reply's turn answers only that chat, and not over someone who answered it by hand.
     const woke = await opts.woken();
-    if (woke) return woke.chat === chat && !woke.typed;
+    if (woke.length) return woke.some((w) => w.chat === chat && !w.typed);
     // Outside text read on the way (a mail, a page, a chat) with nobody watching: on a card.
     if (opts.unwatched()) return false;
     return opts.asked();
+  };
+
+  /**
+   * Whether `ref` is a chat this bot wrote to with the person's approval a little while ago and
+   * the person still lets the bots read: its answers come to the bot, which may then read the chat
+   * and draft a reply (still a card) though no routine of the bot reads it and the run started
+   * from the contact's own words.
+   */
+  const answering = async (ref: string): Promise<boolean> => {
+    const phone = PhoneNumber.safeParse(ref.trim());
+    const chat = phone.success ? `${phone.data}@s.whatsapp.net` : ref.trim();
+    if ((await wa.replyOwner(chat))?.botId !== bot.id) return false;
+    return (await wa.chatsOpen()) || (await s.routines.whatsappReads()).people;
   };
 
   /** A file the bot names, when it is inside one of its own folders. */
@@ -168,7 +181,7 @@ export function whatsappTools(opts: {
       'whatsapp_history',
       { chat: z.string().min(3).max(120), limit: z.number().int().min(1).max(200).default(50) },
       async ({ chat, limit }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(chat)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         // A chat the bot's routines do not read: the person may let it see every chat.
         if (!r.all && !(await wa.knownChat(chat, r)) && (await wa.knownChat(chat))) {
@@ -194,7 +207,7 @@ export function whatsappTools(opts: {
         file: z.string().max(1000).optional(),
       },
       async ({ chat: ref, text, file }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(ref)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         let chat = ref.trim();
         let fresh = false;

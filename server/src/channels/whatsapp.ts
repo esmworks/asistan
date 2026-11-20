@@ -19,6 +19,7 @@ import {
   eq,
   exists,
   gt,
+  gte,
   inArray,
   like,
   lt,
@@ -30,7 +31,6 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { Ctx } from '../context';
-import { SILENT_REPLY } from '../engine/types';
 import { schema } from '../db';
 import type { ServerKey, T } from '../i18n';
 import type { Services } from '../services';
@@ -88,11 +88,6 @@ const CHAT_TEXT_MAX = 4000;
 /** How long the messages of chats routines read are kept. */
 const CHAT_KEEP_MS = 30 * 24 * 3600_000;
 /**
- * How long after a bot's message went out a reply in that chat wakes the bot, where no routine
- * reads the chat: the answer to what it asked comes back to it.
- */
-const REPLY_WAKE_MS = 7 * 24 * 3600_000;
-/**
  * Messages bots may send to one chat in an hour without a card: two bots answering each other's
  * automatic replies stop here, and the next one waits on a card.
  */
@@ -106,6 +101,15 @@ const GROUP_NAMES_FRESH_MS = 10 * 60_000;
 
 /** How old a message WhatsApp held while this device was away may be and still be answered. */
 const HELD_MAX_S = 24 * 3600;
+/**
+ * How long after a bot's approved message the contact's answers still reach that bot. People
+ * answer a business message within a day or two; past that the answer is more likely a new
+ * subject, which the person or a routine handles.
+ */
+const REPLY_WINDOW_MS = 3 * 24 * 3600_000;
+
+/** The name to show for a chat: the one the person saved for the contact, else the one it gave itself. */
+const shownName = (r: { name: string; savedName: string }) => r.savedName || r.name;
 
 /** When a WhatsApp message was written, in seconds since the epoch; 0 when it does not say. */
 export const stampOf = (m: WaMessage): number => {
@@ -176,6 +180,15 @@ export interface WaMessage {
   pushName?: string | null;
 }
 
+/** A contact WhatsApp tells of: `name` is the one saved in the person's phone book, `notify` the one it chose. */
+export interface WaContact {
+  id: string;
+  lid?: string;
+  phoneNumber?: string;
+  name?: string;
+  notify?: string;
+}
+
 /** The parts of a Baileys socket this server uses; tests hand in their own. */
 export interface WaSocket {
   ev: {
@@ -185,6 +198,9 @@ export interface WaSocket {
     ): void;
     on(event: 'creds.update', fn: (u: Record<string, unknown>) => void): void;
     on(event: 'messages.upsert', fn: (u: { type: string; messages: WaMessage[] }) => void): void;
+    on(event: 'contacts.upsert', fn: (u: WaContact[]) => void): void;
+    on(event: 'contacts.update', fn: (u: Partial<WaContact>[]) => void): void;
+    on(event: 'messaging-history.set', fn: (u: { contacts?: WaContact[] }) => void): void;
   };
   user?: { id: string; lid?: string; name?: string } | null;
   sendMessage(
@@ -302,6 +318,22 @@ type WaQuoted = {
   forwarded: boolean;
   message: Record<string, unknown>;
 };
+
+/** The values of `MessageAssociation.AssociationType` that mark the HD copy of a photo or video. */
+const HD_ASSOCIATIONS = new Set([5, 10, 19]);
+
+/**
+ * Whether a message is only the HD copy WhatsApp sends after a photo or video it has already
+ * delivered: it carries no text of its own and answers nothing, so it is never a second message.
+ */
+export function isAssociatedChild(m: WaMessage): boolean {
+  const message = (m.message ?? {}) as Record<string, unknown>;
+  if (message.associatedChildMessage) return true;
+  const info = message.messageContextInfo as
+    { messageAssociation?: { associationType?: number | null; parentMessageKey?: unknown } } | undefined;
+  const link = info?.messageAssociation;
+  return !!link?.parentMessageKey && HD_ASSOCIATIONS.has(Number(link.associationType));
+}
 
 /**
  * The text and the kind of file a WhatsApp message carries, whether it was forwarded, and the
@@ -441,6 +473,20 @@ export class WhatsAppChannel {
   private allChats = false;
   private groupNames = new Map<string, string>();
   private groupNamesAt = 0;
+  /** Names the person saved for contacts, by chat address, for chats kept later. */
+  private savedNames = new Map<string, string>();
+  /** Answers of someone a bot wrote to, waiting for the chat to go quiet before they reach that bot. */
+  private replies = new Map<
+    string,
+    {
+      botId: string;
+      threadId: string;
+      lines: string[];
+      firstId: string;
+      startedAt: number;
+      timer: NodeJS.Timeout | null;
+    }
+  >();
   /** Chats whose new messages wait for the chat to go quiet. */
   private waits = new Map<string, { startedAt: number; timer: NodeJS.Timeout | null }>();
   private pruneTimer: NodeJS.Timeout | null = null;
@@ -515,6 +561,8 @@ export class WhatsAppChannel {
     // What waits for a quiet chat is in the store and goes out after the next start.
     for (const wait of this.waits.values()) if (wait.timer) clearTimeout(wait.timer);
     this.waits.clear();
+    for (const r of this.replies.values()) if (r.timer) clearTimeout(r.timer);
+    this.replies.clear();
     await this.reading;
     await this.credsChain;
     this.socket?.end();
@@ -736,6 +784,15 @@ export class WhatsAppChannel {
       if (this.socket !== socket) return;
       void this.connection(socket, u).catch((err: unknown) => console.warn('whatsapp', err));
     });
+    const contacts = (list: Partial<WaContact>[]) => {
+      if (this.socket !== socket) return;
+      this.reading = this.reading
+        .then(() => this.saveContacts(list))
+        .catch((err: unknown) => console.warn('whatsapp contacts', err));
+    };
+    socket.ev.on('contacts.upsert', contacts);
+    socket.ev.on('contacts.update', contacts);
+    socket.ev.on('messaging-history.set', (u) => contacts(u.contacts ?? []));
     socket.ev.on('messages.upsert', (u) => {
       // New messages come as `notify`. Ones WhatsApp held while this device was away may come as
       // `append` after it connects again; those are read only when newer than the last one read.
@@ -949,6 +1006,9 @@ export class WhatsAppChannel {
   }
 
   private async received(socket: WaSocket, m: WaMessage, held = false) {
+    // The HD copy of a photo or video already received: not a message of its own, so it neither
+    // counts toward the flood guard nor gets a second answer.
+    if (isAssociatedChild(m)) return;
     const row = await this.row();
     if (!row) return;
     const settings = row.settings as Settings;
@@ -989,6 +1049,166 @@ export class WhatsAppChannel {
     }
   }
 
+  // Names the person saved
+
+  /** Remembers the phone-book names WhatsApp tells of, and puts them on the chats already kept. */
+  private async saveContacts(list: Partial<WaContact>[]) {
+    for (const c of list) {
+      const name = oneLine(c.name ?? '');
+      if (!name || !c.id) continue;
+      // A contact is a number when WhatsApp says which; a chat is kept under one address for both.
+      const phone = numberOf(c.phoneNumber) ?? numberOf(c.id);
+      const chats = new Set([phone ? `${phone}@s.whatsapp.net` : bareJid(c.id)]);
+      if (c.lid && !phone) chats.add(bareJid(c.lid));
+      for (const chat of chats) {
+        if (this.savedNames.get(chat) === name) continue;
+        this.savedNames.set(chat, name);
+        await this.ctx.db
+          .update(schema.whatsappChats)
+          .set({ savedName: name })
+          .where(and(eq(schema.whatsappChats.jid, chat), eq(schema.whatsappChats.kind, 'person')));
+      }
+    }
+  }
+
+  /** The name the person saved for a chat's address, if WhatsApp has told it. */
+  private async savedNameOf(chat: string): Promise<string> {
+    const known = this.savedNames.get(chat);
+    if (known) return known;
+    const [row] = await this.ctx.db
+      .select({ savedName: schema.whatsappChats.savedName })
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, chat))
+      .limit(1);
+    return row?.savedName ?? '';
+  }
+
+  // Answers to a bot's message
+
+  /**
+   * The bot that wrote to a chat most recently, within the window, and the conversation it wrote
+   * from. Only a message the person approved counts, so the chat is one they asked the bot to work
+   * with; the newest writer owns the answers, so one answer never reaches two bots.
+   */
+  async replyOwner(chat: string): Promise<{ botId: string; threadId: string } | null> {
+    const at = sql`coalesce(${schema.whatsappDrafts.sentAt}, ${schema.whatsappDrafts.createdAt})`;
+    const [row] = await this.ctx.db
+      .select({ botId: schema.whatsappDrafts.botId, threadId: schema.whatsappDrafts.threadId })
+      .from(schema.whatsappDrafts)
+      .where(
+        and(
+          eq(schema.whatsappDrafts.chat, chat),
+          eq(schema.whatsappDrafts.kind, 'message'),
+          eq(schema.whatsappDrafts.status, 'sent'),
+          gte(at, new Date(Date.now() - REPLY_WINDOW_MS)),
+        ),
+      )
+      .orderBy(desc(at))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Holds an answer for the bot that wrote to the chat; it goes out when the chat is quiet. */
+  private async queueReply(chat: string, line: string, t: T) {
+    const owner = await this.replyOwner(chat);
+    if (!owner) return;
+    // A routine of that bot reading people's chats already hands it the answer in its own way.
+    if ((await this.services.routines.chatReaders(chat, 'person')).includes(owner.botId)) return;
+    const wait = this.replies.get(chat);
+    if (wait && wait.botId !== owner.botId) {
+      // Another bot wrote since: what waits goes to the one it was for, then this one starts.
+      await this.flushReply(chat, t);
+    }
+    const open = this.replies.get(chat) ?? {
+      ...owner,
+      lines: [],
+      firstId: newId().slice(0, 12),
+      startedAt: Date.now(),
+      timer: null,
+    };
+    open.lines.push(line);
+    if (open.timer) clearTimeout(open.timer);
+    const left = Math.max(0, Math.min(this.chatQuietMs, open.startedAt + this.chatMaxWaitMs - Date.now()));
+    open.timer = setTimeout(() => {
+      this.reading = this.reading
+        .then(() => this.flushReply(chat, t))
+        .catch((err: unknown) => console.warn('whatsapp reply', err));
+    }, left);
+    this.replies.set(chat, open);
+  }
+
+  /** Gives the waiting answers of a chat to the bot's conversation, as outside text. */
+  private async flushReply(chat: string, t: T) {
+    const wait = this.replies.get(chat);
+    if (!wait) return;
+    this.replies.delete(chat);
+    if (wait.timer) clearTimeout(wait.timer);
+    const row = await this.row();
+    const [known] = await this.ctx.db
+      .select({ name: schema.whatsappChats.name, savedName: schema.whatsappChats.savedName })
+      .from(schema.whatsappChats)
+      .where(eq(schema.whatsappChats.jid, chat))
+      .limit(1);
+    const label = known ? shownName(known) : '';
+    const who = label ? `${label} (+${numberOf(chat) ?? chat})` : `+${numberOf(chat) ?? chat}`;
+    const input = {
+      text: [
+        t('whatsapp.replyHeader', { name: who }),
+        t('whatsapp.chatId', { chat }),
+        '',
+        ...wait.lines,
+      ].join('\n'),
+      clientId: `whatsapp-reply:${chat}:${wait.firstId}`.slice(0, 120),
+      userId: row?.userId ?? null,
+      props: {
+        via: 'whatsapp',
+        outside: 'whatsapp',
+        lead: t('whatsapp.replyLead', { name: who }),
+        // The turn it starts reaches this chat, and sends to it without a card only where nobody
+        // answered by hand meanwhile.
+        whatsappReply: chat,
+        ...((await this.typedSince(chat)) && { typed: true }),
+      },
+    };
+    try {
+      await this.services.inbox.send(wait.threadId, input);
+    } catch (err) {
+      // The conversation it was written from is gone: the person's main one with that bot instead.
+      if (!row) throw err;
+      const main = await this.services.threads.main(wait.botId, row.userId);
+      await this.services.inbox.send(main.id, input);
+    }
+  }
+
+  /**
+   * Whether someone wrote in a chat by hand from the account since a bot's message last went out
+   * to it: the person answering it themselves, whom a bot must not talk over without a card.
+   */
+  private async typedSince(chat: string): Promise<boolean> {
+    const at = sql`coalesce(${schema.whatsappDrafts.sentAt}, ${schema.whatsappDrafts.createdAt})`;
+    const sent = await this.ctx.db
+      .select({ text: schema.whatsappDrafts.text, at: sql<Date>`${at}` })
+      .from(schema.whatsappDrafts)
+      .where(and(eq(schema.whatsappDrafts.chat, chat), eq(schema.whatsappDrafts.status, 'sent')))
+      .orderBy(desc(at))
+      .limit(50);
+    if (!sent[0]) return false;
+    const mine = await this.ctx.db
+      .select({ text: schema.whatsappMessages.text })
+      .from(schema.whatsappMessages)
+      .where(
+        and(
+          eq(schema.whatsappMessages.chat, chat),
+          eq(schema.whatsappMessages.fromMe, true),
+          eq(schema.whatsappMessages.hidden, false),
+          // A message's time is kept to the second.
+          gte(schema.whatsappMessages.at, new Date(Math.floor(new Date(sent[0].at).getTime() / 1000) * 1000)),
+        ),
+      );
+    const texts = new Set(sent.map((d) => d.text));
+    return mine.some((r) => !texts.has(r.text));
+  }
+
   // Chats routines read: people who write to the account, and followed groups
 
   private async loadFollowed() {
@@ -996,8 +1216,12 @@ export class WhatsAppChannel {
     this.followed = reads.groups;
     this.people = reads.people;
     this.allChats = ((await this.row())?.settings as Settings | undefined)?.chats === true;
-    // A chat no longer read keeps what was stored; its batch, when it comes, goes only where the
-    // hand-over finds a reader (a routine, or the bot that wrote to it).
+    // A chat no longer read keeps what was stored, but no batch goes out for it.
+    for (const [jid, wait] of this.waits) {
+      if (jid.endsWith('@g.us') ? this.followed.has(jid) : this.people) continue;
+      if (wait.timer) clearTimeout(wait.timer);
+      this.waits.delete(jid);
+    }
   }
 
   /** Whose WhatsApp is linked: who set it up; null when it is not set up. */
@@ -1054,6 +1278,7 @@ export class WhatsAppChannel {
         text: d.text,
         approve: '',
         status: 'sent',
+        sentAt: new Date(),
       })
       .returning();
     const t = await this.services.settings.translator();
@@ -1074,85 +1299,25 @@ export class WhatsAppChannel {
   }
 
   /**
-   * The bot whose message went out to a person's chat lately, and the conversation it drafted it
-   * in: a reply there goes back to it. Null when no bot wrote to the chat in that time.
+   * The chats whose answers started a turn, when some did (an answer to a bot's message): that
+   * turn reaches only these chats. `typed` when someone also wrote in the chat by hand from the
+   * account since the bot's message went out.
    */
-  async drafter(chat: string): Promise<{ botId: string; threadId: string } | null> {
-    const [row] = await this.ctx.db
-      .select({ botId: schema.whatsappDrafts.botId, threadId: schema.whatsappDrafts.threadId })
-      .from(schema.whatsappDrafts)
-      .where(
-        and(
-          eq(schema.whatsappDrafts.chat, chat),
-          eq(schema.whatsappDrafts.kind, 'message'),
-          eq(schema.whatsappDrafts.status, 'sent'),
-          gt(schema.whatsappDrafts.createdAt, new Date(Date.now() - REPLY_WAKE_MS)),
-        ),
-      )
-      .orderBy(desc(schema.whatsappDrafts.createdAt))
-      .limit(1);
-    return row ?? null;
-  }
-
-  /**
-   * Wakes the bot that wrote to a chat with the reply, in the conversation it wrote from. The
-   * reply is someone else's words: the turn is marked as outside text, so nothing it does goes
-   * without the person's card, and it reaches only this chat (`wokenBy`).
-   */
-  private async wake(
-    to: { botId: string; threadId: string },
-    chat: string,
-    title: string,
-    payload: string,
-    typed: boolean,
-    t: T,
-  ) {
-    const owner = await this.ownerId();
-    const bot = await this.services.bots.get(to.botId).catch(() => null);
-    const thread = await this.services.threads.row(to.threadId).catch(() => null);
-    if (!owner || !bot || bot.archivedAt || !thread) return;
-    const turn = await this.services.turns.enqueue({
-      threadId: thread.id,
-      botId: bot.id,
-      source: 'bot',
-      prompt: t('whatsapp.replyWake', { name: title, chat, payload, silent: SILENT_REPLY }),
-      outside: 'whatsapp',
-      userId: owner,
-    });
-    await this.services.threads.addMessage({
-      threadId: thread.id,
-      role: 'assistant',
-      author: `bot:${bot.id}`,
-      text: t('whatsapp.replyNote', { name: title }),
-      props: { whatsappReply: chat, wakeTurn: turn.id, outside: 'whatsapp', ...(typed && { typed }) },
-    });
-  }
-
-  /**
-   * The chat whose reply started a turn, when one did: that turn reaches only this chat. `typed`
-   * when someone also wrote in it by hand from the account.
-   */
-  async wokenBy(turn: {
-    id: string;
-    threadId: string;
-    source: string;
-    jobId: string | null;
-  }): Promise<{ chat: string; typed: boolean } | null> {
-    if (turn.source !== 'bot' || turn.jobId) return null;
-    const [row] = await this.ctx.db
+  async wokenBy(turn: { id: string; threadId: string }): Promise<{ chat: string; typed: boolean }[]> {
+    const rows = await this.ctx.db
       .select({ props: schema.messages.props })
       .from(schema.messages)
       .where(
         and(
           eq(schema.messages.threadId, turn.threadId),
-          sql`${schema.messages.props}->>'wakeTurn' = ${turn.id}`,
+          eq(schema.messages.turnId, turn.id),
+          sql`${schema.messages.props}->>'whatsappReply' is not null`,
         ),
-      )
-      .limit(1);
-    const props = row?.props as { whatsappReply?: unknown; typed?: unknown } | undefined;
-    return typeof props?.whatsappReply === 'string'
-      ? { chat: props.whatsappReply, typed: props.typed === true }
-      : null;
+      );
+    return rows.map((r) => {
+      const props = r.props as { whatsappReply: string; typed?: unknown };
+      return { chat: props.whatsappReply, typed: props.typed === true };
+    });
   }
 
   /**
@@ -1218,7 +1383,9 @@ export class WhatsAppChannel {
     if (m.key.fromMe) return t('whatsapp.groupYou');
     const who = m.key.participant ?? chat;
     const phone = await this.phoneOf(socket, who, m.key.participantAlt);
-    const name = oneLine(m.pushName ?? '');
+    const name = oneLine(
+      (await this.savedNameOf(phone ? `${phone}@s.whatsapp.net` : bareJid(who))) || (m.pushName ?? ''),
+    );
     if (name && phone) return `${name} (+${phone})`;
     return name || (phone ? `+${phone}` : '?');
   }
@@ -1248,12 +1415,13 @@ export class WhatsAppChannel {
     const name =
       kind === 'group' ? await this.groupName(socket, chat) : !m.key.fromMe ? oneLine(m.pushName ?? '') : '';
     const at = new Date(stamp * 1000);
+    const saved = kind === 'person' ? (this.savedNames.get(chat) ?? '') : '';
     await this.ctx.db
       .insert(schema.whatsappChats)
-      .values({ jid: chat, kind, name, lastAt: at })
+      .values({ jid: chat, kind, name, savedName: saved, lastAt: at })
       .onConflictDoUpdate({
         target: schema.whatsappChats.jid,
-        set: { lastAt: at, ...(name && { name }) },
+        set: { lastAt: at, ...(name && { name }), ...(saved && { savedName: saved }) },
       });
     const quote =
       !hidden && quoted?.text.trim()
@@ -1274,12 +1442,14 @@ export class WhatsAppChannel {
       .returning({ seq: schema.whatsappMessages.seq });
     // Handed again, or sent from here: already kept.
     if (!stored) return;
+    // An answer from someone a bot wrote to reaches that bot, whether or not a routine reads the chat.
+    if (kind === 'person' && !m.key.fromMe && !hidden) {
+      const line = `[${at.toISOString()}] ${writer}: ${quote}${truncate(text, CHAT_TEXT_MAX)}`;
+      await this.queueReply(chat, media ? `${line}\n  ${t('whatsapp.fileNotKept')}` : line, t);
+    }
     // A chat no routine reads is kept for the bots to look at, not handed over: its place moves on
     // at once, so a routine that starts reading it later gets what comes next, not 30 days of it.
-    // One a bot wrote to lately waits for the bot instead: the reply goes to it.
-    const routineRead = kind === 'group' ? this.followed.has(chat) : this.people;
-    const drafter = routineRead || kind === 'group' ? null : await this.drafter(chat);
-    if (!routineRead && !drafter) {
+    if (!(kind === 'group' ? this.followed.has(chat) : this.people)) {
       if (media && !hidden) {
         await this.ctx.db
           .update(schema.whatsappMessages)
@@ -1292,15 +1462,7 @@ export class WhatsAppChannel {
     if (hidden) return;
     if (media) {
       const name = receivedName(media.kind, id, media.mime, media.name);
-      const file = await this.chatFile(
-        socket,
-        chat,
-        kind,
-        m,
-        name,
-        media.size,
-        drafter ? [drafter.botId] : [],
-      );
+      const file = await this.chatFile(socket, chat, kind, m, name, media.size);
       await this.ctx.db
         .update(schema.whatsappMessages)
         .set({ file })
@@ -1324,11 +1486,9 @@ export class WhatsAppChannel {
     m: WaMessage,
     name: string,
     size: number | undefined,
-    /** Bots a reply goes to besides the routines' (the one that wrote to the chat). */
-    also: string[] = [],
   ): Promise<{ name: string; size: number } | { failed: string }> {
     if ((size ?? 0) > RECEIVE_MAX) return { failed: 'whatsapp.groupFileTooLarge' };
-    const bots = [...new Set([...(await this.services.routines.chatReaders(chat, kind)), ...also])];
+    const bots = await this.services.routines.chatReaders(chat, kind);
     if (!bots.length) return { failed: 'whatsapp.groupFileFailed' };
     // The message id keeps two files of the same name apart.
     const file = `${(m.key.id ?? newId()).slice(0, 24)}-${safeFileName(name) || 'file'}`;
@@ -1384,10 +1544,7 @@ export class WhatsAppChannel {
       .where(eq(schema.whatsappChats.jid, chat))
       .limit(1);
     if (!row) return;
-    const routineRead = row.kind === 'group' ? this.followed.has(chat) : this.people;
-    // A chat no routine reads goes to the bot that wrote to it lately, if any.
-    const drafter = routineRead || row.kind === 'group' ? null : await this.drafter(chat);
-    if (!routineRead && !drafter) return;
+    if (row.kind === 'group' ? !this.followed.has(chat) : !this.people) return;
     // A batch a busy routine did not take goes out again as it was, nothing added to it.
     const held = row.heldSeq !== null && row.heldSeq > row.batchedSeq ? row.heldSeq : null;
     const fresh = await this.ctx.db
@@ -1426,11 +1583,8 @@ export class WhatsAppChannel {
       true,
     ).reverse();
     const t = await this.services.settings.translator();
-    const title = row.name
-      ? row.kind === 'person'
-        ? `${row.name} (+${numberOf(chat) ?? chat})`
-        : row.name
-      : chat;
+    const label = shownName(row);
+    const title = label ? (row.kind === 'person' ? `${label} (+${numberOf(chat) ?? chat})` : label) : chat;
     const payloadFor = (botId: string) =>
       [
         t(row.kind === 'group' ? 'whatsapp.groupHeader' : 'whatsapp.chatHeader', { name: title }),
@@ -1442,25 +1596,8 @@ export class WhatsAppChannel {
         t('whatsapp.chatNew'),
         ...batch.map((r) => this.chatLine(r, botId, t)),
       ].join('\n');
-    if (drafter) {
-      // Someone answered in the chat themselves (on the phone): the bot hears of it but does not
-      // talk over them without a card.
-      const sent = new Set(
-        (
-          await this.ctx.db
-            .select({ text: schema.whatsappDrafts.text })
-            .from(schema.whatsappDrafts)
-            .where(and(eq(schema.whatsappDrafts.chat, chat), eq(schema.whatsappDrafts.status, 'sent')))
-        ).map((d) => d.text),
-      );
-      const typed = batch.some((r) => r.fromMe && !r.hidden && !sent.has(r.text));
-      await this.wake(drafter, chat, title, payloadFor(drafter.botId), typed, t);
-      await this.moveOn(chat, last, {}, null);
-      if (more) this.waitForQuiet(chat, 0);
-      return;
-    }
     const handed = await this.services.routines.runFromWhatsApp(
-      { jid: chat, kind: row.kind, name: row.name || chat, threads: row.threads },
+      { jid: chat, kind: row.kind, name: shownName(row) || chat, threads: row.threads },
       `${chat}:${batch[0]!.seq}-${last}`,
       payloadFor,
     );
@@ -1558,17 +1695,19 @@ export class WhatsAppChannel {
           reads.chats?.size ? inArray(schema.whatsappChats.jid, [...reads.chats]) : undefined,
         );
     if (!covered) return [];
-    return this.ctx.db
+    const rows = await this.ctx.db
       .select({
         jid: schema.whatsappChats.jid,
         kind: schema.whatsappChats.kind,
         name: schema.whatsappChats.name,
+        savedName: schema.whatsappChats.savedName,
         lastAt: schema.whatsappChats.lastAt,
       })
       .from(schema.whatsappChats)
       .where(covered)
       .orderBy(desc(schema.whatsappChats.lastAt))
       .limit(limit);
+    return rows.map(({ savedName, ...r }) => ({ ...r, name: shownName({ name: r.name, savedName }) }));
   }
 
   /** A chat's last messages as `botId` reads them; null when it is not kept here or not the bot's. */
@@ -1588,7 +1727,7 @@ export class WhatsAppChannel {
         .limit(limit)
     ).reverse();
     const t = await this.services.settings.translator();
-    const title = row.name || chat;
+    const title = shownName(row) || chat;
     return [
       t(row.kind === 'group' ? 'whatsapp.groupHeader' : 'whatsapp.chatHeader', { name: title }),
       t('whatsapp.chatId', { chat }),
@@ -1606,13 +1745,14 @@ export class WhatsAppChannel {
       .select({
         jid: schema.whatsappChats.jid,
         name: schema.whatsappChats.name,
+        savedName: schema.whatsappChats.savedName,
         kind: schema.whatsappChats.kind,
       })
       .from(schema.whatsappChats)
       .where(eq(schema.whatsappChats.jid, chat))
       .limit(1);
     if (!row || (reads && !covers(reads, row))) return null;
-    return { name: row.name, kind: row.kind };
+    return { name: shownName(row), kind: row.kind };
   }
 
   /** Who sees a Status post: the people whose chats are kept here. */
@@ -1654,7 +1794,7 @@ export class WhatsAppChannel {
       if (this.state !== 'connected') continue;
       const [claimed] = await this.ctx.db
         .update(schema.whatsappDrafts)
-        .set({ status: 'sent' })
+        .set({ status: 'sent', sentAt: new Date() })
         .where(and(eq(schema.whatsappDrafts.id, draft.id), eq(schema.whatsappDrafts.status, 'pending')))
         .returning();
       if (!claimed) continue;
@@ -1846,6 +1986,8 @@ export class WhatsAppChannel {
       if (numbered && (await this.answeredCard(jid, thread.id, Number(numbered[1]), !!numbered[2], t)))
         return;
     }
+    // An empty or unreadable message starts nothing, so it must not count toward the flood guard.
+    if (!text && !media && !quoted?.media) return;
     // Only what would start the bot counts toward the flood guard; commands and card answers do not.
     if ((row.settings as Settings).mode === 'own' && (await this.looping(jid, t))) return;
     const files: string[] = [];

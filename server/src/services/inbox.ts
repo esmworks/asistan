@@ -159,7 +159,9 @@ export class Inbox {
     // A message forwarded from someone else is their words, not the person's: it neither stops the
     // bot nor answers its card.
     const forwarded = extra.outside === 'forward';
-    const bare = queued && !files.length && !answered && !forwarded && input.answers !== false;
+    // An answer from someone a bot wrote to on WhatsApp is likewise theirs, not the person's.
+    const chatAnswer = extra.outside === 'whatsapp';
+    const bare = queued && !files.length && !answered && !forwarded && !chatAnswer && input.answers !== false;
     // A bare "stop" while it works stops it, as the Stop button does, instead of waiting behind it.
     if (bare && isStopRequest(input.text)) {
       const { message } = await s.threads.addMessage({ ...plain, props: extra });
@@ -206,9 +208,12 @@ export class Inbox {
     if (!thread.title) await s.threads.rename(threadId, titleFrom(text) || files[0]!.name.slice(0, 60));
     const t = await s.settings.translator();
     const from = typeof extra.forwardedFrom === 'string' ? extra.forwardedFrom : '';
+    const lead = chatAnswer && typeof extra.lead === 'string' ? `${extra.lead}\n\n` : '';
     const written = forwarded
       ? asOutsideData(from ? t('outside.forwardFrom', { name: from }) : t('outside.forward'), text, t)
-      : text;
+      : chatAnswer
+        ? `${lead}${asOutsideData(t('outside.whatsapp'), text, t)}`
+        : text;
     // In a team conversation several people write: the bot reads who said it.
     const name =
       input.author?.trim() || (thread.kind === 'team' && input.userId ? await this.nameOf(input.userId) : '');
@@ -223,7 +228,7 @@ export class Inbox {
       botId: bot.id,
       source: 'user',
       prompt,
-      outside: forwarded || history ? 'forward' : null,
+      outside: forwarded || history ? 'forward' : chatAnswer ? 'whatsapp' : null,
       userId: input.userId ?? null,
       ...(input.guest && { guest: true, modeCap: 'ask' as const }),
     });

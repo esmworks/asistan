@@ -281,6 +281,15 @@ export type TurnOutcome = (
        * same request may well go through on a second try.
        */
       cut?: boolean;
+      /**
+       * The engine's own process died mid-turn (it exited or was killed), not for a reason the
+       * provider gave. The same request may well go through on a second try.
+       */
+      crashed?: boolean;
+      /** The provider's balance is spent or its billing failed: another provider's model may carry the turn. */
+      billing?: boolean;
+      /** For `interrupted`: the person stopped it, an ending they chose rather than a failure. */
+      byPerson?: boolean;
       /** What the turn spent before it failed, when the engine knows: it counts toward the limit. */
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */
@@ -319,7 +328,7 @@ export function providerTrouble(
   raw: string,
   provider: string,
   t: T,
-): { kind: 'limit' | 'engine'; message: string; transient?: boolean; cut?: boolean } {
+): { kind: 'limit' | 'engine'; message: string; transient?: boolean; cut?: boolean; billing?: boolean } {
   const detail = readableError(raw.trim(), 300);
   const said = (key: Parameters<T>[0]) => `${t(key, { provider })} (${detail})`;
   if (/\b401\b|unauthori[sz]ed|invalid.{0,20}(api[ _-]?)?key|incorrect api key|authentication/i.test(raw)) {
@@ -328,7 +337,7 @@ export function providerTrouble(
   if (
     /\b402\b|insufficient (credits|balance|funds|quota)|billing|payment required|credit balance/i.test(raw)
   ) {
-    return { kind: 'engine', message: said('engine.providerBilling') };
+    return { kind: 'engine', message: said('engine.providerBilling'), billing: true };
   }
   if (/\b413\b|(request|payload|entity) too large/i.test(raw)) {
     return { kind: 'engine', message: said('engine.providerTooLarge') };

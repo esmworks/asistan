@@ -48,6 +48,8 @@ export const Connection = z.object({
   error: z.string().nullable(),
   /** A token is saved (for `token`). */
   hasToken: z.boolean(),
+  /** The names of the request headers saved for this server; their values never come back. */
+  headerNames: z.array(z.string()).optional(),
   /** The OAuth app's client ID, when one was entered (its secret never comes back). */
   clientId: z.string().nullable(),
   /** The name given to that app, when one was. */
@@ -84,12 +86,72 @@ export const ConnectionUrl = z
     }
   }, 'error.connectionUrl');
 
+/** Names that carry the transport's or the sign-in's own business: never set by the person. */
+const RESERVED_HEADERS = new Set([
+  'host',
+  'content-length',
+  'content-type',
+  'content-encoding',
+  'accept',
+  'accept-encoding',
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'te',
+  'trailer',
+  'upgrade',
+  'expect',
+  'cookie',
+  'set-cookie',
+  'origin',
+  'referer',
+  'mcp-session-id',
+  'mcp-protocol-version',
+  'last-event-id',
+]);
+
+/** Whether a header may be set by the person; `auth` is how the connection signs in. */
+export function headerNameAllowed(name: string, auth: ConnectionAuth): boolean {
+  const n = name.toLowerCase();
+  if (RESERVED_HEADERS.has(n) || n.startsWith('proxy-') || n.startsWith('sec-')) return false;
+  // With a token or OAuth, `Authorization` is the sign-in's own.
+  return n !== 'authorization' || auth === 'none';
+}
+
+/**
+ * A request header for a server. An empty value in an update keeps the one saved under that name,
+ * since values never come back to be shown again.
+ */
+export const ConnectionHeader = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, 'error.connectionHeaderName'),
+  // Visible characters only: a line break would start a header of its own.
+  value: z
+    .string()
+    .max(4000)
+    .regex(/^[\x20-\x7e]*$/, 'error.connectionHeaderValue')
+    .default(''),
+});
+export type ConnectionHeader = z.infer<typeof ConnectionHeader>;
+const ConnectionHeaders = z
+  .array(ConnectionHeader)
+  .max(20)
+  .refine((list) => new Set(list.map((h) => h.name.toLowerCase())).size === list.length, {
+    message: 'error.connectionHeaderName',
+  });
+
 export const ConnectionCreate = z.object({
   name: z.string().trim().min(1).max(80),
   url: ConnectionUrl,
   auth: ConnectionAuth,
   catalogId: z.string().max(80).nullable().default(null),
   token: z.string().trim().max(10_000).optional(),
+  /** Request headers sent with every call to the server; set by the person only, never by a bot. */
+  headers: ConnectionHeaders.optional(),
   clientId: z.string().trim().max(500).optional(),
   clientSecret: z.string().trim().max(2000).optional(),
   /** A name for the app `clientId` names, so further accounts can pick it. */
@@ -115,6 +177,8 @@ export const ConnectionUpdate = z.object({
   auth: ConnectionAuth.optional(),
   /** A new token; an empty string removes it. */
   token: z.string().trim().max(10_000).optional(),
+  /** The whole list: a name left out is removed, a name with an empty value keeps its saved value. */
+  headers: ConnectionHeaders.optional(),
   clientId: z.string().trim().max(500).optional(),
   clientSecret: z.string().trim().max(2000).optional(),
   showApps: z.boolean().optional(),

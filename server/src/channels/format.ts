@@ -138,6 +138,117 @@ export function chunks(md: string, max: number): Block[][] {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+type Kind = 'bold' | 'italic' | 'strike';
+const KIND: Record<string, Kind> = { '**': 'bold', __: 'bold', '*': 'italic', _: 'italic', '~~': 'strike' };
+/** A letter, digit or `@`: a `_` touching one is part of a word or an address, not a mark. */
+const WORDY = /[\p{L}\p{N}@]/u;
+
+interface Span {
+  mark: string;
+  open: [number, number];
+  close: [number, number];
+}
+interface Node {
+  kind: Kind | null;
+  kids: (string | Node)[];
+}
+
+/** The marked spans of a line: pairs of `**`, `__`, `*`, `_`, `~~` that open and close in the text. */
+function spansOf(s: string): Span[] {
+  const stack: { mark: string; at: number; len: number }[] = [];
+  const spans: Span[] = [];
+  for (let i = 0; i < s.length;) {
+    const c = s[i]!;
+    if (c !== '*' && c !== '_' && c !== '~') {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (s[j] === c) j++;
+    const run = j - i;
+    const prev = s[i - 1] ?? '';
+    const next = s[j] ?? '';
+    const spaceBefore = !prev || /\s/.test(prev);
+    const spaceAfter = !next || /\s/.test(next);
+    // A lone `*` or `_` inside a word is text (2*3*4, snake_case); `_` also keeps to that for
+    // `__`, so a name with a double underscore in an address stays as written.
+    const tight = c === '_' || run === 1;
+    let canOpen = !spaceAfter && (!tight || !WORDY.test(prev));
+    let canClose = !spaceBefore && (!tight || !WORDY.test(next));
+    if (c === '~' && run !== 2) canOpen = canClose = false;
+    const closes = canClose && (!canOpen || stack.some((e) => e.mark[0] === c));
+    // A run of three is bold and italic together: opened outer-first, closed inner-first.
+    const sizes: number[] = [];
+    if (c === '~') sizes.push(2);
+    else for (let n = run; n > 0; n -= 2) sizes.push(Math.min(n, 2));
+    if (closes) sizes.reverse();
+    let at = i;
+    for (const len of sizes) {
+      const mark = c.repeat(len);
+      const idx = closes ? stack.map((e) => e.mark).lastIndexOf(mark) : -1;
+      if (idx >= 0 && at > stack[idx]!.at + stack[idx]!.len) {
+        const [o] = stack.splice(idx, 1);
+        spans.push({ mark, open: [o!.at, o!.at + o!.len], close: [at, at + len] });
+      } else if (canOpen) {
+        stack.push({ mark, at, len });
+      }
+      at += len;
+    }
+    i = j;
+  }
+  return spans;
+}
+
+/**
+ * The marks of a line, written by the chat app's own. Spans that cross (`**a _b** c_`) are closed
+ * and opened again at the crossing, so what comes out is always properly nested and keeps both
+ * styles.
+ */
+function emphasis(
+  s: string,
+  m: { bold: (s: string) => string; italic: (s: string) => string; strike: (s: string) => string },
+): string {
+  const spans = spansOf(s);
+  if (!spans.length) return s;
+  const events = spans
+    .flatMap((span) => [
+      { span, open: true, at: span.open[0], end: span.open[1] },
+      { span, open: false, at: span.close[0], end: span.close[1] },
+    ])
+    .sort((a, b) => a.at - b.at);
+  const root: Node = { kind: null, kids: [] };
+  const stack: { node: Node; span: Span | null }[] = [{ node: root, span: null }];
+  const top = () => stack[stack.length - 1]!.node;
+  let pos = 0;
+  for (const ev of events) {
+    if (ev.at > pos) top().kids.push(s.slice(pos, ev.at));
+    pos = ev.end;
+    if (ev.open) {
+      const node: Node = { kind: KIND[ev.span.mark]!, kids: [] };
+      top().kids.push(node);
+      stack.push({ node, span: ev.span });
+      continue;
+    }
+    const [, ...crossed] = stack.splice(stack.findIndex((e) => e.span === ev.span));
+    for (const c of crossed) {
+      const node: Node = { kind: c.node.kind, kids: [] };
+      top().kids.push(node);
+      stack.push({ node, span: c.span });
+    }
+  }
+  if (pos < s.length) root.kids.push(s.slice(pos));
+  // Spaces stay outside a mark, which no chat app reads when it starts or ends with one.
+  const draw = (n: Node): string => {
+    const inner = n.kids.map((k) => (typeof k === 'string' ? k : draw(k))).join('');
+    if (!n.kind) return inner;
+    const core = inner.trim();
+    if (!core) return inner;
+    const at = inner.indexOf(core);
+    return inner.slice(0, at) + m[n.kind](core) + inner.slice(at + core.length);
+  };
+  return draw(root);
+}
+
 /**
  * Inline marks of one line. Code spans and links are set aside first, so a `*` inside them is
  * never read as emphasis.
@@ -164,13 +275,7 @@ function inline(
     .replace(/!?\[([^\]\n]+)\]\((\S+?)\)/g, (_, label: string, url: string) => keep(m.link(label, url)))
     .replace(/(?<![\w/])(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g, (u: string) => keep(m.text(u)));
   out = m.text(out);
-  // Each mark is set aside once made: WhatsApp's bold `*x*` must not be read again as emphasis.
-  out = out
-    .replace(/\*\*(?=\S)([^*]+?)(?<=\S)\*\*/g, (_, x: string) => keep(m.bold(x)))
-    .replace(/__(?=\S)([^_]+?)(?<=\S)__/g, (_, x: string) => keep(m.bold(x)))
-    .replace(/(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])/g, (_, x: string) => keep(m.italic(x)))
-    .replace(/(?<![_\w])_(?=\S)([^_\n]+?)(?<=\S)_(?![_\w])/g, (_, x: string) => keep(m.italic(x)))
-    .replace(/~~(?=\S)([^~]+?)(?<=\S)~~/g, (_, x: string) => keep(m.strike(x)));
+  out = emphasis(out, m);
   // A mark can hold others set aside before it (a code span in bold text). A piece only ever holds
   // pieces kept before it, so each is filled from lower numbers only and once: whatever the text,
   // this ends.

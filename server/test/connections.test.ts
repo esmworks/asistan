@@ -42,9 +42,19 @@ import { OWNER_ID } from '../src/users';
 
 /** A small MCP server over Streamable HTTP, optionally behind a bearer token or an OAuth sign-in. */
 async function mcpFixture(
-  opts: { token?: string; oauth?: boolean; waitTool?: boolean; elicitTool?: boolean; app?: boolean } = {},
+  opts: {
+    token?: string;
+    oauth?: boolean;
+    waitTool?: boolean;
+    elicitTool?: boolean;
+    app?: boolean;
+    /** Wants this value in an `x-api-key` header on every path, and offers no sign-in. */
+    apiKey?: string;
+  } = {},
 ) {
   const calls: { name: string; args: unknown }[] = [];
+  /** The headers of each request to the MCP endpoint. */
+  const seen: Record<string, string | string[] | undefined>[] = [];
   const base = { url: '' };
   /**
    * The sign-in as the service sees it. Each refresh spends the refresh token it was given and
@@ -304,6 +314,11 @@ async function mcpFixture(
       return res.end('<h1>502 Bad Gateway</h1>');
     }
     if (req.method === 'GET') oauth.gets++;
+    seen.push({ ...req.headers });
+    if (opts.apiKey && req.headers['x-api-key'] !== opts.apiKey) {
+      res.writeHead(401);
+      return res.end();
+    }
     const want = opts.token ?? (opts.oauth ? oauth.access : undefined);
     if (want && req.headers.authorization !== `Bearer ${want}`) {
       res.writeHead(401, {
@@ -347,6 +362,7 @@ async function mcpFixture(
   return {
     url: `${base.url}/mcp`,
     calls,
+    seen,
     oauth,
     extraTools,
     gate: { close: closeGate, open: () => gate.open() },
@@ -1212,6 +1228,161 @@ describe('bağlantılar', () => {
     expect(c).toMatchObject({ status: 'signed-out', auth: 'oauth' });
     const start = await t.api<ConnectionAuthStart>('POST', `/api/connections/${c.id}/signin`);
     expect(new URL(start.body.url!).pathname).toBe('/authorize');
+  });
+
+  it('a server that offers no sign-in but wants a key becomes a key connection, and OAuth stays where it is offered', async () => {
+    const keyed = await fixture({ apiKey: 'key-0123456789' });
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Anahtarlı', url: keyed.url, auth: 'none' })
+    ).body;
+    // No Sign in button could work: the person is asked for a key instead.
+    expect(c).toMatchObject({ status: 'signed-out', auth: 'token', hasToken: false });
+    expect(c.error).toContain('anahtar');
+
+    // Metadata found only at the usual address still counts as an offer to sign in.
+    const bare = await fixture({ oauth: true });
+    bare.oauth.noResourceMetadata = true;
+    const o = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Oturumlu', url: bare.url, auth: 'none' })
+    ).body;
+    expect(o).toMatchObject({ status: 'signed-out', auth: 'oauth' });
+  });
+
+  it('a bot that adds a server wanting a key gets a card for the key, not for a sign-in', async () => {
+    const keyed = await fixture({ apiKey: 'key-0123456789' });
+    const bot = await t.bot({ permissionMode: 'auto' });
+    const thread = await main(bot.id);
+    await t.send(thread.id, `[araç:app_add {"name":"Anahtarlı","url":"${keyed.url}"}]`);
+    await t.services.turns.idle();
+    const msgs = await t.messages(thread.id);
+    expect(msgs.find((m) => m.props.connectionSignIn)?.text).toContain('anahtar');
+    expect(msgs.at(-1)!.text).toContain('anahtar');
+    const added = (await t.api<Connection[]>('GET', '/api/connections')).body.find(
+      (c) => c.name === 'Anahtarlı',
+    )!;
+    expect(added.auth).toBe('token');
+  });
+
+  it('request headers are sent to the server, kept sealed, never shown, and refused when they would break the connection', async () => {
+    const keyed = await fixture({ apiKey: 'key-0123456789' });
+    const c = (
+      await t.api<Connection>('POST', '/api/connections', { name: 'Anahtarlı', url: keyed.url, auth: 'none' })
+    ).body;
+    const bad: [string, string, string?][] = [
+      ['Host', 'x'],
+      ['content-length', '1'],
+      ['Cookie', 'a=b'],
+      ['Mcp-Session-Id', 'x'],
+      ['bad name', 'x'],
+      ['X-Key', 'line\nbreak'],
+      ['X-Key', 'çok'],
+      ['X-Key', ''],
+    ];
+    for (const [name, value] of bad) {
+      const r = await t.api('PATCH', `/api/connections/${c.id}`, {
+        auth: 'none',
+        headers: [{ name, value }],
+      });
+      expect(r.status, name).toBe(400);
+    }
+    expect(
+      (
+        await t.api('PATCH', `/api/connections/${c.id}`, {
+          auth: 'none',
+          headers: [
+            { name: 'X-Key', value: 'a' },
+            { name: 'x-key', value: 'b' },
+          ],
+        })
+      ).status,
+    ).toBe(400);
+    // Authorization is the sign-in's own on a connection that signs in.
+    expect(
+      (
+        await t.api('PATCH', `/api/connections/${c.id}`, {
+          headers: [{ name: 'Authorization', value: 'Basic abc' }],
+        })
+      ).status,
+    ).toBe(400);
+
+    const ok = await t.api<Connection>('PATCH', `/api/connections/${c.id}`, {
+      auth: 'none',
+      headers: [{ name: 'X-Api-Key', value: 'key-0123456789' }],
+    });
+    expect(ok.body).toMatchObject({ status: 'connected', auth: 'none', headerNames: ['X-Api-Key'] });
+    expect(JSON.stringify(ok.body)).not.toContain('key-0123456789');
+    expect(JSON.stringify((await t.api('GET', '/api/connections')).body)).not.toContain('key-0123456789');
+    expect(keyed.seen.at(-1)!['x-api-key']).toBe('key-0123456789');
+    const row = (await t.db.db.select().from(schema.connections).where(eq(schema.connections.id, c.id)))[0]!;
+    expect(row.secrets).not.toContain('key-0123456789');
+
+    // A name with no value keeps the saved one; a name left out goes.
+    const kept = await t.api<Connection>('PATCH', `/api/connections/${c.id}`, {
+      headers: [
+        { name: 'x-api-key', value: '' },
+        { name: 'X-Team', value: 'ekip-42' },
+      ],
+    });
+    expect(kept.body).toMatchObject({ status: 'connected', headerNames: ['x-api-key', 'X-Team'] });
+    const bot = await t.bot();
+    const search = (
+      await t.services.connections.toolsFor(bot.id, OWNER_ID, translator('tr'), new AbortController().signal)
+    ).find((x) => x.name === 'search')!;
+    expect(await search.handler({ query: 'x' })).toContain('found');
+    expect(keyed.seen.at(-1)!['x-team']).toBe('ekip-42');
+    // Another way in to the same server keeps the headers; another server drops them.
+    const way = await t.api<Connection>('PATCH', `/api/connections/${c.id}`, { auth: 'none' });
+    expect(way.body.headerNames).toEqual(['x-api-key', 'X-Team']);
+    const gone = await t.api<Connection>('PATCH', `/api/connections/${c.id}`, { headers: [] });
+    expect(gone.body.headerNames).toEqual([]);
+    expect(gone.body.status).toBe('signed-out');
+  });
+
+  it('a call that finds its sign-in gone puts one Sign-in card in the conversation, and says so', async () => {
+    const f = await fixture({ oauth: true });
+    const id = await signedIn(f);
+    const bot = await t.bot({ permissionMode: 'auto' });
+    const thread = await main(bot.id);
+    f.oauth.expire();
+    f.oauth.refreshRefused = true;
+    await t.send(thread.id, '[araç:search {"query":"x"}]');
+    await t.services.turns.idle();
+    const msgs = await t.messages(thread.id);
+    const cards = msgs.filter((m) => m.props.connectionSignIn === id);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.text).toContain('yeniden oturum açın');
+    expect(msgs.at(-1)!.text).toContain('oturum açma kartı gösterildi');
+    // Several calls meeting the same sign-out ask for one card; without a way to show one the bot
+    // is told to ask the person, as before.
+    const shown: string[] = [];
+    const reconnect = () =>
+      t.db.db.update(schema.connections).set({ status: 'connected' }).where(eq(schema.connections.id, id));
+    await reconnect();
+    const [search, create] = await t.services.connections.toolsFor(
+      bot.id,
+      OWNER_ID,
+      translator('tr'),
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      async (c) => {
+        shown.push(c.id);
+        return true;
+      },
+    );
+    expect(await search!.handler({ query: 'x' })).toContain('kartı gösterildi');
+    await reconnect();
+    expect(await create!.handler({ title: 'x' })).toContain('kartı gösterildi');
+    expect(shown).toEqual([id]);
+    await reconnect();
+    const [plain] = await t.services.connections.toolsFor(
+      bot.id,
+      OWNER_ID,
+      translator('tr'),
+      new AbortController().signal,
+    );
+    expect(await plain!.handler({ query: 'x' })).toContain('yeniden oturum açmasını iste');
   });
 
   it('bağlı bağlantının araç listesi zamanla yeniden okunur', async () => {
