@@ -48,7 +48,7 @@ import { sandboxFor, workspacePaths } from '../workspace';
 import { placeOf } from '../services/memory';
 import { buildSystemPrompt, HANDOFF_MESSAGES, handoffPrompt, nowLine, postedText } from './prompt';
 import { catastrophic, readsOnlyLine } from './safety';
-import { ownBoxStep } from './own-box';
+import { confinedWrite, ownBoxStep } from './own-box';
 import { isRehearsalRead } from './rehearsal';
 import { TurnWatchdog, type Stall } from './watchdog';
 import type { Services } from '../services';
@@ -1671,6 +1671,24 @@ export class TurnManager {
         !(await approvals.refusedLately(bot.id, ask.toolName, ask.input))
       ) {
         return { behavior: 'allow', let: { how: 'level' } };
+      }
+      // On the person's own computer the line is narrower: a bot that asks first writes and edits
+      // files in its own folders without a card, and nothing more. No model judges it; the path
+      // alone decides, so it costs no wait. Commands still ask, as they run with the person's own
+      // rights, and so does the group's shared folder, which other bots read.
+      if (
+        this.ctx.config.onUserComputer &&
+        mode === 'ask' &&
+        !locked &&
+        !askRuleMatches(rules, ask.toolName, ask.input) &&
+        confinedWrite(
+          ask.toolName,
+          ask.input,
+          sandbox.writable.filter((d) => d !== paths.groupFiles),
+        ) &&
+        !(await approvals.refusedLately(bot.id, ask.toolName, ask.input))
+      ) {
+        return { behavior: 'allow', let: { how: 'review' } };
       }
       const decided = decide({
         mode,

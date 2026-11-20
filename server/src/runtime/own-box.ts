@@ -1,4 +1,4 @@
-import { resolve, sep } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
 import { commandParts, freePart } from '../services/shell-parts';
 import { realPath } from '../workspace';
 import { reachesOut } from './outside';
@@ -126,6 +126,21 @@ export function staysOnBox(command: string, cwd: string, dirs: string[]): boolea
 
 /** File tools whose path a step on the bot's own machine keeps to its own folders. */
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * Whether a step only writes or edits a file in the bot's own folders, named by its full path. On
+ * the person's own computer this is the one kind of step a bot that asks first takes without a
+ * card: it changes no other file of theirs and reaches nothing outside, while commands, even ones
+ * that look local, run with the person's own rights and still ask. A relative path is not taken,
+ * since what it points at depends on where the engine thinks it stands.
+ */
+export function confinedWrite(toolName: string, input: Record<string, unknown>, dirs: string[]): boolean {
+  if (!FILE_TOOLS.has(toolName) || !dirs.length) return false;
+  const path = [input.file_path, input.notebook_path, input.path].find(
+    (p): p is string => typeof p === 'string' && !!p.trim(),
+  );
+  return !!path && isAbsolute(path) && inside(path, dirs);
+}
 
 /**
  * Whether a step stays in the bot's own folders on a server of its own: a command that only builds,

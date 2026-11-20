@@ -7,6 +7,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- On the desktop app (the server on the person's own computer), a bot that asks first now writes and edits files in
+  its own folders without a card, named by their full path. No model judges the step, so nothing waits on one;
+  commands, the group's shared folder, anything outside the bot's folders and "always ask" rules still ask, and a
+  step the person just turned down is not let through. A server of its own keeps its wider rule for the bot's own
+  machine, unchanged.
 - A routine whose run finds one of its connections signed out now waits for the sign-in: its next scheduled runs
   are skipped with the reason instead of each stopping at the same card, and the routine list says it is waiting.
   The person is told once, outside the routine's conversation too: on the phone, in Telegram or WhatsApp, and in a

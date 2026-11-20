@@ -1,9 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Approval, Thread } from '@yumakbot/shared';
+import type { Approval, BotAction, Thread } from '@yumakbot/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ownBoxStep, staysOnBox } from '../src/runtime/own-box';
+import { confinedWrite, ownBoxStep, staysOnBox } from '../src/runtime/own-box';
 import { testServer, waitFor, type TestServer } from './helpers';
 
 describe('botun kendi makinesindeki adımlar', () => {
@@ -92,6 +92,20 @@ describe('botun kendi makinesindeki adımlar', () => {
     expect(ownBoxStep('Write', { file_path: join(group, 'shared.md') }, dir, [dir])).toBe(false);
     expect(ownBoxStep('mcp__notlar__create_note', { title: 'x' }, dir, [dir])).toBe(false);
   });
+
+  it("on the person's computer only a write by full path inside the bot's folders counts", () => {
+    expect(confinedWrite('Write', { file_path: join(dir, 'notes.md') }, [dir])).toBe(true);
+    expect(confinedWrite('Edit', { file_path: join(dir, 'a/b.ts') }, [dir])).toBe(true);
+    expect(confinedWrite('NotebookEdit', { notebook_path: join(dir, 'n.ipynb') }, [dir])).toBe(true);
+    // A relative path depends on where the engine stands; it is not taken.
+    expect(confinedWrite('Write', { file_path: 'notes.md' }, [dir])).toBe(false);
+    expect(confinedWrite('Write', { file_path: join(dir, '../elsewhere.md') }, [dir])).toBe(false);
+    expect(confinedWrite('Write', { file_path: '/etc/hosts' }, [dir])).toBe(false);
+    expect(confinedWrite('Write', { file_path: join(group, 'shared.md') }, [dir])).toBe(false);
+    expect(confinedWrite('Write', { file_path: join(dir, 'x.md') }, [])).toBe(false);
+    // Commands never count here, however local they look.
+    expect(confinedWrite('Bash', { command: `touch ${join(dir, 'x')}` }, [dir])).toBe(false);
+  });
 });
 
 describe('uzak sunucuda izinler', () => {
@@ -144,6 +158,61 @@ describe('uzak sunucuda izinler', () => {
     const bot = await t.bot({ permissionMode: 'ask' });
     const thread = await run(bot.id, 'pnpm install');
     expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Bash' });
+    await t.api('POST', `/api/threads/${thread.id}/stop`);
+    await t.services.turns.idle();
+  });
+});
+
+describe("on the person's computer", () => {
+  let t: TestServer;
+  afterEach(() => t.dispose());
+
+  const pending = async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body;
+  const write = async (botId: string, file: string) => {
+    const thread = (await t.api<Thread>('GET', `/api/bots/${botId}/main-thread`)).body;
+    await t.send(thread.id, `[izin:Write ${JSON.stringify({ file_path: file })}]`);
+    return thread;
+  };
+  const threadDir = (botId: string, threadId: string) =>
+    join(t.dataDir, 'workspaces', 'bots', botId, 'threads', threadId);
+
+  it('a bot that asks first writes in its own folders without a card, and that is all', async () => {
+    t = await testServer({ onUserComputer: true });
+    const bot = await t.bot({ permissionMode: 'ask' });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    await write(bot.id, join(threadDir(bot.id, thread.id), 'notes.md'));
+    await t.services.turns.idle();
+    expect(await pending()).toEqual([]);
+    const done = (await t.api<BotAction[]>('GET', `/api/bots/${bot.id}/actions`)).body;
+    expect(done.find((a) => a.toolName === 'Write')).toMatchObject({ how: 'review' });
+
+    // Outside its folders it asks.
+    await write(bot.id, join(t.dataDir, 'elsewhere.md'));
+    expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Write' });
+    await t.api('POST', `/api/threads/${thread.id}/stop`);
+    await t.services.turns.idle();
+  });
+
+  it('an "always ask" rule still asks for a write in the bot\'s folders', async () => {
+    t = await testServer({ onUserComputer: true });
+    await t.api('POST', '/api/rules', { list: 'ask', pattern: 'Write' });
+    const bot = await t.bot({ permissionMode: 'ask' });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    await write(bot.id, join(threadDir(bot.id, thread.id), 'notes.md'));
+    expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Write' });
+    await t.api('POST', `/api/threads/${thread.id}/stop`);
+    await t.services.turns.idle();
+  });
+
+  it("the group's shared folder still asks", async () => {
+    t = await testServer({ onUserComputer: true });
+    const group = (await t.api<{ id: string }>('POST', '/api/groups', { name: 'Ekip' })).body;
+    const bot = await t.bot({ permissionMode: 'ask', groupId: group.id });
+    const thread = await write(
+      bot.id,
+      join(t.dataDir, 'workspaces', 'groups', group.id, 'files', 'ortak.md'),
+    );
+    expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Write' });
     await t.api('POST', `/api/threads/${thread.id}/stop`);
     await t.services.turns.idle();
   });
