@@ -302,6 +302,8 @@ export type TurnOutcome = (
       modelGone?: boolean;
       /** For `interrupted`: the person stopped it, an ending they chose rather than a failure. */
       byPerson?: boolean;
+      /** For `interrupted`: the server stopped while the turn ran, not the person or the bot. */
+      restarted?: boolean;
       /** What the turn spent before it failed, when the engine knows: it counts toward the limit. */
       costUsd?: number | null;
       /** It ran out of steps mid-task; the session holds the work so far, and the person may go on. */

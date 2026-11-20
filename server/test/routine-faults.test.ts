@@ -1,7 +1,9 @@
 import type { Routine, RoutineRun } from '@yumakbot/shared';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schema } from '../src/db';
 import { MAX_ROUTINES_PER_BOT } from '../src/services/routines';
+import { OWNER_ID } from '../src/users';
 import { newId } from '../src/util';
 import { testServer, type TestServer } from './helpers';
 
@@ -158,5 +160,121 @@ describe('rutin aksaklıkları', () => {
     expect((await runs(r.id)).map((x) => x.status)).toEqual(['error', 'error']);
     // After the retry it goes on from its own slot, not an hour after the retry.
     expect((await routine(r.id)).nextRunAt).toBe('2026-11-16T07:00:00.000Z');
+  });
+  it('geçici hatayla biten tek seferlik rutin bir kez daha denenir, sonra kapanır', async () => {
+    const bot = await t.bot();
+    // 09:00 in Istanbul is 06:00 UTC; the clock stands at 05:00 UTC.
+    const r = await make(bot.id, 'Bir kez', {
+      prompt: '[meşgul]',
+      schedule: { type: 'once', date: '2026-11-16', time: '09:00' },
+    });
+    t.now.value = new Date('2026-11-16T06:00:30.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    // Put aside when it fired, then taken up again for the retry.
+    expect(await routine(r.id)).toMatchObject({ enabled: true, nextRunAt: '2026-11-16T06:05:30.000Z' });
+    t.now.value = new Date('2026-11-16T06:06:00.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await runs(r.id)).map((x) => x.status)).toEqual(['error', 'error']);
+    // The retry failed too: it is not tried a third time.
+    expect(await routine(r.id)).toMatchObject({ enabled: false, nextRunAt: null });
+  });
+
+  it('elle başlatılan tek seferlik rutin geçici hatadan sonra yeniden açılmaz', async () => {
+    const bot = await t.bot();
+    const r = await make(bot.id, 'Elle', {
+      prompt: '[meşgul]',
+      schedule: { type: 'once', date: '2026-11-16', time: '09:00' },
+    });
+    t.now.value = new Date('2026-11-16T06:00:30.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    t.now.value = new Date('2026-11-16T06:06:00.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect(await routine(r.id)).toMatchObject({ enabled: false, nextRunAt: null });
+    // Long after: the run by hand fails for a passing reason, yet the one-time routine stays put aside.
+    t.now.value = new Date('2026-11-16T08:00:00.000Z');
+    await t.api('POST', `/api/routines/${r.id}/run`);
+    await t.services.turns.idle();
+    expect(await routine(r.id)).toMatchObject({ enabled: false, nextRunAt: null });
+  });
+
+  /** A scheduled run whose turn was running when the server stopped, with or without a step it let through. */
+  const cutRun = async (r: Routine, botId: string, acted: boolean) => {
+    const thread = await t.services.threads.routineThread(botId, r.name, null, OWNER_ID);
+    const runId = newId();
+    const turnId = newId();
+    await t.db.db.insert(schema.routineRuns).values({
+      id: runId,
+      routineId: r.id,
+      occurrence: '2026-11-16T06:00:00.000Z',
+      status: 'running',
+      threadId: thread.id,
+      promptSnapshot: r.prompt,
+    });
+    await t.db.db.insert(schema.turns).values({
+      id: turnId,
+      threadId: thread.id,
+      botId,
+      source: 'routine',
+      status: 'running',
+      prompt: r.prompt,
+      routineRunId: runId,
+    });
+    if (acted) {
+      await t.db.db.insert(schema.botActions).values({
+        id: newId(),
+        botId,
+        threadId: thread.id,
+        turnId,
+        toolName: 'Bash',
+        summary: 'Posta gönderdi',
+        how: 'level',
+      });
+    }
+    return runId;
+  };
+
+  it('sunucu durunca yarıda kalan tek seferlik rutin bir şey değiştirmediyse yeniden denenir', async () => {
+    const bot = await t.bot();
+    const once = { type: 'once', date: '2026-11-16', time: '09:00' };
+    const clean = await make(bot.id, 'Temiz', { schedule: once });
+    const acted = await make(bot.id, 'Yaptı', { schedule: once });
+    const handed = await make(bot.id, 'Devretti', { schedule: once });
+    t.now.value = new Date('2026-11-16T06:00:30.000Z');
+    // As if each had fired and been put aside before the server stopped.
+    for (const r of [clean, acted, handed]) {
+      await t.db.db
+        .update(schema.routines)
+        .set({ enabled: false, nextRunAt: null })
+        .where(eq(schema.routines.id, r.id));
+      const runId = await cutRun(r, bot.id, r === acted);
+      if (r === handed) {
+        const [cut] = await t.db.db.select().from(schema.turns).where(eq(schema.turns.routineRunId, runId));
+        await t.db.db.insert(schema.turns).values({
+          id: newId(),
+          threadId: cut!.threadId,
+          botId: bot.id,
+          source: 'routine',
+          status: 'done',
+          prompt: r.prompt,
+          routineRunId: runId,
+        });
+      }
+    }
+    await t.services.turns.recover();
+    await t.services.routines.recover();
+    expect((await runs(clean.id))[0]).toMatchObject({ status: 'error', reason: 'Sunucu yeniden başladı' });
+    expect(await routine(clean.id)).toMatchObject({ enabled: true, nextRunAt: '2026-11-16T06:05:30.000Z' });
+    // A run that already sent something is not run again from the start.
+    expect(await routine(acted.id)).toMatchObject({ enabled: false, nextRunAt: null });
+    // Nor is one whose earlier turn handed work to other bots: only its last turn was cut short.
+    expect(await routine(handed.id)).toMatchObject({ enabled: false, nextRunAt: null });
+    t.now.value = new Date('2026-11-16T06:06:00.000Z');
+    await t.services.routines.tick();
+    await t.services.turns.idle();
+    expect((await runs(clean.id)).map((x) => x.status)).toEqual(['done', 'error']);
   });
 });

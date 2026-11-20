@@ -2732,66 +2732,111 @@ export class RoutineService {
       )
       .where(eq(schema.routineRuns.id, turn.routineRunId));
     // The account was out of usage: the routine tries again once it resets, unless it is due sooner.
-    if (!outcome.ok && outcome.kind === 'limit' && outcome.resetsAt) {
-      const [run] = await this.ctx.db
-        .select({ routineId: schema.routineRuns.routineId })
-        .from(schema.routineRuns)
-        .where(eq(schema.routineRuns.id, turn.routineRunId));
-      const retryAt = new Date(outcome.resetsAt.getTime() + LIMIT_RETRY_DELAY_MS);
-      if (run) {
-        await this.ctx.db
-          .update(schema.routines)
-          .set({ nextRunAt: retryAt, resumeAt: resumeFrom })
-          .where(
-            and(
-              eq(schema.routines.id, run.routineId),
-              eq(schema.routines.enabled, true),
-              or(isNull(schema.routines.nextRunAt), gt(schema.routines.nextRunAt, retryAt)),
-            ),
-          );
-      }
+    if (run && !outcome.ok && outcome.kind === 'limit' && outcome.resetsAt) {
+      await this.retryLater(
+        run.routineId,
+        turn.routineRunId,
+        new Date(outcome.resetsAt.getTime() + LIMIT_RETRY_DELAY_MS),
+      );
     }
-    // A passing failure (an overloaded or unreachable provider) is tried once more a little later,
-    // unless the run before it failed just now too.
-    if (!outcome.ok && outcome.kind === 'engine' && outcome.transient) {
-      const [run] = await this.ctx.db
-        .select({ routineId: schema.routineRuns.routineId })
+    // A passing failure (an overloaded or unreachable provider), or a server stop that cut a
+    // scheduled run short before it changed anything, is tried once more a little later, unless the
+    // run before it failed just now too: a server that stops again and again does not run it again
+    // each time.
+    const passing = !outcome.ok && outcome.kind === 'engine' && outcome.transient === true;
+    const cutByStop =
+      !outcome.ok &&
+      outcome.kind === 'interrupted' &&
+      outcome.restarted === true &&
+      (await this.scheduled(turn.routineRunId)) &&
+      (await this.untouched(turn.routineRunId, turn.id));
+    if (run && (passing || cutByStop)) {
+      const [before] = await this.ctx.db
+        .select({ status: schema.routineRuns.status, finishedAt: schema.routineRuns.finishedAt })
         .from(schema.routineRuns)
-        .where(eq(schema.routineRuns.id, turn.routineRunId));
-      const [before] = run
-        ? await this.ctx.db
-            .select({ status: schema.routineRuns.status, finishedAt: schema.routineRuns.finishedAt })
-            .from(schema.routineRuns)
-            .where(
-              and(
-                eq(schema.routineRuns.routineId, run.routineId),
-                ne(schema.routineRuns.id, turn.routineRunId),
-              ),
-            )
-            .orderBy(desc(schema.routineRuns.startedAt))
-            .limit(1)
-        : [];
+        .where(
+          and(eq(schema.routineRuns.routineId, run.routineId), ne(schema.routineRuns.id, turn.routineRunId)),
+        )
+        .orderBy(desc(schema.routineRuns.startedAt))
+        .limit(1);
       const now = this.clock();
       const retried =
         before?.status === 'error' &&
         !!before.finishedAt &&
         now.getTime() - before.finishedAt.getTime() < RETRY_WINDOW_MS;
-      if (run && !retried) {
-        const retryAt = new Date(now.getTime() + TRANSIENT_RETRY_DELAY_MS);
-        await this.ctx.db
-          .update(schema.routines)
-          .set({ nextRunAt: retryAt, resumeAt: resumeFrom })
-          .where(
-            and(
-              eq(schema.routines.id, run.routineId),
-              eq(schema.routines.enabled, true),
-              or(isNull(schema.routines.nextRunAt), gt(schema.routines.nextRunAt, retryAt)),
-            ),
-          );
+      if (!retried) {
+        await this.retryLater(
+          run.routineId,
+          turn.routineRunId,
+          new Date(now.getTime() + TRANSIENT_RETRY_DELAY_MS),
+        );
       }
     }
     this.ctx.bus.refresh({ scope: 'routines' });
     if (run) await this.startQueued(run.routineId);
+  }
+
+  /**
+   * Puts the routine's next run at `retryAt`, unless it is due sooner; once the retry has run, the
+   * schedule goes on from the slot it stood in front of. A one-time routine was put aside when it
+   * fired (see `advance`): the retry of its own scheduled run takes it up again, while one the
+   * person set to a new time since keeps that time.
+   */
+  private async retryLater(routineId: string, runId: string, retryAt: Date) {
+    const [r] = await this.ctx.db
+      .select({ schedule: schema.routines.schedule })
+      .from(schema.routines)
+      .where(eq(schema.routines.id, routineId));
+    if (!r) return;
+    if ((r.schedule as Schedule).type === 'once') {
+      // A run the person started by hand, or one an outside event started, is not the one-time run.
+      if (!(await this.scheduled(runId))) return;
+      await this.ctx.db
+        .update(schema.routines)
+        .set({ enabled: true, nextRunAt: retryAt, resumeAt: null })
+        .where(and(eq(schema.routines.id, routineId), isNull(schema.routines.nextRunAt)));
+      return;
+    }
+    await this.ctx.db
+      .update(schema.routines)
+      .set({ nextRunAt: retryAt, resumeAt: resumeFrom })
+      .where(
+        and(
+          eq(schema.routines.id, routineId),
+          eq(schema.routines.enabled, true),
+          or(isNull(schema.routines.nextRunAt), gt(schema.routines.nextRunAt, retryAt)),
+        ),
+      );
+  }
+
+  /** Whether the run came from the routine's schedule, not from the person's hand or an outside event. */
+  private async scheduled(runId: string): Promise<boolean> {
+    const [ran] = await this.ctx.db
+      .select({ trigger: schema.routineRuns.trigger, occurrence: schema.routineRuns.occurrence })
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.id, runId));
+    // A scheduled run is kept under its slot's time (`occurrenceKey`); others under a `kind:` name.
+    return !!ran && !ran.trigger && /^\d{4}-\d{2}-\d{2}T/.test(ran.occurrence);
+  }
+
+  /**
+   * Whether running the run again from the start repeats nothing: `turnId` is its only turn (no
+   * earlier one handed work on or read other bots' answers), and it let through no step that
+   * changes something.
+   */
+  private async untouched(runId: string, turnId: string): Promise<boolean> {
+    const [other] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(and(eq(schema.turns.routineRunId, runId), ne(schema.turns.id, turnId)))
+      .limit(1);
+    if (other) return false;
+    const [step] = await this.ctx.db
+      .select({ id: schema.botActions.id })
+      .from(schema.botActions)
+      .where(eq(schema.botActions.turnId, turnId))
+      .limit(1);
+    return !step;
   }
 }
 

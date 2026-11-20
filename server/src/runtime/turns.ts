@@ -162,13 +162,14 @@ interface Running {
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
 
-const interrupted = (message: string, byPerson = false): TurnOutcome => ({
+const interrupted = (message: string, o: { byPerson?: boolean; restarted?: boolean } = {}): TurnOutcome => ({
   ok: false,
   kind: 'interrupted',
   message,
   text: '',
   sessionId: null,
-  ...(byPerson && { byPerson: true }),
+  ...(o.byPerson && { byPerson: true }),
+  ...(o.restarted && { restarted: true }),
 });
 
 /**
@@ -463,7 +464,7 @@ export class TurnManager {
       .returning();
     for (const turn of dropped) {
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), { byPerson: true }));
     }
     return found || dropped.length > 0;
   }
@@ -551,7 +552,8 @@ export class TurnManager {
       r.steers = r.steers.filter((st) => !dropped.some((d) => d.id === st.turnId));
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
+    for (const turn of dropped)
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), { byPerson: true }));
     return dropped.length;
   }
 
@@ -580,7 +582,8 @@ export class TurnManager {
     this.folding.get(threadId)?.controller.abort();
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
+    for (const turn of dropped)
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), { byPerson: true }));
     return found;
   }
 
@@ -656,7 +659,7 @@ export class TurnManager {
         turnId: turn.id,
       });
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.serverRestarted')));
+      await this.runHooks(turn, interrupted(t('turn.serverRestarted'), { restarted: true }));
     }
   }
 
