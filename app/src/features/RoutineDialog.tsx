@@ -30,6 +30,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
+import { RunSteps, StepsEditor } from './RoutineSteps';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
 export function OpenedRoutineDialog() {
@@ -53,6 +54,15 @@ export function OpenedRoutineDialog() {
 const Form = z.object({
   name: z.string().trim().min(1, 'routine.nameRequired').max(80),
   prompt: z.string().trim().min(1, 'routine.promptRequired').max(20_000),
+  /** What it does after its instruction, in order. */
+  steps: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.literal('agent'),
+      prompt: z.string().trim().min(1, 'routine.stepPromptRequired').max(20_000),
+      model: z.string().max(200),
+    }),
+  ),
   type: z.enum(['hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'interval', 'cron', 'once']),
   expr: z
     .string()
@@ -126,6 +136,7 @@ function fromRoutine(r?: Routine): Form {
   return {
     name: r?.name ?? '',
     prompt: r?.prompt ?? '',
+    steps: (r?.steps ?? []).map((x) => ({ id: x.id, kind: x.kind, prompt: x.prompt, model: x.model ?? '' })),
     type: s?.type ?? 'weekdays',
     time: s && 'time' in s ? s.time : '09:00',
     minute: s?.type === 'hourly' ? s.minute : 0,
@@ -191,6 +202,7 @@ export function RoutineDialog({
       const body = {
         name: f.name,
         prompt: f.prompt,
+        steps: f.steps.map((x) => ({ ...x, prompt: x.prompt.trim(), model: x.model.trim() })),
         schedule: toSchedule(f),
         missed: f.missed,
         carryReport: f.carryReport,
@@ -228,6 +240,7 @@ export function RoutineDialog({
   });
   const err = form.formState.errors;
   const type = values.type;
+  const stepErrors = (values.steps ?? []).map((_, i) => err.steps?.[i]?.prompt?.message);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,6 +276,18 @@ export function RoutineDialog({
                 />
               )}
             </Field>
+            <StepsEditor
+              steps={values.steps ?? []}
+              onChange={(next) =>
+                form.setValue('steps', next, {
+                  shouldDirty: true,
+                  shouldValidate: form.formState.isSubmitted,
+                })
+              }
+              errors={stepErrors}
+              modelListId="routine-model-options"
+              modelPlaceholder={t('routine.stepModelPlaceholder')}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('routine.when')}>
                 <Select value={type} onValueChange={(v) => form.setValue('type', v as Form['type'])}>
@@ -602,7 +627,7 @@ function RecentRuns({
   return (
     <div ref={ref} className="space-y-1.5">
       <div className="text-sm font-medium">{t('routine.runs')}</div>
-      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
+      <ul className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border p-2 text-sm">
         {runs.slice(0, 10).map((r) => (
           <li key={r.id}>
             <button
@@ -641,6 +666,7 @@ function RecentRuns({
                 )}
               </span>
             </button>
+            <RunSteps run={r} />
           </li>
         ))}
       </ul>

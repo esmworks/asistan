@@ -12,6 +12,7 @@ import {
   type RoutineCreate,
   type RoutineRevision,
   type RoutineRun,
+  type RoutineStep,
   type Schedule,
 } from '@yumakbot/shared';
 import {
@@ -41,6 +42,7 @@ import type { Engine, GateRequest, GateVerdict, TurnOutcome } from '../engine/ty
 import type { TurnRow } from '../runtime/turns';
 import { cutAt, errorText, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
+import { snapshotSteps, stepList } from './routine-steps';
 import { fetchPublicText } from './skill-link';
 import { mailText } from './email';
 import type { Services } from '.';
@@ -174,7 +176,22 @@ export class RoutineService {
         ),
       )
       .returning({ id: schema.routineRuns.id });
-    if (orphaned.length) this.ctx.bus.refresh({ scope: 'routines' });
+    if (orphaned.length) {
+      // The step each was at ends with it.
+      await this.ctx.db
+        .update(schema.routineStepRuns)
+        .set({ status: 'error', reason: t('turn.serverRestarted'), finishedAt: this.clock() })
+        .where(
+          and(
+            inArray(
+              schema.routineStepRuns.runId,
+              orphaned.map((o) => o.id),
+            ),
+            eq(schema.routineStepRuns.status, 'running'),
+          ),
+        );
+      this.ctx.bus.refresh({ scope: 'routines' });
+    }
     // Runs that waited for one the stop cut short go on now.
     const waiting = await this.ctx.db
       .selectDistinct({ routineId: schema.routineRuns.routineId })
@@ -420,13 +437,30 @@ export class RoutineService {
           ).map((x) => x.run),
         )
       : new Set<string | null>();
-    if (!queued.size) return rows.map(toRun);
-    const t = await this.services.settings.translator();
-    return rows.map((r) =>
-      queued.has(r.id)
-        ? { ...toRun(r), status: 'waiting' as const, reason: t('routine.waitingForBot') }
-        : toRun(r),
-    );
+    // A run with steps shows each of them; those a finished run never reached read as skipped.
+    const stepped = rows.filter((r) => r.stepsSnapshot).map((r) => r.id);
+    const stepRows = stepped.length
+      ? await this.ctx.db
+          .select()
+          .from(schema.routineStepRuns)
+          .where(inArray(schema.routineStepRuns.runId, stepped))
+      : [];
+    const t = queued.size ? await this.services.settings.translator() : null;
+    return rows.map((r) => {
+      const run = toRun(r);
+      const shown =
+        t && queued.has(r.id)
+          ? { ...run, status: 'waiting' as const, reason: t('routine.waitingForBot') }
+          : run;
+      const steps = snapshotSteps(r.stepsSnapshot);
+      if (!steps) return shown;
+      const going = r.status === 'running' || r.status === 'waiting' || r.status === 'queued';
+      const list = stepList(
+        steps,
+        stepRows.filter((x) => x.runId === r.id),
+      ).map((x) => (x.status === 'pending' && !going ? { ...x, status: 'skipped' as const } : x));
+      return { ...shown, steps: list };
+    });
   }
 
   /**
@@ -1105,6 +1139,7 @@ export class RoutineService {
           status: 'running',
           threadId: thread.id,
           promptSnapshot: routine.prompt,
+          stepsSnapshot: stepsOf(routine),
           // Text from outside starts it: its turns change nothing without a card.
           trigger: check?.trigger ?? null,
         })
@@ -1260,6 +1295,7 @@ export class RoutineService {
           reason: t('routine.queued'),
           threadId,
           promptSnapshot: routine.prompt,
+          stepsSnapshot: stepsOf(routine),
           trigger,
           payload: payload ?? null,
         })
@@ -1435,7 +1471,7 @@ export class RoutineService {
     const prompt = report
       ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
       : base;
-    await this.services.turns.enqueue({
+    const turn = await this.services.turns.enqueue({
       threadId,
       botId,
       source: 'routine',
@@ -1444,6 +1480,239 @@ export class RoutineService {
       // Its runs work for whoever set it up; one from before people came in, for the bot's owner.
       ...(routine.createdByUserId && { userId: routine.createdByUserId }),
     });
+    // A run of a routine with steps keeps how each went, its own instruction first.
+    if (run.stepsSnapshot) await this.stepStarted(run.id, 0, 'prompt', turn.id);
+  }
+
+  /** Records that the run's step at `position` is under way, once more for one tried again. */
+  private async stepStarted(runId: string, position: number, kind: string, turnId: string | null) {
+    const now = this.clock();
+    await this.ctx.db
+      .insert(schema.routineStepRuns)
+      .values({ id: newId(), runId, position, kind, status: 'running', turnId, startedAt: now })
+      .onConflictDoUpdate({
+        target: [schema.routineStepRuns.runId, schema.routineStepRuns.position],
+        set: { status: 'running', turnId, output: null, reason: null, startedAt: now, finishedAt: null },
+      });
+  }
+
+  /**
+   * Starts the run's step at `position` after the routine's own instruction: its instruction goes
+   * into the run's conversation, and the bot works on it with what the step before it ended with.
+   * `note` says why it is done again, for a step tried again.
+   */
+  private async startStep(
+    run: { id: string; routineId: string; threadId: string; botId: string; userId: string | null },
+    routineName: string,
+    steps: readonly RoutineStep[],
+    position: number,
+    before: string | null,
+    t: T,
+    note?: string,
+  ) {
+    const step = steps[position - 1]!;
+    await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ stepModel: step.model || null })
+      .where(eq(schema.routineRuns.id, run.id));
+    await this.services.threads.addMessage({
+      threadId: run.threadId,
+      role: 'user',
+      author: `routine:${run.routineId}`,
+      text: step.prompt,
+      props: { routineRunId: run.id, routineName, routineStep: position },
+    });
+    const parts = [
+      ...(note ? [note] : []),
+      t('routine.stepPrompt', {
+        name: routineName,
+        step: String(position + 1),
+        total: String(steps.length + 1),
+        prompt: step.prompt,
+        silent: SILENT_REPLY,
+      }),
+      ...(before?.trim() ? [t('routine.stepBefore', { text: fence(cutAt(before.trim(), REPORT_MAX)) })] : []),
+    ];
+    const turn = await this.services.turns.enqueue({
+      threadId: run.threadId,
+      botId: run.botId,
+      source: 'routine',
+      prompt: parts.join('\n\n'),
+      routineRunId: run.id,
+      ...(run.userId && { userId: run.userId }),
+    });
+    await this.stepStarted(run.id, position, step.kind, turn.id);
+  }
+
+  /**
+   * A bot's turn of a run with steps ended. One that failed, or that the person stopped, ends the
+   * run there, to be tried again from that step; nothing runs again by itself, since the steps
+   * before it may already have changed something. One that ended well starts the next step. True
+   * when it handled the run; false for the last step ending well, which ends the run as a run of
+   * one instruction does.
+   */
+  private async stepEnded(
+    turn: TurnRow,
+    outcome: TurnOutcome,
+    run: {
+      routineId: string;
+      routineName: string;
+      steps: unknown;
+      failedByBot: boolean;
+      reason: string | null;
+      userId: string | null;
+    },
+  ): Promise<boolean> {
+    const runId = turn.routineRunId!;
+    const steps = snapshotSteps(run.steps) ?? [];
+    const [current] = await this.ctx.db
+      .select()
+      .from(schema.routineStepRuns)
+      .where(and(eq(schema.routineStepRuns.runId, runId), eq(schema.routineStepRuns.status, 'running')))
+      .orderBy(desc(schema.routineStepRuns.position))
+      .limit(1);
+    const position = current?.position ?? 0;
+    const now = this.clock();
+    const endStep = (set: Partial<typeof schema.routineStepRuns.$inferInsert>) =>
+      current
+        ? this.ctx.db
+            .update(schema.routineStepRuns)
+            .set({ ...set, finishedAt: now })
+            .where(eq(schema.routineStepRuns.id, current.id))
+        : Promise.resolve();
+    const endRun = async (set: Partial<typeof schema.routineRuns.$inferInsert>) => {
+      await this.ctx.db
+        .update(schema.routineRuns)
+        .set({ ...set, stepModel: null, finishedAt: now })
+        .where(eq(schema.routineRuns.id, runId));
+      this.ctx.bus.refresh({ scope: 'routines' });
+      await this.startQueued(run.routineId);
+    };
+    if (run.failedByBot || !outcome.ok) {
+      const stopped = !outcome.ok && outcome.kind === 'interrupted' && outcome.byPerson === true;
+      const status = run.failedByBot ? 'error' : stopped ? 'stopped' : 'error';
+      const reason = run.failedByBot ? run.reason : outcome.ok ? null : outcome.message;
+      await endStep({ status, reason, output: outcome.text.trim() || null });
+      // A run the bot marked as failed keeps the bot's reason.
+      await endRun(run.failedByBot ? {} : { status, reason });
+      return true;
+    }
+    await endStep({ status: 'done', output: outcome.text.trim() || null });
+    if (isSilentReply(outcome.text)) {
+      const t = await this.services.settings.translator();
+      const rest = position < steps.length;
+      await endRun({
+        status: 'done',
+        reason: rest ? t('routine.stepsSkippedSilent', { step: String(position + 1) }) : null,
+      });
+      return true;
+    }
+    if (position >= steps.length) return false;
+    const t = await this.services.settings.translator();
+    await this.startStep(
+      { id: runId, routineId: run.routineId, threadId: turn.threadId, botId: turn.botId, userId: run.userId },
+      run.routineName,
+      steps,
+      position + 1,
+      outcome.text,
+      t,
+    );
+    this.ctx.bus.refresh({ scope: 'routines' });
+    return true;
+  }
+
+  /**
+   * Starts a run with steps again at the step where it failed or was stopped, in its own
+   * conversation, with what the step before it ended with.
+   */
+  async retryRun(routineId: string, runId: string): Promise<RoutineRun> {
+    const routine = await this.get(routineId);
+    const [run] = await this.ctx.db
+      .select()
+      .from(schema.routineRuns)
+      .where(and(eq(schema.routineRuns.id, runId), eq(schema.routineRuns.routineId, routineId)))
+      .limit(1);
+    const steps = run ? snapshotSteps(run.stepsSnapshot) : null;
+    if (!run || !steps || !run.threadId || (run.status !== 'error' && run.status !== 'stopped'))
+      throw new HttpError(409, 'error.routineRunNotRetriable');
+    const [failed] = await this.ctx.db
+      .select()
+      .from(schema.routineStepRuns)
+      .where(
+        and(
+          eq(schema.routineStepRuns.runId, runId),
+          inArray(schema.routineStepRuns.status, ['error', 'stopped']),
+        ),
+      )
+      .orderBy(desc(schema.routineStepRuns.position))
+      .limit(1);
+    if (!failed) throw new HttpError(409, 'error.routineRunNotRetriable');
+    const bot = await this.services.bots.get(routine.botId).catch(() => null);
+    if (!bot || bot.archivedAt) throw new HttpError(409, 'error.routineRunNotRetriable');
+    let restarted: RunRow | undefined;
+    try {
+      [restarted] = await this.ctx.db
+        .update(schema.routineRuns)
+        .set({ status: 'running', reason: null, finishedAt: null, failedByBot: false })
+        .where(
+          and(eq(schema.routineRuns.id, runId), inArray(schema.routineRuns.status, ['error', 'stopped'])),
+        )
+        .returning();
+    } catch (err) {
+      // Another run of the routine is going: this one is tried again once that one ends.
+      if (isUniqueViolation(err)) throw new HttpError(409, 'error.routineBusy');
+      throw err;
+    }
+    if (!restarted) throw new HttpError(409, 'error.routineRunNotRetriable');
+    const t = await this.services.settings.translator();
+    const person = routine.createdByUserId ?? null;
+    try {
+      if (failed.position === 0) {
+        const prompt = t('routine.prompt', {
+          name: routine.name,
+          prompt: restarted.promptSnapshot,
+          silent: SILENT_REPLY,
+        });
+        await this.ctx.db
+          .update(schema.routineRuns)
+          .set({ stepModel: null })
+          .where(eq(schema.routineRuns.id, runId));
+        const turn = await this.services.turns.enqueue({
+          threadId: run.threadId,
+          botId: bot.id,
+          source: 'routine',
+          prompt: `${t('routine.stepRetry')}\n\n${prompt}`,
+          routineRunId: runId,
+          ...(person && { userId: person }),
+        });
+        await this.stepStarted(runId, 0, 'prompt', turn.id);
+      } else {
+        const [before] = await this.ctx.db
+          .select({ output: schema.routineStepRuns.output })
+          .from(schema.routineStepRuns)
+          .where(
+            and(
+              eq(schema.routineStepRuns.runId, runId),
+              eq(schema.routineStepRuns.position, failed.position - 1),
+            ),
+          )
+          .limit(1);
+        await this.startStep(
+          { id: runId, routineId, threadId: run.threadId, botId: bot.id, userId: person },
+          routine.name,
+          steps,
+          failed.position,
+          before?.output ?? null,
+          t,
+          t('routine.stepRetry'),
+        );
+      }
+    } catch (err) {
+      await this.startFailed(routineId, runId, err, t);
+      throw err;
+    }
+    this.ctx.bus.refresh({ scope: 'routines' });
+    return (await this.runs(routineId)).find((r) => r.id === runId) ?? toRun(restarted);
   }
 
   /**
@@ -1613,10 +1882,13 @@ export class RoutineService {
     const [run] = await this.ctx.db
       .select({
         failedByBot: schema.routineRuns.failedByBot,
+        reason: schema.routineRuns.reason,
         routineName: schema.routines.name,
         routineId: schema.routineRuns.routineId,
         outside: schema.routineRuns.trigger,
         slackChannel: schema.routines.slackChannel,
+        steps: schema.routineRuns.stepsSnapshot,
+        userId: schema.routines.createdByUserId,
       })
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
@@ -1624,6 +1896,9 @@ export class RoutineService {
     // A run that handed work to other bots goes on in the turn that reads their answers: this turn
     // only said it asked, which is not the run's report.
     if (run && !run.failedByBot && outcome.ok && (await this.awaitsAnswers(turn))) return;
+    // A run with steps goes on to its next step; only its last one reports, as a run of one
+    // instruction does.
+    if (run?.steps && (await this.stepEnded(turn, outcome, run))) return;
     const thread = await this.services.threads.row(turn.threadId).catch(() => null);
     if (
       run &&
@@ -1791,6 +2066,11 @@ function sameSecret(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** The steps a run of the routine starts with; null for a routine with none. */
+function stepsOf(routine: Routine): RoutineStep[] | null {
+  return routine.steps?.length ? routine.steps : null;
 }
 
 /** A routine that reports to a Slack channel shares what it reads there: never WhatsApp chats. */

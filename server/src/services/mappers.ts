@@ -17,6 +17,7 @@ import type {
 import { ALL_TOOLS } from '@yumakbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
+import { snapshotSteps } from './routine-steps';
 
 type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
 
@@ -142,6 +143,7 @@ export const toRoutine = (r: Row<typeof schema.routines>): Routine => ({
   botId: r.botId,
   name: r.name,
   prompt: r.prompt,
+  steps: snapshotSteps(r.steps) ?? [],
   schedule: r.schedule as Schedule,
   timezone: r.timezone,
   enabled: r.enabled,

@@ -256,6 +256,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/routines/:id/webhook': edit('routine'),
   'DELETE /api/routines/:id/webhook': edit('routine'),
   'GET /api/routines/:id/runs': edit('routine'),
+  'POST /api/routines/:id/runs/:runId/retry': edit('routine'),
   'GET /api/routines/:id/revisions': edit('routine'),
 
   // Memory: each person's own notes, and those of the bots they may change (checked by the routes).

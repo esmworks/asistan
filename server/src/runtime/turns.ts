@@ -785,7 +785,11 @@ export class TurnManager {
     // The turn's routine run: what outside text started it, and the model the routine names.
     const [routineRun] = turn.routineRunId
       ? await this.ctx.db
-          .select({ trigger: schema.routineRuns.trigger, model: schema.routines.model })
+          .select({
+            trigger: schema.routineRuns.trigger,
+            model: schema.routines.model,
+            stepModel: schema.routineRuns.stepModel,
+          })
           .from(schema.routineRuns)
           .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
           .where(eq(schema.routineRuns.id, turn.routineRunId))
@@ -1351,8 +1355,10 @@ export class TurnManager {
       inRoom
         ? this.services.rooms.setSessionCost(thread.id, bot.id, costUsd)
         : threads.setSessionCost(thread.id, costUsd);
-    // A routine may name a cheaper or stronger model for its runs, on the bot's own engine.
+    // A routine may name a cheaper or stronger model for its runs, and a step of it one for itself,
+    // on the bot's own engine.
     const model =
+      routineRun?.stepModel ||
       routineRun?.model ||
       bot.model ||
       (bot.engine === 'claude' ? settings.defaultModel : '') ||

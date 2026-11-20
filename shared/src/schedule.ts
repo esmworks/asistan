@@ -65,6 +65,27 @@ export const RoutineCheck = z.object({
 });
 export type RoutineCheck = z.infer<typeof RoutineCheck>;
 
+/** The most steps a routine may have after its own instruction. */
+export const ROUTINE_STEP_MAX = 10;
+
+const stepId = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
+
+/**
+ * A step of a routine after its own instruction, done once the step before it ended well. `agent`:
+ * the bot works on another instruction, with the step before it as what it builds on, on a model of
+ * its own when one is named (empty for the routine's).
+ */
+export const RoutineStep = z.discriminatedUnion('kind', [
+  z.object({
+    id: stepId,
+    kind: z.literal('agent'),
+    prompt: z.string().trim().min(1, 'validation.stepPrompt').max(20_000),
+    model: z.string().trim().max(200).default(''),
+  }),
+]);
+export type RoutineStep = z.infer<typeof RoutineStep>;
+export type RoutineStepKind = RoutineStep['kind'];
+
 export const Routine = z.object({
   /** The person whose work it runs as; null for the bot's owner. Missing on older servers. */
   createdByUserId: z.string().nullable().optional(),
@@ -72,6 +93,8 @@ export const Routine = z.object({
   botId: z.string(),
   name: z.string(),
   prompt: z.string(),
+  /** What it does after its instruction, in order; empty for a routine of one instruction. Missing on older servers. */
+  steps: z.array(RoutineStep).optional(),
   schedule: Schedule,
   timezone: z.string(),
   enabled: z.boolean(),
@@ -117,6 +140,12 @@ export const RoutineCreate = z.object({
   botId: z.string(),
   name: z.string().trim().min(1).max(80),
   prompt: z.string().trim().min(1).max(20_000),
+  /** Steps done in order after the instruction, each once the one before it ended well. */
+  steps: z
+    .array(RoutineStep)
+    .max(ROUTINE_STEP_MAX)
+    .refine((s) => new Set(s.map((x) => x.id)).size === s.length, 'validation.stepIds')
+    .default([]),
   schedule: Schedule,
   timezone: z.string().refine(isValidTimeZone, 'validation.timezone').default('Europe/Istanbul'),
   enabled: z.boolean().default(true),
@@ -214,8 +243,37 @@ export const RoutineRun = z.object({
    * the run looked like it had nothing new to work on. Null when no pre-check ran.
    */
   gate: z.object({ decision: RoutineGateDecision, reason: z.string() }).nullable(),
+  /**
+   * Each step of a run of a routine with steps, its own instruction first; missing for a run of a
+   * routine with none, and on older servers.
+   */
+  steps: z.array(z.lazy(() => RoutineStepRun)).optional(),
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
+
+/** How a step of a run went; `pending` has not started. */
+export const RoutineStepRunStatus = z.enum([
+  'pending',
+  'running',
+  'done',
+  'error',
+  'stopped',
+  'skipped',
+  'waiting',
+]);
+export const RoutineStepRun = z.object({
+  /** 0 is the routine's own instruction, 1 the first step after it. */
+  position: z.number().int().min(0),
+  /** `prompt` for the routine's own instruction, otherwise the step's kind. */
+  kind: z.string(),
+  status: RoutineStepRunStatus,
+  /** What the step ended with, cut short: the bot's answer, or the person's. */
+  output: z.string().nullable(),
+  reason: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+});
+export type RoutineStepRun = z.infer<typeof RoutineStepRun>;
 
 /** An instruction a routine had, with when it was saved; the newest is the one it has now. */
 export const RoutineRevision = z.object({

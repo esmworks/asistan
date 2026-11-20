@@ -601,6 +601,8 @@ export const api = {
   runRoutine: (id: string) => http.post<RoutineRun | null>(`/api/routines/${id}/run`),
   routineFailureSeen: (id: string) => http.post<{ ok: true }>(`/api/routines/${id}/failure-seen`),
   routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
+  retryRoutineRun: (id: string, runId: string) =>
+    http.post<RoutineRun>(`/api/routines/${id}/runs/${runId}/retry`),
   routineRevisions: (id: string) => http.get<RoutineRevision[]>(`/api/routines/${id}/revisions`),
 
   library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),

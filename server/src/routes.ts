@@ -172,6 +172,7 @@ interface Deps {
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
+const RunParams = z.object({ id: z.string().min(1), runId: z.string().min(1) });
 
 /** Library files the page may show as pictures. */
 /** What the page may show in place: raster images, and PDFs in the browser's own viewer. */
@@ -2033,6 +2034,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return reply.code(202).send({ ok: true, runId: run?.id ?? null, status: run?.status ?? 'skipped' });
   });
   app.get('/api/routines/:id/runs', async (req) => s.routines.runs(IdParams.parse(req.params).id));
+  // A run with steps that failed or was stopped goes on from that step.
+  app.post('/api/routines/:id/runs/:runId/retry', async (req) => {
+    const p = RunParams.parse(req.params);
+    return s.routines.retryRun(p.id, p.runId);
+  });
   app.get('/api/routines/:id/revisions', async (req) => s.routines.revisions(IdParams.parse(req.params).id));
 
   // Library: files in the bot's folders (read-only listing and download).

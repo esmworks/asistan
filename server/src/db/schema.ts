@@ -454,6 +454,8 @@ export const routines = pgTable('routines', {
     .references(() => bots.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   prompt: text('prompt').notNull(),
+  /** What it does after its instruction, in order (`RoutineStep`); empty for one instruction. */
+  steps: jsonb('steps').notNull().default([]),
   schedule: jsonb('schedule').notNull(),
   timezone: text('timezone').notNull(),
   enabled: boolean('enabled').notNull().default(true),
@@ -553,6 +555,13 @@ export const routineRuns = pgTable(
      * answer); null for a scheduled or manual run. Such a run may change nothing without a card.
      */
     trigger: text('trigger', { enum: OUTSIDE_TRIGGERS }),
+    /**
+     * The routine's steps after its instruction as they were when the run started, so a routine
+     * changed meanwhile does not change a run under way; null for a routine with none.
+     */
+    stepsSnapshot: jsonb('steps_snapshot'),
+    /** The model the step under way names; null for the routine's own. */
+    stepModel: text('step_model'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },
@@ -562,6 +571,33 @@ export const routineRuns = pgTable(
       .on(t.routineId)
       .where(sql`${t.status} in ('running', 'waiting')`),
   ],
+);
+
+/**
+ * Each step of a run of a routine with steps, its own instruction at position 0. A step done again
+ * (tried again after it failed) keeps its row.
+ */
+export const routineStepRuns = pgTable(
+  'routine_step_runs',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => routineRuns.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    kind: text('kind').notNull(),
+    status: text('status', {
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting'],
+    }).notNull(),
+    /** What the step ended with: the bot's answer, or the person's. */
+    output: sealedText('output'),
+    reason: text('reason'),
+    /** The bot's turn doing the step, while it is a bot's. */
+    turnId: text('turn_id'),
+    startedAt: created(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [uniqueIndex('routine_step_runs_position_uq').on(t.runId, t.position)],
 );
 
 /**

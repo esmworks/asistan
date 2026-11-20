@@ -701,6 +701,8 @@ export class ToolFactory {
               botId: bot.id,
               name: a.name.trim(),
               prompt: a.prompt.trim(),
+              // Steps after the instruction are set in the routine's window, where the person sees them.
+              steps: [],
               schedule: a.schedule,
               timezone: settings.timezone,
               enabled: true,
