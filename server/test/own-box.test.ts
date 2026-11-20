@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Approval, BotAction, Thread } from '@yumakbot/shared';
@@ -105,6 +105,22 @@ describe('botun kendi makinesindeki adımlar', () => {
     expect(confinedWrite('Write', { file_path: join(dir, 'x.md') }, [])).toBe(false);
     // Commands never count here, however local they look.
     expect(confinedWrite('Bash', { command: `touch ${join(dir, 'x')}` }, [dir])).toBe(false);
+    // A repository's hooks and config run code later; they still ask.
+    expect(confinedWrite('Write', { file_path: join(dir, '.git/hooks/pre-commit') }, [dir])).toBe(false);
+    expect(confinedWrite('Edit', { file_path: join(dir, 'repo/.git/config') }, [dir])).toBe(false);
+  });
+
+  it('a link in the folder to a file that does not exist yet is not taken as inside', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'yumakbot-outside-'));
+    symlinkSync(join(outside, 'not-yet.plist'), join(dir, 'agent.plist'));
+    symlinkSync(join(outside, 'no-folder'), join(dir, 'gone'));
+    expect(confinedWrite('Write', { file_path: join(dir, 'agent.plist') }, [dir])).toBe(false);
+    expect(confinedWrite('Write', { file_path: join(dir, 'gone/new.md') }, [dir])).toBe(false);
+    // A link to a file that exists is judged by where it really is.
+    writeFileSync(join(outside, 'real.md'), 'x');
+    symlinkSync(join(outside, 'real.md'), join(dir, 'real.md'));
+    expect(confinedWrite('Write', { file_path: join(dir, 'real.md') }, [dir])).toBe(false);
+    rmSync(outside, { recursive: true, force: true });
   });
 });
 
@@ -202,6 +218,18 @@ describe("on the person's computer", () => {
     expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Write' });
     await t.api('POST', `/api/threads/${thread.id}/stop`);
     await t.services.turns.idle();
+  });
+
+  it("a project folder the bot was pointed at is the person's own, so a write there still asks", async () => {
+    t = await testServer({ onUserComputer: true });
+    const project = mkdtempSync(join(tmpdir(), 'yumakbot-project-'));
+    const bot = await t.bot({ permissionMode: 'ask', projectDir: project });
+    expect(bot.projectDir).toBe(project);
+    const thread = await write(bot.id, join(project, 'package.json'));
+    expect(await waitFor(async () => (await pending())[0])).toMatchObject({ toolName: 'Write' });
+    await t.api('POST', `/api/threads/${thread.id}/stop`);
+    await t.services.turns.idle();
+    rmSync(project, { recursive: true, force: true });
   });
 
   it("the group's shared folder still asks", async () => {

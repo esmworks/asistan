@@ -1,4 +1,5 @@
-import { isAbsolute, resolve, sep } from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { commandParts, freePart } from '../services/shell-parts';
 import { realPath } from '../workspace';
 import { reachesOut } from './outside';
@@ -139,7 +140,35 @@ export function confinedWrite(toolName: string, input: Record<string, unknown>, 
   const path = [input.file_path, input.notebook_path, input.path].find(
     (p): p is string => typeof p === 'string' && !!p.trim(),
   );
-  return !!path && isAbsolute(path) && inside(path, dirs);
+  if (!path || !isAbsolute(path)) return false;
+  // A git repository's own files (its hooks, its config) run code the next time a git command the
+  // person allows runs there; writing them is not a plain file change.
+  if (resolve(path).split(sep).includes('.git')) return false;
+  return !danglingLink(path) && inside(path, dirs);
+}
+
+/**
+ * Whether the path, or a folder on the way to it, is a link to something that does not exist yet.
+ * Its real place cannot be read, so it would be judged by where the link sits, while writing it
+ * creates the file wherever the link points.
+ */
+function danglingLink(path: string): boolean {
+  for (let at = resolve(path); ; at = dirname(at)) {
+    let link = false;
+    try {
+      link = lstatSync(at).isSymbolicLink();
+    } catch {
+      // Not there (yet): nothing to follow at this step.
+    }
+    if (link) {
+      try {
+        realpathSync(at);
+      } catch {
+        return true;
+      }
+    }
+    if (dirname(at) === at) return false;
+  }
 }
 
 /**

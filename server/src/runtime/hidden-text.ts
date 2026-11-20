@@ -13,6 +13,8 @@
 /** Longest stretch of hidden text kept from one element, and how many are kept per page. */
 const SNIPPET_MAX = 600;
 const SNIPPETS_MAX = 40;
+/** Elements looked at on one page at most, so a huge page does not hold a step up. */
+const ELEMENTS_MAX = 20_000;
 
 /**
  * Words that speak to an AI agent rather than to a person: naming it, or telling it to drop what
@@ -58,26 +60,45 @@ export const HIDDEN_TEXT_SCRIPT = `(() => {
   const W = Math.max(document.documentElement.scrollWidth, innerWidth);
   const H = Math.max(document.documentElement.scrollHeight, innerHeight);
   const rgb = (c) => { const m = /rgba?\\(([^)]+)\\)/.exec(c || ''); if (!m) return null; const p = m[1].split(',').map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
-  const bg = (el) => { for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c && c.a > 0.9) return c; } return { r: 255, g: 255, b: 255, a: 1 }; };
+  // Each element's style and background are read once: the background is found by going up,
+  // and what a parent found is kept for its children.
+  const styles = new Map();
+  const st = (el) => { let s = styles.get(el); if (!s) { s = getComputedStyle(el); styles.set(el, s); } return s; };
+  const white = { r: 255, g: 255, b: 255, a: 1 };
+  const bgs = new Map();
+  const bg = (el) => {
+    if (!el) return white;
+    if (bgs.has(el)) return bgs.get(el);
+    const c = rgb(st(el).backgroundColor);
+    const v = c && c.a > 0.9 ? c : bg(el.parentElement);
+    bgs.set(el, v);
+    return v;
+  };
   const same = (a, b) => a && b && Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) < 24;
   const hidden = (el) => {
-    const s = getComputedStyle(el);
+    const s = st(el);
     if (el.hidden || s.display === 'none' || s.visibility === 'hidden' || s.visibility === 'collapse') return true;
     if (Number(s.opacity) < 0.05 || el.getAttribute('aria-hidden') === 'true') return true;
     if (parseFloat(s.fontSize) < 3) return true;
     if (/rect\\(\\s*0(px)?[ ,]+0(px)?[ ,]+0(px)?[ ,]+0(px)?\\s*\\)/.test(s.clip) || s.clipPath === 'inset(50%)' || s.clipPath === 'inset(100%)') return true;
     const r = el.getBoundingClientRect();
     if (r.width * r.height > 0 && (r.right + scrollX < -200 || r.bottom + scrollY < -200 || r.left + scrollX > W + 200 || r.top + scrollY > H + 200)) return true;
-    if (r.width * r.height > 0 && r.width < 2 && r.height < 2 && s.overflow === 'hidden') return true;
-    const c = rgb(s.color);
-    return !!c && c.a > 0.5 && same(c, bg(el));
+    return r.width * r.height > 0 && r.width < 2 && r.height < 2 && s.overflow === 'hidden';
   };
+  // Text drawn in the colour behind it: looked at only where an element holds text of its own.
+  const ownText = (el) => { for (const n of el.childNodes) if (n.nodeType === 3 && n.nodeValue.trim()) return true; return false; };
+  const blended = (el) => { const c = rgb(st(el).color); return !!c && c.a > 0.5 && same(c, bg(el)); };
+  // Each element is visited once and its text read only when it is hidden, which ends the walk
+  // below it: the cost grows with the page, not with its depth times its size.
+  let seen = 0;
   const walk = (el) => {
-    if (out.length >= max) return;
+    if (out.length >= max || ++seen > ${ELEMENTS_MAX}) return;
     if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'svg'].includes(el.tagName)) return;
-    const text = el.textContent || '';
-    if (text.trim().length < 12) return;
-    if (hidden(el)) { out.push(cut(text)); return; }
+    if (hidden(el) || (ownText(el) && blended(el))) {
+      const text = el.textContent || '';
+      if (text.trim().length >= 12) out.push(cut(text));
+      return;
+    }
     for (const child of el.children) walk(child);
   };
   if (document.body) walk(document.body);
@@ -107,12 +128,13 @@ export function hiddenInHtml(html: string): string[] {
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, SNIPPET_MAX);
+  const lower = html.toLowerCase();
   for (const m of html.matchAll(HIDING_TAG)) {
     if (out.length >= SNIPPETS_MAX) break;
     const name = m[1]!.toLowerCase();
     if (name === 'script' || name === 'style' || name === 'template') continue;
     const start = m.index! + m[0].length;
-    const end = html.toLowerCase().indexOf(`</${name}`, start);
+    const end = lower.indexOf(`</${name}`, start);
     const inner = text(html.slice(start, end < 0 ? start + SNIPPET_MAX * 4 : end));
     if (inner.length >= 12) out.push(inner);
   }

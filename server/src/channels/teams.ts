@@ -49,6 +49,16 @@ interface Account {
   tenantId: string;
 }
 
+/** A personal chat with the bot: the service Teams named, the conversation, and the person in it. */
+interface Place {
+  serviceUrl: string;
+  conversationId: string;
+  user: string;
+}
+
+/** Teams shows at most this many buttons on a card; a longer choice is a list with one button. */
+const CARD_BUTTONS = 6;
+
 /**
  * The server's Microsoft Teams bot, registered in Azure as a single-tenant bot. Teams delivers what
  * people write to the server's public address, each request signed by the Bot Framework and checked
@@ -260,7 +270,8 @@ export class TeamsChannel {
     const tenant = a.conversation?.tenantId ?? a.channelData?.tenant?.id;
     if (tenant !== account.tenantId) return;
     const t = await this.services.settings.translator();
-    const reply = (text: string) => this.say(row, a.serviceUrl!, conversation, text);
+    const place: Place = { serviceUrl: a.serviceUrl, conversationId: conversation, user: from };
+    const reply = (text: string) => this.say(row, place, text);
     if (a.conversation?.conversationType !== 'personal') {
       await reply(t('teams.personalOnly'));
       return;
@@ -298,9 +309,7 @@ export class TeamsChannel {
     }
     const thread = await this.services.threads.main(bot.id, person.userId);
     // The person sees the bot is on it while the reply is written.
-    void this.api(row)
-      .send(a.serviceUrl, conversation, { type: 'typing' })
-      .catch(() => {});
+    void this.post(row, place, { type: 'typing' }).catch(() => {});
     try {
       await this.services.inbox.send(thread.id, {
         text: files.length ? `${words}\n\n${t('teams.filesLeftOut')}` : words,
@@ -317,7 +326,12 @@ export class TeamsChannel {
   /** `link <code>` in a personal chat: the Teams account becomes the person's whose code it is. */
   private async linked(row: Row, a: TeamsActivity, code: string, person: Person | null, t: T) {
     const from = a.from!.id!;
-    const reply = (text: string) => this.say(row, a.serviceUrl!, a.conversation!.id!, text);
+    const reply = (text: string) =>
+      this.say(
+        row,
+        { serviceUrl: a.serviceUrl!, conversationId: a.conversation!.id!, user: a.from!.id! },
+        text,
+      );
     const now = Date.now();
     const missed = this.misses.get(from);
     if (missed && missed.until > now && missed.count >= CODE_TRIES) {
@@ -351,7 +365,12 @@ export class TeamsChannel {
 
   /** A button of a step card: answered as the linked person, as in the app. */
   private async pressed(row: Row, a: TeamsActivity, person: Person | null, t: T) {
-    const reply = (text: string) => this.say(row, a.serviceUrl!, a.conversation!.id!, text);
+    const reply = (text: string) =>
+      this.say(
+        row,
+        { serviceUrl: a.serviceUrl!, conversationId: a.conversation!.id!, user: a.from!.id! },
+        text,
+      );
     const data = (a.value as { choice?: unknown }).choice;
     const choice = typeof data === 'string' ? parseChoice(data) : null;
     if (!choice) return;
@@ -423,14 +442,18 @@ export class TeamsChannel {
       .limit(1);
     if (!person?.serviceUrl || !person.conversationId) return;
     const t = await this.services.settings.translator();
-    const where = { serviceUrl: person.serviceUrl, conversationId: person.conversationId };
-    const api = this.api(row);
+    const where: Place = {
+      serviceUrl: person.serviceUrl,
+      conversationId: person.conversationId,
+      user: person.teamsUserId,
+    };
     const ok = await this.sends.run(person.conversationId, async () => {
       if (m.role === 'approval') {
         const card = await this.services.approvals.get(String(m.props.approvalId)).catch(() => null);
         if (!card || card.status !== 'pending') return;
         const view = cardView(card, m.props, t, await this.services.settings.locale());
-        await api.send(where.serviceUrl, where.conversationId, {
+        const many = view.buttons.length > CARD_BUTTONS;
+        await this.post(row, where, {
           type: 'message',
           attachments: [
             {
@@ -439,12 +462,27 @@ export class TeamsChannel {
                 type: 'AdaptiveCard',
                 $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
                 version: '1.4',
-                body: [{ type: 'TextBlock', text: truncate(view.text, 4000), wrap: true }],
-                actions: view.buttons.slice(0, 6).map((b) => ({
-                  type: 'Action.Submit',
-                  title: truncate(b.label, 60),
-                  data: { choice: b.data },
-                })),
+                body: [
+                  { type: 'TextBlock', text: truncate(view.text, 4000), wrap: true },
+                  // More choices than Teams shows as buttons: a list, sent with one button.
+                  ...(many
+                    ? [
+                        {
+                          type: 'Input.ChoiceSet',
+                          id: 'choice',
+                          style: 'expanded',
+                          choices: view.buttons.map((b) => ({ title: truncate(b.label, 60), value: b.data })),
+                        },
+                      ]
+                    : []),
+                ],
+                actions: many
+                  ? [{ type: 'Action.Submit', title: t('teams.answer') }]
+                  : view.buttons.map((b) => ({
+                      type: 'Action.Submit',
+                      title: truncate(b.label, 60),
+                      data: { choice: b.data },
+                    })),
               },
             },
           ],
@@ -452,7 +490,7 @@ export class TeamsChannel {
         return;
       }
       if (m.role === 'error') {
-        await api.send(where.serviceUrl, where.conversationId, {
+        await this.post(row, where, {
           type: 'message',
           text: `⚠️ ${m.text}`,
           textFormat: 'plain',
@@ -461,14 +499,14 @@ export class TeamsChannel {
       }
       if (m.author !== `bot:${thread.botId}`) return;
       for (const part of teamsParts(m.text))
-        await api.send(where.serviceUrl, where.conversationId, {
+        await this.post(row, where, {
           type: 'message',
           text: part,
           textFormat: 'markdown',
         });
       // Files stay in the app: sending them to Teams needs the bot to have OneDrive access.
       for (const f of messageFiles(m))
-        await api.send(where.serviceUrl, where.conversationId, {
+        await this.post(row, where, {
           type: 'message',
           text: t('channel.fileInApp', { name: f.name }),
           textFormat: 'plain',
@@ -478,9 +516,23 @@ export class TeamsChannel {
   }
 
   /** A short plain reply in a conversation the person wrote in. */
-  private async say(row: Row, serviceUrl: string, conversationId: string, text: string) {
-    await this.sends.run(conversationId, async () => {
-      await this.api(row).send(serviceUrl, conversationId, { type: 'message', text, textFormat: 'plain' });
+  private async say(row: Row, place: Place, text: string) {
+    await this.sends.run(place.conversationId, async () => {
+      await this.post(row, place, { type: 'message', text, textFormat: 'plain' });
+    });
+  }
+
+  /**
+   * Posts an activity into a personal chat, naming who it is from (the bot, as Teams addresses it),
+   * who it is for and which conversation, as the Bot Connector expects of a message a bot sends.
+   */
+  private post(row: Row, place: Place, activity: Record<string, unknown>): Promise<void> {
+    const account = row.account as unknown as Account;
+    return this.api(row).send(place.serviceUrl, place.conversationId, {
+      ...activity,
+      from: { id: `28:${account.appId}` },
+      recipient: { id: place.user },
+      conversation: { id: place.conversationId },
     });
   }
 

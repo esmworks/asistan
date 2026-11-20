@@ -12,6 +12,8 @@ const SKEW_S = 5 * 60;
 const KEYS_MS = 24 * 3600_000;
 /** A key not known yet makes the keys be read again, but not more often than this. */
 const KEYS_RETRY_MS = 5 * 60_000;
+/** After a read that failed (Microsoft could not be reached), the next try waits this long. */
+const KEYS_FAILED_MS = 30_000;
 /** A token is renewed this long before it runs out. */
 const TOKEN_MARGIN_MS = 5 * 60_000;
 const WAIT_MS = 15_000;
@@ -74,7 +76,9 @@ interface Key {
  */
 export class TeamsAuth {
   private keys = new Map<string, Key>();
+  /** When the keys were last read, and when a read was last tried, whether it worked or not. */
   private readAt = 0;
+  private triedAt = Number.NEGATIVE_INFINITY;
   private reading: Promise<void> | null = null;
 
   constructor(
@@ -119,20 +123,25 @@ export class TeamsAuth {
     return sameService(service, activity.serviceUrl);
   }
 
+  /**
+   * The key named `kid`, reading the keys first when there are none yet or they are a day old, or
+   * when the key is not among them. Tries are spaced out from the last one, worked or not, so while
+   * Microsoft cannot be reached a stream of made-up tokens does not make the server ask on each
+   * one; a failed read is tried again soon, as Teams cannot be answered until one works.
+   */
   private async key(kid: string): Promise<Key | null> {
-    const stale = this.now() - this.readAt > KEYS_MS;
-    const unknown = !this.keys.has(kid) && this.now() - this.readAt > KEYS_RETRY_MS;
-    if (stale || unknown) await this.read().catch(() => {});
+    const now = this.now();
+    const sinceTry = now - this.triedAt;
+    const missing = !this.keys.size || now - this.readAt > KEYS_MS;
+    const unknown = !this.keys.has(kid);
+    if ((missing && sinceTry > KEYS_FAILED_MS) || (unknown && sinceTry > KEYS_RETRY_MS))
+      await this.read().catch(() => {});
     return this.keys.get(kid) ?? null;
   }
 
-  /**
-   * Reads the keys again. The time counts from the try, not from a success, so while Microsoft
-   * cannot be reached a stream of made-up tokens does not make the server ask on each one.
-   */
   private read(): Promise<void> {
     if (!this.reading) {
-      this.readAt = this.now();
+      this.triedAt = this.now();
       this.reading = this.load().finally(() => (this.reading = null));
     }
     return this.reading;
@@ -160,6 +169,7 @@ export class TeamsAuth {
       }
     }
     this.keys = keys;
+    this.readAt = this.now();
   }
 
   private async get(url: string): Promise<unknown> {

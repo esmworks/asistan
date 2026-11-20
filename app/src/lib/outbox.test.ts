@@ -6,7 +6,7 @@ vi.mock('./api', async (orig) => ({ ...(await orig<object>()), api: { send } }))
 const toastError = vi.fn();
 vi.mock('sonner', () => ({ toast: { error: toastError } }));
 
-const { ApiError } = await import('./api');
+const { ApiError, NoAnswerError } = await import('./api');
 const { flushOutbox, holdsFor, isOffline, useOutbox } = await import('./outbox');
 
 const held = (clientId: string) => ({
@@ -25,7 +25,10 @@ describe('outbox', () => {
   });
 
   it('tells a refused send from one that never reached the server', () => {
-    expect(isOffline(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isOffline(new NoAnswerError('Failed to fetch'))).toBe(true);
+    // A mistake made before anything was sent would only repeat: it is not held.
+    expect(isOffline(new TypeError('Converting circular structure to JSON'))).toBe(false);
+    expect(isOffline(new SyntaxError('Unexpected token'))).toBe(false);
     expect(isOffline(new ApiError(400, 'no'))).toBe(false);
     // A proxy's error page while the server restarts is no answer; the server's own 502 is one.
     expect(isOffline(new ApiError(502, 'Request failed (502)', false))).toBe(true);
@@ -57,7 +60,7 @@ describe('outbox', () => {
   it('keeps the rest while the server still cannot be reached, and drops one it refuses', async () => {
     useOutbox.getState().hold(held('a'));
     useOutbox.getState().hold(held('b'));
-    send.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    send.mockRejectedValueOnce(new NoAnswerError('Failed to fetch'));
     await flushOutbox();
     expect(send).toHaveBeenCalledTimes(1);
     expect(useOutbox.getState().items.map((i) => i.clientId)).toEqual(['a', 'b']);

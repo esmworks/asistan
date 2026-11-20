@@ -159,13 +159,17 @@ async function request<T>(
   // A file goes as it is; everything else as JSON.
   const raw = body instanceof Blob;
   if (hasBody) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers,
-    body: hasBody ? (raw ? body : JSON.stringify(body ?? {})) : undefined,
-  });
-  const text = await res.text();
+  const payload = hasBody ? (raw ? body : JSON.stringify(body ?? {})) : undefined;
+  let res: Response;
+  let text: string;
+  // Only a request that got no answer (or lost it on the way) is told apart as such: a mistake
+  // made here before sending is thrown as it is.
+  try {
+    res = await fetch(path, { method, credentials: 'same-origin', headers, body: payload });
+    text = await res.text();
+  } catch (err) {
+    throw new NoAnswerError(err instanceof Error ? err.message : String(err));
+  }
   let data: unknown = null;
   try {
     data = text ? JSON.parse(text) : null;
