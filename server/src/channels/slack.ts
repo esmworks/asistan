@@ -830,12 +830,19 @@ export class SlackChannel {
     try {
       if (choice.kind === 'a') {
         const allow = choice.value !== 'n';
-        await this.services.approvals.answer(
+        const after = await this.services.approvals.answer(
           card.id,
           { decision: allow ? 'allow' : 'deny', remember: choice.value === 'r' },
           person.userId,
         );
-        result = t(allow ? 'channel.allowed' : 'channel.denied');
+        // The first yes of a step that needs two people leaves it waiting for the second.
+        result = t(
+          !allow
+            ? 'channel.denied'
+            : after.status === 'pending'
+              ? 'channel.waitingSecond'
+              : 'channel.allowed',
+        );
       } else {
         const option = card.kind === 'question' ? this.option(card, Number(choice.value)) : null;
         if (option === null) return note('channel.cardClosed');

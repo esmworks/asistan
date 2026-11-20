@@ -43,7 +43,8 @@ export function QuickPanel() {
   const pending = useMemo(
     () =>
       (approvals ?? [])
-        .filter((a) => a.status === 'pending')
+        // A step that has its first yes waits for a second person, not for this card's buttons.
+        .filter((a) => a.status === 'pending' && !(a.needsSecond && a.firstAt))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [approvals],
   );

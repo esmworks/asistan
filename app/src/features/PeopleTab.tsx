@@ -18,6 +18,17 @@ export function personName(p: Pick<PersonInfo, 'displayName' | 'username'>, owne
   return p.displayName || p.username || owner;
 }
 
+/** The name of the person with this id among `people`, or `fallback` when they are not listed. */
+export function personNameOf(
+  people: Pick<PersonInfo, 'id' | 'displayName' | 'username'>[],
+  id: string | null | undefined,
+  owner: string,
+  fallback = '',
+) {
+  const p = people.find((x) => x.id === id);
+  return p ? personName(p, owner) : fallback;
+}
+
 /**
  * The people on this server. Everyone sees who is here; those who look after the server add,
  * change and remove them. Only the owner handles admins, and nobody changes themselves here.

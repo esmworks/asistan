@@ -142,6 +142,12 @@ export interface TurnRequest {
    */
   pickTool?: (name: string) => boolean;
   canUseTool(ask: PermissionAsk): Promise<PermissionAnswer>;
+  /**
+   * Looks at a step before it runs, whether or not it would ask: the reason to refuse it (a
+   * trip-wire was touched), or null. An engine calls it for every tool call it can see, so a call
+   * the engine would run without asking is looked at too.
+   */
+  screen?(ask: PermissionAsk): Promise<string | null>;
   /** A shell command reached a host on the internet: what came back is outside text. */
   onReach?(host: string): void;
   onText(delta: string): void;

@@ -102,6 +102,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('rooms');
       inv('meetings', e.threadId);
       inv('messages', e.threadId);
+      inv('turn-changes', e.threadId);
       inv('thread', e.threadId);
       inv('threads', e.botId);
       inv('summaries');
@@ -109,6 +110,7 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       break;
     case 'approvals':
       inv('approvals');
+      inv('second-yes');
       inv('summaries');
       // An answered card counts toward ways to ask less.
       inv('suggestions');
@@ -120,7 +122,15 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('routines');
       // A routine's instruction may have changed, by a bot or on another device.
       inv('routine-revisions');
+      inv('routine-rehearsals');
+      inv('routine-replayable');
       inv('summaries');
+      break;
+    case 'promises':
+      inv('promises');
+      break;
+    case 'routineSuggestions':
+      inv('routine-suggestions');
       break;
     case 'rules':
       inv('rules');

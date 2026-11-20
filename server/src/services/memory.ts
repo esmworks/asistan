@@ -5,13 +5,28 @@ import {
   type MemoryChange,
   type MemoryScope,
 } from '@yumakbot/shared';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { matchInServer } from '../db/sealed';
 import { lastActive, MEMORY_PROMPT_CHARS, PINNED_MEMORY_CHARS, withinBudget } from '../runtime/prompt';
 import { DOTTED_AND_DOTLESS_I, foldText, HttpError, newId, notFound } from '../util';
 import { toMemory, toMemoryChange } from './mappers';
+import { scrubCanary } from './canary';
 import { noteKey } from './secrets';
 import { siteMatches } from './vault';
 import { MIN_SCORE, type EmbeddingService } from './embeddings';
@@ -108,6 +123,16 @@ export async function placeOf(
 const placeNotes = (place: string | null) =>
   place ? and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)) : sql`false`;
 
+/** Whether the note's "true until" date has passed. */
+export const isExpired = (m: Pick<Memory, 'validUntil'>, now: Date) =>
+  !!m.validUntil && new Date(m.validUntil).getTime() <= now.getTime();
+
+/**
+ * The notes that are still true: those with no end date, or whose date has not come. An expired
+ * note stays in the database (the person may extend or delete it) but reaches no bot.
+ */
+const unexpired = (now: Date) => or(isNull(schema.memories.validUntil), gt(schema.memories.validUntil, now))!;
+
 /** One person's notes; none for null (a team conversation, which reads no one's own notes). */
 const userNotes = (userId: string | null) =>
   userId ? and(eq(schema.memories.scope, 'user'), eq(schema.memories.userId, userId)) : sql`false`;
@@ -151,6 +176,7 @@ export class MemoryService {
       .from(schema.memories)
       .where(
         and(
+          unexpired(new Date()),
           isNotNull(schema.memories.site),
           or(
             userNotes(userId),
@@ -181,14 +207,35 @@ export class MemoryService {
 
   /** The notes no bot uses any more (see `staleNotes`), the longest unused first; with `reach`, one person's. */
   async stale(now = new Date(), reach?: MemoryReach): Promise<Memory[]> {
-    const [notes, bots] = await Promise.all([
+    const [all, bots] = await Promise.all([
       this.list({ reach }),
       this.ctx.db
         .select({ id: schema.bots.id, memory: schema.bots.memory })
         .from(schema.bots)
         .where(isNull(schema.bots.archivedAt)),
     ]);
-    return staleNotes(notes, bots, now);
+    // An expired note is in no prompt and is listed on its own (see `expired`), so it takes no
+    // part in what fits the prompt, and is not offered twice.
+    return staleNotes(
+      all.filter((m) => !isExpired(m, now)),
+      bots,
+      now,
+    );
+  }
+
+  /**
+   * The notes whose "true until" date has passed, the longest expired first; with `reach`, one
+   * person's. They are kept for the person to delete or give a new date.
+   */
+  async expired(now = new Date(), reach?: MemoryReach): Promise<Memory[]> {
+    const conds = [isNotNull(schema.memories.validUntil), lte(schema.memories.validUntil, now)];
+    if (reach) conds.push(reachable(reach));
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.memories)
+      .where(and(...conds))
+      .orderBy(asc(schema.memories.validUntil));
+    return rows.map(toMemory);
   }
 
   /**
@@ -207,6 +254,7 @@ export class MemoryService {
         and(
           // Notes about a site come with that site, not with every turn.
           isNull(schema.memories.site),
+          unexpired(new Date()),
           or(
             userNotes(userId),
             and(eq(schema.memories.scope, 'bot'), eq(schema.memories.botId, botId)),
@@ -239,7 +287,7 @@ export class MemoryService {
     const own = botIds.length
       ? and(eq(schema.memories.scope, 'bot'), inArray(schema.memories.botId, botIds))
       : sql`false`;
-    const visible = shared ? or(userNotes(userId), own, placeNotes(place)) : own;
+    const visible = and(unexpired(new Date()), shared ? or(userNotes(userId), own, placeNotes(place)) : own)!;
     if (query?.trim() && this.embeddings && (await this.embeddings.available())) {
       const rows = await this.ctx.db
         .select()
@@ -347,7 +395,13 @@ export class MemoryService {
     if (same) return same;
     const [row] = await this.ctx.db
       .insert(schema.memoryChanges)
-      .values({ id: newId(), ...input })
+      .values({
+        id: newId(),
+        ...input,
+        // A bot's private token is never kept in a note, whatever asked for it.
+        content: scrubCanary(input.content),
+        validUntil: input.validUntil ? new Date(input.validUntil) : null,
+      })
       .returning();
     this.ctx.bus.refresh({ scope: 'memory' });
     return toMemoryChange(row!);
@@ -388,14 +442,28 @@ export class MemoryService {
         site: row.site,
       };
       if (!(await this.findSame(note)))
-        await this.create({ ...note, source: actor, threadId: row.threadId, sourceUrl: row.sourceUrl });
+        await this.create({
+          ...note,
+          source: actor,
+          threadId: row.threadId,
+          sourceUrl: row.sourceUrl,
+          validUntil: row.validUntil?.toISOString() ?? null,
+        });
     } else if (row.memoryId) {
       const exists = await this.get(row.memoryId).then(
         () => true,
         () => false,
       );
       if (exists && row.action === 'update')
-        await this.update(row.memoryId, { content: words, ...sourceOf(row) }, actor);
+        await this.update(
+          row.memoryId,
+          {
+            content: words,
+            ...sourceOf(row),
+            ...(row.validUntil && { validUntil: row.validUntil.toISOString() }),
+          },
+          actor,
+        );
       if (exists && row.action === 'forget') await this.remove(row.memoryId, actor);
     }
     await this.ctx.db.delete(schema.memoryChanges).where(eq(schema.memoryChanges.id, id));
@@ -428,6 +496,8 @@ export class MemoryService {
     /** The conversation the bot wrote it in, and the page the fact came from. */
     threadId?: string | null;
     sourceUrl?: string | null;
+    /** Until when the note is true, as an ISO time; none when not said. */
+    validUntil?: string | null;
   }): Promise<Memory> {
     if (input.scope === 'bot' && !input.botId) throw new HttpError(400, 'error.memoryNeedsBot');
     if (input.scope === 'room') {
@@ -443,11 +513,12 @@ export class MemoryService {
         botId: input.scope === 'bot' ? input.botId : null,
         userId: input.scope === 'user' ? (input.userId ?? OWNER_ID) : null,
         place: input.scope === 'room' ? input.place : null,
-        content: input.content,
+        content: scrubCanary(input.content),
         site: input.site ?? null,
         source: input.source,
         threadId: input.threadId ?? null,
         sourceUrl: input.sourceUrl ?? null,
+        validUntil: input.validUntil ? new Date(input.validUntil) : null,
       })
       .returning();
     await this.log(row!.id, 'create', null, row!.content, input.actor ?? input.source, noteOwner(row!));
@@ -522,7 +593,8 @@ export class MemoryService {
    * Changes a note's words, whether it is pinned, or both. A bot's change also says where it
    * learned the new words; the person's own edit leaves that as it was. With `expectedUpdatedAt`,
    * the change is refused when the note was changed since that version, so a screen that was left
-   * open cannot write over newer words. Pinning is the person's own act and not a change of the
+   * open cannot write over newer words. A date to be true until is no change of the words either:
+   * it leaves `updatedAt` and the history as they were. Pinning is the person's own act and not a change of the
    * words: it adds a line to the history without text and leaves `updatedAt` as it was.
    */
   async update(
@@ -532,6 +604,8 @@ export class MemoryService {
       pinned?: boolean;
       threadId?: string | null;
       sourceUrl?: string | null;
+      /** An ISO time the note is true until; null takes the end away. */
+      validUntil?: string | null;
       expectedUpdatedAt?: string;
     },
     actor: string,
@@ -543,7 +617,8 @@ export class MemoryService {
     ) {
       throw new HttpError(409, 'error.memoryChanged');
     }
-    const { expectedUpdatedAt: _seen, content, pinned, ...source } = patch;
+    const { expectedUpdatedAt: _seen, content: written, pinned, validUntil, ...source } = patch;
+    const content = written === undefined ? undefined : scrubCanary(written);
     const nowPinned = pinned ?? !!before.pinned;
     if (
       nowPinned &&
@@ -557,6 +632,8 @@ export class MemoryService {
       .set({
         ...(content !== undefined && { content, ...source, updatedAt: new Date() }),
         ...(pinned !== undefined && { pinned }),
+        // A date is no change of the words, so `updatedAt` stays; the history line says it happened.
+        ...(validUntil !== undefined && { validUntil: validUntil ? new Date(validUntil) : null }),
       })
       .where(eq(schema.memories.id, id))
       .returning();
@@ -595,6 +672,20 @@ export class MemoryService {
    */
   async removePlace(place: string): Promise<void> {
     await this.ctx.db.transaction(async (tx) => {
+      const notes = await tx
+        .select({ id: schema.memories.id })
+        .from(schema.memories)
+        .where(and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)));
+      if (notes.length)
+        await tx.delete(schema.turnChanges).where(
+          and(
+            eq(schema.turnChanges.kind, 'memory'),
+            inArray(
+              schema.turnChanges.targetId,
+              notes.map((n) => n.id),
+            ),
+          ),
+        );
       await tx
         .delete(schema.memories)
         .where(and(eq(schema.memories.scope, 'room'), eq(schema.memories.place, place)));
@@ -623,6 +714,19 @@ export class MemoryService {
               eq(schema.auditLog.targetType, 'memory'),
               inArray(
                 schema.auditLog.targetId,
+                gone.map((m) => m.id),
+              ),
+            ),
+          );
+        // The turn journal keeps notes' earlier words too, so a forgotten note goes from it as well.
+        await tx
+          .update(schema.turnChanges)
+          .set({ before: null, label: '' })
+          .where(
+            and(
+              eq(schema.turnChanges.kind, 'memory'),
+              inArray(
+                schema.turnChanges.targetId,
                 gone.map((m) => m.id),
               ),
             ),

@@ -38,6 +38,7 @@ import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MissingApps } from './MissingApps';
 import { PromptHistory } from './PromptHistory';
+import { RoutineRehearsal } from './RoutineRehearsal';
 import { RunSteps, StepsEditor, TemplatePicker, type StepForm } from './RoutineSteps';
 
 /** The routine the store asked to open, wherever the bot panel is; it opens at its latest runs. */
@@ -340,6 +341,7 @@ export function RoutineDialog({
                   }
                 />
               )}
+              {routine && <RoutineRehearsal routine={routine} prompt={values.prompt ?? ''} />}
             </Field>
             <StepsEditor
               steps={values.steps ?? []}

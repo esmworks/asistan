@@ -7,6 +7,77 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A routine can be rehearsed before it runs for real. A new or changed routine runs unattended and the person only
+  learned what it does from what it already did, so "Rehearse" in the routine's dialog runs it once, with the
+  instruction as typed (saved or not) and, for a routine something else starts, with what started one of its last
+  five runs, shown beside what that run actually reported (that input is now kept, sealed and cut to 20,000
+  characters, as long as the run is; older runs cannot be replayed). The bot works for the person who set the
+  routine up, in a conversation of its own that is in no list and goes after 7 days. Steps that only read (pages,
+  searches, files, mail and WhatsApp history, a connected app's read-only tools, commands that read the bot's own
+  folders) are really done; every other step is not done, the bot is told so and to go on as if it had been, and it
+  is listed as "would do" in the words the approval card uses. No card is ever asked, whatever the level or the
+  rules, and the private line still stops the turn. The result shows the report, those steps in order, the reads
+  that ran, how long it took and what it cost, which counts in usage as a rehearsal of that routine. Nothing of the
+  routine changes (schedule, last run, carried report, failure marks), nothing is posted to the bot's main
+  conversation or its Slack channel, and no promise look or undo line follows. Someone who may change the bot can
+  rehearse instructions they typed; the saved routine is rehearsed only by the person it works for.
+- A turn can be taken back. A bot's step can be wrong, and the person had to find and undo each change by hand, so
+  every turn now keeps, for 30 days, what its file tools wrote or edited, the table rows, tickets, routines, skills
+  and bot settings it changed, and the notes it wrote or changed, each with how it was before (the words of a note it forgot are never kept). A bot's reply
+  gets "Undo this turn" for the person whose turn it was (admins cannot take someone else's turn back): a list shows
+  what will be put back, newest first, and apart from it what cannot be, the steps that went outside (mail, chat
+  apps, the browser, programs, requests), forgotten notes and files too large to keep (2 MB each, 20 MB a turn). Anything changed
+  again after the turn, by a later turn or by hand, is left as it is and reported, a routine, skill, bot setting or
+  bot note is put back only by someone who may change the bot, and a turn can be taken back once, when it is no longer
+  running. The result is posted in the conversation.
+- Routines are suggested for what a person keeps asking by hand. People ask a bot for the same thing again and again
+  ("this week's sales summary" every Monday) without thinking of a routine, so once a day, for each person who has
+  not turned it off, their own messages to bots of the last 45 days are grouped by meaning (when an embedding service
+  is set up) or by shared words. A request made at least three times on three different days to the same bot, that no
+  routine of the bot already does and the person has not turned down, becomes one small-model request on the bot's
+  own account (its cost shows on the usage page) that writes a routine name and instructions in the person's
+  language, with a schedule when the requests kept one (the same weekday, most days or most working days, around the
+  same hour) and none otherwise. Today lists them ("You asked Ada for this 4 times, on 4 different days") with the
+  instructions editable and "Create routine" or "Not this"; only someone who may change the bot can create the
+  routine, anyone else is told to ask its owner, and a request turned down is never offered again. Rooms, team
+  conversations, routine runs, API calls, text handed over from outside and chat-app strangers are never read, and
+  each person sees only their own suggestions. Each person can turn it off in their profile.
+- Promises are kept. Bots say "I'll let you know tomorrow" and nothing made it happen, so the prompt now tells a bot
+  to set up a one-time routine in the same turn it promises something later. As a safety net, when a reply in a
+  person's own conversation or room sounds like such a promise and the turn set up no routine, a short list of Turkish
+  and English phrasings decides whether one small request on the bot's own account reads it. A promise with a time
+  gets a one-time routine that does it then and tells the person in the same conversation, and a line under the
+  reply ("Promise kept on the calendar: tomorrow 09:00 · Cancel") takes it back; a promise that waits for something
+  ("when the price drops") is only listed, with no time made up. Bots also record promises the person made to
+  others with a new `promise_track` tool, from the chat or from the person's own sent WhatsApp messages and mails
+  they read in a routine, and remind the person on the due day at a time they pick (09:00 by default). Open
+  promises, overdue first, are on the Today page with "Done" and "Drop", which also remove a routine still waiting;
+  each person sees only their own. The safety net can be turned off on the usage page, where its cost shows beside
+  the routine pre-check's.
+- A step can need two people. An "always ask" rule (with or without its amount limit) can now ask for a second
+  person's yes, for things like a card filled above 1,000 or a `git push` that one person alone should not decide.
+  The first yes works as before, from the app or a chat app; the card then waits as "waiting for a second person"
+  and shows who said yes, and the step does not run. The second yes comes from someone else who may change the bot
+  (or the one person the rule names), who sees the step and who asked for it, with the first yes and when, in a
+  "Waiting for your second yes" list on the Today page, and is told alone, without the conversation, which stays
+  private. The same person cannot give both yeses, a "no" from either refuses it, "always allow" is never offered
+  on such a card and a bot at full access still waits. If the second person is removed or loses the bot while it
+  waits, the card is refused with a reason, and a rule nobody else could answer is not saved. The bot's list of
+  steps names both people.
+- A bot that is being steered by text it read (a page, a mail, a webhook, another bot) is now caught by two
+  trip-wires that nothing the person asks for would ever touch. Every bot's prompt carries a private line it is told
+  never to repeat; if that line shows up in a tool's input (as it is, percent-encoded, in hex or in base64) or in
+  its reply, the step is refused and the reply is cleaned. And in Settings → API keys a person can add a "trap key":
+  a made-up key with a made-up address that guards nothing and is shown to their bots like any other key; naming it
+  in a request, asking for a key of that name, or reaching its address trips the wire. A trip stops the turn and the
+  work it handed to other bots, moves the bot to "Ask" if it was freer, says in plain words in the conversation what
+  happened and what the turn had read before, tells the person, and stays on the Today page until they mark it seen.
+- A memory note can be true only until a date. A bot that saves a fact that will stop being true ("working from
+  home this week", "Ali is on leave until the 5th") gives the date, worked out from today's date and the person's
+  time zone, and the note carries it into the bot's prompt as "true until ...". Once the date passes the note
+  reaches no prompt and no bot's search, so the bot stops acting on it; it is not deleted but moves to an
+  "Expired notes" list in Settings → Memory, where it can be deleted or given a new date, and the Today page counts
+  them. A note's date can be set, changed or cleared when editing it.
 - A long conversation can be summarised while it is idle, before the size at which a Claude bot would summarise it
   in the middle of the next message (Settings → Model). Once a conversation is at least 70% of that size and has been
   quiet for half an hour, the server folds its session and marks the place in the chat; a message that comes

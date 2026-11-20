@@ -1,5 +1,5 @@
 import type { BotAction, BotActionHow } from '@yumakbot/shared';
-import { asc, desc, eq, lt } from 'drizzle-orm';
+import { asc, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { newId, truncate } from '../util';
@@ -19,6 +19,7 @@ const toAction = (r: typeof schema.botActions.$inferSelect): BotAction => ({
   summary: r.summary,
   how: r.how,
   rule: r.rule,
+  approvedBy: r.approvedBy,
   outside: r.outside,
   createdAt: r.createdAt.toISOString(),
 });
@@ -42,6 +43,22 @@ export class ActionService {
     approvalId?: string | null;
     outside?: boolean;
   }): Promise<void> {
+    // The people whose yes let a card's step through: both, for a step that needed two.
+    const [card] = a.approvalId
+      ? await this.ctx.db
+          .select({
+            needsSecond: schema.approvals.needsSecond,
+            first: schema.approvals.firstByUserId,
+            decided: schema.approvals.decidedByUserId,
+            decidedBy: schema.approvals.decidedBy,
+          })
+          .from(schema.approvals)
+          .where(eq(schema.approvals.id, a.approvalId))
+          .limit(1)
+      : [];
+    const approvedBy = [
+      ...new Set([card?.needsSecond ? card.first : null, card?.decidedBy === 'person' ? card.decided : null]),
+    ].filter((id): id is string => !!id);
     await this.ctx.db.insert(schema.botActions).values({
       id: newId(),
       botId: a.botId,
@@ -52,6 +69,7 @@ export class ActionService {
       how: a.how,
       rule: a.rule ?? null,
       approvalId: a.approvalId ?? null,
+      approvedBy,
       outside: !!a.outside,
     });
     this.ctx.bus.refresh({ scope: 'actions', botId: a.botId });
@@ -75,10 +93,33 @@ export class ActionService {
       .from(schema.botActions)
       .where(eq(schema.botActions.botId, botId))
       .orderBy(asc(schema.botActions.createdAt));
-    const lines = [['at', 'step', 'tool', 'let_through_by', 'rule', 'outside_text'].join(',')];
+    const people = [...new Set(rows.flatMap((r) => r.approvedBy))];
+    const names = new Map(
+      people.length
+        ? (
+            await this.ctx.db
+              .select({
+                id: schema.users.id,
+                name: schema.users.displayName,
+                username: schema.users.username,
+              })
+              .from(schema.users)
+              .where(inArray(schema.users.id, people))
+          ).map((u) => [u.id, u.name || u.username || u.id])
+        : [],
+    );
+    const lines = [['at', 'step', 'tool', 'let_through_by', 'rule', 'outside_text', 'approved_by'].join(',')];
     for (const r of rows) {
       lines.push(
-        [r.createdAt.toISOString(), r.summary, r.toolName, r.how, r.rule, r.outside ? 'yes' : 'no']
+        [
+          r.createdAt.toISOString(),
+          r.summary,
+          r.toolName,
+          r.how,
+          r.rule,
+          r.outside ? 'yes' : 'no',
+          r.approvedBy.map((id) => names.get(id) ?? id).join(' + '),
+        ]
           .map((v) => csvCell(v ?? null))
           .join(','),
       );

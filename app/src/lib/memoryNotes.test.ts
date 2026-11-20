@@ -6,10 +6,13 @@ import {
   foldText,
   historyText,
   historyWho,
+  noteExpired,
   noteMatches,
   pinnedFirst,
   placeLabel,
   placeNoteGroups,
+  untilDay,
+  untilEndOfDay,
 } from './memoryNotes';
 
 const t = createTranslator({ tr, en }, 'tr');
@@ -110,5 +113,21 @@ describe('geçmiş satırı', () => {
     );
     expect(historyText(line({ action: 'delete', after: null }), t)).toBe('Silindi · metin saklanmıyor');
     expect(historyText(line({ action: 'pin', after: null }), t)).toBe('Sabitlendi');
+  });
+});
+
+describe('notes that are true until a date', () => {
+  it('a note is expired once its time has passed, and a note with no date never is', () => {
+    const now = new Date('2026-11-20T12:00:00Z');
+    expect(noteExpired({ validUntil: '2026-11-20T11:59:00Z' }, now)).toBe(true);
+    expect(noteExpired({ validUntil: '2026-11-20T12:01:00Z' }, now)).toBe(false);
+    expect(noteExpired({ validUntil: null }, now)).toBe(false);
+    expect(noteExpired({}, now)).toBe(false);
+  });
+
+  it('the date field reads the day on the person own calendar and saves the end of it', () => {
+    expect(untilDay(untilEndOfDay('2026-11-27'))).toBe('2026-11-27');
+    const end = new Date(untilEndOfDay('2026-11-27'));
+    expect([end.getHours(), end.getMinutes()]).toEqual([23, 59]);
   });
 });

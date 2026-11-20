@@ -1,5 +1,9 @@
 import type {
   BotAction,
+  Pledge,
+  TurnChanges,
+  RoutineSuggestion,
+  RoutineSuggestionAccept,
   DoctorCheckId,
   DoctorReport,
   ReplayResult,
@@ -45,6 +49,8 @@ import type {
   MemoryHistoryLine,
   Message,
   PermissionRule,
+  Approver,
+  SecondYes,
   ProviderInfo,
   ModelInfo,
   CustomEndpointCreate,
@@ -55,6 +61,9 @@ import type {
   SkillCreate,
   SkillUpdate,
   RoutineRevision,
+  Rehearsal,
+  RehearsalStart,
+  ReplayableRun,
   RoutineRun,
   SearchHit,
   ServerInfo,
@@ -93,6 +102,7 @@ import type {
   ApiCredentialCreate,
   ApiCredentialUpdate,
   ApiKeyImport,
+  TrapKeyCreate,
   ApiKeyImportResult,
   EmailSettings,
   AiEndpoint,
@@ -276,6 +286,12 @@ export interface Settings {
   maxTurns?: number;
   /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
   memoryReviewEvery?: number;
+  /** Whether the person's own requests are looked at for something asked again and again; missing on older servers. */
+  routineSuggestions?: boolean;
+  /** The promise safety net after a bot's reply; missing on older servers. */
+  promiseKeeper?: boolean;
+  /** The time of day a reminder of the person's own promise arrives (HH:MM); missing on older servers. */
+  promiseRemindAt?: string;
   /** The bots' browsers go out through the person's own computer; missing on older servers. */
   browserViaComputer?: boolean;
   modelTitles?: boolean;
@@ -540,6 +556,13 @@ export const api = {
   job: (id: string) => http.get<JobView>(`/api/jobs/${id}`),
 
   approvals: () => http.get<Approval[]>('/api/approvals'),
+  /** Steps waiting for this person's second yes, without the conversations they come from. */
+  secondYes: () => http.get<SecondYes[]>('/api/approvals-second'),
+  answerSecond: (id: string, decision: 'allow' | 'deny') =>
+    http.post<Approval>(`/api/approvals-second/${id}`, { decision }),
+  /** Who could give a second yes on a bot's steps; on every bot's without a bot. */
+  approvers: (botId?: string | null) =>
+    http.get<Approver[]>(`/api/approvers${botId ? `?botId=${encodeURIComponent(botId)}` : ''}`),
   answer: (
     id: string,
     d: {
@@ -591,14 +614,23 @@ export const api = {
     botId?: string | null;
     field?: string;
     limit?: number;
+    secondPerson?: boolean;
+    secondUserId?: string | null;
   }) => http.post<PermissionRule>('/api/rules', r),
   removeRule: (id: string) => http.del<{ ok: true }>(`/api/rules/${id}`),
 
   memory: () => http.get<Memory[]>('/api/memory'),
-  addMemory: (m: { scope: 'bot' | 'user'; botId?: string | null; content: string; site?: string | null }) =>
-    http.post<Memory>('/api/memory', m),
-  updateMemory: (id: string, p: { content?: string; pinned?: boolean; updatedAt?: string }) =>
-    http.patch<Memory>(`/api/memory/${id}`, p),
+  addMemory: (m: {
+    scope: 'bot' | 'user';
+    botId?: string | null;
+    content: string;
+    site?: string | null;
+    validUntil?: string | null;
+  }) => http.post<Memory>('/api/memory', m),
+  updateMemory: (
+    id: string,
+    p: { content?: string; pinned?: boolean; validUntil?: string | null; updatedAt?: string },
+  ) => http.patch<Memory>(`/api/memory/${id}`, p),
   memoryHistory: () => http.get<MemoryHistoryLine[]>('/api/memory-history'),
   removeMemory: (id: string) => http.del<{ ok: true }>(`/api/memory/${id}`),
   /** Deletes every note the bot keeps for itself. */
@@ -622,6 +654,10 @@ export const api = {
   endRoutineWait: (id: string, runId: string) =>
     http.post<RoutineRun>(`/api/routines/${id}/runs/${runId}/end-wait`),
   routineRevisions: (id: string) => http.get<RoutineRevision[]>(`/api/routines/${id}/revisions`),
+  rehearseRoutine: (id: string, body: RehearsalStart) =>
+    http.post<Rehearsal>(`/api/routines/${id}/rehearse`, body),
+  routineRehearsals: (id: string) => http.get<Rehearsal[]>(`/api/routines/${id}/rehearsals`),
+  routineReplayable: (id: string) => http.get<ReplayableRun[]>(`/api/routines/${id}/replayable`),
 
   library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),
   /** `inline`: an image to show on the page rather than a download. */
@@ -707,6 +743,21 @@ export const api = {
   updateApiKey: (id: string, input: ApiCredentialUpdate) =>
     http.patch<ApiCredential>(`/api/api-keys/${id}`, input),
   removeApiKey: (id: string) => http.del<{ ok: true }>(`/api/api-keys/${id}`),
+  addTrapKey: (input: TrapKeyCreate) => http.post<ApiCredential>('/api/api-keys/trap', input),
+  routineSuggestions: () => http.get<RoutineSuggestion[]>('/api/routine-suggestions'),
+  acceptRoutineSuggestion: (id: string, input: RoutineSuggestionAccept) =>
+    http.post<Routine>(`/api/routine-suggestions/${id}/accept`, input),
+  dismissRoutineSuggestion: (id: string) =>
+    http.post<{ ok: true }>(`/api/routine-suggestions/${id}/dismiss`, {}),
+  /** The turns of a conversation with something to put back, with how many changes each made. */
+  turnChangesPending: (threadId: string) =>
+    http.get<Record<string, number>>(`/api/threads/${threadId}/turn-changes`),
+  turnChanges: (turnId: string) => http.get<TurnChanges>(`/api/turns/${turnId}/changes`),
+  undoTurn: (turnId: string) => http.post<TurnChanges>(`/api/turns/${turnId}/undo`, {}),
+  promises: () => http.get<Pledge[]>('/api/promises'),
+  promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
+  promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),
+  canaryAlarmSeen: (id: string) => http.post<{ ok: true }>(`/api/canary-alarms/${id}/seen`, {}),
   importApiKeys: (input: ApiKeyImport) => http.post<ApiKeyImportResult>('/api/api-keys/import', input),
   /** The page opened on its own, with the print dialog, to save it as a PDF. */
   pagePrintUrl: (botId: string, path: string) =>

@@ -3,11 +3,13 @@ import {
   ApiCredentialCreate,
   ApiCredentialUpdate,
   ApiKeyImport,
+  TrapKeyCreate,
   type ApiKeyImportResult,
   type ApiCredential,
   type ApiCredentialCreate as CreateInput,
   type ApiCredentialUpdate as UpdateInput,
 } from '@yumakbot/shared';
+import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
@@ -81,7 +83,23 @@ const toCredential = (r: Row): ApiCredential => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
   lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
+  trap: r.trap,
 });
+
+/**
+ * The address a trap key pretends to be at: on `.internal`, which is set aside for private networks
+ * and is never in the public name system, so nothing real answers there and no one can register
+ * it. Unlike `.invalid` or `.example`, it looks like what a team's own gateway or proxy is called,
+ * so a bot has no reason to treat the key differently from its real ones.
+ */
+export function trapOrigin(name: string): string {
+  const label =
+    name
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 30) || 'service';
+  return `https://api.${label}-${randomBytes(4).toString('hex')}.internal`;
+}
 
 /** The most of a response a bot is given; the rest is cut, and it is told so. */
 export const MAX_RESPONSE_CHARS = 20_000;
@@ -182,6 +200,49 @@ export class ApiCredentialService {
     return row ? toCredential(row) : null;
   }
 
+  /** The trap keys a person made, for the trip-wire check. */
+  async traps(userId: string): Promise<{ name: string; origin: string; botIds: string[] | null }[]> {
+    const rows = await this.ctx.db
+      .select()
+      .from(schema.apiCredentials)
+      .where(and(eq(schema.apiCredentials.userId, userId), eq(schema.apiCredentials.trap, true)));
+    return rows.map((r) => ({ name: r.name, origin: r.origin, botIds: r.botIds ?? null }));
+  }
+
+  /**
+   * Makes a trap key for `userId`: a name, and an address the server makes up. It stores no real
+   * secret. It is always the person's own, and it may not take the name of a key already usable
+   * by them (a team key of that name would be hidden behind it, and a bot would see one key where
+   * there were two).
+   */
+  async createTrap(raw: TrapKeyCreate, userId: string): Promise<ApiCredential> {
+    const input = TrapKeyCreate.parse(raw);
+    const taken = await this.ctx.db
+      .select({ id: schema.apiCredentials.id })
+      .from(schema.apiCredentials)
+      .where(and(eq(schema.apiCredentials.name, input.name), usableBy(userId)))
+      .limit(1);
+    if (taken.length) throw new HttpError(409, 'error.trapKeyNameTaken');
+    const id = newId();
+    const origin = trapOrigin(input.name);
+    const [row] = await this.ctx.db
+      .insert(schema.apiCredentials)
+      .values({
+        id,
+        userId,
+        name: input.name,
+        origin,
+        auth: { type: 'bearer' },
+        label: '',
+        secret: this.vault.seal('trap', keyBinding(id, origin)),
+        botIds: input.botIds ?? null,
+        trap: true,
+      })
+      .returning();
+    this.ctx.bus.refresh({ scope: 'info' });
+    return toCredential(row!);
+  }
+
   private async byName(name: string, owner: string | null): Promise<Row | null> {
     const [row] = await this.ctx.db
       .select()
@@ -252,6 +313,15 @@ export class ApiCredentialService {
     const input = ApiCredentialUpdate.parse(raw);
     await this.ready();
     const old = await this.row(id);
+    // A trap key stays what it was made as: only the bots it is shown to and its label change.
+    if (
+      old.trap &&
+      (input.origin !== undefined ||
+        input.auth !== undefined ||
+        input.value !== undefined ||
+        (owner !== undefined && owner !== old.userId))
+    )
+      throw new HttpError(409, 'error.apiKeyTrap');
     const origin = input.origin ?? old.origin;
     // A new origin needs the key bound to it: a key not typed anew is sealed again for it.
     const secret =
@@ -348,6 +418,9 @@ export class ApiCredentialService {
         .where(and(eq(schema.apiCredentials.name, key), usableBy(userId)))
     ).filter((r) => !r.botIds || r.botIds.includes(botId));
     const row = ownFirst(named)[0];
+    // A trap key never sends anything anywhere; the turn manager has already stopped the bot that
+    // names one, this is the last line if a call gets here by another way.
+    if (row?.trap) throw new ApiCallError('noKey', name);
     if (!row) {
       const any = await this.ctx.db
         .select({ id: schema.apiCredentials.id })

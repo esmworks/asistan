@@ -27,6 +27,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { schema } from '../src/db';
+import { FileWatch } from '../src/services/turn-changes';
 import {
   announcesAction,
   dropOldImages,
@@ -338,6 +339,34 @@ describe('Pi motoru', () => {
     expect(asks).toHaveLength(1);
     expect(asks[0]!.toolName).toBe('Write');
     expect(String(asks[0]!.input.file_path)).toMatch(/not\.txt$/);
+  });
+
+  it('bir dosya aracını çalışmadan önce modelin yazdığı yolla gösterir; turu geri almak için kaydı tutulur', async () => {
+    const lines: { kind: string; op: string; label: string; before: unknown }[] = [];
+    const watch = new FileWatch(
+      { record: async (_s: unknown, c: (typeof lines)[number]) => void lines.push(c) } as never,
+      { turnId: 't1', threadId: 'th1', botId: 'b1', userId: 'u1' },
+      cwd,
+      [cwd],
+      0,
+    );
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('write_file', { path: 'geri.txt', content: 'yeni' })], {
+        stopReason: 'toolUse',
+      }),
+      fauxAssistantMessage('Yazdım.'),
+    ]);
+    const { req } = request({
+      screen: async (ask) => {
+        await watch.before(ask.toolName, ask.input);
+        return null;
+      },
+    });
+    await engine().run(req);
+    await watch.finish();
+    expect(lines).toEqual([
+      expect.objectContaining({ kind: 'file', op: 'create', label: 'geri.txt', before: { exists: false } }),
+    ]);
   });
 
   it('araç başlayıp bittiğinde ve her olayda canlılık işareti verir', async () => {

@@ -107,6 +107,9 @@ export const toApproval = (r: Row<typeof schema.approvals>): Approval => ({
   status: r.status,
   answer: r.answer,
   remembered: r.remembered,
+  needsSecond: r.needsSecond,
+  firstApprover: r.firstByUserId,
+  firstAt: iso(r.firstAt),
   createdAt: r.createdAt.toISOString(),
   decidedAt: iso(r.decidedAt),
 });
@@ -119,6 +122,8 @@ export const toRule = (r: Row<typeof schema.permissionRules>): PermissionRule =>
   botId: r.botId ?? null,
   field: r.field ?? null,
   limit: r.limit ?? null,
+  secondPerson: r.secondPerson,
+  secondUserId: r.secondUserId ?? null,
   createdAt: r.createdAt.toISOString(),
 });
 
@@ -137,6 +142,7 @@ export const toMemory = (r: Row<typeof schema.memories>): Memory => ({
   sourceUrl: r.sourceUrl,
   place: r.place,
   pinned: r.pinned,
+  validUntil: r.validUntil?.toISOString() ?? null,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -201,6 +207,7 @@ export function toMemoryChange(r: typeof schema.memoryChanges.$inferSelect): Mem
     userId: r.userId,
     threadId: r.threadId,
     sourceUrl: r.sourceUrl,
+    validUntil: r.validUntil?.toISOString() ?? null,
     createdAt: r.createdAt.toISOString(),
   };
 }

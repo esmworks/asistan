@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { useT } from '@/i18n';
 import { api, ApiError } from '@/lib/api';
 import { useFormat } from '@/lib/format';
-import { historyText, historyWho } from '@/lib/memoryNotes';
+import { historyText, historyWho, noteExpired, untilDay, untilEndOfDay } from '@/lib/memoryNotes';
 import { useBots, useManagesServer, useSession, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { NoteSource } from './NoteSource';
@@ -21,8 +21,8 @@ const REVIEW_DEFAULT = 20;
 
 /**
  * One note: its words, a pin, an edit and a delete. Editing turns the line into a box (Enter
- * saves, Escape leaves it); the save carries the version the person began on, so a note changed
- * meanwhile is not overwritten.
+ * saves, Escape leaves it) with a date the note is true until, which can be cleared; the save
+ * carries the version the person began on, so a note changed meanwhile is not overwritten.
  */
 export function NoteRow({
   m,
@@ -33,20 +33,29 @@ export function NoteRow({
 }: {
   m: Memory;
   hint?: string;
-  onSave: (m: Memory, content: string) => Promise<unknown>;
+  onSave: (m: Memory, patch: { content?: string; validUntil?: string | null }) => Promise<unknown>;
   onPin: (m: Memory) => void;
   onForget: (m: Memory) => void;
 }) {
   const t = useT();
+  const { calendarDay } = useFormat();
   const [draft, setDraft] = useState<string | null>(null);
+  // The date field's own text: a day, or empty for no end.
+  const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
   if (draft !== null) {
     const submit = () => {
       const content = draft.trim();
       if (!content || busy) return;
-      if (content === m.content) return setDraft(null);
+      const before = m.validUntil ? untilDay(m.validUntil) : '';
+      const patch = {
+        ...(content !== m.content && { content }),
+        // A day left as it was keeps the exact time the bot gave.
+        ...(until !== before && { validUntil: until ? untilEndOfDay(until) : null }),
+      };
+      if (!Object.keys(patch).length) return setDraft(null);
       setBusy(true);
-      onSave(m, content)
+      onSave(m, patch)
         .then(() => setDraft(null))
         // A note changed meanwhile: the list is already fetched again, so leave the stale draft.
         .catch((e) => e instanceof ApiError && e.status === 409 && setDraft(null))
@@ -69,6 +78,26 @@ export function NoteRow({
           aria-label={t('memory.edit')}
           className="min-w-40 flex-1 rounded-full"
         />
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          {t('memory.validUntil')}
+          <Input
+            type="date"
+            value={until}
+            onChange={(e) => setUntil(e.target.value)}
+            className="w-40 rounded-full"
+          />
+          {until && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => setUntil('')}
+            >
+              {t('memory.validUntilClear')}
+            </Button>
+          )}
+        </label>
         <Button className="rounded-full" size="sm" disabled={busy || !draft.trim()}>
           {t('common.save')}
         </Button>
@@ -97,6 +126,13 @@ export function NoteRow({
           <span className="min-w-0 break-words">{m.site ? `${m.site} · ${m.content}` : m.content}</span>
         </div>
         {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+        {m.validUntil && (
+          <div className="text-xs text-muted-foreground">
+            {t(noteExpired(m) ? 'memory.expiredOn' : 'memory.validUntilOn', {
+              date: calendarDay(untilDay(m.validUntil), true),
+            })}
+          </div>
+        )}
       </div>
       <NoteSource m={m} />
       <div className="flex items-center">
@@ -115,7 +151,10 @@ export function NoteRow({
           variant="ghost"
           size="icon"
           className="size-8 rounded-full"
-          onClick={() => setDraft(m.content)}
+          onClick={() => {
+            setDraft(m.content);
+            setUntil(m.validUntil ? untilDay(m.validUntil) : '');
+          }}
           aria-label={t('memory.edit')}
           title={t('memory.edit')}
         >

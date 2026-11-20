@@ -52,7 +52,8 @@ export function cardView(
         ? `\n⚠️ **${t('channel.resembles', { site: props.resembles })}**`
         : '';
     // Nor a card that offers none: a guest's request, or a turn a stricter bot holds to its level.
-    const always = !props.askRule && !props.heldBy && !outside && !copy && props.noAlways !== true;
+    const always =
+      !props.askRule && !props.heldBy && !outside && !copy && props.noAlways !== true && !a.needsSecond;
     // What the app shows under "What?": the command, file or address, so the step is not
     // allowed from the chat app without seeing it.
     const detail = describeAction(a.toolName, a.input ?? {}, {
@@ -63,8 +64,10 @@ export function cardView(
     const shown = detail
       ? `\n\`\`\`\n${truncate(masked(detail), DETAIL_MAX).replace(/```/g, "'''")}\n\`\`\``
       : '';
+    // A step that needs two people's yes says so: the first says it here, the second elsewhere.
+    const two = a.needsSecond ? `\n_${t('channel.needsSecond')}_` : '';
     return {
-      text: `🔐 ${a.summary}${copy}${shown}${why}${reason}`,
+      text: `🔐 ${a.summary}${copy}${shown}${why}${two}${reason}`,
       buttons: [
         { label: t('channel.allow'), data: `a:${a.id}:y` },
         ...(always ? [{ label: t('channel.always'), data: `a:${a.id}:r` }] : []),

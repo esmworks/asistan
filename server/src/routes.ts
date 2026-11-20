@@ -15,6 +15,8 @@ import {
   connectionToolParts,
   describeAction,
   ApprovalDecision,
+  type Approver,
+  type SecondYes,
   BotAccess,
   BotCreate,
   type Bot,
@@ -50,7 +52,9 @@ import {
   LOCALES,
   pickLocale,
   RoutineCreate,
+  RoutineSuggestionAccept,
   RoutineUpdate,
+  RehearsalStart,
   RoomCreate,
   RoomSend,
   MeetingAnswer,
@@ -86,6 +90,7 @@ import {
   ApiCredentialCreate,
   ApiKeyImport,
   ApiCredentialUpdate,
+  TrapKeyCreate,
   DoctorRepair,
   EmailClaim,
   EmailCodes,
@@ -300,6 +305,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   const peopleChanged = async (userId: string, signOut: boolean) => {
     await d.auth.forgetPerson(userId, signOut);
     s.access.forget();
+    // A step may have waited for this person's second yes.
+    await s.approvals.refuseUnanswerable();
     d.dropSockets(userId);
     s.ctx.bus.refresh({ scope: 'people' });
   };
@@ -636,6 +643,8 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     await requireBotOwner(req, id);
     const bot = await s.bots.setAccess(id, BotAccess.parse(req.body));
     s.access.forget();
+    // Someone who lost the bot can no longer give a second yes on its steps.
+    await s.approvals.refuseUnanswerable();
     return leveled(req, bot);
   });
   // The document a bot's instructions are kept in: read it now, take its text, or turn it down.
@@ -747,8 +756,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return {
       ...(await s.usage.today(canAdminister(me(req).role) ? undefined : reach('chat'))),
       staleMemory: (await s.memory.stale(new Date(), notes)).length,
+      expiredMemory: (await s.memory.expired(new Date(), notes)).length,
       pendingMemory: (await s.memory.pending(notes)).length,
       pendingSkills: (await s.skills.changes(skillReach(req))).length,
+      canaryAlarms: await s.canary.open(me(req).userId),
     };
   });
 
@@ -772,6 +783,17 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
   // How many turns run now, so the desktop app can ask before quitting stops them.
   app.get('/api/turns/running', async () => ({ count: s.turns.runningCount() }));
+  // What a turn changed in its bot's own world, and putting it back: only the person whose turn it
+  // was, admins included; the handler keeps each person to their own.
+  app.get('/api/threads/:id/turn-changes', async (req) =>
+    s.changes.pending(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.get('/api/turns/:id/changes', async (req) =>
+    s.changes.preview(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.post('/api/turns/:id/undo', async (req) =>
+    s.changes.undo(IdParams.parse(req.params).id, me(req).userId, await s.settings.translator()),
+  );
   app.get('/api/turns/:id/result', async (req, reply) => {
     const q = z.object({ wait: z.coerce.number().int().min(0).max(600).default(0) }).parse(req.query);
     const result = await s.botApi.result(IdParams.parse(req.params).id, q.wait * 1000);
@@ -1405,6 +1427,43 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/approvals/:id', async (req) =>
     s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId),
   );
+  // Steps that wait for this person's second yes, without the conversations they come from.
+  app.get('/api/approvals-second', async (req): Promise<SecondYes[]> => {
+    const locale = await serverLocale(s.ctx);
+    const names = await s.connections.names();
+    const botNames = new Map((await s.bots.list()).map((b) => [b.id, b.name]));
+    return (await s.approvals.waitingForSecond(me(req).userId)).map(({ card, askedBy }) => {
+      const server = connectionToolParts(card.toolName)?.server;
+      const said = describeAction(card.toolName, card.input, {
+        bot: botNames.get(card.botId) ?? '',
+        locale,
+        service: server ? names.get(server) : undefined,
+      });
+      return {
+        id: card.id,
+        botId: card.botId,
+        askedBy,
+        summary: card.summary,
+        step: said.step,
+        detail: said.detail,
+        firstApprover: card.firstApprover ?? null,
+        firstAt: card.firstAt ?? card.createdAt,
+        createdAt: card.createdAt,
+      };
+    });
+  });
+  // The second yes, given from that list: it only reaches a card waiting for one.
+  app.post('/api/approvals-second/:id', async (req) =>
+    s.approvals.answer(IdParams.parse(req.params).id, ApprovalDecision.parse(req.body), me(req).userId, {
+      fromList: true,
+    }),
+  );
+  // Who could give a second yes on a bot's steps (every bot's, without `botId`).
+  app.get('/api/approvers', async (req): Promise<Approver[]> => {
+    const { botId } = z.object({ botId: z.string().min(1).optional() }).parse(req.query);
+    await checkRuleBot(req, botId);
+    return s.approvals.approvers(botId ?? null);
+  });
   // What a bot changed, and what let each step through.
   app.get('/api/bots/:id/actions', async (req) => {
     const { id } = IdParams.parse(req.params);
@@ -1457,7 +1516,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.post('/api/rules', async (req) => {
     const body = PermissionRuleCreate.parse(req.body);
     await checkRuleBot(req, body.botId);
-    return s.approvals.addRule(body);
+    return s.approvals.addRule(body, me(req).userId);
   });
   app.delete('/api/rules/:id', async (req) => {
     const id = IdParams.parse(req.params).id;
@@ -1672,6 +1731,37 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     if (owner) await checkOwnBots(req, body.botIds);
     return s.apiCredentials.create(body, owner ?? null);
   });
+  // A trap key: always the person's own, with an address the server makes up.
+  app.post('/api/api-keys/trap', async (req) => {
+    const body = TrapKeyCreate.parse(req.body);
+    await checkOwnBots(req, body.botIds);
+    return s.apiCredentials.createTrap(body, me(req).userId);
+  });
+  // Alarms of a bot caught steered by text it read: the person's own, marked seen once read.
+  app.post('/api/canary-alarms/:id/seen', async (req) => {
+    await s.canary.seen(IdParams.parse(req.params).id, me(req).userId);
+    return { ok: true };
+  });
+  // Promises made to the person by a bot, or by the person to others: their own, never anyone else's.
+  app.get('/api/promises', async (req) => s.promises.list(me(req).userId));
+  app.post('/api/promises/:id/done', async (req) =>
+    s.promises.close(IdParams.parse(req.params).id, me(req).userId, 'done'),
+  );
+  app.post('/api/promises/:id/drop', async (req) =>
+    s.promises.close(IdParams.parse(req.params).id, me(req).userId, 'dropped'),
+  );
+  // Routines suggested from what the person keeps asking by hand: their own, never anyone else's.
+  app.get('/api/routine-suggestions', async (req) => s.routineSuggestions.list(me(req)));
+  app.post('/api/routine-suggestions/:id/accept', async (req) =>
+    s.routineSuggestions.accept(
+      IdParams.parse(req.params).id,
+      me(req),
+      RoutineSuggestionAccept.parse(req.body ?? {}),
+    ),
+  );
+  app.post('/api/routine-suggestions/:id/dismiss', async (req) =>
+    s.routineSuggestions.dismiss(IdParams.parse(req.params).id, me(req).userId),
+  );
   app.post('/api/api-keys/import', async (req) => {
     const { team, ...body } = ApiKeyImport.parse(req.body);
     const owner = ownerFor(req, team ?? managesServer(me(req).role));
@@ -2099,6 +2189,22 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     return s.routines.endWait(p.id, p.runId);
   });
   app.get('/api/routines/:id/revisions', async (req) => s.routines.revisions(IdParams.parse(req.params).id));
+  // Trying a routine without doing anything; each person sees only the rehearsals they asked for.
+  app.post('/api/routines/:id/rehearse', async (req) =>
+    s.rehearsals.start(IdParams.parse(req.params).id, me(req).userId, RehearsalStart.parse(req.body ?? {})),
+  );
+  app.get('/api/routines/:id/rehearsals', async (req) =>
+    s.rehearsals.list(IdParams.parse(req.params).id, me(req).userId),
+  );
+  app.get('/api/routines/:id/rehearsals/:rehearsalId', async (req) => {
+    const p = z
+      .object({ id: z.string().min(1).max(64), rehearsalId: z.string().min(1).max(64) })
+      .parse(req.params);
+    return s.rehearsals.get(p.id, p.rehearsalId, me(req).userId);
+  });
+  app.get('/api/routines/:id/replayable', async (req) =>
+    s.rehearsals.replayable(IdParams.parse(req.params).id, me(req).userId),
+  );
 
   // Library: files in the bot's folders (read-only listing and download).
   const libraryRoots = async (botId: string) => {

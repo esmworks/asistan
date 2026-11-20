@@ -43,6 +43,7 @@ import {
   SmilePlus,
   Square,
   Trash2,
+  Undo2,
   Volume2,
   X,
   RotateCcw,
@@ -63,6 +64,8 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 import { BotAvatar } from '@/components/BotAvatar';
 import { MessageFiles } from './Attachments';
+import { PromiseLine } from './Promises';
+import { UndoTurnDialog } from './UndoTurn';
 import { Markdown } from '@/components/Markdown';
 import { copyText } from '@/lib/clipboard';
 import { Button } from '@/components/ui/button';
@@ -74,7 +77,15 @@ import { useLocale, useT, type T } from '@/i18n';
 import { api } from '@/lib/api';
 import { newClientId } from '@/lib/format';
 import type { BotActivity } from '@/lib/botActivity';
-import { useApprovals, useConnections, useJob, useMainThread } from '@/lib/queries';
+import {
+  useApprovals,
+  useConnections,
+  useJob,
+  useMainThread,
+  usePeople,
+  useTurnChanges,
+} from '@/lib/queries';
+import { personNameOf } from './PeopleTab';
 import { toolLabel } from '@/lib/toolLabel';
 import { isRefusal } from '@/lib/refusal';
 import { BotPage } from './BotPage';
@@ -189,6 +200,7 @@ export function MessageItem({
           ) : (
             <AssistantCard text={m.text} turnId={m.turnId} partial={!!m.props.partial} messageId={m.id} />
           )}
+          {typeof m.props.promiseId === 'string' && <PromiseLine id={m.props.promiseId} />}
           {!pending && <MessageActions m={m} onReply={onReply} />}
         </div>
       );
@@ -263,6 +275,13 @@ export function MessageItem({
       }
       if (typeof m.props.suggestApp === 'string')
         return <AppSuggestion catalogId={m.props.suggestApp} reason={m.text} botId={botId} />;
+      // What taking a turn back put back and left: several lines, kept as lines.
+      if (m.props.kind === 'turnUndo')
+        return (
+          <div className="max-w-(--bubble-width) rounded-2xl border bg-card/50 px-4 py-3 text-sm whitespace-pre-line [overflow-wrap:anywhere]">
+            {m.text}
+          </div>
+        );
       return (
         <div className="flex items-center justify-center gap-2 py-1 text-center text-sm text-muted-foreground">
           {m.text}
@@ -559,6 +578,9 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  // Only turns that changed something, and only for the person whose turn it was.
+  const { data: undoable } = useTurnChanges(m.threadId);
   const row = useRef<HTMLDivElement>(null);
   const reaction = typeof m.props.userReaction === 'string' ? m.props.userReaction : null;
   const locale = useLocale((s) => s.locale);
@@ -717,7 +739,15 @@ function MessageActions({ m, onReply }: { m: Message; onReply?(m: Message): void
         <ActionButton label={t('message.pin')} onClick={() => void pin()}>
           <Pin />
         </ActionButton>
+        {m.turnId && undoable?.[m.turnId] ? (
+          <ActionButton label={t('message.undoTurn')} onClick={() => setUndoing(true)}>
+            <Undo2 />
+          </ActionButton>
+        ) : null}
       </div>
+      {undoing && m.turnId && (
+        <UndoTurnDialog turnId={m.turnId} threadId={m.threadId} open onOpenChange={setUndoing} />
+      )}
     </div>
   );
 }
@@ -1278,6 +1308,7 @@ function ApprovalCard({
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const { data: approvals } = useApprovals();
+  const { data: people = [] } = usePeople();
   const a = approvals?.find((x) => x.id === approvalId);
   const connection = useToolConnection(a?.toolName);
   const service = connection?.name;
@@ -1319,7 +1350,9 @@ function ApprovalCard({
     }
   }
   if (a.kind === 'login' && a.status === 'pending') return <LoginCard a={a} />;
-  const notes = (heldBy || reviewReason || askRule || outside || resembles) && (
+  // A step that needs two people's yes, and has the first: it waits for the second.
+  const waitingSecond = a.needsSecond && a.status === 'pending' && !!a.firstAt;
+  const notes = (heldBy || reviewReason || askRule || outside || resembles || a.needsSecond) && (
     <>
       {resembles && (
         <div className="text-sm font-medium text-destructive">
@@ -1338,6 +1371,15 @@ function ApprovalCard({
         <div className="text-xs text-muted-foreground">{t('approval.askRule', { rule: askRule })}</div>
       )}
       {outside && <div className="text-xs text-muted-foreground">{t(`approval.outside.${outside}`)}</div>}
+      {a.needsSecond && (
+        <div className="text-xs text-muted-foreground">
+          {waitingSecond
+            ? t('approval.waitingSecond', {
+                name: personNameOf(people, a.firstApprover, t('people.owner'), t('common.someone')),
+              })
+            : t('approval.needsSecond')}
+        </div>
+      )}
     </>
   );
   // A mail shows as the mail itself, with the button that sends it.
@@ -1350,7 +1392,7 @@ function ApprovalCard({
         service={service}
         connectionId={connection?.id}
         notes={notes}
-        offerAlways={!heldBy && !askRule && !outside && !resembles}
+        offerAlways={!heldBy && !askRule && !outside && !resembles && !a.needsSecond}
         busy={decide.isPending}
         onDecide={(d) => decide.mutate(d)}
       />
@@ -1370,17 +1412,20 @@ function ApprovalCard({
         </div>
       </div>
       <div className="flex flex-wrap gap-2 pl-8">
-        <Button
-          size="sm"
-          className="rounded-full"
-          disabled={decide.isPending}
-          onClick={() => decide.mutate({ decision: 'allow' })}
-        >
-          <Check /> {t('approval.allowOnce')}
-        </Button>
+        {/* After the first yes the second must come from someone else: no button for it here. */}
+        {!waitingSecond && (
+          <Button
+            size="sm"
+            className="rounded-full"
+            disabled={decide.isPending}
+            onClick={() => decide.mutate({ decision: 'allow' })}
+          >
+            <Check /> {t('approval.allowOnce')}
+          </Button>
+        )}
         {/* An "always ask" rule outranks "always allow": offering it would change nothing. Nor is it
             taken from a run outside text started. */}
-        {!heldBy && !askRule && !outside && !resembles && !noAlways && (
+        {!heldBy && !askRule && !outside && !resembles && !noAlways && !a.needsSecond && (
           <Button
             size="sm"
             variant="secondary"
@@ -1536,7 +1581,7 @@ function AnsweredLine({ text }: { text: string }) {
 }
 
 /** What exactly the bot will run or touch, hidden until asked for. */
-function Detail({ text }: { text: string }) {
+export function Detail({ text }: { text: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   return (

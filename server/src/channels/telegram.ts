@@ -507,12 +507,19 @@ export class TelegramChannels {
       if (choice.kind === 'a') {
         const allow = choice.value !== 'n';
         // Answered as the person who linked the chat, so "always allow" is theirs to give.
-        await this.services.approvals.answer(
+        const after = await this.services.approvals.answer(
           card.id,
           { decision: allow ? 'allow' : 'deny', remember: choice.value === 'r' },
           row.userId,
         );
-        result = t(allow ? 'channel.allowed' : 'channel.denied');
+        // The first yes of a step that needs two people leaves it waiting for the second.
+        result = t(
+          !allow
+            ? 'channel.denied'
+            : after.status === 'pending'
+              ? 'channel.waitingSecond'
+              : 'channel.allowed',
+        );
       } else {
         const option = card.kind === 'question' ? this.option(card, Number(choice.value)) : null;
         if (option === null) return answer(t('channel.cardClosed'));
@@ -525,6 +532,7 @@ export class TelegramChannels {
       }
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) return answer(t('channel.cardClosed'));
+      if (err instanceof HttpError && err.status === 403) return answer(truncate(err.localized(t), 190));
       throw err;
     }
     await answer(truncate(result, 190));
@@ -771,6 +779,16 @@ export class TelegramChannels {
     if (!row?.secret || !row.owner) return;
     const settings = row.settings as { threadId?: string; notices?: boolean };
     if (settings.notices === false) return;
+    // A step waiting for this person's second yes: told to them alone, with no conversation named.
+    if (e.to) {
+      if (!e.to.includes(row.userId)) return;
+      const t = await this.services.settings.translator();
+      const api = this.api(this.vault.open(row.secret));
+      await this.deliver(row, api, row.owner!, t, async () => {
+        await this.text(api, row.owner!, t('channel.noticeSecond', { text: e.text }));
+      });
+      return;
+    }
     // The conversation the person writes to from Telegram gets its cards as cards, or the person
     // is in the app with it; either way a note would only repeat it.
     if (settings.threadId === e.threadId) return;

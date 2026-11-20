@@ -14,7 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { BotAccess, TaughtStep } from '@yumakbot/shared';
+import type { BotAccess, Schedule, TaughtStep } from '@yumakbot/shared';
 import { sealedJson, sealedProps, sealedText } from './sealed';
 
 /** The outside text a run can read, as `OUTSIDE_TRIGGERS` in the shared package names it. */
@@ -114,7 +114,9 @@ export const threads = pgTable(
     // `ticket`: a bot's work on a ticket of the board; listed only while it needs the person.
     // `team`: a conversation of the team (a Slack channel's thread); everyone who may talk with the
     // bot sees it, and its turns use only what the team shares, never one person's own data.
-    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team'] })
+    // `rehearsal`: where a routine is tried without doing anything; in no list, shown from the
+    // routine, and removed after a week.
+    kind: text('kind', { enum: ['user', 'bot', 'routine', 'api', 'room', 'ticket', 'team', 'rehearsal'] })
       .notNull()
       .default('user'),
     /**
@@ -292,6 +294,8 @@ export const turns = pgTable(
     prompt: sealedText('prompt').notNull(),
     jobId: text('job_id'),
     routineRunId: text('routine_run_id'),
+    /** The rehearsal this turn is: its steps that change something are recorded, not done. */
+    rehearsalId: text('rehearsal_id'),
     error: text('error'),
     costUsd: real('cost_usd'),
     /** The engine and model the turn ran on, for the usage report; null until it starts. */
@@ -353,6 +357,16 @@ export const approvals = pgTable(
      * their message in the chat in place of an answer. Null on cards from before it was kept.
      */
     decidedBy: text('decided_by', { enum: ['person', 'rule', 'typed'] }),
+    /**
+     * An "always ask" rule asked for a second person's yes: the step runs only after two different
+     * people allowed it. `secondUserId` is the one the rule named (anyone who may change the bot
+     * when null), kept as the rule had it when the card was made.
+     */
+    needsSecond: boolean('needs_second').notNull().default(false),
+    secondUserId: text('second_user_id'),
+    /** The first yes of such a card: who gave it and when. The card stays pending until the second. */
+    firstByUserId: text('first_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    firstAt: ts('first_at'),
     createdAt: created(),
     decidedAt: ts('decided_at'),
   },
@@ -378,6 +392,8 @@ export const botActions = pgTable(
     /** The rule that let it through, when one did. */
     rule: text('rule'),
     approvalId: text('approval_id'),
+    /** The people whose yes on a card let it through: two for a step that needed a second person. */
+    approvedBy: jsonb('approved_by').$type<string[]>().notNull().default([]),
     /** Taken in a run outside text started. */
     outside: boolean('outside').notNull().default(false),
     createdAt: created(),
@@ -402,6 +418,13 @@ export const permissionRules = pgTable('permission_rules', {
    */
   field: text('field'),
   limit: doublePrecision('limit_value'),
+  /**
+   * An ask rule's step runs only after two different people said yes. `secondUserId` names the
+   * second one; without it, anyone but the first who may change the bot. Not a reference: a
+   * person who is gone leaves a rule nobody can answer, so the step is refused, not loosened.
+   */
+  secondPerson: boolean('second_person').notNull().default(false),
+  secondUserId: text('second_user_id'),
   createdAt: created(),
 });
 
@@ -437,6 +460,13 @@ export const memories = pgTable(
     threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
     /** The page the fact came from, as the bot gave it, so the person can check it. */
     sourceUrl: sealedText('source_url'),
+    /**
+     * Until when the note is true, for a fact that is only so for a while ("this week", "until
+     * Friday"). From then on it goes into no prompt and no bot's search finds it; it stays here,
+     * shown as expired, until the person deletes it or gives it a new date. Null: true until
+     * someone says otherwise.
+     */
+    validUntil: ts('valid_until'),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -561,6 +591,13 @@ export const routineRuns = pgTable(
     threadId: text('thread_id'),
     /** What a queued run carries in, kept until it starts. */
     payload: sealedText('payload'),
+    /**
+     * What started the run, as the bot was handed it (a mail, a webhook's body, what a page or an
+     * app's answer changed, WhatsApp messages), cut short and kept as long as the run is, so a
+     * rehearsal can replay it. Null for a run with nothing handed in, and for runs from before it
+     * was kept.
+     */
+    triggerInput: sealedText('trigger_input'),
     promptSnapshot: text('prompt_snapshot').notNull(),
     /** The bot itself said the run could not do its task. */
     failedByBot: boolean('failed_by_bot').notNull().default(false),
@@ -1296,6 +1333,8 @@ export const memoryChanges = pgTable(
     threadId: text('thread_id'),
     /** The page the bot said the fact came from; kept on the note once accepted. */
     sourceUrl: sealedText('source_url'),
+    /** The date the bot said the fact is true until; kept on the note once accepted (see `memories.validUntil`). */
+    validUntil: ts('valid_until'),
     createdAt: created(),
   },
   (t) => [index('memory_changes_created_idx').on(t.createdAt)],
@@ -1358,6 +1397,12 @@ export const apiCredentials = pgTable(
     secret: text('secret').notNull(),
     /** The bots that may use it; null lets every bot. */
     botIds: jsonb('bot_ids').$type<string[]>(),
+    /**
+     * A trap key: it holds no real secret and no real service answers at its origin. It is shown
+     * to bots like any other key, and any use of it is a sign that something a bot read is
+     * steering it. Always a person's own.
+     */
+    trap: boolean('trap').notNull().default(false),
     createdAt: created(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastUsedAt: ts('last_used_at'),
@@ -1526,4 +1571,245 @@ export const botTableRows = pgTable(
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [index('bot_table_rows_table_idx').on(t.tableId, t.createdAt)],
+);
+
+/**
+ * Trip-wires that caught a bot being steered by text it read: the bot repeated its private
+ * canary token, or touched a trap key. Kept until the person marks the alarm seen. Holds no
+ * input of the call that tripped it, so the token itself is never stored.
+ */
+export const canaryAlarms = pgTable(
+  'canary_alarms',
+  {
+    id: text('id').primaryKey(),
+    /** Which wire: the prompt's private token, or a trap key. */
+    wire: text('wire', { enum: ['prompt', 'key'] }).notNull(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    turnId: text('turn_id'),
+    /** Whose turn it was; the alarm is theirs. Null when no one's own (a team conversation). */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** The tool that was refused, or `reply` for an answer that carried the token. */
+    tool: text('tool').notNull(),
+    /** For a trap key: its name. */
+    keyName: text('key_name'),
+    /** What the turn had read from outside before the trip, as people name it. */
+    sources: sealedJson('sources').$type<string[]>().notNull().default([]),
+    /** The bot's approval level before it was moved to Ask; null when it was not changed. */
+    movedFrom: text('moved_from'),
+    createdAt: created(),
+    seenAt: ts('seen_at'),
+  },
+  (t) => [index('canary_alarms_open_idx').on(t.seenAt, t.createdAt)],
+);
+
+/**
+ * What someone said they would do later, kept where it cannot be forgotten: a promise a bot made in
+ * a reply ("I'll tell you tomorrow") or one the person made to someone else that a bot noticed.
+ * Only the person it belongs to sees it, admins included. Due promises have a one-time routine
+ * that does the bot's part or reminds the person; it is removed with the promise.
+ */
+export const promises = pgTable(
+  'promises',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    /** Who promised: the bot (to the person) or the person (to someone else). */
+    madeBy: text('made_by', { enum: ['bot', 'person'] }).notNull(),
+    text: sealedText('text').notNull(),
+    /** For the person's own promise, who it was made to. */
+    toWhom: sealedText('to_whom').notNull().default(''),
+    /** When it falls due; a promise with only a day is due at the end of that day. */
+    dueAt: ts('due_at'),
+    /** Whether `dueAt` is a time of day the promise named, or only the end of a day. */
+    dueHasTime: boolean('due_has_time').notNull().default(false),
+    /** What it waits for instead of a time ("when the price drops"); empty when it has none. */
+    condition: sealedText('condition').notNull().default(''),
+    /** The one-time routine that keeps it; null when none was set (no time, or it could not be). */
+    routineId: text('routine_id').references(() => routines.id, { onDelete: 'set null' }),
+    status: text('status', { enum: ['open', 'done', 'dropped'] })
+      .notNull()
+      .default('open'),
+    createdAt: created(),
+    closedAt: ts('closed_at'),
+  },
+  (t) => [index('promises_user_status_idx').on(t.userId, t.status)],
+);
+
+/**
+ * One look of the promise safety net at a bot's reply: what the small-model call cost, and whether
+ * it found a promise. It lets the usage page show the net's cost beside the routine pre-check's.
+ */
+export const promiseChecks = pgTable(
+  'promise_checks',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    costUsd: real('cost_usd'),
+    found: boolean('found').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('promise_checks_created_idx').on(t.createdAt)],
+);
+
+/**
+ * A routine proposed to a person because they keep asking a bot for the same thing by hand. It is
+ * written from the person's own messages, so only they see it, admins included. A dismissed one
+ * stays, so the same request is never offered again.
+ */
+export const routineSuggestions = pgTable(
+  'routine_suggestions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    name: sealedText('name').notNull(),
+    instructions: sealedText('instructions').notNull(),
+    /** The rhythm the requests had, in the person's time zone; null when they had none. */
+    schedule: jsonb('schedule').$type<Schedule | null>(),
+    timezone: text('timezone').notNull(),
+    /** How many requests there were, and the local days (YYYY-MM-DD) they were made on. */
+    requests: integer('requests').notNull(),
+    days: jsonb('days').$type<string[]>().notNull(),
+    /** Identifies the request, so a later pass finds the same group again. */
+    fingerprint: text('fingerprint').notNull(),
+    /** The words the group's requests share; what a later pass compares a new group with. */
+    signature: sealedText('signature').notNull().default(''),
+    status: text('status', { enum: ['open', 'accepted', 'dismissed'] })
+      .notNull()
+      .default('open'),
+    routineId: text('routine_id').references(() => routines.id, { onDelete: 'set null' }),
+    createdAt: created(),
+    decidedAt: ts('decided_at'),
+  },
+  (t) => [
+    index('routine_suggestions_user_status_idx').on(t.userId, t.status),
+    uniqueIndex('routine_suggestions_fingerprint_uq').on(t.userId, t.botId, t.fingerprint),
+  ],
+);
+
+/** One look of the routine suggestions at a group of requests: what the small-model call cost. */
+export const routineSuggestionChecks = pgTable(
+  'routine_suggestion_checks',
+  {
+    id: text('id').primaryKey(),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    costUsd: real('cost_usd'),
+    found: boolean('found').notNull().default(false),
+    createdAt: created(),
+  },
+  (t) => [index('routine_suggestion_checks_created_idx').on(t.createdAt)],
+);
+
+/**
+ * What one turn changed in the bot's own world, with the state before each change, so the person
+ * can take the whole turn back. A line is written only once the step went through. Kept for 30
+ * days. It belongs to the person whose turn it was, admins included. Each line holds words and
+ * file contents from conversations, so those are sealed with the rest.
+ */
+export const turnChanges = pgTable(
+  'turn_changes',
+  {
+    id: text('id').primaryKey(),
+    turnId: text('turn_id').notNull(),
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+      .notNull()
+      .references(() => bots.id, { onDelete: 'cascade' }),
+    /** Whose turn it was: only they may take it back. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', {
+      enum: ['file', 'table_row', 'ticket', 'routine', 'skill', 'bot', 'memory'],
+    }).notNull(),
+    op: text('op', { enum: ['create', 'update', 'delete'] }).notNull(),
+    /** The file's path, or the id of the row, ticket, routine, skill, bot or note. */
+    targetId: text('target_id').notNull(),
+    /** What the person sees in the list: a file name, a table and row, a routine's name. */
+    label: sealedText('label').notNull().default(''),
+    /** The bot the target belongs to, when it is another than the turn's (a manager's change). */
+    scopeBotId: text('scope_bot_id'),
+    /** The state before the change; null when the target did not exist. */
+    before: sealedJson('before'),
+    /** What the target looked like right after the turn, to tell a later change from this one. */
+    after: sealedJson('after'),
+    /** Size of what was kept, for the cap on one turn. */
+    bytes: integer('bytes').notNull().default(0),
+    /** Why the change cannot be put back, when it cannot: too large to keep, or words deleted on purpose. */
+    reason: text('reason', { enum: ['tooBig', 'deleted'] }),
+    createdAt: created(),
+    /** When the turn was taken back, and what became of this line then. */
+    undoneAt: ts('undone_at'),
+    outcome: text('outcome', {
+      enum: ['restored', 'later', 'needsOwner', 'notUndoable', 'failed'],
+    }),
+  },
+  (t) => [
+    index('turn_changes_turn_idx').on(t.turnId, t.createdAt),
+    index('turn_changes_created_idx').on(t.createdAt),
+  ],
+);
+
+/**
+ * A routine tried once without doing anything: what the bot would have done is written down, what
+ * only reads is done. It works in a conversation of its own (kind `rehearsal`). After a week the
+ * words of both are let go, but the conversation's turns stay without their words, since money
+ * spent stays spent in the usage page and the monthly limit. Only the person who asked sees it.
+ */
+export const routineRehearsals = pgTable(
+  'routine_rehearsals',
+  {
+    id: text('id').primaryKey(),
+    routineId: text('routine_id')
+      .notNull()
+      .references(() => routines.id, { onDelete: 'cascade' }),
+    /** Who asked, and whom the rehearsal worked for. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'cascade' }),
+    turnId: text('turn_id'),
+    /** The instruction was the one typed in the dialog, not the saved one. */
+    draft: boolean('draft').notNull().default(false),
+    /** The run whose input was replayed; null when none was. */
+    replayRunId: text('replay_run_id'),
+    /** The instruction as it was rehearsed. */
+    prompt: sealedText('prompt').notNull(),
+    status: text('status', { enum: ['running', 'done', 'error', 'stopped'] })
+      .notNull()
+      .default('running'),
+    /** What the bot wrote at the end. */
+    report: sealedText('report').notNull().default(''),
+    /** Each step in order: one that only read and was done, or one that would have changed something. */
+    steps: sealedJson('steps')
+      .$type<{ kind: 'ran' | 'would'; tool: string; summary: string; at: string }[]>()
+      .notNull()
+      .default([]),
+    error: sealedText('error'),
+    costUsd: real('cost_usd'),
+    startedAt: created(),
+    finishedAt: ts('finished_at'),
+    /** When its words were let go (the row, its conversation's turns and their cost stay, so usage still adds up). */
+    prunedAt: ts('pruned_at'),
+  },
+  (t) => [index('routine_rehearsals_routine_idx').on(t.routineId, t.startedAt)],
 );
