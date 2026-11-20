@@ -7,6 +7,9 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A daily spending limit for the whole server beside the monthly one (Settings → Usage), and daily and monthly limits
+  for each bot in its advanced settings, with what it spent today and this month. A turn that would go past one does
+  not start and says which limit stopped it and where to change it. Another bot cannot set a bot's limits.
 - A bot, a group or every bot at once can be paused from the sidebar's menus. A paused bot's running work stops and
   says why; what the person writes to it waits and is answered once it is resumed; its routines are skipped with the
   reason; and another bot that asks it for help is told it is paused. A pause mark shows on its avatar and a bar above

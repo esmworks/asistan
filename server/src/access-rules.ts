@@ -126,6 +126,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'POST /api/bots/:id/move': edit(),
   'POST /api/bots/:id/archive': edit(),
   'POST /api/bots/:id/pause': edit(),
+  'GET /api/bots/:id/spend': edit(),
   'POST /api/bots/pause-all': 'admin',
   'POST /api/bots/:id/restore': edit(),
   'DELETE /api/bots/:id': edit(),

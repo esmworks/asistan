@@ -244,6 +244,9 @@ export const en: Catalog<MessageKey> = {
   'usage.month': 'This month',
   'usage.monthOf': 'of a {limit} limit; turns wait for next month once it is reached',
   'usage.noLimit': 'No monthly limit',
+  'usage.day': 'Today',
+  'usage.dayOf': 'of a {limit} limit; turns wait for tomorrow once it is reached',
+  'usage.noDayLimit': 'No daily limit',
   'usage.limit': 'Limit ($)',
   'usage.downloadCsv': 'Download every turn as CSV',
   'usage.gate': 'Routine pre-check',
@@ -1316,6 +1319,13 @@ export const en: Catalog<MessageKey> = {
   'bot.managerHint':
     'Can write to every bot and create and edit bots. Still asks you before loosening permissions.',
   'bot.archive': 'Archive',
+  'bot.spendLimits': 'Spending limit',
+  'bot.spendLimitsHint':
+    'Once this bot alone has spent this much, it starts no new work; empty or 0 means no limit. The server’s limits apply as well.',
+  'bot.dailyLimit': 'Daily ($)',
+  'bot.monthlyLimit': 'Monthly ($)',
+  'bot.spent': 'Spent {day} today, {month} this month',
+  'bot.limitInvalid': 'Enter an amount of 0 or more',
   'bot.advanced': 'Advanced settings',
   'bot.advancedHint': 'Permissions, project folder, internet access, manager bot, tools',
   'bot.create': 'Create',

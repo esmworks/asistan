@@ -76,6 +76,11 @@ export const Settings = z.object({
    */
   monthlyLimitUsd: z.number().min(0).max(1_000_000).default(0),
   /**
+   * The most the bots may spend in one day of the server's time zone, in US dollars; 0 for no
+   * limit. A day that runs away (a routine in a loop) stops there instead of eating the month.
+   */
+  dailyLimitUsd: z.number().min(0).max(1_000_000).default(0),
+  /**
    * The small-model check before a routine run that a watched page or a webhook started: off,
    * watching only (it records what it would do), or on (it skips runs with nothing new).
    */

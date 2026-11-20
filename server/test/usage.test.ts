@@ -109,6 +109,53 @@ describe('kullanım raporu', () => {
     expect((await t.messages(thread.id)).at(-1)!.role).toBe('assistant');
   });
 
+  it('günlük sınır yalnız bugünün harcamasını sayar; dolunca yeni tur yarını bekler', async () => {
+    const a = await t.bot({ name: 'Katip' });
+    // Istanbul's 16 November starts at 2026-11-15T21:00Z; the turn before it is yesterday's.
+    await turn(a.id, '2026-11-15T20:00:00.000Z', 5);
+    await turn(a.id, '2026-11-16T04:00:00.000Z', 0.75);
+    await t.api('PATCH', '/api/settings', { dailyLimitUsd: 0.5 });
+    const report = (await t.api<UsageReport>('GET', '/api/usage?days=7')).body;
+    expect(report.day).toEqual({ costUsd: 0.75, limitUsd: 0.5 });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    const last = (await t.messages(thread.id)).at(-1)!;
+    expect(last.role).toBe('error');
+    expect(last.text).toContain('Bugünün harcama sınırına');
+    expect(last.text).toContain('$0.75');
+  });
+
+  it('botun kendi sınırı yalnız onun harcamasını sayar; öbür botlar çalışmayı sürdürür', async () => {
+    const a = await t.bot({ name: 'Katip' });
+    const b = await t.bot({ name: 'Yazman' });
+    await turn(a.id, '2026-11-02T09:00:00.000Z', 2);
+    await turn(b.id, '2026-11-16T04:00:00.000Z', 3);
+    const patched = await t.api<{ monthlyLimitUsd: number }>('PATCH', `/api/bots/${a.id}`, {
+      monthlyLimitUsd: 2,
+    });
+    expect(patched.body.monthlyLimitUsd).toBe(2);
+    expect((await t.api('GET', `/api/bots/${a.id}/spend`)).body).toEqual({ dayUsd: 0, monthUsd: 2 });
+
+    const ta = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;
+    await t.send(ta.id, 'merhaba');
+    await t.services.turns.idle();
+    const last = (await t.messages(ta.id)).at(-1)!;
+    expect(last.role).toBe('error');
+    expect(last.text).toContain('Katip bu ay kendi harcama sınırına');
+
+    const tb = (await t.api<Thread>('GET', `/api/bots/${b.id}/main-thread`)).body;
+    await t.send(tb.id, 'merhaba');
+    await t.services.turns.idle();
+    expect((await t.messages(tb.id)).at(-1)!.role).toBe('assistant');
+
+    // A bot's daily limit counts only today.
+    await t.api('PATCH', `/api/bots/${a.id}`, { monthlyLimitUsd: 0, dailyLimitUsd: 1 });
+    await t.send(ta.id, 'tekrar');
+    await t.services.turns.idle();
+    expect((await t.messages(ta.id)).at(-1)!.role).toBe('assistant');
+  });
+
   it('başarısız biten turun harcaması da aylık toplama ve sınıra sayılır', async () => {
     const a = await t.bot({ name: 'Katip' });
     const thread = (await t.api<Thread>('GET', `/api/bots/${a.id}/main-thread`)).body;

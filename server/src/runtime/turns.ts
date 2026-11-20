@@ -24,6 +24,7 @@ import {
   type TurnOutcome,
 } from '../engine/types';
 import { translator, type T } from '../i18n';
+import type { SpendStop } from '../services/usage';
 import {
   allowRulesFor,
   askRuleFor,
@@ -113,6 +114,19 @@ export function stallText(stall: Stall, t: T): string {
   // `mcp__server__name` reads as the tool's own name.
   const tool = stall.tool.split('__').at(-1) || stall.tool;
   return t('turn.stalledTool', { minutes, tool });
+}
+
+/** Why a turn did not start: the spending limit it would go past, and where to change it. */
+export function spendText(stop: SpendStop, name: string, t: T): string {
+  const key =
+    stop.scope === 'server'
+      ? stop.period === 'day'
+        ? 'turn.spendLimitDay'
+        : 'turn.spendLimit'
+      : stop.period === 'day'
+        ? 'turn.botSpendLimitDay'
+        : 'turn.botSpendLimit';
+  return t(key, { name, spent: stop.spentUsd.toFixed(2), limit: stop.limitUsd.toFixed(2) });
 }
 
 /** Whether the text names a skill as `$name`, as a word of its own. */
@@ -787,16 +801,11 @@ export class TurnManager {
 
   private async execute(turn: TurnRow, controller: AbortController) {
     const { threads, bots, memory, approvals } = this.services;
-    // Spending is checked as a turn starts; one already running finishes.
-    const month = await this.services.usage.month();
-    if (month.limitUsd > 0 && month.costUsd >= month.limitUsd) {
-      const t = await this.services.settings.translator();
-      throw new Error(
-        t('turn.spendLimit', { spent: month.costUsd.toFixed(2), limit: month.limitUsd.toFixed(2) }),
-      );
-    }
     const thread = await threads.row(turn.threadId);
     const bot = await bots.get(turn.botId);
+    // Spending is checked as a turn starts; one already running finishes.
+    const stop = await this.services.usage.reached(bot);
+    if (stop) throw new Error(spendText(stop, bot.name, await this.services.settings.translator()));
     const paths = workspacePaths(this.ctx.config.dataDir, bot.id, thread.id, bot.groupId);
     const sandbox = sandboxFor(paths, {
       projectDir: bot.projectDir,

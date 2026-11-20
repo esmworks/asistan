@@ -260,6 +260,8 @@ export interface Settings {
   backupModel?: string;
   /** Tokens at which a Claude bot folds the conversation into a summary; 0 leaves it to Claude. Missing on older servers. */
   claudeCompactWindow?: number;
+  /** The most the bots may spend in a day, in US dollars; 0 for none. Missing on older servers. */
+  dailyLimitUsd?: number;
   timezone: string;
   /** The most the bots may spend in a calendar month, in US dollars; 0 for none. Missing on older servers. */
   monthlyLimitUsd?: number;
@@ -379,6 +381,7 @@ export const api = {
   /** Moves every active bot to what new bots start with; says how many changed. */
   moveBotsToNewEngine: () => http.post<{ changed: number }>('/api/bots/engine'),
   archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
+  botSpend: (id: string) => http.get<{ dayUsd: number; monthUsd: number }>(`/api/bots/${id}/spend`),
   pauseBot: (id: string, paused: boolean) => http.post<Bot>(`/api/bots/${id}/pause`, { paused }),
   pauseAllBots: (paused: boolean) => http.post<{ count: number }>('/api/bots/pause-all', { paused }),
   today: () => http.get<TodayReport>('/api/today'),

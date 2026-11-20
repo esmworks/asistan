@@ -1665,6 +1665,9 @@ export class ToolFactory {
               effort: '',
               toolSelection: ALL_TOOLS,
               instructionsUrl: null,
+              // A bot's spending limits are the person's to set, never another bot's.
+              dailyLimitUsd: 0,
+              monthlyLimitUsd: 0,
             },
             // The bot is the person's the manager made it for.
             person,

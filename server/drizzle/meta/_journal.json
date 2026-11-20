@@ -533,6 +533,13 @@
       "when": 1795188437195,
       "tag": "0075_bot_pause",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795188823528,
+      "tag": "0076_spend_limits",
+      "breakpoints": true
     }
   ]
 }

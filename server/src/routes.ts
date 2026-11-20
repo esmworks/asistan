@@ -661,6 +661,11 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     else s.turns.schedule();
     return bot;
   });
+  app.get('/api/bots/:id/spend', async (req) => {
+    const id = IdParams.parse(req.params).id;
+    await s.bots.get(id);
+    return s.usage.botSpent(id);
+  });
   app.post('/api/bots/pause-all', async (req) => {
     const { paused } = PauseBody.parse(req.body);
     const ids = await s.bots.setAllPaused(paused);

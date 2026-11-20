@@ -317,6 +317,12 @@ const tr = {
   'turn.personDisabled': 'Bu iş, artık giriş yapamayan bir kişi adına çalışacaktı; başlatılmadı.',
   'turn.spendLimit':
     'Bu ayın harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar ay başında yeniden çalışır.',
+  'turn.spendLimitDay':
+    'Bugünün harcama sınırına ulaşıldı (${spent} / ${limit}). Ayarlar → Kullanım bölümünden sınırı yükseltebilir ya da kaldırabilirsin; yoksa botlar yarın yeniden çalışır.',
+  'turn.botSpendLimit':
+    '{name} bu ay kendi harcama sınırına ulaştı (${spent} / ${limit}). Botun ayarlarından sınırı yükseltebilir ya da kaldırabilirsin; yoksa ay başında yeniden çalışır.',
+  'turn.botSpendLimitDay':
+    '{name} bugün kendi harcama sınırına ulaştı (${spent} / ${limit}). Botun ayarlarından sınırı yükseltebilir ya da kaldırabilirsin; yoksa yarın yeniden çalışır.',
   'validation.watchUrl': 'İzlenecek sayfa https:// ile başlayan bir adres olmalı',
   'validation.slackChannel': 'Slack kanalının kimliği C ya da G ile başlar (kanal ayrıntılarının en altında)',
   'validation.whatsappGroup': 'Bir WhatsApp grubu seçin',
@@ -1751,6 +1757,12 @@ const en: Catalog<ServerKey> = {
   'turn.personDisabled': 'This work would run for someone who may no longer sign in; it was not started.',
   'turn.spendLimit':
     "This month's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again when the month turns.",
+  'turn.spendLimitDay':
+    "Today's spending limit is reached (${spent} of ${limit}). Raise or remove it in Settings → Usage; otherwise the bots work again tomorrow.",
+  'turn.botSpendLimit':
+    "{name} reached its own spending limit for this month (${spent} of ${limit}). Raise or remove it in the bot's settings; otherwise it works again when the month turns.",
+  'turn.botSpendLimitDay':
+    "{name} reached its own spending limit for today (${spent} of ${limit}). Raise or remove it in the bot's settings; otherwise it works again tomorrow.",
   'validation.watchUrl': 'The page to watch must be an address starting with https://',
   'validation.slackChannel':
     "A Slack channel's id starts with C or G (at the bottom of the channel's details)",

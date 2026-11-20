@@ -82,6 +82,10 @@ export const bots = pgTable('bots', {
    * skipped, another bot's request is refused) until it is cleared.
    */
   pausedAt: ts('paused_at'),
+  /** The most this bot may spend in a day of the server's time zone, in US dollars; 0 for no limit. */
+  dailyLimitUsd: doublePrecision('daily_limit_usd').notNull().default(0),
+  /** The most this bot may spend in a calendar month, in US dollars; 0 for no limit. */
+  monthlyLimitUsd: doublePrecision('monthly_limit_usd').notNull().default(0),
   createdAt: created(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
   /** The person who made the bot, or was handed it; they may always change and share it. */

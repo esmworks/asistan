@@ -52,6 +52,8 @@ export const toBot = (r: Row<typeof schema.bots>): Bot => ({
   instructionsError: r.instructionsError,
   archivedAt: iso(r.archivedAt),
   pausedAt: iso(r.pausedAt),
+  dailyLimitUsd: r.dailyLimitUsd,
+  monthlyLimitUsd: r.monthlyLimitUsd,
   ownerUserId: r.ownerUserId,
   access: r.access,
   createdAt: r.createdAt.toISOString(),

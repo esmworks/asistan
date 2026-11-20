@@ -118,6 +118,9 @@ export const Bot = z.object({
    * older servers.
    */
   pausedAt: z.string().nullable().optional(),
+  /** The bot's own spending limits in US dollars, 0 for none. Missing from older servers. */
+  dailyLimitUsd: z.number().optional(),
+  monthlyLimitUsd: z.number().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /** The person who made the bot (or was given it). Missing from older servers. */
@@ -160,6 +163,9 @@ export const Avatar = z
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v),
     'validation.avatar',
   );
+/** A spending limit in US dollars, to the cent; 0 for none. */
+const SpendLimit = z.number().min(0).max(1_000_000);
+
 export const BotCreate = z.object({
   name: botName,
   description: z.string().max(500).default(''),
@@ -180,6 +186,10 @@ export const BotCreate = z.object({
   effort: z.union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.literal('')]).default(''),
   /** Which tools the bot gets; by default every tool its settings allow. */
   toolSelection: ToolSelection.default(ALL_TOOLS),
+  /** The most the bot may spend in a day, in US dollars; 0 for no limit of its own. */
+  dailyLimitUsd: SpendLimit.default(0),
+  /** The most the bot may spend in a calendar month, in US dollars; 0 for no limit of its own. */
+  monthlyLimitUsd: SpendLimit.default(0),
   /** A document (https) the instructions are kept in; null for instructions written here. */
   instructionsUrl: z
     .string()
@@ -1393,6 +1403,8 @@ export const UsageReport = z.object({
   daily: z.array(z.object({ date: z.string(), costUsd: z.number(), turns: z.number().int() })),
   /** Spending so far in this calendar month and the limit set for it (0: none); missing on older servers. */
   month: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
+  /** Spending so far today (the server's time zone) and the daily limit (0: none); missing on older servers. */
+  day: z.object({ costUsd: z.number(), limitUsd: z.number() }).optional(),
   /**
    * How many turns may run at once: the person's choice (0 for the server's own) and the server's
    * own number; missing on older servers.

@@ -248,6 +248,9 @@ export const tr = {
   'usage.month': 'Bu ay',
   'usage.monthOf': '{limit} sınırından; sınıra ulaşılınca turlar gelecek ayı bekler',
   'usage.noLimit': 'Aylık sınır yok',
+  'usage.day': 'Bugün',
+  'usage.dayOf': '{limit} sınırından; sınıra ulaşılınca turlar yarını bekler',
+  'usage.noDayLimit': 'Günlük sınır yok',
   'usage.limit': 'Sınır ($)',
   'usage.downloadCsv': 'Bütün turları CSV olarak indir',
   'usage.gate': 'Rutin ön kontrolü',
@@ -1307,6 +1310,13 @@ export const tr = {
   'bot.managerHint':
     'Bütün botlara yazabilir, bot oluşturup düzenleyebilir. İzin gevşetmek için yine size sorar.',
   'bot.archive': 'Arşivle',
+  'bot.spendLimits': 'Harcama sınırı',
+  'bot.spendLimitsHint':
+    'Bu bot yalnız kendi harcamasıyla buraya ulaşınca yeni iş başlatmaz; boş ya da 0 sınır yok demek. Sunucunun sınırları ayrıca geçerli.',
+  'bot.dailyLimit': 'Günlük ($)',
+  'bot.monthlyLimit': 'Aylık ($)',
+  'bot.spent': 'Bugün {day}, bu ay {month} harcadı',
+  'bot.limitInvalid': '0 ya da daha büyük bir tutar yaz',
   'bot.advanced': 'Gelişmiş ayarlar',
   'bot.advancedHint': 'İzinler, proje klasörü, internet erişimi, yönetici bot, araçlar',
   'bot.create': 'Oluştur',
