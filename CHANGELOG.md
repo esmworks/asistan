@@ -7,6 +7,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- A page that hides text from people but writes it to an AI agent ("ignore your previous instructions", "if you are an
+  AI agent…") is now caught when a bot reads it: in its browser (text pushed off the page, see-through, a few
+  pixels tall, clipped or drawn in the background's colour, and comments) and in a page fetched without a browser
+  (what the markup hides). The bot is told the text is the page's, not an instruction, and to say it found it; the
+  conversation also shows a warning naming the site, once per site in a turn. Hidden text that does not speak to an
+  agent, such as a screen reader's "Skip to main content", says nothing.
 - On the desktop app (the server on the person's own computer), a bot that asks first now writes and edits files in
   its own folders without a card, named by their full path. No model judges the step, so nothing waits on one;
   commands, the group's shared folder, anything outside the bot's folders and "always ask" rules still ask, and a

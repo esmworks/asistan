@@ -1804,6 +1804,7 @@ export class ToolFactory {
         if (pick === always && mayKeep) return 'always';
         return { message: t('browser.cardRefused', { site }) };
       };
+      const planted = new Set<string>();
       tools.push(
         ...browserTools({
           def,
@@ -1825,6 +1826,19 @@ export class ToolFactory {
               ? (await s.memory.forSite(bot.id, host, own, await place())).map((m) => m.content)
               : [],
           exitNote: () => this.ctx.egress?.takeExitNote(bot.id) ?? null,
+          onPlanted: async (site) => {
+            // Once per site in a turn: reading the same page again says nothing new.
+            if (planted.has(site)) return;
+            planted.add(site);
+            await s.threads.addMessage({
+              threadId: thread.id,
+              role: 'system',
+              author: `bot:${bot.id}`,
+              text: t('browser.plantedNotice', { site, bot: bot.name }),
+              props: { kind: 'planted', site },
+              turnId: turn.id,
+            });
+          },
           ...(opts.email &&
             opts.emailCodes && {
               mailCode: {

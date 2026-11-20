@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { T } from '../i18n';
 import { fetchPublic, publicHost, type PublicFetchOptions } from '../services/skill-link';
+import { hiddenInHtml, plantedIn } from '../runtime/hidden-text';
 import { HttpError } from '../util';
 import { PathError, type FileTool } from './pi-files';
 import type { ToolResult } from './types';
@@ -87,13 +88,19 @@ function webFetch(t: T, o: WebToolOptions): FileTool {
       const type = page.contentType.split(';')[0]!.trim().toLowerCase();
       const raw = pageChars(page.body, page.contentType);
       let text: string;
-      if (!type || type === 'text/html' || type === 'application/xhtml+xml')
+      // Text the markup hides from people but that speaks to an agent: the bot is told before it reads.
+      let planted: string[] = [];
+      if (!type || type === 'text/html' || type === 'application/xhtml+xml') {
         text = readableText(raw, page.url);
-      else if (TEXT_TYPES.test(type)) text = raw;
+        planted = plantedIn(hiddenInHtml(raw));
+      } else if (TEXT_TYPES.test(type)) text = raw;
       else return t('web.notText', { type });
       const cut = text.length > TEXT_MAX ? `${text.slice(0, TEXT_MAX)}\n${t('web.cut')}` : text;
       const head = page.url.href === url.href ? page.url.href : `${url.href} → ${page.url.href}`;
-      return o.mark(page.url.hostname, `${head}\n\n${cut.trim() || t('web.empty')}`);
+      const warn = planted.length
+        ? `${t('browser.planted', { site: page.url.hostname, quotes: planted.map((q) => `"${q}"`).join('; ') })}\n\n`
+        : '';
+      return o.mark(page.url.hostname, `${warn}${head}\n\n${cut.trim() || t('web.empty')}`);
     },
   };
 }

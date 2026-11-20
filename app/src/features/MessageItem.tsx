@@ -275,6 +275,14 @@ export function MessageItem({
       }
       if (typeof m.props.suggestApp === 'string')
         return <AppSuggestion catalogId={m.props.suggestApp} reason={m.text} botId={botId} />;
+      // A page hid instructions for agents: a warning the person should not scroll past.
+      if (m.props.kind === 'planted')
+        return (
+          <div className="flex max-w-(--bubble-width) gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm [overflow-wrap:anywhere]">
+            <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+            <div className="min-w-0 flex-1">{m.text}</div>
+          </div>
+        );
       // What taking a turn back put back and left: several lines, kept as lines.
       if (m.props.kind === 'turnUndo')
         return (

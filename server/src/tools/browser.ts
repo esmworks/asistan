@@ -35,6 +35,7 @@ import { totp } from '../totp';
 import { botFile } from './files';
 import type { Define } from './index';
 import { workspacePaths } from '../workspace';
+import { HIDDEN_TEXT_SCRIPT, plantedIn } from '../runtime/hidden-text';
 
 /** Longest page outline handed to the model; a long page is cut and the bot is told so. */
 export const MAX_SNAPSHOT = 40_000;
@@ -606,6 +607,8 @@ export function browserTools(opts: {
   attended?: boolean;
   /** What the bot noted earlier about how a site works. */
   siteNotes?: (host: string) => Promise<string[]>;
+  /** A page of `site` hides text written to steer an agent; the person is told. */
+  onPlanted?: (site: string) => Promise<void>;
   /** Where the browser's traffic now leaves, if that changed since the bot last heard. */
   exitNote?: () => 'computer' | 'server' | null;
   /**
@@ -632,11 +635,23 @@ export function browserTools(opts: {
     page: Page,
     view: { part?: number; find?: string; ref?: string } = {},
   ): Promise<string> => {
-    const [title, raw, typed] = await Promise.all([
+    const [title, raw, typed, hidden] = await Promise.all([
       page.title().catch(() => ''),
       page.ariaSnapshot({ mode: 'ai', timeout: 10_000 }).catch(() => ''),
       passwordValues(page),
+      page.evaluate<string[]>(HIDDEN_TEXT_SCRIPT).catch(() => [] as string[]),
     ]);
+    // Text the page hides from people but speaks to an agent: the bot is told it is data and to say
+    // it was there, and the person is told in the conversation, whatever the bot then writes.
+    const planted = plantedIn(Array.isArray(hidden) ? hidden : []);
+    const site = (() => {
+      try {
+        return new URL(page.url()).hostname;
+      } catch {
+        return page.url();
+      }
+    })();
+    if (planted.length) await opts.onPlanted?.(site).catch(() => undefined);
     const tabs = browser.pages(bot.id)?.pages.length ?? 1;
     let base = raw;
     if (view.ref) {
@@ -666,6 +681,9 @@ export function browserTools(opts: {
         t('browser.address', { url: page.url() }),
         t('browser.title', { title: title || '-' }),
         ...(tabs > 1 ? [t('browser.tabCount', { count: tabs })] : []),
+        ...(planted.length
+          ? ['', t('browser.planted', { site, quotes: planted.map((q) => `"${q}"`).join('; ') })]
+          : []),
         '',
         body || t('browser.emptyPage'),
       ].join('\n'),
