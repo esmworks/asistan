@@ -92,6 +92,7 @@ import { editAsTyped } from '@/lib/undoableEdit';
 import { useHoldReload } from '@/lib/update';
 import { isOffline, useOutbox } from '@/lib/outbox';
 import { ComputerButton } from './Computer';
+import { EmojiButton } from '@/components/EmojiPicker';
 import { PlanMeter } from './PlanMeter';
 import { cn } from '@/lib/utils';
 import { useFitHeight } from '@/lib/fitHeight';
@@ -1436,6 +1437,14 @@ function Composer({
   const anyFiles = useAnyAttachments();
   useHoldReload(!!text.trim() || anyFiles || send.isPending);
 
+  // Where the caret was is kept by the picker opening; the box itself lost the focus to it.
+  const insertEmoji = (emoji: string) => {
+    const el = ref.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    editAsTyped(el, el.value.slice(0, start) + emoji + el.value.slice(end), start + emoji.length);
+  };
   const ready = attachments.items.length > 0 && !attachments.uploading;
   const canSend = !attachments.uploading && (!!text.trim() || ready);
   const submit = () => {
@@ -1631,6 +1640,7 @@ function Composer({
             </TooltipTrigger>
             <TooltipContent>{t('chat.attach')}</TooltipContent>
           </Tooltip>
+          <EmojiButton onPick={insertEmoji} />
           <textarea
             ref={ref}
             rows={1}

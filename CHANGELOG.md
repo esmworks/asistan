@@ -7,6 +7,9 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- An emoji button next to the message box: every emoji in sections, the ones picked lately first, and a search by
+  English name or keyword; the pick goes where the caret was, and Shift-click adds more without closing. The data
+  comes with the app, so it works offline. Phones keep their own emoji keyboard.
 - The desktop app checks spelling as you type: a misspelled word is underlined, and a right-click on it offers what it
   could be and "Add to dictionary". It is on by default and turned off with "Check spelling" in the same menu or in
   the Edit menu. On a Mac it uses the system's checker; on Windows and Linux it checks the system's languages it has
