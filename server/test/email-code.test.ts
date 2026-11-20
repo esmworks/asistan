@@ -63,33 +63,33 @@ describe('postadan giriş kodu: izin ve site', () => {
   it('izin verilmeden kod alınmaz; izin yalnız botu düzenleyebilenin', async () => {
     const { bot, deliver } = await setUp();
     await deliver({ from: 'no-reply@banka.example', subject: 'Kodunuz', text: 'Kod: 482913', id: 'a' });
-    expect(await t.services.email.takeCode(bot.id, 'banka.example')).toBeNull();
+    expect(await t.services.email.findCode(bot.id, 'banka.example')).toBeNull();
 
     await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
     const member = await t.person('uye', 'member');
     expect((await member.api('PUT', `/api/bots/${bot.id}/email/codes`, { on: true })).status).toBe(403);
     const on = await t.api<EmailSettings>('PUT', `/api/bots/${bot.id}/email/codes`, { on: true });
     expect(on.body.addresses[0]!.codes).toBe(true);
-    expect(await t.services.email.takeCode(bot.id, 'banka.example')).toEqual({
-      code: '482913',
-      from: 'no-reply@banka.example',
-    });
-    // Taken once: the same mail does not give its code again.
-    expect(await t.services.email.takeCode(bot.id, 'banka.example')).toBeNull();
+    const found = await t.services.email.findCode(bot.id, 'banka.example');
+    expect(found).toMatchObject({ code: '482913', from: 'no-reply@banka.example' });
+    // Found again until its code is typed; then not again.
+    expect(await t.services.email.findCode(bot.id, 'banka.example')).toMatchObject({ code: '482913' });
+    await t.services.email.codeUsed(bot.id, (found as { id: string }).id);
+    expect(await t.services.email.findCode(bot.id, 'banka.example')).toBeNull();
   });
 
   it('başka sitenin postasındaki kod bu siteye verilmez; eski posta kullanılmaz', async () => {
     const { bot, deliver } = await setUp();
     await t.api('PUT', `/api/bots/${bot.id}/email/codes`, { on: true });
     await deliver({ from: 'no-reply@banka.example', subject: 'Kodunuz', text: 'Kod: 482913', id: 'b' });
-    expect(await t.services.email.takeCode(bot.id, 'kotu-site.example')).toBeNull();
+    expect(await t.services.email.findCode(bot.id, 'kotu-site.example')).toBeNull();
 
     await deliver({ from: 'kod@mail.magaza.example', subject: 'Kodunuz', text: 'Kod: 555111', id: 'c' });
     await t.db.db
       .update(schema.emails)
       .set({ receivedAt: new Date(Date.now() - 11 * 60_000) })
       .where(eq(schema.emails.from, 'kod@mail.magaza.example'));
-    expect(await t.services.email.takeCode(bot.id, 'magaza.example')).toBeNull();
+    expect(await t.services.email.findCode(bot.id, 'magaza.example')).toBeNull();
   });
 
   it('araç yalnız izin verilmiş posta kutusu olan bota verilir', async () => {
@@ -166,6 +166,10 @@ describe.skipIf(!BROWSER)('postadan giriş kodu: gerçek tarayıcı', () => {
 
     await text('browser_open', { url: 'https://giris.banka.test/giris' });
     const outline = await text('browser_snapshot', {});
+    // A step refused (here a field that is not there) leaves the mail for the next try.
+    expect(await text('browser_email_code', { ref: 'e999', wait_seconds: 0, submit: false })).not.toContain(
+      'alana yazıldı',
+    );
     const typed = await text('browser_email_code', {
       ref: refOf(outline, 'textbox "Kod"'),
       wait_seconds: 0,
@@ -175,5 +179,13 @@ describe.skipIf(!BROWSER)('postadan giriş kodu: gerçek tarayıcı', () => {
     expect(typed).not.toContain('482913');
     const value = await browser.use(bot.id, (p) => p.locator('input[name=kod]').inputValue());
     expect(value).toBe('482913');
+    // Typed once: the same mail gives no code again.
+    expect(
+      await text('browser_email_code', {
+        ref: refOf(outline, 'textbox "Kod"'),
+        wait_seconds: 0,
+        submit: false,
+      }),
+    ).toContain('posta gelmedi');
   }, 40_000);
 });

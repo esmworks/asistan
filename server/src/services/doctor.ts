@@ -100,32 +100,39 @@ export class DoctorService {
 
   /** Folders of bots, conversations and groups the database no longer has. */
   private async strayFolders(): Promise<Stray[]> {
-    const bots = new Set(
-      (await this.ctx.db.select({ id: schema.bots.id }).from(schema.bots)).map((r) => r.id),
-    );
-    const threads = new Set(
-      (await this.ctx.db.select({ id: schema.threads.id }).from(schema.threads)).map((r) => r.id),
-    );
-    const groups = new Set(
-      (await this.ctx.db.select({ id: schema.groups.id }).from(schema.groups)).map((r) => r.id),
-    );
+    // The folders are listed before the database is read: one made for a bot or conversation that
+    // is created in between then has its row by the time it is looked up.
     const root = join(this.dataDir, 'workspaces');
+    const botDirs = await folders(join(root, 'bots'));
+    const threadDirs = await Promise.all(
+      botDirs.map(async (bot) => ({ bot, threads: await folders(join(root, 'bots', bot, 'threads')) })),
+    );
+    const groupDirs = await folders(join(root, 'groups'));
+    const browserDirs = await folders(join(this.dataDir, 'browsers'));
+    const ids = async (table: typeof schema.bots | typeof schema.threads | typeof schema.groups) =>
+      new Set((await this.ctx.db.select({ id: table.id }).from(table)).map((r) => r.id));
+    const [bots, threads, groups] = await Promise.all([
+      ids(schema.bots),
+      ids(schema.threads),
+      ids(schema.groups),
+    ]);
     const found: string[] = [];
-    for (const id of await folders(join(root, 'bots'))) {
-      if (!bots.has(id)) {
-        found.push(join(root, 'bots', id));
-        continue;
-      }
-      for (const thread of await folders(join(root, 'bots', id, 'threads'))) {
-        if (!threads.has(thread)) found.push(join(root, 'bots', id, 'threads', thread));
-      }
+    for (const { bot, threads: inBot } of threadDirs) {
+      if (!bots.has(bot)) found.push(join(root, 'bots', bot));
+      else for (const id of inBot) if (!threads.has(id)) found.push(join(root, 'bots', bot, 'threads', id));
     }
-    for (const id of await folders(join(root, 'groups')))
-      if (!groups.has(id)) found.push(join(root, 'groups', id));
-    for (const id of await folders(join(this.dataDir, 'browsers'))) {
-      if (!bots.has(id)) found.push(join(this.dataDir, 'browsers', id));
-    }
-    return Promise.all(found.map(async (path) => ({ path, bytes: await size(path) })));
+    for (const id of groupDirs) if (!groups.has(id)) found.push(join(root, 'groups', id));
+    for (const id of browserDirs) if (!bots.has(id)) found.push(join(this.dataDir, 'browsers', id));
+    // A folder changed a moment ago is still in someone's hands (a bot being deleted, say).
+    const settled = await Promise.all(
+      found.map(async (path) => {
+        const at = (await stat(path).catch(() => null))?.mtimeMs ?? 0;
+        return Date.now() - at >= GRACE_MS ? path : null;
+      }),
+    );
+    return Promise.all(
+      settled.filter((p): p is string => !!p).map(async (path) => ({ path, bytes: await size(path) })),
+    );
   }
 
   async check(): Promise<DoctorReport> {

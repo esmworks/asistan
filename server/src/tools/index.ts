@@ -1539,6 +1539,7 @@ export class ToolFactory {
               mailCode: {
                 address: opts.email,
                 wait: (site: string, waitMs: number) => s.email.waitForCode(bot.id, site, waitMs, signal),
+                used: (id: string) => s.email.codeUsed(bot.id, id),
               },
             }),
         }),

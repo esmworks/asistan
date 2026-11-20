@@ -39,6 +39,7 @@ export class TitleService {
   private pending = new Set<Promise<void>>();
   private controllers = new Set<AbortController>();
   private stopped = false;
+  private tried = new Set<string>();
 
   constructor(
     private ctx: Ctx,
@@ -78,6 +79,8 @@ export class TitleService {
     if (await this.services.usage.reached(bot)) return;
     const engine = this.engineFor(bot);
     if (!engine.complete) return;
+    // Asked once per conversation while the server runs: a model that fails is not asked on every turn.
+    if (this.tried.has(threadId)) return;
 
     const said = await this.ctx.db
       .select({ role: schema.messages.role, text: schema.messages.text })
@@ -86,10 +89,12 @@ export class TitleService {
         and(eq(schema.messages.threadId, threadId), inArray(schema.messages.role, ['user', 'assistant'])),
       )
       .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id))
-      .limit(2);
+      // Several messages may come before the first answer.
+      .limit(20);
     const question = said.find((m) => m.role === 'user')?.text.trim();
     const answer = said.find((m) => m.role === 'assistant')?.text.trim();
     if (!question || !answer) return;
+    this.tried.add(threadId);
 
     const locale =
       (await this.services.settings.all(thread.userId ?? undefined)).language ??

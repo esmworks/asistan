@@ -222,15 +222,15 @@ export class EmailService {
 
   /**
    * The code in the newest unread mail from `site` (by the sender's domain) that came in the last
-   * few minutes; that mail is marked read, so a code is taken once. The sender of a mail can be
-   * forged, so this only keeps a code from one site out of another site's page: the code is
-   * typed into that site's own field, where a forged one only fails. Null when there is no such
-   * mail; `unclear` when one came but its code could not be told apart.
+   * few minutes, with the mail's id so it is marked used (`codeUsed`) only once the code is typed.
+   * The sender of a mail can be forged, so this only keeps a code from one site out of another
+   * site's page: the code is typed into that site's own field, where a forged one only fails. Null
+   * when there is no such mail; `unclear` when one came but its code could not be told apart.
    */
-  async takeCode(
+  async findCode(
     botId: string,
     site: string,
-  ): Promise<{ code: string; from: string } | { unclear: true } | null> {
+  ): Promise<{ id: string; code: string; from: string } | { unclear: true } | null> {
     if (!(await this.codesAllowed(botId))) return null;
     const rows = await this.ctx.db
       .select()
@@ -247,17 +247,24 @@ export class EmailService {
       .limit(20);
     const mail = rows.find((r) => registrableSite(r.from.split('@')[1] ?? '') === site);
     if (!mail) return null;
-    await this.ctx.db.update(schema.emails).set({ readAt: new Date() }).where(eq(schema.emails.id, mail.id));
-    this.ctx.bus.refresh({ scope: 'info' });
     const code = codeIn(mail.subject, mail.text);
-    return code ? { code, from: mail.from } : { unclear: true };
+    return code ? { id: mail.id, code, from: mail.from } : { unclear: true };
   }
 
-  /** Waits for `takeCode` to find a code, up to `waitMs`; the turn being stopped ends the wait. */
+  /** Marks the mail a code was typed from as read, so its code is not typed again. */
+  async codeUsed(botId: string, id: string) {
+    await this.ctx.db
+      .update(schema.emails)
+      .set({ readAt: new Date() })
+      .where(and(eq(schema.emails.id, id), eq(schema.emails.botId, botId)));
+    this.ctx.bus.refresh({ scope: 'info' });
+  }
+
+  /** Waits for `findCode` to find a mail, up to `waitMs`; the turn being stopped ends the wait. */
   async waitForCode(botId: string, site: string, waitMs: number, signal?: AbortSignal) {
     const until = Date.now() + waitMs;
     for (;;) {
-      const found = await this.takeCode(botId, site);
+      const found = await this.findCode(botId, site);
       if (found || Date.now() >= until || signal?.aborted) return found;
       await new Promise((r) => setTimeout(r, Math.min(1000, Math.max(0, until - Date.now()))));
     }

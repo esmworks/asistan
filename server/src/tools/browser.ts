@@ -611,7 +611,12 @@ export function browserTools(opts: {
    */
   mailCode?: {
     address: string;
-    wait(site: string, waitMs: number): Promise<{ code: string; from: string } | { unclear: true } | null>;
+    wait(
+      site: string,
+      waitMs: number,
+    ): Promise<{ id: string; code: string; from: string } | { unclear: true } | null>;
+    /** Marks the mail used once its code is in the field, so a refused step leaves it for a retry. */
+    used(id: string): Promise<void>;
   };
 }): AppTool[] {
   const { def, bot, dataDir, threadId, t, browser, vault, person, askLogin } = opts;
@@ -1623,6 +1628,7 @@ export function browserTools(opts: {
                 try {
                   browser.rememberSecret(bot.id, found.code, CODE_HIDDEN_MS);
                   await f.field.fill(found.code);
+                  await mail.used(found.id);
                   if (submit) await f.field.press('Enter');
                 } finally {
                   await f.field.dispose().catch(() => {});

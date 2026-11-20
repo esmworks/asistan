@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DoctorReport, Thread } from '@yumakbot/shared';
 import { eq } from 'drizzle-orm';
@@ -102,6 +102,10 @@ describe('sunucu bakımı (doctor)', () => {
     mkdirSync(goneThread, { recursive: true });
     writeFileSync(join(goneThread, 'a.txt'), 'abc');
 
+    // Just made: still in someone's hands, so not counted yet.
+    expect(found(await check(), 'strayFolders').count).toBe(0);
+    const old = longAgo();
+    for (const dir of [join(root, 'silinmis-bot'), goneThread]) utimesSync(dir, old, old);
     const r = await check();
     expect(found(r, 'strayFolders')).toMatchObject({ status: 'warn', count: 2 });
     expect(found(r, 'strayFolders').bytes).toBe('eski rapor'.length + 3);
