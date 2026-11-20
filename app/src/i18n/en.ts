@@ -2204,7 +2204,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.routeRemove': 'Remove',
   'whatsapp.routeNoBot': 'Choose a number or group and a bot for every chat given to a bot.',
   'whatsapp.doorOwn':
-    'On your own number anyone who writes may be someone you know: the front door answers only when the bots have a number of their own. Here, give chats to bots one by one.',
+    'On your own number the front door answers only people not saved in your phone book, and since its answer goes out from your number, it always comes to you on a card first.',
   'whatsapp.notices': 'Also tell me about other conversations',
   'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
   'whatsapp.chats': 'Let the bots look at my chats',

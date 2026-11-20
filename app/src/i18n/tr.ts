@@ -2201,7 +2201,7 @@ export const tr = {
   'whatsapp.routeRemove': 'Kaldır',
   'whatsapp.routeNoBot': 'Verilen her sohbet için bir numara ya da grup ve bir bot seçin.',
   'whatsapp.doorOwn':
-    'Kendi numaranızda size yazan herkes tanıdığınız biri olabilir; karşılama botu yalnızca botlara ayrı bir numara bağlandığında cevap verir. Burada sohbetleri tek tek bir bota verin.',
+    'Kendi numaranızda karşılama botu yalnızca rehberinizde kayıtlı olmayan kişilere cevap verir; cevabı sizin numaranızdan gideceği için her zaman önce kartla onayınıza gelir.',
   'whatsapp.notices': 'Diğer konuşmalardan da haber ver',
   'whatsapp.noticesHint': "Bu botun rutin raporları ve sizi beklediği kartlar WhatsApp'a da gelir.",
   'whatsapp.chats': 'Botlar sohbetlerime bakabilsin',
