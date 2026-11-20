@@ -42,6 +42,32 @@ export const PhoneNumber = z
   .transform((v) => v.replace(/[\s()+-]/g, '').replace(/^00/, ''))
   .pipe(z.string().regex(/^[1-9]\d{6,14}$/, 'validation.phone'));
 
+/**
+ * How a bot answers a chat given to it: `off` it does not; `draft` its answer waits on a card for
+ * the person; `auto` it goes at once (up to a few an hour to one chat, then on a card).
+ */
+export const WhatsAppReplyMode = z.enum(['off', 'draft', 'auto']);
+export type WhatsAppReplyMode = z.infer<typeof WhatsAppReplyMode>;
+
+/**
+ * A chat given to one bot: a person by their number (country code, digits only) or a group by its
+ * address. That bot answers it, in a conversation of its own for that chat; a group is never
+ * written to, the bot only tells the person what it was asked there.
+ */
+export const WhatsAppRoute = z.object({
+  chat: z.string().regex(/^(\d{7,15}|[\w.-]{3,80}@g\.us)$/),
+  botId: z.string().min(1),
+  mode: WhatsAppReplyMode.default('draft'),
+});
+export type WhatsAppRoute = z.infer<typeof WhatsAppRoute>;
+
+/** The bot that answers people with no chat given to a bot: the front door. */
+export const WhatsAppDoor = z.object({
+  botId: z.string().min(1),
+  mode: WhatsAppReplyMode.default('draft'),
+});
+export type WhatsAppDoor = z.infer<typeof WhatsAppDoor>;
+
 export const WhatsAppSet = z.object({
   mode: WhatsAppMode,
   /** The person's own number; with a separate bot number, only this number is read. */
@@ -55,6 +81,15 @@ export const WhatsAppSet = z.object({
    * stays as it is.
    */
   chats: z.boolean().optional(),
+  /**
+   * Whether a bot at full access may send a message without its card: when the person asked for
+   * the work, or as the answer to the chat whose reply woke it. Left out, it stays as it is.
+   */
+  autoSend: z.boolean().optional(),
+  /** Chats given to bots. Left out, they stay as they are. */
+  routes: z.array(WhatsAppRoute).max(200).optional(),
+  /** The front door; null removes it. Left out, it stays as it is. */
+  door: WhatsAppDoor.nullable().optional(),
 });
 export type WhatsAppSet = z.infer<typeof WhatsAppSet>;
 
@@ -67,6 +102,11 @@ export interface WhatsAppStatus {
   notices: boolean;
   /** Whether the bots may read the account's chats and draft messages in a conversation. */
   chats: boolean;
+  /** Whether a bot at full access may send a message without its card. */
+  autoSend: boolean;
+  /** Chats given to bots, with the name the chat goes by here when it is known. */
+  routes: (WhatsAppRoute & { name: string })[];
+  door: WhatsAppDoor | null;
   /** The linked account's number, once linked. */
   linked: string | null;
   /** The QR code to scan while linking, as a PNG data URL. */

@@ -500,6 +500,36 @@ describe('Telegram biçimi', () => {
     expect(m!.html).toContain('<pre><code class="language-js">let a = 1 &lt; 2;</code></pre>');
   });
 
+  it('kesişen kalın ve eğik aralıkları iç içe kapatıp yeniden açarak ikisini de korur', () => {
+    const html = (md: string) => telegramMessages(md)[0]!.html;
+    expect(html('**kalın _ikisi** eğik_')).toBe('<b>kalın <i>ikisi</i></b> <i>eğik</i>');
+    expect(html('_eğik **ikisi_ kalın**')).toBe('<i>eğik <b>ikisi</b></i> <b>kalın</b>');
+    // Spaces at the crossing stay outside the reopened mark, where chat apps still read it. Three crossing in a row stay valid too.
+    expect(html('**a _b ~~c** d_ e~~')).toBe('<b>a <i>b <s>c</s></i></b> <i><s>d</s></i> <s>e</s>');
+    // Nesting, bold-italic and other cases written before keep their shape.
+    expect(html('**kalın _eğik_ yine**')).toBe('<b>kalın <i>eğik</i> yine</b>');
+    expect(html('***ikisi***')).toBe('<b><i>ikisi</i></b>');
+    expect(html('~~silik~~ ve *yıldız*')).toBe('<s>silik</s> ve <i>yıldız</i>');
+    expect(html('**a *b** c')).toBe('<b>a *b</b> c');
+  });
+
+  it('sözcük içindeki alt çizgiler ve e-posta adresleri biçim sayılmaz', () => {
+    const html = (md: string) => telegramMessages(md)[0]!.html;
+    expect(html('snake_case ve first_last@x.com yazdı')).toBe('snake_case ve first_last@x.com yazdı');
+    expect(html('first__last@x.com ile a__b ve c__d')).toBe('first__last@x.com ile a__b ve c__d');
+    expect(html('2*3*4 işlemi')).toBe('2*3*4 işlemi');
+    expect(html('_eğik_ ve my_var_name')).toBe('<i>eğik</i> ve my_var_name');
+    // Code spans and links are never read as marks.
+    expect(html('`a_b_c` ve [x_y](https://a.co/_k_)')).toBe(
+      '<code>a_b_c</code> ve <a href="https://a.co/_k_">x_y</a>',
+    );
+  });
+
+  it('Slack ve Discord da kesişen biçimi geçerli iç içe işaretlerle yazar', () => {
+    expect(slackMessages('**kalın _ikisi** eğik_')[0]).toBe('*kalın _ikisi_* _eğik_');
+    expect(discordMessages('**kalın _ikisi** eğik_')[0]).toBe('**kalın *ikisi*** *eğik*');
+  });
+
   it('sohbet uygulamasına giden cevapta bilinen biçimli anahtarları maskeler, sıradan metne dokunmaz', () => {
     const reply =
       'Anahtarın: sk-ant-api03-abcdefghijklmnopqrstuvwx\n\n```\nexport GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n```\n\nPIN: 1234, şifre: kedi';

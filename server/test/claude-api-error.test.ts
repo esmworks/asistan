@@ -16,7 +16,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (real) => ({
       close: () => close(),
       async *[Symbol.asyncIterator]() {
         if (frames.current === 'hang') await closed;
-        else yield* frames.current;
+        else {
+          for (const f of frames.current) {
+            // An error in the list is what the SDK throws when the stream breaks.
+            if (f instanceof Error) throw f;
+            yield f;
+          }
+        }
       },
     };
   },
@@ -72,6 +78,53 @@ describe('Claude API hatası', () => {
       expect(out.message).toContain('Credit balance is too low');
       expect(out.message).not.toContain('{');
     }
+  });
+
+  it('Claude Code işleminin çökmesi yeniden denenebilir hata olarak işaretlenir', async () => {
+    frames.current = [new Error('Claude Code process exited with code 1\nStderr: boom')];
+    expect(await run()).toMatchObject({ ok: false, kind: 'engine', crashed: true, transient: true });
+    frames.current = [new Error('Claude Code process terminated by signal SIGKILL')];
+    expect(await run()).toMatchObject({ ok: false, crashed: true });
+    // Another thrown error is not a crash.
+    frames.current = [new Error('Something else broke')];
+    const other = await run();
+    expect(other).toMatchObject({ ok: false, kind: 'engine' });
+    expect(other).not.toHaveProperty('crashed');
+    // A durdurma is not a crash either.
+    const stop = new AbortController();
+    stop.abort();
+    frames.current = [new Error('Claude Code process exited with code 143')];
+    expect(await run(undefined, stop.signal)).toMatchObject({ ok: false, kind: 'interrupted' });
+  });
+
+  it('bakiye hatası yedek modele geçilebilir diye işaretlenir', async () => {
+    const said =
+      'API Error: 402 {"type":"error","error":{"type":"billing_error","message":"Credit balance is too low"}}';
+    frames.current = [
+      apiError('billing_error', said),
+      { type: 'result', subtype: 'success', is_error: true, result: said },
+    ];
+    expect(await run()).toMatchObject({ ok: false, kind: 'engine', billing: true });
+    // The CLI's own error code is enough, whatever its text says.
+    frames.current = [
+      apiError('billing_error', 'Your account is not active'),
+      { type: 'result', subtype: 'success', is_error: true, result: 'Your account is not active' },
+    ];
+    const out = await run();
+    expect(out).toMatchObject({ ok: false, billing: true });
+    if (!out.ok) expect(out.message).toContain('bakiye');
+  });
+
+  it('ek kullanımla süren reddedilmiş olay planın sınırı sayılmaz', async () => {
+    const rejected = (extra: object) => ({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', ...extra },
+    });
+    const failed = { type: 'result', subtype: 'success', is_error: true, result: 'Başka bir hata' };
+    frames.current = [rejected({ overageStatus: 'allowed' }), failed];
+    expect(await run()).toMatchObject({ ok: false, kind: 'engine' });
+    frames.current = [rejected({ overageStatus: 'rejected' }), failed];
+    expect(await run()).toMatchObject({ ok: false, kind: 'limit' });
   });
 
   it('sonradan başarıyla biten tur başarılı sayılır', async () => {

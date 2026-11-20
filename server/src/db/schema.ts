@@ -548,7 +548,9 @@ export const routineRuns = pgTable(
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
     // `queued`: outside text that arrived while another run was going, kept until that one ends.
-    status: text('status', { enum: ['running', 'done', 'error', 'skipped', 'waiting', 'queued'] }).notNull(),
+    status: text('status', {
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued'],
+    }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
     /** What a queued run carries in, kept until it starts. */
@@ -1111,6 +1113,8 @@ export const whatsappChats = pgTable('whatsapp_chats', {
   jid: text('jid').primaryKey(),
   kind: text('kind', { enum: ['person', 'group'] }).notNull(),
   name: sealedText('name').notNull().default(''),
+  /** The name the person saved for the contact in their phone book; it wins over the name the contact gave. */
+  savedName: sealedText('saved_name').notNull().default(''),
   batchedSeq: bigint('batched_seq', { mode: 'number' }).notNull().default(0),
   /**
    * The end of a batch a busy routine did not take: the next hand-over offers that same batch
@@ -1119,6 +1123,17 @@ export const whatsappChats = pgTable('whatsapp_chats', {
   heldSeq: bigint('held_seq', { mode: 'number' }),
   threads: jsonb('threads').$type<Record<string, string>>().notNull().default({}),
   lastAt: timestamp('last_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Names the person saved for contacts in their phone book, by chat address. WhatsApp tells them
+ * once, when the device is linked, and later only when one changes, so they are kept for chats that
+ * start long after.
+ */
+export const whatsappSavedNames = pgTable('whatsapp_saved_names', {
+  jid: text('jid').primaryKey(),
+  name: sealedText('name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
@@ -1140,6 +1155,11 @@ export const whatsappMessages = pgTable(
     text: sealedText('text').notNull().default(''),
     /** A file that came with it, saved under this name in each following bot's folder. */
     file: jsonb('file').$type<{ name: string; size: number } | { failed: string }>(),
+    /**
+     * Waits for the chat to go quiet before it reaches the bot that wrote to the person, or the bot
+     * the chat is given to; kept here so a restart in between does not lose it.
+     */
+    awaiting: boolean('awaiting').notNull().default(false),
     at: timestamp('at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1156,6 +1176,7 @@ export const whatsappMessages = pgTable(
  */
 export const whatsappDrafts = pgTable('whatsapp_drafts', {
   id: text('id').primaryKey(),
+  /** Its card; empty for a message a bot sent at once, which the person let go without one. */
   approvalId: text('approval_id').notNull(),
   botId: text('bot_id')
     .notNull()
@@ -1173,6 +1194,8 @@ export const whatsappDrafts = pgTable('whatsapp_drafts', {
     .notNull()
     .default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** When it went out: the card may be answered long after it was drafted. */
+  sentAt: timestamp('sent_at', { withTimezone: true }),
 });
 
 /**

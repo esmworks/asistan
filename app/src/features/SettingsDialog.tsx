@@ -1,5 +1,6 @@
 import {
   botNoteGroups,
+  CONNECTION_CATALOG,
   describeSchedule,
   INTL_LOCALE,
   leavesForEngine,
@@ -32,6 +33,7 @@ import {
   Loader2,
   LogOut,
   MessageCircle,
+  Plug,
   Plus,
   RefreshCw,
   Shield,
@@ -107,7 +109,7 @@ import {
   type FontChoice,
 } from '@/lib/density';
 import { ruleLabel } from '@/lib/ruleLabel';
-import { settingsMatch } from '@/lib/settingsMatch';
+import { appsHit, settingsMatch } from '@/lib/settingsMatch';
 import { useZoom, ZOOMS } from '@/lib/zoom';
 import { cn } from '@/lib/utils';
 import { ChannelsTab } from './ChannelsTab';
@@ -233,6 +235,19 @@ export function SettingsDialog() {
   const shownTabs = tabs.filter((tb) =>
     settingsMatch(find, `${t(`settings.tab.${tb.id}`)} ${t(`settings.keywords.${tb.id}`)}`),
   );
+  // MCP servers and apps live in their own window; a search that names them leads there.
+  const { data: connections = [] } = useConnections();
+  const appsFound = appsHit(
+    find,
+    t('settings.keywords.apps'),
+    CONNECTION_CATALOG,
+    connections.map((c) => c.name),
+  );
+  const openAppsFound = () => {
+    if (!appsFound) return;
+    open(null);
+    useUi.getState().openApps({ botId: null, catalogId: appsFound.catalogId ?? undefined });
+  };
   // ⌘, / Ctrl+, opens the settings, as in most desktop apps; again closes them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -266,7 +281,9 @@ export function SettingsDialog() {
               value={find}
               onChange={(e) => setFind(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing && shownTabs[0]) open(shownTabs[0].id);
+                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                if (shownTabs[0]) open(shownTabs[0].id);
+                else openAppsFound();
               }}
               placeholder={t('settings.search')}
               aria-label={t('settings.search')}
@@ -286,6 +303,20 @@ export function SettingsDialog() {
                 {phone && <ChevronRight className="text-muted-foreground" />}
               </button>
             ))}
+            {appsFound && (
+              <button
+                onClick={openAppsFound}
+                className="flex shrink-0 items-center gap-3 rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors hover:bg-accent [&>svg]:size-4 phone:py-3 phone:text-base"
+              >
+                <Plug />
+                <span className="flex-1 truncate text-left">
+                  {appsFound.name
+                    ? t('settings.appsResultFor', { name: appsFound.name })
+                    : t('settings.appsResult')}
+                </span>
+                <ExternalLink className="text-muted-foreground" />
+              </button>
+            )}
           </nav>
         )}
         {!listing && (

@@ -1,1 +1,0 @@
-ALTER TABLE "threads" ADD COLUMN "engine_session_tokens" integer;

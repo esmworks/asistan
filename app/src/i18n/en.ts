@@ -397,6 +397,10 @@ export const en: Catalog<MessageKey> = {
   'bot.effortDefault': 'As set for all bots',
   'settings.search': 'Search settings',
   'settings.back': 'All settings',
+  'settings.keywords.apps':
+    'apps, connections, connect, mcp, mcp server, integrations, services, tools, plugins',
+  'settings.appsResult': 'Apps and connections',
+  'settings.appsResultFor': 'Apps and connections: {name}',
   'settings.keywords.profile': 'name, about me, how to address, job, focus',
   'settings.keywords.general':
     'theme, dark, light, language, zoom, notifications, sound, send key, enter, time zone, sidebar, compact, chat width, open at login, reading aloud, speech',
@@ -440,6 +444,13 @@ export const en: Catalog<MessageKey> = {
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',
+  'chat.micDenied':
+    'the microphone is turned off for this site. Allow it in the browser’s site settings (the icon left of the address), then try again.',
+  'chat.micDeniedDesktop':
+    'the microphone is turned off for Yumak Bot. On a Mac, allow it in System Settings → Privacy & Security → Microphone; elsewhere, in your system’s microphone privacy settings.',
+  'chat.micMissing': 'no microphone was found. Plug one in or choose an input device, then try again.',
+  'chat.micBusy':
+    'another app may be using the microphone, or it could not start. Close the other app and try again.',
   'chat.copyLink': 'Copy a link to this conversation',
   'chat.linkCopied': 'Link copied',
   'chat.linkGone': 'The linked conversation is not here any more.',
@@ -869,6 +880,7 @@ export const en: Catalog<MessageKey> = {
   'message.readAloud': 'Read aloud',
   'message.stopReading': 'Stop reading',
   'message.signIn': 'Sign in',
+  'message.enterKey': 'Enter key',
   'message.delete': 'Delete',
   'message.confirmDelete':
     'Delete this message from the conversation? What the bot already read of it stays with the bot.',
@@ -1299,6 +1311,7 @@ export const en: Catalog<MessageKey> = {
   'routine.run.waiting': 'waiting',
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
+  'routine.run.stopped': 'stopped',
   'routine.run.skipped': 'skipped',
   'routine.run.queued': 'queued',
   'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
@@ -2013,6 +2026,14 @@ export const en: Catalog<MessageKey> = {
   'apps.auth.none': 'No sign-in needed',
   'apps.token': 'API key',
   'apps.newToken': 'New API key',
+  'apps.headers': 'Request headers',
+  'apps.headersHint':
+    'Sent with every request to this server, for a service that wants its key under another name. Values are kept sealed and never shown again.',
+  'apps.headerName': 'Header name',
+  'apps.headerValue': 'Value',
+  'apps.headerAdd': 'Add header',
+  'apps.headerSaved': 'saved',
+  'apps.headerNameBlocked': 'This header is set by the app itself and cannot be changed.',
   'apps.tokenHint': 'Sent as an Authorization: Bearer header; never shown again.',
   'apps.tokenHelp': 'Create a {name} key',
   'apps.clientNeeded':
@@ -2208,7 +2229,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.state.error': 'The connection stopped',
   'whatsapp.error.expired': 'The QR code was not scanned in time. Link again to get a new code.',
   'whatsapp.error.ownNumber':
-    'The linked account is the same as "The number you write to the bots from". In this mode they must differ: scan the QR code with the number that will be the bot, and enter another number you will write from. To write to the bots from the same number, choose "My own number".',
+    'The linked account is the same as the number under "Your number". Scan the QR code with the number that will be the bot (e.g. a company line), and enter there not that number but your own phone’s, which you write to the bots from.',
   'whatsapp.error.loggedOut': 'WhatsApp removed this device. Link again and scan the QR code.',
   'whatsapp.error.forbidden':
     'WhatsApp refused this connection; the number may be banned. Check the account in the WhatsApp app.',
@@ -2223,17 +2244,52 @@ export const en: Catalog<MessageKey> = {
     'Recommended. A second number that will be the bot (e.g. a company line) is linked; you write to it from another number.',
   'whatsapp.mode.own': 'My own number',
   'whatsapp.modeHint.own': 'Your own account is linked; you write to the bots in "Message yourself".',
-  'whatsapp.phone': 'The number you write to the bots from',
+  'whatsapp.phone.separate': 'Your number',
+  'whatsapp.phone.own': 'The number of the account to link',
   'whatsapp.phoneHint.separate':
-    'With the country code, digits only. It must differ from the bot number you scan the QR code with; only messages from this number reach the bots as requests.',
+    'The number of your own phone, which you write to the bots from (e.g. your personal line); with the country code, digits only. Not the bot number: only messages from this number reach the bots as requests.',
   'whatsapp.phoneHint.own':
     'With the country code, digits only. The number of the account you scan the QR code with; you write to the bots in its "Message yourself" chat.',
-  'whatsapp.bot': 'The bot messages go to',
+  'whatsapp.bot': 'The bot that answers you',
   'whatsapp.botPick': 'Choose a bot',
-  'whatsapp.botHint': 'Write "/bot <name>" in WhatsApp to switch to another bot.',
+  'whatsapp.botHint':
+    'This bot answers what you write on WhatsApp; write "/bot <name>" to switch to another bot. Other people’s messages do not go to it.',
+  'whatsapp.door': 'Front-door bot',
+  'whatsapp.doorNone': 'None: nobody answers chats not given to a bot',
+  'whatsapp.doorHint':
+    'This bot answers everyone writing from a chat not given to a bot. It uses no tools and does not see your notes, profile or apps. All it can do is suggest to you, on a card, which bot the chat should go to.',
+  'whatsapp.doorRisk':
+    'Anyone who writes can ask about whatever the bot’s instructions and memory hold, so do not pick a bot you use for other work.',
+  'whatsapp.doorBot.create': 'Create a safe front-door bot',
+  'whatsapp.doorBot.created': 'Front-door bot created. Put only what anyone may know in its instructions.',
+  'whatsapp.doorBot.loose':
+    'This bot is not locked down: it is not read-only, its internet or memory is on, or it has a project folder. A separate bot is advised for the front door.',
+  'whatsapp.doorBot.name': 'Front door',
+  'whatsapp.doorBot.description':
+    'Gives the first answer on WhatsApp to people whose chat is not given to a bot.',
+  'whatsapp.doorBot.instructions':
+    'You greet people who write on WhatsApp. Answer briefly and kindly, in the language they write in.\n\nWhat anyone may know (fill in; no customers, prices, passwords or internal information):\n- Company:\n- Opening hours:\n- Address:\n- Services:\n- Contact:\n\nIf asked something not in these facts, do not make it up; say the right person will get back to them soon.',
+  'whatsapp.reply': 'Answers',
+  'whatsapp.reply.off': 'Off',
+  'whatsapp.reply.draft': 'Draft',
+  'whatsapp.reply.auto': 'Automatic',
+  'whatsapp.routes': 'Chats given to bots',
+  'whatsapp.routesHint':
+    'Give a person or a group to a bot; that bot then answers the chat, in a conversation of its own for it. There the bot sees none of your personal data or your WhatsApp, and asks before anything but answering. Draft: the answer comes to you for approval first. Automatic: it goes at once, but asks on a card when you wrote in the chat by hand or more than 5 an hour would go to it. In a group the bot works only when the account is mentioned or answered, and never writes to the group; it tells you. The answer of someone a bot sent a message to in the last 3 days goes to that bot.',
+  'whatsapp.routeNumber': 'Phone number',
+  'whatsapp.routeGroup': 'Group',
+  'whatsapp.routeAdd': 'Add a number',
+  'whatsapp.routeGroupAdd': 'Add a group',
+  'whatsapp.routeRemove': 'Remove',
+  'whatsapp.routeNoBot': 'Choose a number or group and a bot for every chat given to a bot.',
+  'whatsapp.doorOwn':
+    'On your own number the front door answers only people not saved in your phone book, and since its answer goes out from your number, it always comes to you on a card first.',
   'whatsapp.notices': 'Also tell me about other conversations',
   'whatsapp.noticesHint': "This bot's routine reports and cards where it waits for you come to WhatsApp too.",
   'whatsapp.chats': 'Let the bots look at my chats',
+  'whatsapp.autoSend': 'Let the bots send without asking',
+  'whatsapp.autoSendHint':
+    'A bot at full access sends without a card in work you asked for. Woken by the reply of someone it wrote to, it answers only that chat without a card, unless you wrote there by hand; so it may answer their questions with words you did not see. Every message that goes is written in the conversation. Messages with a file, to a number never written to, or more than 5 an hour to one chat still ask on a card.',
   'whatsapp.chatsHint':
     "When you ask, your bots read this account's chats with people and groups and draft messages; a message goes only once you approve it. Messages are kept encrypted for 30 days from when this is on.",
   'whatsapp.qrAlt': 'QR code of the WhatsApp link',
@@ -2241,7 +2297,7 @@ export const en: Catalog<MessageKey> = {
   'whatsapp.scan':
     'On the phone of the account you link, open WhatsApp → Settings → Linked devices → Link a device and scan this code. The code renews itself; setup must finish within 5 minutes.',
   'whatsapp.howTo.separate':
-    'Write to +{number} from the number you write to the bots from. /bot <name> switches to another bot, /stop stops work in progress.',
+    'Write to +{number} from your own number. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.howTo.own':
     'Write in "Message yourself" in WhatsApp. /bot <name> switches to another bot, /stop stops work in progress.',
   'whatsapp.risk':

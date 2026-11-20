@@ -13,6 +13,7 @@ import {
   SCREEN,
   VIEWPORT,
   webUrl,
+  windowedHints,
   windowedUserAgent,
 } from '../src/browser/manager';
 import { browserErrorText } from '../src/browser/text';
@@ -63,6 +64,30 @@ describe('tarayıcı yardımcıları', () => {
       `${mac} Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0`,
     );
     expect(windowedUserAgent(`${mac} Chrome/157.0.0.0 Safari/537.36`)).toBeNull();
+  });
+
+  it('headless kabuğun istemci ipuçlarından "HeadlessChrome" markasını çıkarır', () => {
+    const seen = {
+      brands: [
+        { brand: 'HeadlessChrome', version: '153' },
+        { brand: 'Not_A Brand', version: '8' },
+        { brand: 'Chromium', version: '153' },
+      ],
+      fullVersionList: [
+        { brand: 'HeadlessChrome', version: '153.0.1.2' },
+        { brand: 'Chromium', version: '153.0.1.2' },
+      ],
+      mobile: false,
+      platform: 'macOS',
+      platformVersion: '26.1.0',
+      architecture: 'arm',
+      bitness: '64',
+    };
+    const hints = windowedHints(seen)!;
+    expect(hints.brands.map((b) => b.brand)).toEqual(['Not_A Brand', 'Chromium']);
+    expect(hints.fullVersionList.map((b) => b.brand)).toEqual(['Chromium']);
+    expect(hints).toMatchObject({ platform: 'macOS', architecture: 'arm', model: '' });
+    expect(windowedHints({ ...seen, brands: seen.brands.slice(1) })).toBeNull();
   });
 
   it('hides a vault secret in every form a page may show it', () => {
@@ -1357,6 +1382,70 @@ describe.skipIf(!BROWSER)('botun tarayıcısı', () => {
     expect((await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body).toHaveLength(0);
     expect((await fieldValues(bot.id)).every((v) => v === '')).toBe(true);
   });
+
+  it('tells the bot why no login fits, and types the password of a two-step sign-in once its field shows', async () => {
+    const bot = await t.bot();
+    const other = await t.bot();
+    await t.send((await main(bot.id)).id, 'merhaba');
+    await t.services.turns.idle();
+    const secret = 'Cok-Gizli-91';
+    const twoStep = (reveals: boolean) => `<title>Giriş</title>
+      <form id="f"><label>E-posta <input type="email" id="u"></label><button>İleri</button></form>
+      <form id="g" style="display:none"><label>Şifre <input type="password" id="p"></label></form>
+      <script>
+        document.getElementById('f').addEventListener('submit', (e) => {
+          e.preventDefault();
+          ${reveals ? "setTimeout(() => { document.getElementById('g').style.display = 'block'; }, 300);" : ''}
+        });
+        document.getElementById('g').addEventListener('submit', (e) => e.preventDefault());
+      </script>`;
+    await serve(bot.id, {
+      'https://ornek.test/giris': twoStep(true),
+      'https://ornek.test/sifresiz': twoStep(false),
+    });
+    const open = async (path: string) =>
+      refOf(await text('browser_open', { url: `https://ornek.test${path}` }), 'textbox "E-posta"');
+    const decline = async () => {
+      const card = await waitFor(
+        async () => (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body[0],
+      );
+      await t.api('POST', `/api/approvals/${card.id}`, { decision: 'deny' });
+    };
+
+    // Nothing saved for the site at all.
+    let pending = text('browser_login', { username_ref: await open('/giris') });
+    await decline();
+    expect(await pending).toContain('ornek.test için kasada kayıtlı giriş yok');
+
+    // A login kept for another bot, and one for the same name under another ending: the bot is
+    // told how many and where, never whose.
+    for (const site of ['ornek.test', 'ornek.org', 'baska.test']) {
+      await t.api('POST', '/api/vault', { site, username: `kisi@${site}`, password: secret });
+    }
+    const vault = (await t.api<{ id: string; site: string }[]>('GET', '/api/vault')).body;
+    await t.api('PATCH', `/api/vault/${vault.find((v) => v.site === 'ornek.test')!.id}`, {
+      botIds: [other.id],
+    });
+    pending = text('browser_login', { username_ref: await open('/giris') });
+    await decline();
+    const told = await pending;
+    expect(told).toContain('1 giriş var ama yalnızca başka botlara açık');
+    expect(told).toContain('ornek.org için giriş kayıtlı');
+    expect(told).not.toContain('kisi@');
+    expect(told).not.toContain('baska.test');
+
+    // Opened to this bot: the username goes in, the password field appears, and it is typed too.
+    await t.api('PATCH', `/api/vault/${vault.find((v) => v.site === 'ornek.test')!.id}`, { botIds: null });
+    const done = await text('browser_login', { username_ref: await open('/giris') });
+    expect(done).toContain('giriş bilgileri yazıldı');
+    expect(done).not.toContain(secret);
+    expect(await fieldValues(bot.id)).toContain(secret);
+
+    // The field never shows: the bot is told to read the page and give the password ref.
+    const never = await text('browser_login', { username_ref: await open('/sifresiz') });
+    expect(never).toContain('şifre alanı görünmedi');
+    expect((await fieldValues(bot.id)).includes(secret)).toBe(false);
+  }, 60_000);
 
   it('hides a typed password in the address, the title and the tabs, and takes no picture of it', async () => {
     const bot = await t.bot();

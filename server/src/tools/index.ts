@@ -50,6 +50,7 @@ import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 import { OWNER_ID } from '../users';
 import { atLeast, managesServer } from '../services/access';
+import { closestNames } from '../services/bots';
 import { privateHost } from '../services/skill-link';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
@@ -110,6 +111,7 @@ const TEAM_OFF = new Set<string>([
   'open_conversation',
   'bot_send',
   'bot_status',
+  'bot_requests',
   'bot_stop',
 ]);
 
@@ -197,6 +199,7 @@ export type ToolName =
   | 'whatsapp_send'
   | 'whatsapp_status'
   | 'whatsapp_follow'
+  | 'whatsapp_suggest_route'
   | 'page_to_image'
   | 'browser_open'
   | 'browser_snapshot'
@@ -243,6 +246,7 @@ export type ToolName =
   | 'open_conversation'
   | 'bot_send'
   | 'bot_status'
+  | 'bot_requests'
   | 'bot_stop'
   | 'reply_files'
   | 'bot_conversations_read'
@@ -334,6 +338,8 @@ export class ToolFactory {
     whatsappOwner?: string | null;
     /** Whether a routine of the bot reads WhatsApp chats. */
     whatsappReader?: boolean;
+    /** A WhatsApp chat the bot answers for the person: one given to it, or the front door. */
+    contact?: 'route' | 'door';
   }): AppTool[] {
     const { bot, thread, turn, signal, t, plan } = opts;
     const reads = () => opts.outside?.() ?? null;
@@ -349,8 +355,9 @@ export class ToolFactory {
     const s = this.services;
     // Whom the turn works for: who asked, else whose conversation it is, else the bot's owner.
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
-    // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins.
-    const team = thread.kind === 'team';
+    // A team conversation acts for who asked but uses no one's own notes, apps or sign-ins; so
+    // does a WhatsApp chat a bot answers for the person, where someone else writes.
+    const team = thread.kind === 'team' || !!opts.contact;
     const own = team ? null : person;
     // Asked by someone with no account here (a Discord member): the turn acts for the person it
     // works for, but may do no more with the bots than talk with them.
@@ -358,7 +365,22 @@ export class ToolFactory {
     /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
     const reachBot = async (ref: string, wanted: 'chat' | 'edit') => {
       if (guest && wanted === 'edit') throw notFound('bot');
-      return s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+      const target = await s.bots.resolve(ref, bot).catch(async (err: unknown) => {
+        if (!(err instanceof HttpError) || err.key !== 'error.noBotNamed') throw err;
+        // Only bots the person reaches are offered, so a wrong name never shows another's bot.
+        const reachable = new Set(await s.access.botIds(await s.access.viewerOf(person), 'chat'));
+        const names = (await s.bots.list()).filter((b) => b.id !== bot.id && reachable.has(b.id));
+        const close = closestNames(
+          ref,
+          names.map((b) => b.name),
+        );
+        if (!close.length) throw err;
+        throw new HttpError(404, 'error.noBotNamedDidYouMean', {
+          ref,
+          names: close.map((n) => `"${n}"`).join(', '),
+        });
+      });
+      return s.access.reach(person, bot, target, wanted);
     };
     let levelHere: Promise<BotLevel> | undefined;
     /** What the person may do with this bot. */
@@ -625,17 +647,19 @@ export class ToolFactory {
           // The person's own, open to this bot only; they can open it to others in the apps window.
           let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] }, person);
           if (c.status === 'signed-out') {
-            // The server wants a sign-in: it becomes an OAuth connection for the person to sign in to.
-            c = await s.connections.update(c.id, { auth: 'oauth' });
+            // The server wants a sign-in: it became an OAuth connection for the person to sign in
+            // to, or, when it offers no sign-in and wants a key, one they enter the key for.
+            const needsKey = c.auth === 'token';
+            if (!needsKey && c.auth !== 'oauth') c = await s.connections.update(c.id, { auth: 'oauth' });
             await s.threads.addMessage({
               threadId: thread.id,
               role: 'system',
               author: `bot:${bot.id}`,
-              text: t('tool.appSignInCard', { name: c.name }),
+              text: t(needsKey ? 'connection.needsKeyCardText' : 'tool.appSignInCard', { name: c.name }),
               props: { connectionSignIn: c.id },
               turnId: turn.id,
             });
-            return t('tool.appNeedsSignIn', { name: c.name });
+            return t(needsKey ? 'tool.appNeedsKey' : 'tool.appNeedsSignIn', { name: c.name });
           }
           if (c.status === 'error') return t('tool.appFailed', { name: c.name, message: c.error ?? '' });
           const tools = c.tools.map((x) => x.name).join(', ') || '-';
@@ -1263,6 +1287,30 @@ export class ToolFactory {
           ]
         : []),
       def(
+        'bot_requests',
+        {},
+        async () => {
+          const rows = await s.jobs.requestsFrom(bot.id);
+          if (!rows.length) return t('tool.requestsNone');
+          const clock = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ');
+          return rows
+            .map((r) =>
+              t(r.reply === null ? 'tool.requestLine' : 'tool.requestLineReply', {
+                id: r.id,
+                to: r.toBotName ?? '?',
+                status: t(
+                  `tool.requestStatus.${r.kind === 'notify' && r.status === 'done' ? 'notified' : r.status}`,
+                ),
+                at: clock(r.createdAt),
+                request: truncate(r.request.replace(/\s+/g, ' '), 120),
+                reply: truncate((r.reply ?? '').replace(/\s+/g, ' '), 160),
+              }),
+            )
+            .join('\n');
+        },
+        'read',
+      ),
+      def(
         'bot_stop',
         { job_id: z.string() },
         async ({ job_id }) => {
@@ -1328,6 +1376,19 @@ export class ToolFactory {
       );
     }
     if (opts.email) tools.push(...emailTools({ def, services: s, bot, address: opts.email, t }));
+    // The front door's one tool: the chat is its own, never one it names.
+    if (opts.contact === 'door') {
+      tools.push(
+        def(
+          'whatsapp_suggest_route',
+          { bot: z.string().min(1).max(200), reason: z.string().min(1).max(1000) },
+          async ({ bot: ref, reason }) =>
+            s.whatsapp.suggestRoute({ threadId: thread.id, botId: bot.id, ref, reason }, t),
+          'internal',
+        ),
+      );
+    }
+    let askedOnce: Promise<boolean> | null = null;
     // Someone's WhatsApp chats are theirs alone: not in a team conversation, nor for a guest.
     if (opts.whatsappOwner && opts.whatsappOwner === person && !team && !guest) {
       tools.push(
@@ -1342,7 +1403,17 @@ export class ToolFactory {
           reader: !!opts.whatsappReader,
           // Every chat is reached only for the person's own message or a routine they saved, not
           // for a run a mail, a webhook, a watched page or a WhatsApp chat started.
-          asked: async () => (await requestedBy(this.ctx, turn)) !== null,
+          // Read once: a run that reads a chat is marked as outside text from then on, which must
+          // not make the person's own work look like nobody asked for it.
+          // A contact's answer comes in as a message in the conversation, but is their words, not
+          // the person's.
+          asked: () =>
+            (askedOnce ??=
+              turn.outside === 'whatsapp'
+                ? Promise.resolve(false)
+                : requestedBy(this.ctx, turn).then((x) => x !== null)),
+          woken: () => s.whatsapp.wokenBy(turn),
+          unwatched: () => !attended(turn.source) && !!reads(),
           // Reading someone's chats starts only on the person's own word, whatever the bot's level.
           askOpen: async () => {
             const yes = t('tool.whatsappFollowYes');

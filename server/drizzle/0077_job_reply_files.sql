@@ -1,1 +1,0 @@
-ALTER TABLE "jobs" ADD COLUMN "reply_files" jsonb DEFAULT '[]'::jsonb NOT NULL;

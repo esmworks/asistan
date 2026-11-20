@@ -112,6 +112,42 @@ export function windowedUserAgent(userAgent: string): string | null {
   return userAgent.includes('HeadlessChrome/') ? userAgent.replaceAll('HeadlessChrome/', 'Chrome/') : null;
 }
 
+/** A secure address no network answers, for the page that learns the browser's identity. */
+const PROBE_URL = 'https://identity.invalid/';
+
+/** What a page reads of the browser's client hints, from `navigator.userAgentData`. */
+export interface SeenHints {
+  brands: { brand: string; version: string }[];
+  fullVersionList?: { brand: string; version: string }[];
+  mobile: boolean;
+  platform: string;
+  platformVersion?: string;
+  architecture?: string;
+  model?: string;
+  bitness?: string;
+}
+
+/**
+ * The client hints of the same browser with a window. A headless shell also names itself
+ * "HeadlessChrome" among its brands, in the `sec-ch-ua` header and on the page, which the user agent
+ * alone does not change. Null when there is nothing to change.
+ */
+export function windowedHints(seen: SeenHints) {
+  const plain = (list: { brand: string; version: string }[]) =>
+    list.filter((b) => b.brand !== 'HeadlessChrome');
+  if (plain(seen.brands).length === seen.brands.length) return null;
+  return {
+    brands: plain(seen.brands),
+    fullVersionList: plain(seen.fullVersionList ?? []),
+    mobile: seen.mobile,
+    platform: seen.platform,
+    platformVersion: seen.platformVersion ?? '',
+    architecture: seen.architecture ?? '',
+    model: seen.model ?? '',
+    bitness: seen.bitness ?? '',
+  };
+}
+
 /** Only web addresses: no file://, chrome:// or javascript: (the browser runs next to the server's data). */
 export function webUrl(raw: string): URL {
   const text = raw.trim();
@@ -310,6 +346,11 @@ export class BrowserManager {
   private sweep: NodeJS.Timeout | null = null;
   private closed = false;
   private userAgent: Promise<string | undefined> | null = null;
+  /** Set on each page of a launched headless browser whose hints still say it is headless. */
+  private hints: {
+    userAgent: string;
+    userAgentMetadata: NonNullable<ReturnType<typeof windowedHints>>;
+  } | null = null;
   private windows = new Map<string, Window>();
 
   constructor(private opts: BrowserManagerOptions) {}
@@ -995,7 +1036,37 @@ export class BrowserManager {
       });
       try {
         const page = await browser.newPage();
-        return windowedUserAgent(await page.evaluate(() => navigator.userAgent)) ?? undefined;
+        // Client hints are given only to a secure page; this one is answered here, never fetched.
+        await page.route(PROBE_URL, (route) => route.fulfill({ body: '', contentType: 'text/html' }));
+        await page.goto(PROBE_URL).catch(() => {});
+        const seen = await page.evaluate(async () => {
+          const data = (
+            navigator as unknown as {
+              userAgentData?: Omit<SeenHints, 'fullVersionList'> & {
+                getHighEntropyValues(keys: string[]): Promise<Partial<SeenHints>>;
+              };
+            }
+          ).userAgentData;
+          const high = data
+            ? await data.getHighEntropyValues([
+                'architecture',
+                'bitness',
+                'model',
+                'platformVersion',
+                'fullVersionList',
+              ])
+            : {};
+          return {
+            userAgent: navigator.userAgent,
+            hints: data
+              ? { brands: data.brands, mobile: data.mobile, platform: data.platform, ...high }
+              : null,
+          };
+        });
+        const userAgent = windowedUserAgent(seen.userAgent) ?? undefined;
+        const metadata = seen.hints ? windowedHints(seen.hints as SeenHints) : null;
+        if (metadata) this.hints = { userAgent: userAgent ?? seen.userAgent, userAgentMetadata: metadata };
+        return userAgent;
       } finally {
         await browser.close();
       }
@@ -1074,7 +1145,10 @@ export class BrowserManager {
     // The wall leaves a binding on every page's window, one more mark of a program for bot guards.
     // A desktop shows the passkey window on its own screen, where the bot or the person closes it.
     if (!remote) await this.wallPasskeys(live, context);
-    for (const p of context.pages()) this.track(live, p);
+    for (const p of context.pages()) {
+      this.track(live, p);
+      if (!remote) await this.disguise(live, p);
+    }
     context.on('page', (p) => {
       // On the person's desktop the browser is theirs too: their own tabs are never closed.
       if (!live.remote && !live.userControl && this.openTabs(live).length > MAX_TABS) {
@@ -1084,6 +1158,7 @@ export class BrowserManager {
         return;
       }
       this.track(live, p);
+      if (!live.remote) void this.disguise(live, p);
       // Links that open a new tab: follow them, as a person would.
       this.activate(live, p);
     });
@@ -1101,6 +1176,17 @@ export class BrowserManager {
     if (this.watchers.has(botId)) void this.startCast(live);
     this.emitState(live);
     return live;
+  }
+
+  /** Gives a page of a headless shell the client hints of a windowed browser (see windowedHints). */
+  private async disguise(live: Live, page: Page) {
+    if (!this.hints) return;
+    try {
+      const cdp = await live.context.newCDPSession(page);
+      await cdp.send('Emulation.setUserAgentOverride', this.hints);
+    } catch {
+      // A page already gone, or a browser without the protocol: it keeps its own hints.
+    }
   }
 
   private track(live: Live, page: Page) {

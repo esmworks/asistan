@@ -286,12 +286,15 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     models: claudeModels,
   };
   // A failed turn for lack of login updates the status without polling the CLI.
+  const markSignedOut = () => {
+    claudeStatus = { status: 'logged-out', detail: null };
+    bus.refresh({ scope: 'info' });
+  };
   services.turns.onFinished(async (_t, o) => {
-    if (!o.ok && o.kind === 'auth') {
-      claudeStatus = { status: 'logged-out', detail: null };
-      bus.refresh({ scope: 'info' });
-    }
+    if (!o.ok && o.kind === 'auth') markSignedOut();
   });
+  // A backup model may carry the turn, so its outcome alone would hide the expired sign-in.
+  services.turns.onSignedOut(markSignedOut);
 
   let shellSandbox: ServerInfo['shellSandbox'] = { status: 'unknown', detail: null };
   if (!opts.engine && !fake) {

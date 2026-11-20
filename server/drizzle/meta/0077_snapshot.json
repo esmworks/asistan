@@ -1,6 +1,6 @@
 {
-  "id": "b1d35928-b197-446c-b4a5-1f3935170f7f",
-  "prevId": "a44e329e-ccb6-47cc-9601-7728d2d72e85",
+  "id": "099cdd1d-db51-4196-8387-3810e4c9a9f8",
+  "prevId": "2f8d859d-8cc0-40de-af82-3b51a5c623ee",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1855,6 +1855,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sign_in_codes": {
+          "name": "sign_in_codes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -4339,6 +4346,12 @@
           "notNull": true,
           "default": "''"
         },
+        "steps": {
+          "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
@@ -4608,6 +4621,13 @@
           "notNull": true,
           "default": "''"
         },
+        "title_auto": {
+          "name": "title_auto",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -4636,6 +4656,12 @@
         "engine_session_cost_usd": {
           "name": "engine_session_cost_usd",
           "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "engine_session_tokens": {
+          "name": "engine_session_tokens",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -5513,6 +5539,13 @@
           "notNull": true,
           "default": "''"
         },
+        "saved_name": {
+          "name": "saved_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "batched_seq": {
           "name": "batched_seq",
           "type": "bigint",
@@ -5621,6 +5654,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -5726,6 +5765,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "awaiting": {
+          "name": "awaiting",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "at": {
           "name": "at",
           "type": "timestamp with time zone",
@@ -5793,6 +5839,38 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.whatsapp_saved_names": {
+      "name": "whatsapp_saved_names",
+      "schema": "",
+      "columns": {
+        "jid": {
+          "name": "jid",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

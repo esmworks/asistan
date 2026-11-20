@@ -28,6 +28,9 @@ import {
  *   [kesik]              after the directives before it, cut the reply off on the turn's first run
  *   [kesik-hep]          after the directives before it, cut the reply off on every run
  *   [özet]               report that the conversation was condensed into a summary
+ *   [çöktü]              after the directives before it, the Claude Code process dies on the turn's first run
+ *   [çöktü-hep]          after the directives before it, it dies on every run of a Claude model
+ *   [bakiye]             fail as if the provider's balance were spent (a backup is not under it)
  *   [giriş-yok]          fail as if logged out
  *   [sınır]              fail as if the usage limit were spent until 2026-11-16 09:00 UTC
  *   [sınır-sonra]        after the directives before it, fail as [sınır] does
@@ -49,6 +52,7 @@ export class FakeEngine implements Engine {
   private totals = new Map<string, number>();
   /** Turns whose reply `[kesik]` has cut off once already. */
   private cutTurns = new Set<string>();
+  private crashedTurns = new Set<string>();
   public requests: TurnRequest[] = [];
   public gates: GateRequest[] = [];
   /** The requests of `complete`, and what answers them (the memory review); a test sets `completer`. */
@@ -169,6 +173,16 @@ export class FakeEngine implements Engine {
     if (req.prompt.includes('[adım-sınırı]')) {
       return { ok: false, kind: 'engine', message: 'Adım sınırı', text: '', sessionId, stepLimit: true };
     }
+    if (req.prompt.includes('[bakiye]') && !req.model.includes('/')) {
+      return {
+        ok: false,
+        kind: 'engine',
+        message: 'Credit balance is too low',
+        text: '',
+        sessionId,
+        billing: true,
+      };
+    }
     if (req.prompt.includes('[giriş-yok]') && !req.model.includes('/')) {
       return { ok: false, kind: 'auth', message: 'Not logged in', text: '', sessionId };
     }
@@ -204,7 +218,7 @@ export class FakeEngine implements Engine {
     const spent = cost ? Number(cost[1]) : 0;
     const parts: string[] = [];
     const directive =
-      /\[(izin|araç|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra|kesik|kesik-hep)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
+      /\[(izin|araç|uzun-araç|bekle|hata|özet|meşgul-sonra|sınır-sonra|kesik|kesik-hep|çöktü|çöktü-hep)(?::([^\s\]]+))?(?:\s+(\{.*?\}))?\](?=\s|$)/g;
     for (const m of req.prompt.matchAll(directive)) {
       const [, kind, name, json] = m;
       if (req.signal.aborted) break;
@@ -239,6 +253,23 @@ export class FakeEngine implements Engine {
           costUsd: spent,
           transient: true,
           cut: true,
+        };
+      }
+      // The CLI's process exits; a backup model is not under it.
+      if (
+        !req.model.includes('/') &&
+        (kind === 'çöktü-hep' || (kind === 'çöktü' && !this.crashedTurns.has(req.turnId)))
+      ) {
+        this.crashedTurns.add(req.turnId);
+        return {
+          ok: false,
+          kind: 'engine',
+          message: 'Claude Code process exited with code 1',
+          text: parts.join('\n'),
+          sessionId,
+          costUsd: spent,
+          transient: true,
+          crashed: true,
         };
       }
       if (kind === 'meşgul-sonra' && !req.model.includes('/')) {

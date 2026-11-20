@@ -1,5 +1,13 @@
-import type { Bot, WhatsAppMode, WhatsAppStatus } from '@yumakbot/shared';
+import type {
+  Bot,
+  WhatsAppDoor,
+  WhatsAppMode,
+  WhatsAppReplyMode,
+  WhatsAppRoute,
+  WhatsAppStatus,
+} from '@yumakbot/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -8,7 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
-import { useBots } from '@/lib/queries';
+import { newBotEngine } from '@/lib/new-bot';
+import { useBots, useSettings } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Card } from './SettingsDialog';
 import { EmailCard } from './EmailCard';
@@ -45,6 +55,48 @@ export function ChannelsTab() {
   );
 }
 
+/** A value for "no bot" in a select, which cannot hold an empty one. */
+const NONE = '-';
+
+/**
+ * Whether a bot is set up the way the front door should be: it reads only, has no internet,
+ * memory or project folder. The door keeps its tools off by itself; what the bot's instructions
+ * and memory hold, anyone who writes can ask about.
+ */
+const lockedDown = (b: Bot) => b.permissionMode === 'readonly' && !b.internet && !b.memory && !b.projectDir;
+
+/** How a bot answers a chat: not at all, on a card, or at once. */
+function ReplyModeSelect({
+  value,
+  onChange,
+  cardsOnly = false,
+}: {
+  value: WhatsAppReplyMode;
+  onChange: (m: WhatsAppReplyMode) => void;
+  /** Answers always wait on a card: no automatic sending to offer. */
+  cardsOnly?: boolean;
+}) {
+  const t = useT();
+  const modes = cardsOnly ? (['off', 'draft'] as const) : (['off', 'draft', 'auto'] as const);
+  return (
+    <Select
+      value={cardsOnly && value === 'auto' ? 'draft' : value}
+      onValueChange={(v) => onChange(v as WhatsAppReplyMode)}
+    >
+      <SelectTrigger className="w-36 rounded-xl" aria-label={t('whatsapp.reply')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {modes.map((m) => (
+          <SelectItem key={m} value={m}>
+            {t(`whatsapp.reply.${m}`)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function WhatsAppCard() {
   const { data: status } = useQuery({ queryKey: ['whatsapp'], queryFn: api.whatsapp });
   const { data: bots } = useBots();
@@ -52,7 +104,15 @@ function WhatsAppCard() {
   // The form starts again from what is saved whenever that changes (saved, or disconnected).
   return (
     <WhatsAppForm
-      key={`${status.mode}:${status.phone}:${status.botId}:${status.chats}`}
+      key={JSON.stringify([
+        status.mode,
+        status.phone,
+        status.botId,
+        status.chats,
+        status.autoSend,
+        status.door,
+        status.routes,
+      ])}
       status={status}
       bots={bots}
     />
@@ -68,9 +128,74 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const [botId, setBotId] = useState(status.botId ?? live.find((b) => b.isManager)?.id ?? live[0]?.id ?? '');
   const [notices, setNotices] = useState(status.notices);
   const [chats, setChats] = useState(status.chats);
+  const [autoSend, setAutoSend] = useState(status.autoSend);
+  const [door, setDoor] = useState<WhatsAppDoor | null>(status.door);
+  const [routes, setRoutes] = useState<(WhatsAppRoute & { name: string })[]>(status.routes);
+  const connected = status.state === 'connected';
+  const { data: groups } = useQuery({
+    queryKey: ['whatsapp-groups'],
+    queryFn: api.whatsappGroups,
+    enabled: connected,
+  });
+  const form = () => {
+    // A number as it is typed, with spaces or a plus, is kept as its digits.
+    const given = routes.map(({ name: _name, ...r }) => ({
+      ...r,
+      chat: r.chat.includes('@') ? r.chat : r.chat.replace(/\D/g, ''),
+    }));
+    // A row left empty is dropped; one half filled stops the save, not to be lost unseen.
+    if (given.some((r) => !r.chat !== !r.botId)) throw new Error(t('whatsapp.routeNoBot'));
+    return {
+      mode,
+      phone,
+      botId: botId || null,
+      notices,
+      chats,
+      autoSend,
+      door,
+      routes: given.filter((r) => r.chat && r.botId),
+    };
+  };
+  const setRoute = (i: number, change: Partial<WhatsAppRoute>) =>
+    setRoutes((all) => all.map((r, j) => (j === i ? { ...r, ...change } : r)));
+  const groupName = (chat: string) => groups?.find((g) => g.id === chat)?.name;
+  const { data: settings } = useSettings();
+  const openSettings = useUi((s) => s.openSettings);
+  const openBotDialog = useUi((s) => s.openBotDialog);
+  const doorBot = door ? live.find((b) => b.id === door.botId) : undefined;
+  // A bot made for the front door alone, locked down; the door is saved with it, and its
+  // instructions open next, to be filled with what anyone may know.
+  const makeDoor = useMutation({
+    mutationFn: async () => {
+      // The form is saved first, so a number it cannot take stops here and leaves no bot behind
+      // that no door points to.
+      await api.setWhatsapp(form());
+      const bot = await api.createBot({
+        name: t('whatsapp.doorBot.name'),
+        description: t('whatsapp.doorBot.description'),
+        instructions: t('whatsapp.doorBot.instructions'),
+        permissionMode: 'readonly',
+        internet: false,
+        memory: false,
+        projectDir: null,
+        ...(settings ? newBotEngine(settings) : {}),
+      });
+      const made = { botId: bot.id, mode: 'draft' as const };
+      setDoor(made);
+      return { bot, status: await api.setWhatsapp({ ...form(), door: made }) };
+    },
+    onSuccess: ({ bot, status: s }) => {
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+      put(s);
+      toast.success(t('whatsapp.doorBot.created'));
+      openSettings(null);
+      openBotDialog({ mode: 'edit', botId: bot.id });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
   const put = (s: WhatsAppStatus) => qc.setQueryData(['whatsapp'], s);
   const save = useMutation({
-    mutationFn: () => api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats }),
+    mutationFn: () => api.setWhatsapp(form()),
     onSuccess: (s) => {
       put(s);
       toast.success(t('whatsapp.saved'));
@@ -80,7 +205,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
   const link = useMutation({
     mutationFn: async () => {
       // What is in the form is what the new link is for.
-      await api.setWhatsapp({ mode, phone, botId: botId || null, notices, chats });
+      await api.setWhatsapp(form());
       return api.linkWhatsapp();
     },
     onSuccess: put,
@@ -130,7 +255,7 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           ))}
         </div>
         <label className="block space-y-1">
-          <span className="text-sm font-medium">{t('whatsapp.phone')}</span>
+          <span className="text-sm font-medium">{t(`whatsapp.phone.${mode}`)}</span>
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -170,6 +295,139 @@ function WhatsAppForm({ status, bots }: { status: WhatsAppStatus; bots: Bot[] })
           </span>
           <Switch checked={chats} onCheckedChange={setChats} />
         </label>
+        <label className="flex items-center justify-between gap-4">
+          <span>
+            <span className="block text-sm">{t('whatsapp.autoSend')}</span>
+            <span className="block text-xs text-muted-foreground">{t('whatsapp.autoSendHint')}</span>
+          </span>
+          <Switch checked={autoSend} onCheckedChange={setAutoSend} />
+        </label>
+
+        <div className="space-y-2">
+          <span className="block text-sm font-medium">{t('whatsapp.door')}</span>
+          <div className="flex flex-wrap gap-2">
+            <Select
+              value={door?.botId ?? NONE}
+              onValueChange={(v) => setDoor(v === NONE ? null : { botId: v, mode: door?.mode ?? 'draft' })}
+            >
+              <SelectTrigger className="min-w-0 flex-1 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>{t('whatsapp.doorNone')}</SelectItem>
+                {live.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {door && (
+              <ReplyModeSelect
+                value={door.mode}
+                onChange={(m) => setDoor({ ...door, mode: m })}
+                cardsOnly={mode === 'own'}
+              />
+            )}
+          </div>
+          {mode === 'own' && (
+            <span className="block text-xs text-muted-foreground">{t('whatsapp.doorOwn')}</span>
+          )}
+          {!doorBot && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-xl"
+              disabled={makeDoor.isPending}
+              onClick={() => makeDoor.mutate()}
+            >
+              {t('whatsapp.doorBot.create')}
+            </Button>
+          )}
+          {doorBot && !lockedDown(doorBot) && (
+            <p className="text-xs text-destructive">{t('whatsapp.doorBot.loose')}</p>
+          )}
+          <span className="block text-xs text-muted-foreground">{t('whatsapp.doorHint')}</span>
+          <span className="block text-xs text-muted-foreground">{t('whatsapp.doorRisk')}</span>
+        </div>
+
+        <div className="space-y-2">
+          <span className="block text-sm font-medium">{t('whatsapp.routes')}</span>
+          <span className="block text-xs text-muted-foreground">{t('whatsapp.routesHint')}</span>
+          {routes.map((r, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              {r.chat.includes('@') ? (
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {groupName(r.chat) || r.name || t('whatsapp.routeGroup')}
+                </span>
+              ) : (
+                <Input
+                  value={r.chat}
+                  onChange={(e) => setRoute(i, { chat: e.target.value })}
+                  inputMode="tel"
+                  placeholder="905321234567"
+                  aria-label={t('whatsapp.routeNumber')}
+                  className="min-w-0 flex-1 rounded-xl"
+                />
+              )}
+              <Select value={r.botId} onValueChange={(v) => setRoute(i, { botId: v })}>
+                <SelectTrigger className="w-40 rounded-xl">
+                  <SelectValue placeholder={t('whatsapp.botPick')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {live.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ReplyModeSelect value={r.mode} onChange={(m) => setRoute(i, { mode: m })} />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t('whatsapp.routeRemove')}
+                onClick={() => setRoutes((all) => all.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-xl"
+              onClick={() => setRoutes((all) => [...all, { chat: '', botId: '', mode: 'draft', name: '' }])}
+            >
+              {t('whatsapp.routeAdd')}
+            </Button>
+            {connected && !!groups?.length && (
+              <Select
+                value=""
+                onValueChange={(id) =>
+                  setRoutes((all) =>
+                    all.some((r) => r.chat === id)
+                      ? all
+                      : [...all, { chat: id, botId: '', mode: 'draft', name: groupName(id) ?? '' }],
+                  )
+                }
+              >
+                <SelectTrigger className="w-48 rounded-xl">
+                  <SelectValue placeholder={t('whatsapp.routeGroupAdd')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
 
         {state === 'linking' && (
           <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-secondary/60 p-4">

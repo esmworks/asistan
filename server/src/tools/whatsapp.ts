@@ -3,11 +3,9 @@ import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import { PhoneNumber, type Bot, type WhatsAppGroup } from '@yumakbot/shared';
 import type { ChatReads } from '../channels/whatsapp';
 import { z } from 'zod';
-import { schema } from '../db';
 import type { AppTool } from '../engine/types';
 import type { T } from '../i18n';
 import type { Services } from '../services';
-import { newId } from '../util';
 import { realPath } from '../workspace';
 import type { Define } from './index';
 
@@ -37,6 +35,13 @@ export function whatsappTools(opts: {
    * may the bot reach chats beyond its routines', or ask to.
    */
   asked: () => Promise<boolean>;
+  /**
+   * The chat whose reply started this turn, if one did: the turn reaches it too. `typed` when
+   * someone also wrote in it by hand.
+   */
+  woken: () => Promise<{ chat: string; typed: boolean }[]>;
+  /** Whether the turn read outside text with nobody there to see what it does. */
+  unwatched: () => boolean;
   /** Asks the person on a card whether the bots may read every chat. */
   askOpen: () => Promise<'yes' | 'no' | 'timeout'>;
   t: T;
@@ -47,7 +52,14 @@ export function whatsappTools(opts: {
   /** The chats the bot sees: all of them once the person allowed it, else its routines'; null for none. */
   const reach = async (): Promise<ChatReads | null> => {
     if ((await wa.chatsOpen()) && (await opts.asked())) return every;
-    return opts.reader ? s.routines.whatsappReadsOf(bot.id) : null;
+    const own = opts.reader ? await s.routines.whatsappReadsOf(bot.id) : null;
+    const woke = await opts.woken();
+    if (!woke.length) return own;
+    return {
+      groups: own?.groups ?? new Set(),
+      people: own?.people ?? false,
+      chats: new Set(woke.map((w) => w.chat)),
+    };
   };
   /**
    * The chats the bot sees, or the person is asked first; a string is what the tool answers when
@@ -62,6 +74,31 @@ export function whatsappTools(opts: {
     if (answer !== 'yes') return r ?? t('tool.whatsappOpenSkipped');
     await wa.openChats(true);
     return every;
+  };
+
+  /** Whether a message to `chat` goes at once, without a card. */
+  const sendsAtOnce = async (chat: string) => {
+    if (bot.permissionMode !== 'auto' && bot.permissionMode !== 'review') return false;
+    if (!(await wa.autoSendOn())) return false;
+    // A reply's turn answers only that chat, and not over someone who answered it by hand.
+    const woke = await opts.woken();
+    if (woke.length) return woke.some((w) => w.chat === chat && !w.typed);
+    // Outside text read on the way (a mail, a page, a chat) with nobody watching: on a card.
+    if (opts.unwatched()) return false;
+    return opts.asked();
+  };
+
+  /**
+   * Whether `ref` is a chat this bot wrote to with the person's approval a little while ago and
+   * the person still lets the bots read: its answers come to the bot, which may then read the chat
+   * and draft a reply (still a card) though no routine of the bot reads it and the run started
+   * from the contact's own words.
+   */
+  const answering = async (ref: string): Promise<boolean> => {
+    const phone = PhoneNumber.safeParse(ref.trim());
+    const chat = phone.success ? `${phone.data}@s.whatsapp.net` : ref.trim();
+    if ((await wa.replyOwner(chat))?.botId !== bot.id) return false;
+    return (await wa.chatsOpen()) || (await s.routines.whatsappReads()).people;
   };
 
   /** A file the bot names, when it is inside one of its own folders. */
@@ -83,43 +120,7 @@ export function whatsappTools(opts: {
     reject: string;
   }) => {
     const thread = await s.threads.main(bot.id, person);
-    let made!: () => void;
-    const created = new Promise<void>((done) => (made = done));
-    const id = newId();
-    const asked = s.approvals.ask({
-      threadId: thread.id,
-      botId: bot.id,
-      turnId: null,
-      kind: 'question',
-      toolName: d.kind === 'status' ? 'whatsapp_status' : 'whatsapp_send',
-      input: { chat: d.chat, text: d.text, file: d.file },
-      summary: d.summary,
-      options: [d.approve, d.reject],
-      onCreated: async (ap) => {
-        await s.ctx.db.insert(schema.whatsappDrafts).values({
-          id,
-          approvalId: ap.id,
-          botId: bot.id,
-          threadId: thread.id,
-          kind: d.kind,
-          chat: d.chat,
-          text: d.text,
-          file: d.file,
-          approve: d.approve,
-        });
-        await s.threads.addMessage({
-          threadId: thread.id,
-          role: 'approval',
-          author: `bot:${bot.id}`,
-          text: ap.summary,
-          props: { approvalId: ap.id },
-        });
-        made();
-      },
-    });
-    // The answer is handled by the channel when it comes, not by this turn.
-    void asked.catch((err: unknown) => console.warn('whatsapp draft card', err));
-    await Promise.race([created, asked.then(() => undefined)]);
+    await wa.putOnCard({ ...d, botId: bot.id, threadId: thread.id });
     return t('tool.whatsappDrafted');
   };
 
@@ -142,7 +143,7 @@ export function whatsappTools(opts: {
       'whatsapp_history',
       { chat: z.string().min(3).max(120), limit: z.number().int().min(1).max(200).default(50) },
       async ({ chat, limit }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(chat)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         // A chat the bot's routines do not read: the person may let it see every chat.
         if (!r.all && !(await wa.knownChat(chat, r)) && (await wa.knownChat(chat))) {
@@ -168,9 +169,10 @@ export function whatsappTools(opts: {
         file: z.string().max(1000).optional(),
       },
       async ({ chat: ref, text, file }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(ref)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         let chat = ref.trim();
+        let fresh = false;
         let known = await wa.knownChat(chat, r);
         // A number, or a chat the bot's routines do not read: the person may let it reach every chat.
         const phone = PhoneNumber.safeParse(chat);
@@ -190,6 +192,7 @@ export function whatsappTools(opts: {
             if (found === null) return t('tool.whatsappNotOnWhatsApp', { phone: phone.data });
             chat = asChat;
             known = { name: '', kind: 'person' };
+            fresh = true;
           }
         }
         if (!known) return t(r.all ? 'tool.whatsappUnknownChatOpen' : 'tool.whatsappUnknownChat', { chat });
@@ -200,6 +203,15 @@ export function whatsappTools(opts: {
         if (!text.trim() && !path) return t('tool.whatsappEmpty');
         const number = chat.replace(/@.*$/, '');
         const to = known.name ? `${known.name} (${number})` : `+${number}`;
+        // Without a card only when the person let the bots send so, the bot is at full access, no
+        // file goes along, and it is the person's own work or the answer to the chat that woke it.
+        // A first message to a number goes on a card: many at once is how a linked number gets barred.
+        if (!path && !fresh && (await sendsAtOnce(chat))) {
+          const thread = await s.threads.main(bot.id, person);
+          const sent = await wa.sendNow({ botId: bot.id, threadId: thread.id, chat, text: text.trim() });
+          if (sent === 'sent') return t('tool.whatsappSentNow', { to });
+          if (sent !== 'card') return t('whatsapp.draftFailed', { message: sent.failed });
+        }
         const summary = [
           t('whatsapp.draftCard', { to, text: text.trim() }),
           ...(path ? ['', t('whatsapp.draftCardFile', { name: basename(path) })] : []),

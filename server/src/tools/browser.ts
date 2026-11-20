@@ -299,6 +299,9 @@ export function enterSends(c: ControlInfo | null): boolean {
   return clickSends(c);
 }
 
+/** How long a sign-in with only the username waits for the password field the page shows next. */
+const PASSWORD_WAIT_MS = 4_000;
+
 /** Keys that paste: what is pasted may have been copied from another site's page. */
 const PASTE = /^(control|meta|controlormeta)\+v$|^shift\+insert$/i;
 
@@ -937,7 +940,14 @@ export function browserTools(opts: {
     kind: FieldKind,
     site: string,
   ): Promise<{ field: ElementHandle } | { refused: string }> => {
-    const field = await (await fresh(page, r)).elementHandle({ timeout: 5_000 });
+    return vetField(await (await fresh(page, r)).elementHandle({ timeout: 5_000 }), kind, site);
+  };
+  /** The checks of `secretField` on a field already found, for one found by what it is rather than by a ref. */
+  const vetField = async (
+    field: ElementHandle,
+    kind: FieldKind,
+    site: string,
+  ): Promise<{ field: ElementHandle } | { refused: string }> => {
     const refuse = async (refused: string) => {
       await field.dispose().catch(() => {});
       return { refused };
@@ -973,6 +983,46 @@ export function browserTools(opts: {
       }
     }
     return { field };
+  };
+  /**
+   * Tells the bot why the vault has no login for this page, in words that give nothing of the
+   * vault away: a count of the person's own logins kept for other bots, or the sites of the same
+   * name under another ending that this bot may use, or that none is saved.
+   */
+  const noLoginNote = async (host: string, site: string): Promise<string> => {
+    const why = await vault.whyNone(host, bot.id, person).catch(() => null);
+    const lines = [
+      ...(why?.notShared ? [t('browser.noLoginNotShared', { count: String(why.notShared) })] : []),
+      ...(why?.otherSites.length
+        ? [t('browser.noLoginOtherSite', { sites: why.otherSites.join(', '), site })]
+        : []),
+    ];
+    return lines.length ? lines.join('\n') : t('browser.noLoginNone', { site });
+  };
+  /**
+   * The password field a two-step sign-in shows only once the username is sent: the page holds it
+   * hidden until then, so the outline had no ref for it. Waits a few seconds for exactly one
+   * visible password field in the page itself, and checks it like any other. Null when none shows
+   * (or there is more than one, and the bot must say which).
+   */
+  const laterPassword = async (
+    page: Page,
+    site: string,
+  ): Promise<{ field: ElementHandle } | { refused: string } | null> => {
+    const visible = page.locator('input[type="password"]:visible');
+    try {
+      await visible.first().waitFor({ state: 'visible', timeout: PASSWORD_WAIT_MS });
+      // The submit may have led to another site (a single sign-on page): nothing is typed there.
+      const now = new URL(page.url());
+      if (!siteMatches(now.hostname, site)) {
+        return { refused: t('browser.loginMoved', { host: now.hostname, site }) };
+      }
+      if (!secure(now)) return { refused: t('browser.loginInsecure') };
+      if ((await visible.count()) !== 1) return null;
+      return await vetField(await visible.elementHandle({ timeout: 2_000 }), 'password', site);
+    } catch {
+      return null;
+    }
   };
   /**
    * The field a part of a card goes into: an input (or, for the month and year, a list) that says
@@ -1498,14 +1548,18 @@ export function browserTools(opts: {
         } else if (saved.length > 1) {
           return t('browser.loginChoose', { accounts: saved.map((c) => c.username).join(', ') });
         } else cred = saved[0];
+        // Why the vault had nothing for this page, for the bot; the card is offered all the same.
+        let why = '';
         if (!cred) {
           const site = registrableSite(host);
+          why = await noLoginNote(host, site);
           const r = await askLogin(site, siteOf(host));
-          if (!r.ok) return r.message;
+          if (!r.ok) return `${why}\n${r.message}`;
           cred = { id: r.login.savedId, site, username: r.login.username, password: r.login.password };
         }
         const c = cred;
-        return step(async (page) => {
+        let waiting = false;
+        const result = await step(async (page) => {
           // The page may have moved while the user filled in the card: only type on the right site.
           const now = new URL(page.url());
           if (!siteMatches(now.hostname, c.site)) {
@@ -1531,16 +1585,38 @@ export function browserTools(opts: {
             browser.rememberSecret(bot.id, c.password);
             if (user) await user.fill(c.username);
             if (pass) await pass.fill(c.password);
+            // A page that already shows a password field is not the two-step kind below.
+            const hadPassword = await page
+              .locator('input[type="password"]:visible')
+              .count()
+              .then((n) => n > 0)
+              .catch(() => false);
             const last = pass ?? user;
             if (submit) await (last ? last.press('Enter') : at(page, username_ref!).press('Enter'));
+            if (submit && user && !pass && !hadPassword) {
+              const later = await laterPassword(page, c.site);
+              if (later && 'refused' in later) return later.refused;
+              if (later) {
+                fields.push((pass = later.field));
+                await pass.fill(c.password);
+                await pass.press('Enter');
+              } else waiting = true;
+            }
           } finally {
             for (const f of fields) await f.dispose().catch(() => {});
           }
           if (c.id) void vault.used(c.id).catch(() => {});
           await settle(page);
           const out = await outline(browser.pages(bot.id)?.active ?? page);
-          return `${t('browser.loggedIn', { site: c.site, username: c.username || '-' })}\n\n${out}`;
+          const said = waiting
+            ? t('browser.loginPasswordPending', { site: c.site, username: c.username || '-' })
+            : t('browser.loggedIn', { site: c.site, username: c.username || '-' });
+          return `${said}\n\n${out}`;
         });
+        if (!why) return result;
+        return typeof result === 'string'
+          ? `${why}\n\n${result}`
+          : { ...result, text: `${why}\n\n${result.text}` };
       },
       'internal',
     ),

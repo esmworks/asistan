@@ -1,5 +1,5 @@
 {
-  "id": "cb27bd73-c078-49c5-b1f6-1681871dd0a9",
+  "id": "9beb49ec-be11-4c8c-b320-f83d91fbc04f",
   "prevId": "ab2e207d-da51-4c8e-919d-7279a7aa5c48",
   "version": "7",
   "dialect": "postgresql",
@@ -1111,12 +1111,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2036,12 +2030,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -5492,6 +5480,13 @@
           "notNull": true,
           "default": "''"
         },
+        "saved_name": {
+          "name": "saved_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "batched_seq": {
           "name": "batched_seq",
           "type": "bigint",
@@ -5600,6 +5595,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

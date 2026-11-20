@@ -167,6 +167,7 @@ export class Services {
     this.turns.onFinished((t) => this.meetings.onTurnFinished(t));
     this.telegram = new TelegramChannels(ctx, this, this.vault);
     this.whatsapp = new WhatsAppChannel(ctx, this, this.vault);
+    this.turns.onFinished((t, o) => this.whatsapp.onTurnFinished(t, o));
     this.slack = new SlackChannel(ctx, this, this.vault);
     this.discord = new DiscordChannel(ctx, this, this.vault);
   }

@@ -1451,7 +1451,7 @@ export const TodayReport = z.object({
       routineId: Id,
       name: z.string(),
       botId: Id,
-      status: z.enum(['running', 'done', 'error', 'skipped', 'waiting', 'queued']),
+      status: z.enum(['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued']),
       threadId: Id.nullable(),
       startedAt: z.string(),
     }),

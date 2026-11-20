@@ -530,50 +530,22 @@
     {
       "idx": 75,
       "version": "7",
-      "when": 1795188437195,
-      "tag": "0075_bot_pause",
+      "when": 1795182385096,
+      "tag": "0075_whatsapp_saved_names_and_sent_at",
       "breakpoints": true
     },
     {
       "idx": 76,
       "version": "7",
-      "when": 1795188823528,
-      "tag": "0076_spend_limits",
+      "when": 1795187108984,
+      "tag": "0076_whatsapp_awaiting_and_saved_names",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
-      "when": 1795189133330,
-      "tag": "0077_job_reply_files",
-      "breakpoints": true
-    },
-    {
-      "idx": 78,
-      "version": "7",
-      "when": 1795189540306,
-      "tag": "0078_skill_steps",
-      "breakpoints": true
-    },
-    {
-      "idx": 79,
-      "version": "7",
-      "when": 1795190104982,
-      "tag": "0079_email_sign_in_codes",
-      "breakpoints": true
-    },
-    {
-      "idx": 80,
-      "version": "7",
-      "when": 1795190795952,
-      "tag": "0080_thread_title_auto",
-      "breakpoints": true
-    },
-    {
-      "idx": 81,
-      "version": "7",
-      "when": 1795191732488,
-      "tag": "0081_idle_compact",
+      "when": 1795192163475,
+      "tag": "0077_pause_limits_replay_codes_titles",
       "breakpoints": true
     }
   ]

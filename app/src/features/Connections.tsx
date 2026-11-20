@@ -4,6 +4,8 @@ import {
   addressKey,
   catalogEntry,
   catalogLogo,
+  formHeaders,
+  headerNameAllowed,
   parseMcpSetup,
   searchCatalog,
   sharesApp,
@@ -607,6 +609,11 @@ function Setup({
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [ownSwitch, setOwnSwitch] = useState(false);
+  const [headers, setHeaders] = useState<{ name: string; value: string }[]>([]);
+  const [typed, setTyped] = useState({ name: '', value: '' });
+  // A catalog service rarely needs headers of its own: they stay behind a link until asked for.
+  const [showHeaders, setShowHeaders] = useState(!entry);
+  const sentHeaders = formHeaders(headers, typed);
   const manages = useManagesServer();
   const [team, setTeam] = useState(false);
   // A service that needs a registered app always asks for one; any other only when switched on.
@@ -630,6 +637,7 @@ function Setup({
           : {}),
         ...(reusing ? { sameAppAs: appFrom } : {}),
         ...(team ? { team } : {}),
+        ...(sentHeaders.length ? { headers: sentHeaders } : {}),
       };
       const c = await api.addConnection(input);
       if (auth !== 'oauth') return { id: c.id, url: undefined };
@@ -650,7 +658,8 @@ function Setup({
     (auth !== 'token' || token.trim()) &&
     (!needsClient || clientId.trim()) &&
     (!ownApp || clientId.trim()) &&
-    (!namingApp || appName.trim());
+    (!namingApp || appName.trim()) &&
+    sentHeaders.every((h) => headerNameAllowed(h.name, auth));
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (ready) add.mutate();
@@ -707,6 +716,9 @@ function Setup({
               </Select>
             </Field>
           </>
+        )}
+        {!entry && (
+          <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
         )}
         {auth === 'token' && (
           <Field
@@ -802,6 +814,18 @@ function Setup({
             )}
           </div>
         )}
+        {entry &&
+          (showHeaders ? (
+            <NewHeaders headers={headers} onChange={setHeaders} typed={typed} onType={setTyped} auth={auth} />
+          ) : (
+            <button
+              type="button"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={() => setShowHeaders(true)}
+            >
+              {t('apps.headerAdd')}
+            </button>
+          ))}
         {another && auth === 'oauth' && (
           <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-sm">
             {t('apps.accountSignInNote', { name: entry.name })}
@@ -1018,12 +1042,168 @@ function Detail({
           </form>
         )}
 
+        <RequestHeaders connection={c} onSaved={done} />
         <Owned connection={c} />
         <BotAccess connection={c} bots={live} />
         <AppViews connection={c} />
         <Tools connection={c} />
       </div>
     </>
+  );
+}
+
+/**
+ * Extra request headers for the server, such as an API key under the name the service wants. Only
+ * the names come back from the server: each shows as saved, and one is changed by adding it again.
+ */
+/**
+ * Request headers for a server being added, sent with it. A name the server would refuse for the
+ * chosen sign-in is flagged here, and holds the form back, rather than failing the whole connect.
+ */
+function NewHeaders({
+  headers,
+  onChange,
+  typed,
+  onType,
+  auth,
+}: {
+  headers: { name: string; value: string }[];
+  onChange(headers: { name: string; value: string }[]): void;
+  typed: { name: string; value: string };
+  onType(typed: { name: string; value: string }): void;
+  auth: ConnectionAuth;
+}) {
+  const t = useT();
+  const name = typed.name.trim();
+  const blocked = !!name && !headerNameAllowed(name, auth);
+  const addTyped = () => {
+    if (!name || !typed.value || blocked) return;
+    onChange(formHeaders(headers, typed));
+    onType({ name: '', value: '' });
+  };
+  // Enter in these fields adds the header instead of connecting.
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    addTyped();
+  };
+  return (
+    <section className="space-y-2">
+      <div className="text-sm font-medium">{t('apps.headers')}</div>
+      <p className="text-xs text-muted-foreground">{t('apps.headersHint')}</p>
+      {headers.map((h) => {
+        const refused = !headerNameAllowed(h.name, auth);
+        return (
+          <div key={h.name.toLowerCase()} className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate font-medium">{h.name}</span>
+            {refused && <span className="text-xs text-destructive">{t('apps.headerNameBlocked')}</span>}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('common.remove')}
+              onClick={() => onChange(headers.filter((x) => x !== h))}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        );
+      })}
+      <div className="flex items-center gap-2">
+        <Input
+          value={typed.name}
+          onChange={(e) => onType({ ...typed, name: e.target.value })}
+          onKeyDown={onKey}
+          placeholder={t('apps.headerName')}
+          aria-invalid={blocked || undefined}
+          autoComplete="off"
+        />
+        <Input
+          type="password"
+          value={typed.value}
+          onChange={(e) => onType({ ...typed, value: e.target.value })}
+          onKeyDown={onKey}
+          placeholder={t('apps.headerValue')}
+          autoComplete="off"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-full"
+          disabled={!name || !typed.value || blocked}
+          onClick={addTyped}
+        >
+          {t('apps.headerAdd')}
+        </Button>
+      </div>
+      {blocked && <p className="text-xs text-destructive">{t('apps.headerNameBlocked')}</p>}
+    </section>
+  );
+}
+
+function RequestHeaders({ connection, onSaved }: { connection: Connection; onSaved: () => unknown }) {
+  const t = useT();
+  const names = connection.headerNames ?? [];
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  // The whole list goes each time; a name sent with no value keeps what is saved under it.
+  const save = useMutation({
+    mutationFn: (headers: { name: string; value: string }[]) =>
+      api.updateConnection(connection.id, { headers }),
+    onSuccess: () => {
+      setName('');
+      setValue('');
+      void onSaved();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const kept = (except?: string) =>
+    names.filter((n) => n.toLowerCase() !== except?.toLowerCase()).map((n) => ({ name: n, value: '' }));
+  return (
+    <section className="space-y-2">
+      <div className="text-sm font-medium">{t('apps.headers')}</div>
+      <p className="text-xs text-muted-foreground">{t('apps.headersHint')}</p>
+      {names.map((n) => (
+        <div key={n} className="flex items-center gap-2 text-sm">
+          <span className="min-w-0 flex-1 truncate font-medium">{n}</span>
+          <span className="text-xs text-muted-foreground">{t('apps.headerSaved')}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('common.remove')}
+            disabled={save.isPending}
+            onClick={() => save.mutate(kept(n))}
+          >
+            <Trash2 />
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim() && value) save.mutate([...kept(name.trim()), { name: name.trim(), value }]);
+        }}
+      >
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('apps.headerName')}
+          autoComplete="off"
+        />
+        <Input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={t('apps.headerValue')}
+          autoComplete="off"
+        />
+        <Button type="submit" className="rounded-full" disabled={!name.trim() || !value || save.isPending}>
+          {t('apps.headerAdd')}
+        </Button>
+      </form>
+    </section>
   );
 }
 

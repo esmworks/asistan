@@ -874,7 +874,7 @@ export class ThreadService {
       .where(
         and(
           eq(schema.routines.enabled, true),
-          inArray(schema.routineRuns.status, ['done', 'error']),
+          inArray(schema.routineRuns.status, ['done', 'error', 'stopped']),
           // A routine's failures are for those who may change its bot.
           scope && (scope.editable.length ? inArray(schema.routines.botId, scope.editable) : sql`false`),
         ),

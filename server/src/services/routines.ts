@@ -1581,6 +1581,72 @@ export class RoutineService {
     this.ctx.bus.refresh({ scope: 'routines' });
   }
 
+  /**
+   * Whether a turn that ended well left the run waiting: it asked other bots and their answers have
+   * not come back as the run's next turn yet.
+   */
+  private async awaitsAnswers(turn: TurnRow): Promise<boolean> {
+    const [open] = await this.ctx.db
+      .select({ id: schema.jobs.id })
+      .from(schema.jobs)
+      .where(
+        and(
+          eq(schema.jobs.fromTurnId, turn.id),
+          sql`${schema.jobs.kind} <> 'notify'`,
+          isNull(schema.jobs.deliveredAt),
+        ),
+      )
+      .limit(1);
+    if (open) return true;
+    const [next] = await this.ctx.db
+      .select({ id: schema.turns.id })
+      .from(schema.turns)
+      .where(
+        and(
+          eq(schema.turns.routineRunId, turn.routineRunId!),
+          ne(schema.turns.id, turn.id),
+          inArray(schema.turns.status, ['queued', 'running']),
+        ),
+      )
+      .limit(1);
+    return !!next;
+  }
+
+  /**
+   * Ends the run of a turn that asked other bots, when the answer cannot reach it any more: its bot
+   * was archived while the request was open, so no turn will read the answer and write the report.
+   */
+  async abandonAsked(fromTurnId: string) {
+    const [turn] = await this.ctx.db
+      .select({ routineRunId: schema.turns.routineRunId })
+      .from(schema.turns)
+      .where(eq(schema.turns.id, fromTurnId));
+    if (!turn?.routineRunId) return;
+    const t = await this.services.settings.translator();
+    const [ended] = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status: 'error', reason: t('routine.botMissing'), finishedAt: this.clock() })
+      .where(
+        and(
+          eq(schema.routineRuns.id, turn.routineRunId),
+          inArray(schema.routineRuns.status, ['running', 'waiting']),
+          notExists(
+            this.ctx.db
+              .select({ id: schema.turns.id })
+              .from(schema.turns)
+              .where(
+                and(
+                  eq(schema.turns.routineRunId, schema.routineRuns.id),
+                  inArray(schema.turns.status, ['queued', 'running']),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: schema.routineRuns.id });
+    if (ended) this.ctx.bus.refresh({ scope: 'routines' });
+  }
+
   async onTurnFinished(turn: TurnRow, outcome: TurnOutcome) {
     if (!turn.routineRunId) return;
     const [run] = await this.ctx.db
@@ -1594,6 +1660,9 @@ export class RoutineService {
       .from(schema.routineRuns)
       .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
       .where(eq(schema.routineRuns.id, turn.routineRunId));
+    // A run that handed work to other bots goes on in the turn that reads their answers: this turn
+    // only said it asked, which is not the run's report.
+    if (run && !run.failedByBot && outcome.ok && (await this.awaitsAnswers(turn))) return;
     const thread = await this.services.threads.row(turn.threadId).catch(() => null);
     if (
       run &&
@@ -1621,6 +1690,8 @@ export class RoutineService {
         .report(run.slackChannel, run.routineName, outcome.text)
         .catch((err: unknown) => console.warn('slack report', err));
     }
+    // The person's stop is an ending they chose, not a failure, and is not tried again.
+    const stopped = !outcome.ok && outcome.kind === 'interrupted' && outcome.byPerson === true;
     await this.ctx.db
       .update(schema.routineRuns)
       .set(
@@ -1628,7 +1699,7 @@ export class RoutineService {
         run?.failedByBot && outcome.ok
           ? { finishedAt: this.clock() }
           : {
-              status: outcome.ok ? 'done' : 'error',
+              status: outcome.ok ? 'done' : stopped ? 'stopped' : 'error',
               reason: outcome.ok ? null : outcome.message,
               finishedAt: this.clock(),
             },

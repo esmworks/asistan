@@ -156,12 +156,13 @@ interface Running {
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
 
-const interrupted = (message: string): TurnOutcome => ({
+const interrupted = (message: string, byPerson = false): TurnOutcome => ({
   ok: false,
   kind: 'interrupted',
   message,
   text: '',
   sessionId: null,
+  ...(byPerson && { byPerson: true }),
 });
 
 /**
@@ -220,6 +221,7 @@ export class TurnManager {
   private upkeep: ReturnType<typeof setInterval> | null = null;
   private sweeping = false;
   private hooks: TurnFinishedHook[] = [];
+  private signedOutHooks: (() => void)[] = [];
   private scheduling: Promise<void> = Promise.resolve();
   private stopped = false;
 
@@ -231,6 +233,14 @@ export class TurnManager {
 
   onFinished(hook: TurnFinishedHook) {
     this.hooks.push(hook);
+  }
+
+  /**
+   * Called when a turn finds the Claude sign-in expired, even if a backup model then carries the
+   * turn: the finished outcome would only show the backup's result.
+   */
+  onSignedOut(hook: () => void) {
+    this.signedOutHooks.push(hook);
   }
 
   /** Mark turns that were running when the server stopped. */
@@ -425,6 +435,7 @@ export class TurnManager {
     let found = false;
     for (const r of this.running.values()) {
       if (r.turn.jobId === jobId && (!threadId || r.turn.threadId === threadId)) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
@@ -442,7 +453,7 @@ export class TurnManager {
       .returning();
     for (const turn of dropped) {
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     }
     return found || dropped.length > 0;
   }
@@ -530,9 +541,15 @@ export class TurnManager {
       r.steers = r.steers.filter((st) => !dropped.some((d) => d.id === st.turnId));
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return dropped.length;
   }
+
+  /**
+   * Turns the person told to stop and that are still ending, so what follows the end (a routine
+   * run) can tell their stop from an interruption they did not ask for, such as a restart.
+   */
+  private stoppedByPerson = new Set<string>();
 
   /** Stop the running turn of a thread and drop its queued turns. */
   async interrupt(threadId: string): Promise<boolean> {
@@ -545,6 +562,7 @@ export class TurnManager {
     let found = dropped.length > 0;
     for (const r of this.running.values()) {
       if (r.turn.threadId === threadId) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
@@ -552,7 +570,7 @@ export class TurnManager {
     this.folding.get(threadId)?.controller.abort();
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return found;
   }
 
@@ -1039,7 +1057,12 @@ export class TurnManager {
     const person = turn.userId ?? thread.userId ?? bot.ownerUserId ?? OWNER_ID;
     // A team conversation (a Slack channel's) works for who asked, with their level and cards, but
     // uses only what the team shares: no one's profile, own notes, apps or sign-ins.
-    const own = thread.kind === 'team' ? null : person;
+    // A WhatsApp chat a bot answers for the person (one given to it, or the front door) is someone
+    // else's words, written by someone with no account here: like a team conversation it uses no
+    // one's own data, and the front door has no tool but suggesting a bot for the chat.
+    const contact = thread.kind === 'user' ? await this.services.whatsapp.contactOf(thread.id) : null;
+    const door = contact?.role === 'door';
+    const own = thread.kind === 'team' || contact ? null : person;
     // Only the person whose WhatsApp is linked gets its tools; nobody else's turn looks further.
     const whatsappOwner = await this.services.whatsapp.ownerId();
     // Nothing works for someone who may no longer sign in: not their routines, their chat apps,
@@ -1063,9 +1086,9 @@ export class TurnManager {
     // The person's own language; the server's until they choose one.
     const locale = settings.language ?? (await this.services.settings.locale());
     const t = translator(locale);
-    const skills = await this.services.skills.forBot(bot.id);
-    const email = await this.services.email.addressOf(bot.id);
-    const apiSources = await this.services.apiSources.forBot(bot.id);
+    const skills = door ? [] : await this.services.skills.forBot(bot.id);
+    const email = door ? null : await this.services.email.addressOf(bot.id);
+    const apiSources = door ? [] : await this.services.apiSources.forBot(bot.id);
     // In a room every member keeps its own session, and its prompt is the room's new lines.
     const inRoom = thread.kind === 'room';
     // Only a turn the person's own message or emoji started has them there to answer a card. A
@@ -1130,7 +1153,9 @@ export class TurnManager {
       await persist().catch((err) => console.warn('outside mark', err));
     };
     // The bot's tool selection narrows what it is given; the rest never reaches the model.
-    const pickTool = toolPicker(bot.toolSelection);
+    const pickTool = door
+      ? (name: string) => name === toolPermName({ name: 'whatsapp_suggest_route' })
+      : toolPicker(bot.toolSelection);
     // Whether it can look earlier talk up, which the prompts point it to.
     const recall = pickTool(toolPermName({ name: 'conversations_search' }));
     const systemPrompt = buildSystemPrompt({
@@ -1152,10 +1177,11 @@ export class TurnManager {
       peers,
       timezone,
       locale,
-      browser: this.ctx.browser.available && bot.internet,
+      browser: !door && this.ctx.browser.available && bot.internet,
       onUserComputer: this.ctx.config.onUserComputer,
       routines: own ? await this.services.routines.list(bot.isManager ? undefined : bot.id) : [],
       team: !own,
+      contact: contact?.role,
       skills,
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
@@ -1179,6 +1205,7 @@ export class TurnManager {
         readOutside,
         whatsappOwner,
         whatsappReader: whatsappOwner === person && (await this.services.routines.whatsappBots()).has(bot.id),
+        contact: contact?.role,
       }),
       ...(await this.services.connections.toolsFor(
         bot.id,
@@ -1225,6 +1252,21 @@ export class TurnManager {
             },
             turnId: turn.id,
           });
+        },
+        async (c) => {
+          // Someone with no account here cannot sign in to the team's connections.
+          if (turn.guest) return false;
+          await threads.addMessage({
+            threadId: thread.id,
+            role: 'system',
+            author: `bot:${bot.id}`,
+            text: t(c.auth === 'token' ? 'connection.needsKeyCardText' : 'connection.signInAgainCard', {
+              name: c.name,
+            }),
+            props: { connectionSignIn: c.id },
+            turnId: turn.id,
+          });
+          return true;
         },
       )),
     ];
@@ -1517,8 +1559,8 @@ export class TurnManager {
     const asked = tagged.length
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
-    // Webhook posts and routine reports land in the conversation without a turn, so a live session
-    // never saw them; the ones since the bot last ran here come with this message. A handoff
+    // Webhook posts, routine reports and what became of a WhatsApp draft land in the conversation
+    // without a turn, so a live session never saw them; the ones since the bot last ran here come with this message. A handoff
     // carries them already.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
@@ -1531,7 +1573,7 @@ export class TurnManager {
         .filter((m) => {
           const at = new Date(m.createdAt);
           return (
-            (m.props.posted || m.props.routineReport) &&
+            (m.props.posted || m.props.routineReport || m.props.whatsappDraft) &&
             at <= turn.createdAt &&
             (!before || at > before.createdAt)
           );
@@ -1680,7 +1722,7 @@ export class TurnManager {
         sandbox,
         shell,
         tools,
-        ...(selectsTools(bot.toolSelection) && { pickTool }),
+        ...((door || selectsTools(bot.toolSelection)) && { pickTool }),
         canUseTool: async (ask) => {
           const { let: letThrough, ...answer } = await canUseTool(ask);
           // A step that changes something goes into the bot's list, with what let it through.
@@ -1813,14 +1855,16 @@ export class TurnManager {
         // What the old session had folded into a summary goes along, or it would be lost with it.
         outcome = await run(await settle(await handoff(outcome.summary), false));
       }
-      if (!outcome.ok && outcome.cut && !acted && !controller.signal.aborted) {
-        // The provider closed the reply before its end. Nothing was changed yet and the engine kept
-        // none of the broken exchange, so the same request goes once more before any backup.
+      if (!outcome.ok && (outcome.cut || outcome.crashed) && !acted && !controller.signal.aborted) {
+        // The provider closed the reply before its end, or the engine's own process died. Nothing
+        // was changed yet and the engine kept none of the broken exchange, so the same request goes
+        // once more before any backup. The thread's session stays: the engine resumes it, or a
+        // session that cannot be resumed is replaced through the lost-session path above.
         await threads.addMessage({
           threadId: thread.id,
           role: 'system',
           author: 'system',
-          text: t('turn.retryCut'),
+          text: t(outcome.crashed ? 'turn.retryCrash' : 'turn.retryCut'),
           props: { kind: 'retryCut' },
           turnId: turn.id,
         });
@@ -1835,8 +1879,13 @@ export class TurnManager {
       // limit, a model that is down and a sign-in that no longer works all leave the backup to it.
       const blocked =
         !outcome.ok &&
-        (outcome.kind === 'limit' || outcome.kind === 'auth' || outcome.transient === true) &&
+        (outcome.kind === 'limit' ||
+          outcome.kind === 'auth' ||
+          outcome.transient === true ||
+          outcome.billing === true) &&
         !acted;
+      // The sign-in is expired whoever carries the turn next: the account status must say so.
+      if (!outcome.ok && outcome.kind === 'auth') for (const hook of this.signedOutHooks) hook();
       if (!outcome.ok && blocked && backup && backup !== model && !controller.signal.aborted) {
         // The usage limit is spent: the backup model carries this turn with the recent exchange, so
         // the work goes on instead of waiting for the limit to lift. The thread keeps its own session.
@@ -1849,7 +1898,9 @@ export class TurnManager {
               ? 'turn.backupModel'
               : outcome.kind === 'auth'
                 ? 'turn.backupAuth'
-                : 'turn.backupBusy',
+                : outcome.billing
+                  ? 'turn.backupBilling'
+                  : 'turn.backupBusy',
             { model: backup },
           ),
           props: { kind: 'backupModel' },
@@ -1890,6 +1941,10 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // The engine words an abort its own way; a stop the person asked for is worded as theirs.
+    if (this.stoppedByPerson.delete(turn.id) && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.stoppedByUser'), byPerson: true };
+    }
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

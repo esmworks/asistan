@@ -90,4 +90,31 @@ describe('masaüstü güncellemeleri', () => {
     updater.emit('error', new Error('net::ERR_INTERNET_DISCONNECTED'));
     expect(steps).toEqual(['update check failed: net::ERR_INTERNET_DISCONNECTED']);
   });
+
+  it('keeps the version waiting when the person declines to restart while bots work', async () => {
+    let allow = false;
+    updates = startUpdates({
+      updater,
+      everyMs: 1000,
+      ask: async () => true,
+      confirmInstall: async () => {
+        steps.push('confirm');
+        return allow;
+      },
+      beforeInstall: async () => {
+        steps.push('server stopped');
+      },
+      onReady: (version) => steps.push(`ready ${version}`),
+      warn: (message) => steps.push(message),
+    });
+    updater.emit('update-downloaded', { version: '0.2.1' });
+    await flush();
+    expect(steps).toEqual(['ready 0.2.1', 'confirm']);
+    expect(updater.installs).toEqual([]);
+
+    allow = true;
+    await updates.install();
+    expect(steps).toEqual(['ready 0.2.1', 'confirm', 'confirm', 'server stopped']);
+    expect(updater.installs).toEqual([[true, true]]);
+  });
 });

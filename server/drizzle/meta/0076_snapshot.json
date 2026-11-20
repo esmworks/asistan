@@ -1,6 +1,6 @@
 {
-  "id": "a44e329e-ccb6-47cc-9601-7728d2d72e85",
-  "prevId": "cb27bd73-c078-49c5-b1f6-1681871dd0a9",
+  "id": "2f8d859d-8cc0-40de-af82-3b51a5c623ee",
+  "prevId": "9beb49ec-be11-4c8c-b320-f83d91fbc04f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1111,26 +1111,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "daily_limit_usd": {
-          "name": "daily_limit_usd",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "monthly_limit_usd": {
-          "name": "monthly_limit_usd",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2050,12 +2030,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -5506,6 +5480,13 @@
           "notNull": true,
           "default": "''"
         },
+        "saved_name": {
+          "name": "saved_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "batched_seq": {
           "name": "batched_seq",
           "type": "bigint",
@@ -5614,6 +5595,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -5719,6 +5706,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "awaiting": {
+          "name": "awaiting",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "at": {
           "name": "at",
           "type": "timestamp with time zone",
@@ -5786,6 +5780,38 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.whatsapp_saved_names": {
+      "name": "whatsapp_saved_names",
+      "schema": "",
+      "columns": {
+        "jid": {
+          "name": "jid",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
