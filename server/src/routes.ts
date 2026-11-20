@@ -131,7 +131,7 @@ import { findProjects, findSetup } from './services/setup-import';
 import { APP_DIR } from './runtime/turns';
 import { bundlePage } from './tools/page-bundle';
 import { stepsText } from './browser/teach';
-import { workspacePaths } from './workspace';
+import { findLinkedFile, workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
 
 /** Where services start routines by their secret address; needs no access key. */
@@ -2041,7 +2041,7 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const root = resolve(d.config.dataDir, 'workspaces');
     const roots = [join(root, 'bots', bot.id)];
     if (bot.groupId) roots.push(join(root, 'groups', bot.groupId, 'files'));
-    return { root, roots };
+    return { root, roots, bot };
   };
   app.get('/api/bots/:id/library', async (req) => {
     const { root, roots } = await libraryRoots(IdParams.parse(req.params).id);
@@ -2080,10 +2080,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
    * files it hands them, not everyone's.
    */
   const libraryFile = async (botId: string, path: string, who?: Principal) => {
-    const { root, roots } = await libraryRoots(botId);
+    const { root, roots, bot } = await libraryRoots(botId);
     let full: string;
     try {
-      full = realpathSync(resolve(root, path));
+      const found = findLinkedFile(root, path, bot);
+      if (!found) throw new Error('missing');
+      full = realpathSync(found);
     } catch {
       throw new HttpError(404, 'error.fileMissing');
     }
