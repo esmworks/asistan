@@ -174,3 +174,19 @@ export const useLibrary = (botId: string | null | undefined) => {
     enabled: !!botId,
   });
 };
+export const useSecondYes = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['second-yes', useOrigin()], queryFn: api.secondYes });
+};
+export const usePromises = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['promises', useOrigin()], queryFn: api.promises });
+};
+export const useRoutineSuggestions = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['routine-suggestions', useOrigin()], queryFn: api.routineSuggestions });
+};
+export const usePeople = () => {
+  const api = useApi();
+  return useQuery({ queryKey: ['people', useOrigin()], queryFn: api.people });
+};

@@ -1,6 +1,6 @@
 import type { ProfileFocus, ProfileHelp } from '@yumakbot/shared';
 import { StyleSheet, Text, View } from 'react-native';
-import { Loading, Section } from '@/components/page';
+import { Loading, Section, SwitchRow } from '@/components/page';
 import { CheckRow, ChoiceRow, Hint, Pad, Rows, SavedField, useSaveSettings } from './common/controls';
 import { t } from '@/i18n';
 import { useSettings } from '@/lib/queries';
@@ -107,6 +107,16 @@ export function ProfileSection() {
               <Hint>{t('profile.aboutHint')}</Hint>
             </Pad>
           </Section>
+          {/* A server older than the suggestions does not offer them. */}
+          {settings.routineSuggestions !== undefined ? (
+            <Section title={t('routineSuggest.setting.title')} footer={t('routineSuggest.setting.hint')}>
+              <SwitchRow
+                label={t('routineSuggest.setting.on')}
+                value={settings.routineSuggestions}
+                onChange={(routineSuggestions) => save.mutate({ routineSuggestions })}
+              />
+            </Section>
+          ) : null}
         </>
       ) : null}
     </>

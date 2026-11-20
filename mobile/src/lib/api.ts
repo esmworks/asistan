@@ -17,6 +17,11 @@ import type {
   SessionInfo,
   AccountSet,
   TodayReport,
+  Pledge,
+  SecondYes,
+  PersonInfo,
+  RoutineSuggestion,
+  RoutineSuggestionAccept,
   Group,
   Memory,
   MemoryChange,
@@ -215,6 +220,12 @@ export interface Settings {
   maxTurns?: number;
   /** Finished turns between two looks back at a conversation for lasting facts; 0 is off. Missing on older servers. */
   memoryReviewEvery?: number;
+  /** Whether the person's own requests are looked at for something asked again and again; missing on older servers. */
+  routineSuggestions?: boolean;
+  /** The promise safety net after a bot's reply; missing on older servers. */
+  promiseKeeper?: boolean;
+  /** The time of day a reminder of the person's own promise arrives (HH:MM); missing on older servers. */
+  promiseRemindAt?: string;
   /** Unset until a language is chosen; the app then stores the one it opened in. */
   language?: Locale;
 }
@@ -308,6 +319,23 @@ export function apiFor(origin: string) {
     updateBot: (id: string, b: unknown) => http.patch<Bot>(`/api/bots/${id}`, b),
     archiveBot: (id: string) => http.post<Bot>(`/api/bots/${id}/archive`),
     today: () => http.get<TodayReport>('/api/today'),
+    /** A bot caught steered by outside text stays on Today until the person says they saw it. */
+    canaryAlarmSeen: (id: string) => http.post<{ ok: true }>(`/api/canary-alarms/${id}/seen`, {}),
+    /** Steps waiting for this person's second yes, without the conversations they come from. */
+    secondYes: () => http.get<SecondYes[]>('/api/approvals-second'),
+    answerSecond: (id: string, decision: 'allow' | 'deny') =>
+      http.post<Approval>(`/api/approvals-second/${id}`, { decision }),
+    /** The person's open promises: a bot's, and their own to others. */
+    promises: () => http.get<Pledge[]>('/api/promises'),
+    promiseDone: (id: string) => http.post<Pledge>(`/api/promises/${id}/done`, {}),
+    promiseDrop: (id: string) => http.post<Pledge>(`/api/promises/${id}/drop`, {}),
+    routineSuggestions: () => http.get<RoutineSuggestion[]>('/api/routine-suggestions'),
+    acceptRoutineSuggestion: (id: string, input: RoutineSuggestionAccept) =>
+      http.post<Routine>(`/api/routine-suggestions/${id}/accept`, input),
+    dismissRoutineSuggestion: (id: string) =>
+      http.post<{ ok: true }>(`/api/routine-suggestions/${id}/dismiss`, {}),
+    /** Who is on this server, to name who asked and who said the first yes. */
+    people: () => http.get<PersonInfo[]>('/api/people'),
     /** Pins a message above its conversation; null takes the pin away. */
     pinMessage: (threadId: string, messageId: string | null) =>
       http.put<Thread>(`/api/threads/${threadId}/pin`, { messageId }),

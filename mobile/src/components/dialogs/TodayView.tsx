@@ -4,6 +4,12 @@ import { useEffect, type ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Avatar } from '@/components/Avatar';
 import { Item, ItemCard } from '@/components/dialogs/Item';
+import {
+  CanarySection,
+  PromisesSection,
+  RoutineSuggestionsSection,
+  SecondYesSection,
+} from '@/components/dialogs/TodaySections';
 import { Loading, Page } from '@/components/page';
 import { locale, t } from '@/i18n';
 import { formatters } from '@/lib/format';
@@ -56,10 +62,21 @@ export function TodayView() {
               cost: usd.format(data.costUsd),
             })}
           </Text>
+          {/* A bot caught steered by text it read stays here until the person has seen it. */}
+          <CanarySection alarms={data.canaryAlarms ?? []} />
+          {/* Steps that need this person's second yes, then what was promised, then routine offers. */}
+          <SecondYesSection />
+          <PromisesSection />
+          <RoutineSuggestionsSection />
           <Block
             title={t('today.waiting')}
             empty={t('today.waitingNone')}
-            count={waiting.length + (data.staleMemory ? 1 : 0) + (data.pendingMemory ? 1 : 0)}
+            count={
+              waiting.length +
+              (data.staleMemory ? 1 : 0) +
+              (data.pendingMemory ? 1 : 0) +
+              (data.expiredMemory ? 1 : 0)
+            }
           >
             {[
               ...waiting.map((s) => (
@@ -83,6 +100,18 @@ export function TodayView() {
                         {t('today.pendingMemory', { count: data.pendingMemory })}
                       </Text>
                       <Text style={[styles.note, { color: c.amber }]}>{t('today.pendingMemoryReview')}</Text>
+                    </Item>,
+                  ]
+                : []),
+              // Notes past their "true until" date wait in the memory screen too.
+              ...(data.expiredMemory
+                ? [
+                    <Item key="expired-memory" onPress={() => nav.settings('memory')}>
+                      <Feather name="clock" size={24} color={c.mutedForeground} />
+                      <Text style={[styles.grow, { color: c.foreground }]} numberOfLines={1}>
+                        {t('today.expiredMemory', { count: data.expiredMemory })}
+                      </Text>
+                      <Text style={[styles.note, { color: c.amber }]}>{t('today.staleMemoryReview')}</Text>
                     </Item>,
                   ]
                 : []),

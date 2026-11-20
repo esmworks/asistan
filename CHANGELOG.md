@@ -7,6 +7,9 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- The phone app's Today page now shows expired notes, security alarms (with "Mark as seen"), steps waiting for the
+  person's second yes, open promises with the reminder time, and routine suggestions; the profile settings hold the
+  routine-suggestion switch and the usage settings the promise safety-net switch.
 - A routine can be rehearsed before it runs for real. A new or changed routine runs unattended and the person only
   learned what it does from what it already did, so "Rehearse" in the routine's dialog runs it once, with the
   instruction as typed (saved or not) and, for a routine something else starts, with what started one of its last
