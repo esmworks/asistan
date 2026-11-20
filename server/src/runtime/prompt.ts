@@ -211,10 +211,15 @@ export const HANDOFF_CHARS = 30_000;
  * webhook post, fenced as data, or the report the bot itself wrote in one of its routine's runs.
  */
 export function postedText(
-  m: { text: string; props?: { routineName?: unknown; posted?: unknown; routineReport?: unknown } },
+  m: {
+    text: string;
+    props?: { routineName?: unknown; posted?: unknown; routineReport?: unknown; whatsappDraft?: unknown };
+  },
   t: T,
 ): string {
   const text = m.text.length > HANDOFF_MESSAGE_CHARS ? `${cutAt(m.text, HANDOFF_MESSAGE_CHARS)}…` : m.text;
+  // The server's own word on a draft the person answered on its card.
+  if (m.props?.whatsappDraft) return t('prompt.whatsappDraft', { text });
   const name = String(m.props?.routineName ?? '');
   return m.props?.routineReport && !m.props.posted
     ? t('prompt.routineReport', { name, text })

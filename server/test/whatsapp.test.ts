@@ -968,6 +968,33 @@ describe('WhatsApp: rutinlerin okuduğu sohbetler', () => {
     expect(card.summary).toContain('Geliyorum');
   });
 
+  it('onaylanan taslağın gittiği, botun o sohbetteki sonraki mesajında ona söylenir', async () => {
+    const { wa, asistan } = await setUp();
+    await t.api('PUT', '/api/whatsapp', { mode: 'own', phone: PERSON, botId: asistan.id, chats: true });
+    wa.chat(`${CUSTOMER}@s.whatsapp.net`, { conversation: 'Fiyat?' }, {}, 'Ahmet');
+    await waitFor(async () => (await t.db.db.select().from(schema.whatsappMessages)).length === 1);
+    const thread = (await t.api<Thread>('GET', `/api/bots/${asistan.id}/main-thread`)).body;
+    await t.send(thread.id, `[araç:whatsapp_send {"chat":"${CUSTOMER}@s.whatsapp.net","text":"120.000 TL"}]`);
+    const card = await waitFor(async () =>
+      (await t.api<Approval[]>('GET', '/api/approvals?status=pending')).body.find(
+        (a) => a.toolName === 'whatsapp_send',
+      ),
+    );
+    await t.services.turns.idle();
+    await t.api('POST', `/api/approvals/${card.id}`, { decision: 'allow', answer: 'Gönder' });
+    await waitFor(async () => wa.sent.some((x) => x.jid === `${CUSTOMER}@s.whatsapp.net`));
+    const note = await waitFor(async () =>
+      (await t.messages(thread.id)).find((m) => m.text.includes('kişisine WhatsApp mesajı gönderildi')),
+    );
+    expect(note.text).toContain('Ahmet (905001112233)');
+    expect(note.text).toContain('120.000 TL');
+    await t.send(thread.id, 'Cevap geldi mi?');
+    await t.services.turns.idle();
+    const prompt = t.engine.requests.at(-1)!.prompt;
+    expect(prompt).toContain('kişisine WhatsApp mesajı gönderildi');
+    expect(prompt).toContain('120.000 TL');
+  });
+
   it('dışarıdan başlayan bir çalışma, izin açıkken de rutinlerin okumadığı sohbete bakamaz', async () => {
     const { wa, asistan } = await setUp();
     wa.groups[GROUP] = { id: GROUP, subject: 'Finans' };

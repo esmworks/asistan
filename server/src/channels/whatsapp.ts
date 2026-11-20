@@ -1466,13 +1466,7 @@ export class WhatsAppChannel {
           .set({ status: 'dropped' })
           .where(and(eq(schema.whatsappDrafts.id, draft.id), eq(schema.whatsappDrafts.status, 'pending')))
           .returning();
-        if (dropped) {
-          const t = await this.services.settings.translator();
-          await this.draftNote(
-            draft,
-            t(draft.kind === 'status' ? 'whatsapp.statusDropped' : 'whatsapp.draftDropped'),
-          );
-        }
+        if (dropped) await this.draftNote(draft, 'dropped');
         continue;
       }
       // Sent only while connected; otherwise it waits for the next connect.
@@ -1493,22 +1487,51 @@ export class WhatsAppChannel {
           .update(schema.whatsappDrafts)
           .set({ status: 'failed' })
           .where(eq(schema.whatsappDrafts.id, draft.id));
-        await this.draftNote(draft, t('whatsapp.draftFailed', { message: errorText(err) }), true);
+        await this.draftNote(draft, 'failed', errorText(err));
         continue;
       }
       // Sent: whatever goes wrong after this does not make it look unsent, which would get it sent twice.
-      await this.draftNote(
-        draft,
-        t(draft.kind === 'status' ? 'whatsapp.statusPosted' : 'whatsapp.draftSent'),
-      ).catch((err: unknown) => console.warn('whatsapp draft note', errorText(err)));
+      await this.draftNote(draft, 'sent').catch((err: unknown) =>
+        console.warn('whatsapp draft note', errorText(err)),
+      );
     }
   }
 
-  /** Says in the conversation the draft was made in what became of it. */
-  private async draftNote(draft: typeof schema.whatsappDrafts.$inferSelect, text: string, failed = false) {
+  /**
+   * Says in the conversation the draft was made in what became of it, with whom it was for and
+   * what it said: the person's record of what went out, and the bot's, which reads it with its
+   * next message there.
+   */
+  async draftNote(
+    draft: typeof schema.whatsappDrafts.$inferSelect,
+    outcome: 'sent' | 'dropped' | 'failed',
+    error = '',
+  ) {
+    const t = await this.services.settings.translator();
+    let text: string;
+    if (draft.kind === 'status') {
+      text =
+        outcome === 'sent'
+          ? t('whatsapp.statusPosted')
+          : outcome === 'dropped'
+            ? t('whatsapp.statusDropped')
+            : t('whatsapp.draftFailed', { message: error });
+    } else {
+      const chat = draft.chat ?? '';
+      const known = chat ? await this.knownChat(chat) : null;
+      const number = chat.replace(/@.*$/, '');
+      const to = known?.name ? `${known.name} (${number})` : `+${number}`;
+      const said = draft.text || (draft.file ? (draft.file.split('/').pop() ?? '') : '');
+      text =
+        outcome === 'sent'
+          ? t('whatsapp.draftSent', { to, text: said })
+          : outcome === 'dropped'
+            ? t('whatsapp.draftDropped', { to, text: said })
+            : t('whatsapp.draftFailedTo', { to, text: said, message: error });
+    }
     await this.services.threads.addMessage({
       threadId: draft.threadId,
-      role: failed ? 'error' : 'assistant',
+      role: outcome === 'failed' ? 'error' : 'assistant',
       author: `bot:${draft.botId}`,
       text,
       props: { whatsappDraft: draft.id },

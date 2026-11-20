@@ -1209,8 +1209,8 @@ export class TurnManager {
     const asked = tagged.length
       ? `${t('prompt.skillTagged', { names: tagged.map((k) => k.name).join(', ') })}\n\n${turn.prompt}`
       : turn.prompt;
-    // Webhook posts and routine reports land in the conversation without a turn, so a live session
-    // never saw them; the ones since the bot last ran here come with this message. A handoff
+    // Webhook posts, routine reports and what became of a WhatsApp draft land in the conversation
+    // without a turn, so a live session never saw them; the ones since the bot last ran here come with this message. A handoff
     // carries them already.
     const withPosts = async (prompt: string) => {
       const [before] = await this.ctx.db
@@ -1223,7 +1223,7 @@ export class TurnManager {
         .filter((m) => {
           const at = new Date(m.createdAt);
           return (
-            (m.props.posted || m.props.routineReport) &&
+            (m.props.posted || m.props.routineReport || m.props.whatsappDraft) &&
             at <= turn.createdAt &&
             (!before || at > before.createdAt)
           );
