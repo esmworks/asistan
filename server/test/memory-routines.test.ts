@@ -1280,7 +1280,7 @@ describe('rutinler', () => {
     await t.api('POST', `/api/threads/${busy.id}/stop`);
     await t.services.turns.idle();
 
-    expect((await runs(r.id)).map((x) => x.status)).toEqual(['error']);
+    expect((await runs(r.id)).map((x) => x.status)).toEqual(['stopped']);
     expect((await runAgain(r.id))?.status).toBe('running');
     await t.services.turns.idle();
   });

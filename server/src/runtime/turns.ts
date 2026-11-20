@@ -135,12 +135,13 @@ interface Running {
 
 export type TurnFinishedHook = (turn: TurnRow, outcome: TurnOutcome) => Promise<void>;
 
-const interrupted = (message: string): TurnOutcome => ({
+const interrupted = (message: string, byPerson = false): TurnOutcome => ({
   ok: false,
   kind: 'interrupted',
   message,
   text: '',
   sessionId: null,
+  ...(byPerson && { byPerson: true }),
 });
 
 /**
@@ -180,6 +181,7 @@ const GUEST_READS: ReadonlySet<string> = new Set([
 export class TurnManager {
   private running = new Map<string, Running>();
   private hooks: TurnFinishedHook[] = [];
+  private signedOutHooks: (() => void)[] = [];
   private scheduling: Promise<void> = Promise.resolve();
   private stopped = false;
 
@@ -191,6 +193,14 @@ export class TurnManager {
 
   onFinished(hook: TurnFinishedHook) {
     this.hooks.push(hook);
+  }
+
+  /**
+   * Called when a turn finds the Claude sign-in expired, even if a backup model then carries the
+   * turn: the finished outcome would only show the backup's result.
+   */
+  onSignedOut(hook: () => void) {
+    this.signedOutHooks.push(hook);
   }
 
   /** Mark turns that were running when the server stopped. */
@@ -397,6 +407,7 @@ export class TurnManager {
     let found = false;
     for (const r of this.running.values()) {
       if (r.turn.jobId === jobId && (!threadId || r.turn.threadId === threadId)) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
@@ -414,7 +425,7 @@ export class TurnManager {
       .returning();
     for (const turn of dropped) {
       this.emitState(turn.threadId, turn.botId);
-      await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+      await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     }
     return found || dropped.length > 0;
   }
@@ -502,9 +513,15 @@ export class TurnManager {
       r.steers = r.steers.filter((st) => !dropped.some((d) => d.id === st.turnId));
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return dropped.length;
   }
+
+  /**
+   * Turns the person told to stop and that are still ending, so what follows the end (a routine
+   * run) can tell their stop from an interruption they did not ask for, such as a restart.
+   */
+  private stoppedByPerson = new Set<string>();
 
   /** Stop the running turn of a thread and drop its queued turns. */
   async interrupt(threadId: string): Promise<boolean> {
@@ -517,13 +534,14 @@ export class TurnManager {
     let found = dropped.length > 0;
     for (const r of this.running.values()) {
       if (r.turn.threadId === threadId) {
+        this.stoppedByPerson.add(r.turn.id);
         r.controller.abort();
         found = true;
       }
     }
     if (dropped[0]) this.emitState(threadId, dropped[0].botId);
     // A dropped turn never reaches `finish`; its routine run or job still has to end.
-    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser')));
+    for (const turn of dropped) await this.runHooks(turn, interrupted(t('turn.stoppedByUser'), true));
     return found;
   }
 
@@ -917,6 +935,21 @@ export class TurnManager {
             },
             turnId: turn.id,
           });
+        },
+        async (c) => {
+          // Someone with no account here cannot sign in to the team's connections.
+          if (turn.guest) return false;
+          await threads.addMessage({
+            threadId: thread.id,
+            role: 'system',
+            author: `bot:${bot.id}`,
+            text: t(c.auth === 'token' ? 'connection.needsKeyCardText' : 'connection.signInAgainCard', {
+              name: c.name,
+            }),
+            props: { connectionSignIn: c.id },
+            turnId: turn.id,
+          });
+          return true;
         },
       )),
     ];
@@ -1501,14 +1534,16 @@ export class TurnManager {
         // What the old session had folded into a summary goes along, or it would be lost with it.
         outcome = await run(await settle(await handoff(outcome.summary), false));
       }
-      if (!outcome.ok && outcome.cut && !acted && !controller.signal.aborted) {
-        // The provider closed the reply before its end. Nothing was changed yet and the engine kept
-        // none of the broken exchange, so the same request goes once more before any backup.
+      if (!outcome.ok && (outcome.cut || outcome.crashed) && !acted && !controller.signal.aborted) {
+        // The provider closed the reply before its end, or the engine's own process died. Nothing
+        // was changed yet and the engine kept none of the broken exchange, so the same request goes
+        // once more before any backup. The thread's session stays: the engine resumes it, or a
+        // session that cannot be resumed is replaced through the lost-session path above.
         await threads.addMessage({
           threadId: thread.id,
           role: 'system',
           author: 'system',
-          text: t('turn.retryCut'),
+          text: t(outcome.crashed ? 'turn.retryCrash' : 'turn.retryCut'),
           props: { kind: 'retryCut' },
           turnId: turn.id,
         });
@@ -1523,8 +1558,13 @@ export class TurnManager {
       // limit, a model that is down and a sign-in that no longer works all leave the backup to it.
       const blocked =
         !outcome.ok &&
-        (outcome.kind === 'limit' || outcome.kind === 'auth' || outcome.transient === true) &&
+        (outcome.kind === 'limit' ||
+          outcome.kind === 'auth' ||
+          outcome.transient === true ||
+          outcome.billing === true) &&
         !acted;
+      // The sign-in is expired whoever carries the turn next: the account status must say so.
+      if (!outcome.ok && outcome.kind === 'auth') for (const hook of this.signedOutHooks) hook();
       if (!outcome.ok && blocked && backup && backup !== model && !controller.signal.aborted) {
         // The usage limit is spent: the backup model carries this turn with the recent exchange, so
         // the work goes on instead of waiting for the limit to lift. The thread keeps its own session.
@@ -1537,7 +1577,9 @@ export class TurnManager {
               ? 'turn.backupModel'
               : outcome.kind === 'auth'
                 ? 'turn.backupAuth'
-                : 'turn.backupBusy',
+                : outcome.billing
+                  ? 'turn.backupBilling'
+                  : 'turn.backupBusy',
             { model: backup },
           ),
           props: { kind: 'backupModel' },
@@ -1575,6 +1617,10 @@ export class TurnManager {
     const { threads } = this.services;
     const t = await this.services.settings.translator();
     const kind = (await threads.row(turn.threadId)).kind;
+    // The engine words an abort its own way; a stop the person asked for is worded as theirs.
+    if (this.stoppedByPerson.delete(turn.id) && !outcome.ok && outcome.kind === 'interrupted') {
+      outcome = { ...outcome, message: t('turn.stoppedByUser'), byPerson: true };
+    }
     if (outcome.sessionId) {
       if (kind === 'room') await this.services.rooms.setSession(turn.threadId, turn.botId, outcome.sessionId);
       else await threads.setSession(turn.threadId, outcome.sessionId);

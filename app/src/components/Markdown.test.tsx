@@ -12,6 +12,7 @@ import {
   webLink,
 } from './Markdown';
 import { textOf } from './Mermaid';
+import { FileLinks } from '@/lib/fileLink';
 
 describe('Markdown', () => {
   it('leaves a table inside a longer code fence alone', () => {
@@ -175,5 +176,36 @@ describe('leftover bold', () => {
     expect(html).not.toContain('<strong>');
     expect(html).toContain('**&quot;a&quot;**b');
     expect(html).toContain('<code');
+  });
+
+  it('draws a task list item as one block with its checkbox and no bullet class', () => {
+    const html = renderToStaticMarkup(<Markdown text={'- [x] done\n- [ ] to do'} />);
+    expect(html).toContain('contains-task-list');
+    expect(html).toContain('task-list-item');
+    expect(html.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(html).toContain('checked');
+  });
+
+  it('plays an audio or video file a reply names in place, and keeps the link', () => {
+    const html = renderToStaticMarkup(
+      <FileLinks.Provider value={{ botId: 'b1', base: 'threads/t1' }}>
+        <Markdown text={'Listen: [voice](voice.mp3) and `clip.webm`, report: [r](r.pdf)'} />
+      </FileLinks.Provider>,
+    );
+    expect(html).toContain('<audio');
+    expect(html).toContain('<video');
+    expect(html).toContain('/api/bots/b1/library/file');
+    expect(html.match(/<audio/g)).toHaveLength(1);
+    expect(html).toContain('href="voice.mp3"');
+  });
+
+  it('shows no player for media outside the bot folders or without a file context', () => {
+    const files = renderToStaticMarkup(
+      <FileLinks.Provider value={{ botId: 'b1', base: 'threads/t1' }}>
+        <Markdown text="[x](https://example.com/a.mp3)" />
+      </FileLinks.Provider>,
+    );
+    expect(files).not.toContain('<audio');
+    expect(renderToStaticMarkup(<Markdown text="[x](a.mp3)" />)).not.toContain('<audio');
   });
 });

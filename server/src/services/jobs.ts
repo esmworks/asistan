@@ -304,7 +304,26 @@ export class JobService {
       prompt: parts.join('\n\n---\n\n'),
       jobId: claimed.at(-1)!.id,
       outside: read?.outside ?? null,
+      routineRunId: await this.routineRunOf(job.fromTurnId),
     });
+  }
+
+  /**
+   * The routine run a request was made in. A run that delegates ends in the turn that reads the
+   * answers, not in the turn that asked, so that turn belongs to the run too. A run the person
+   * stopped or that failed is over: its late answers are just a bot's turn.
+   */
+  private async routineRunOf(turnId: string | null): Promise<string | null> {
+    if (!turnId) return null;
+    const [row] = await this.ctx.db
+      .select({ id: schema.routineRuns.id })
+      .from(schema.turns)
+      .innerJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.turns.routineRunId))
+      .where(
+        and(eq(schema.turns.id, turnId), inArray(schema.routineRuns.status, ['running', 'waiting', 'done'])),
+      )
+      .limit(1);
+    return row?.id ?? null;
   }
 
   /**
@@ -457,6 +476,28 @@ export class JobService {
       threads: running.map((t) => ({ id: t.id, state: t.state })),
       pendingJobs: pending.length,
     };
+  }
+
+  /**
+   * The requests one bot sent to others: the ones still open first, then the most recent. Only
+   * its own (`fromBotId`), so no bot reads what another asked.
+   */
+  async requestsFrom(botId: string, limit = 15) {
+    return this.ctx.db
+      .select({
+        id: schema.jobs.id,
+        toBotName: schema.bots.name,
+        kind: schema.jobs.kind,
+        status: schema.jobs.status,
+        request: schema.jobs.request,
+        reply: schema.jobs.reply,
+        createdAt: schema.jobs.createdAt,
+      })
+      .from(schema.jobs)
+      .leftJoin(schema.bots, eq(schema.bots.id, schema.jobs.toBotId))
+      .where(eq(schema.jobs.fromBotId, botId))
+      .orderBy(sql`(${schema.jobs.status} = 'pending') desc`, desc(schema.jobs.createdAt))
+      .limit(limit);
   }
 
   /**

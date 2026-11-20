@@ -27,6 +27,7 @@ import { usePreview } from '@/features/FilePreview';
 import { copyText } from '@/lib/clipboard';
 import { readTable, toCsv, toMarkdown } from '@/lib/tableCopy';
 import { api } from '@/lib/api';
+import { previewKind } from '@/lib/preview';
 import { FileLinks, localFilePath, localFolderPath } from '@/lib/fileLink';
 import { useUi } from '@/lib/store';
 import { sameServerThread } from '@/lib/threadLink';
@@ -224,7 +225,11 @@ const COMPONENTS: MarkdownOptions['components'] = {
   },
   // Each paragraph and list item reads in the direction of its own text (Arabic, Hebrew).
   p: ({ children }) => <p dir="auto">{children}</p>,
-  li: ({ children }) => <li dir="auto">{children}</li>,
+  li: ({ children, className }) => (
+    <li dir="auto" className={className}>
+      {children}
+    </li>
+  ),
   code: ({ className, children }) => <Code className={className}>{children}</Code>,
   table: ({ children }) => <Table>{children}</Table>,
   a: ({ href, children }) => <Link href={href}>{children}</Link>,
@@ -458,7 +463,7 @@ function BotImage({ src, alt }: { src: string; alt: string }) {
 /** A web link opens in a new tab; a link to one of the bot's files opens it in the preview. */
 /** Kinds of file a bot makes and names in its replies: documents, data, pictures, media, code. */
 const FILE_NAME =
-  /^[^\s`'"<>|]*[\p{L}\p{N}_-][^\s`'"<>|]*\.(pdf|md|txt|csv|tsv|json|xlsx?|docx?|pptx?|odt|ods|html?|png|jpe?g|gif|webp|svg|zip|mp3|wav|m4a|mp4|mov|eml|ics|py|js|ts|sh)$/iu;
+  /^[^\s`'"<>|]*[\p{L}\p{N}_-][^\s`'"<>|]*\.(pdf|md|txt|csv|tsv|json|xlsx?|docx?|pptx?|odt|ods|html?|png|jpe?g|gif|webp|svg|zip|mp3|wav|m4a|aac|ogg|oga|opus|flac|mp4|m4v|webm|mov|eml|ics|py|js|ts|sh)$/iu;
 
 /** Whether text written as code is the name or path of a file (`report.pdf`, `out/data.csv`). */
 export function looksLikeFile(text: string): boolean {
@@ -486,7 +491,7 @@ function Link({ href, children }: { href?: string; children: ReactNode }) {
   const path = files && href ? (localFilePath(href, files.base) ?? localFolderPath(href, files.base)) : null;
   if (files && path) {
     const name = path.split('/').pop()!;
-    return (
+    const link = (
       <a
         href={href}
         title={t('preview.open', { name })}
@@ -497,6 +502,28 @@ function Link({ href, children }: { href?: string; children: ReactNode }) {
       >
         {children}
       </a>
+    );
+    // Sound and video play where they are named, from the same URL the preview plays; the link
+    // stays to open the preview.
+    const media = previewKind(name);
+    if (media !== 'audio' && media !== 'video') return link;
+    const src = api.fileUrl(files.botId, path, { inline: true });
+    return (
+      <>
+        {link}
+        <span className="my-1 block">
+          {media === 'audio' ? (
+            <audio src={src} controls preload="metadata" className="w-full max-w-sm" />
+          ) : (
+            <video
+              src={src}
+              controls
+              preload="metadata"
+              className="max-h-80 max-w-full rounded-xl bg-black"
+            />
+          )}
+        </span>
+      </>
     );
   }
   // A link to a conversation on this server (Copy link) opens it here, not in another tab.

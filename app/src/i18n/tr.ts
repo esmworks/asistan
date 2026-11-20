@@ -402,6 +402,13 @@ export const tr = {
   'chat.dictation': 'Yazmak yerine konuş',
   'chat.dictationStop': 'Durdur ve yazıya dök',
   'chat.dictationFailed': 'Konuşma alınamadı: {message}',
+  'chat.micDenied':
+    'bu site için mikrofon kapalı. Tarayıcının site ayarlarından (adres çubuğunun solundaki simge) izin verip yeniden dene.',
+  'chat.micDeniedDesktop':
+    'Yumak Bot için mikrofon kapalı. Mac’te Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon bölümünden izin ver; diğer sistemlerde sistemin mikrofon gizlilik ayarlarından.',
+  'chat.micMissing': 'mikrofon bulunamadı. Bir mikrofon tak ya da giriş aygıtını seç, sonra yeniden dene.',
+  'chat.micBusy':
+    'mikrofonu başka bir uygulama kullanıyor olabilir ya da başlatılamadı. Diğer uygulamayı kapatıp yeniden dene.',
   'chat.copyLink': 'Bu sohbetin bağlantısını kopyala',
   'chat.linkCopied': 'Bağlantı kopyalandı',
   'chat.linkGone': 'Bağlantıdaki sohbet artık burada değil.',
@@ -918,6 +925,10 @@ export const tr = {
   'vault.hasTotp': 'iki adımlı kod',
   'vault.allBots': 'Her bot kullanabilir',
   'settings.tab.people': 'Kişiler',
+  'settings.keywords.apps':
+    'uygulamalar, bağlantılar, bağlan, mcp, mcp sunucusu, entegrasyonlar, servisler, araçlar, eklentiler',
+  'settings.appsResult': 'Uygulamalar ve bağlantılar',
+  'settings.appsResultFor': 'Uygulamalar ve bağlantılar: {name}',
   'settings.keywords.people': 'kişiler, kullanıcılar, ekip, takım, yönetici, üye, şifre, davet',
   'people.intro':
     'Bu sunucuyu kullanan kişiler. Herkes kendi sohbetlerini, notlarını, bağlantılarını ve kasa kayıtlarını görür; başkasınınkini kimse göremez, yöneticiler de.',
@@ -1225,6 +1236,7 @@ export const tr = {
   'routine.run.waiting': 'sırada',
   'routine.run.done': 'tamamlandı',
   'routine.run.error': 'başarısız',
+  'routine.run.stopped': 'durduruldu',
   'routine.run.skipped': 'atlandı',
   'routine.run.queued': 'sırada',
   'routine.gateWouldSkip': 'Ön kontrol bunu atlardı: {reason}',
@@ -1930,6 +1942,13 @@ export const tr = {
   'apps.auth.none': 'Giriş gerekmiyor',
   'apps.token': 'API anahtarı',
   'apps.newToken': 'Yeni API anahtarı',
+  'apps.headers': 'İstek başlıkları',
+  'apps.headersHint':
+    'Bu sunucuya giden her istekle gönderilir; anahtarını başka bir adla isteyen servisler için. Değerler şifreli saklanır ve bir daha gösterilmez.',
+  'apps.headerName': 'Başlık adı',
+  'apps.headerValue': 'Değer',
+  'apps.headerAdd': 'Başlık ekle',
+  'apps.headerSaved': 'kayıtlı',
   'apps.tokenHint': 'Authorization: Bearer başlığıyla gönderilir; bir daha gösterilmez.',
   'apps.tokenHelp': '{name} anahtarını oluştur',
   'apps.clientNeeded':

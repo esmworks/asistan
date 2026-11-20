@@ -64,6 +64,19 @@ export function whatsappTools(opts: {
     return every;
   };
 
+  /**
+   * Whether `ref` is a chat this bot wrote to with the person's approval a little while ago and
+   * the person still lets the bots read: its answers come to the bot, which may then read the chat
+   * and draft a reply (still a card) though no routine of the bot reads it and the run started
+   * from the contact's own words.
+   */
+  const answering = async (ref: string): Promise<boolean> => {
+    const phone = PhoneNumber.safeParse(ref.trim());
+    const chat = phone.success ? `${phone.data}@s.whatsapp.net` : ref.trim();
+    if ((await wa.replyOwner(chat))?.botId !== bot.id) return false;
+    return (await wa.chatsOpen()) || (await s.routines.whatsappReads()).people;
+  };
+
   /** A file the bot names, when it is inside one of its own folders. */
   const ownFile = async (name: string): Promise<string | null> => {
     const full = realPath(isAbsolute(name) ? name : resolve(cwd, name));
@@ -142,7 +155,7 @@ export function whatsappTools(opts: {
       'whatsapp_history',
       { chat: z.string().min(3).max(120), limit: z.number().int().min(1).max(200).default(50) },
       async ({ chat, limit }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(chat)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         // A chat the bot's routines do not read: the person may let it see every chat.
         if (!r.all && !(await wa.knownChat(chat, r)) && (await wa.knownChat(chat))) {
@@ -168,7 +181,7 @@ export function whatsappTools(opts: {
         file: z.string().max(1000).optional(),
       },
       async ({ chat: ref, text, file }) => {
-        let r = await reachOrAsk();
+        let r = (await answering(ref)) ? every : await reachOrAsk();
         if (typeof r === 'string') return r;
         let chat = ref.trim();
         let known = await wa.knownChat(chat, r);

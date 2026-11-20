@@ -49,6 +49,7 @@ import { siteOf } from '../services/vault';
 import { workspacePaths } from '../workspace';
 import { OWNER_ID } from '../users';
 import { atLeast, managesServer } from '../services/access';
+import { closestNames } from '../services/bots';
 import { privateHost } from '../services/skill-link';
 
 type ThreadRow = typeof schema.threads.$inferSelect;
@@ -109,6 +110,7 @@ const TEAM_OFF = new Set<string>([
   'open_conversation',
   'bot_send',
   'bot_status',
+  'bot_requests',
   'bot_stop',
 ]);
 
@@ -240,6 +242,7 @@ export type ToolName =
   | 'open_conversation'
   | 'bot_send'
   | 'bot_status'
+  | 'bot_requests'
   | 'bot_stop'
   | 'bot_conversations_read'
   | 'bot_create'
@@ -352,7 +355,22 @@ export class ToolFactory {
     /** Another bot by name or id, if the person reaches it at `wanted`; this bot itself always. */
     const reachBot = async (ref: string, wanted: 'chat' | 'edit') => {
       if (guest && wanted === 'edit') throw notFound('bot');
-      return s.access.reach(person, bot, await s.bots.resolve(ref, bot), wanted);
+      const target = await s.bots.resolve(ref, bot).catch(async (err: unknown) => {
+        if (!(err instanceof HttpError) || err.key !== 'error.noBotNamed') throw err;
+        // Only bots the person reaches are offered, so a wrong name never shows another's bot.
+        const reachable = new Set(await s.access.botIds(await s.access.viewerOf(person), 'chat'));
+        const names = (await s.bots.list()).filter((b) => b.id !== bot.id && reachable.has(b.id));
+        const close = closestNames(
+          ref,
+          names.map((b) => b.name),
+        );
+        if (!close.length) throw err;
+        throw new HttpError(404, 'error.noBotNamedDidYouMean', {
+          ref,
+          names: close.map((n) => `"${n}"`).join(', '),
+        });
+      });
+      return s.access.reach(person, bot, target, wanted);
     };
     let levelHere: Promise<BotLevel> | undefined;
     /** What the person may do with this bot. */
@@ -619,17 +637,19 @@ export class ToolFactory {
           // The person's own, open to this bot only; they can open it to others in the apps window.
           let c = await s.connections.create({ ...input.data, allBots: false, botIds: [bot.id] }, person);
           if (c.status === 'signed-out') {
-            // The server wants a sign-in: it becomes an OAuth connection for the person to sign in to.
-            c = await s.connections.update(c.id, { auth: 'oauth' });
+            // The server wants a sign-in: it became an OAuth connection for the person to sign in
+            // to, or, when it offers no sign-in and wants a key, one they enter the key for.
+            const needsKey = c.auth === 'token';
+            if (!needsKey && c.auth !== 'oauth') c = await s.connections.update(c.id, { auth: 'oauth' });
             await s.threads.addMessage({
               threadId: thread.id,
               role: 'system',
               author: `bot:${bot.id}`,
-              text: t('tool.appSignInCard', { name: c.name }),
+              text: t(needsKey ? 'connection.needsKeyCardText' : 'tool.appSignInCard', { name: c.name }),
               props: { connectionSignIn: c.id },
               turnId: turn.id,
             });
-            return t('tool.appNeedsSignIn', { name: c.name });
+            return t(needsKey ? 'tool.appNeedsKey' : 'tool.appNeedsSignIn', { name: c.name });
           }
           if (c.status === 'error') return t('tool.appFailed', { name: c.name, message: c.error ?? '' });
           const tools = c.tools.map((x) => x.name).join(', ') || '-';
@@ -1230,6 +1250,30 @@ export class ToolFactory {
           return st.busy
             ? t('tool.busy', { name: target.name, count: st.pendingJobs })
             : t('tool.idle', { name: target.name });
+        },
+        'read',
+      ),
+      def(
+        'bot_requests',
+        {},
+        async () => {
+          const rows = await s.jobs.requestsFrom(bot.id);
+          if (!rows.length) return t('tool.requestsNone');
+          const clock = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ');
+          return rows
+            .map((r) =>
+              t(r.reply === null ? 'tool.requestLine' : 'tool.requestLineReply', {
+                id: r.id,
+                to: r.toBotName ?? '?',
+                status: t(
+                  `tool.requestStatus.${r.kind === 'notify' && r.status === 'done' ? 'notified' : r.status}`,
+                ),
+                at: clock(r.createdAt),
+                request: truncate(r.request.replace(/\s+/g, ' '), 120),
+                reply: truncate((r.reply ?? '').replace(/\s+/g, ' '), 160),
+              }),
+            )
+            .join('\n');
         },
         'read',
       ),

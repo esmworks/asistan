@@ -363,6 +363,10 @@ export const en: Catalog<MessageKey> = {
   'bot.effortDefault': 'As set for all bots',
   'settings.search': 'Search settings',
   'settings.back': 'All settings',
+  'settings.keywords.apps':
+    'apps, connections, connect, mcp, mcp server, integrations, services, tools, plugins',
+  'settings.appsResult': 'Apps and connections',
+  'settings.appsResultFor': 'Apps and connections: {name}',
   'settings.keywords.profile': 'name, about me, how to address, job, focus',
   'settings.keywords.general':
     'theme, dark, light, language, zoom, notifications, sound, send key, enter, time zone, sidebar, compact, chat width, open at login, reading aloud, speech',
@@ -406,6 +410,13 @@ export const en: Catalog<MessageKey> = {
   'chat.dictation': 'Speak instead of typing',
   'chat.dictationStop': 'Stop and write it out',
   'chat.dictationFailed': 'Could not take the speech: {message}',
+  'chat.micDenied':
+    'the microphone is turned off for this site. Allow it in the browser’s site settings (the icon left of the address), then try again.',
+  'chat.micDeniedDesktop':
+    'the microphone is turned off for Yumak Bot. On a Mac, allow it in System Settings → Privacy & Security → Microphone; elsewhere, in your system’s microphone privacy settings.',
+  'chat.micMissing': 'no microphone was found. Plug one in or choose an input device, then try again.',
+  'chat.micBusy':
+    'another app may be using the microphone, or it could not start. Close the other app and try again.',
   'chat.copyLink': 'Copy a link to this conversation',
   'chat.linkCopied': 'Link copied',
   'chat.linkGone': 'The linked conversation is not here any more.',
@@ -1234,6 +1245,7 @@ export const en: Catalog<MessageKey> = {
   'routine.run.waiting': 'waiting',
   'routine.run.done': 'done',
   'routine.run.error': 'failed',
+  'routine.run.stopped': 'stopped',
   'routine.run.skipped': 'skipped',
   'routine.run.queued': 'queued',
   'routine.gateWouldSkip': 'The pre-check would have skipped it: {reason}',
@@ -1935,6 +1947,13 @@ export const en: Catalog<MessageKey> = {
   'apps.auth.none': 'No sign-in needed',
   'apps.token': 'API key',
   'apps.newToken': 'New API key',
+  'apps.headers': 'Request headers',
+  'apps.headersHint':
+    'Sent with every request to this server, for a service that wants its key under another name. Values are kept sealed and never shown again.',
+  'apps.headerName': 'Header name',
+  'apps.headerValue': 'Value',
+  'apps.headerAdd': 'Add header',
+  'apps.headerSaved': 'saved',
   'apps.tokenHint': 'Sent as an Authorization: Bearer header; never shown again.',
   'apps.tokenHelp': 'Create a {name} key',
   'apps.clientNeeded':

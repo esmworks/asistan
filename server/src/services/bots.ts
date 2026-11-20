@@ -342,3 +342,51 @@ export class BotService {
     this.ctx.bus.refresh({ scope: 'groups' });
   }
 }
+
+/** Lower case without accents, with Turkish letters folded to their plain Latin ones. */
+function plain(text: string): string {
+  return text.trim().toLocaleLowerCase('tr').replace(/ı/g, 'i').normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * The names closest to what a bot wrote for a teammate, for a "did you mean" hint: names it starts
+ * or is part of, then names a few typos away. At most `limit`, nearest first; the caller passes
+ * only names the asker may see, so no hint reveals a bot it cannot reach.
+ */
+export function closestNames(ref: string, names: string[], limit = 3): string[] {
+  const wanted = plain(ref);
+  if (!wanted) return [];
+  const allowed = Math.max(1, Math.floor(wanted.length / 3));
+  const scored: { name: string; score: number }[] = [];
+  for (const name of new Set(names)) {
+    const p = plain(name);
+    if (!p) continue;
+    // A very short name inside a longer word says nothing about what was meant.
+    const part = p.length >= 3 && wanted.includes(p);
+    let score: number;
+    if (p.startsWith(wanted) || (part && wanted.startsWith(p))) score = 0;
+    else if (p.includes(wanted) || part) score = 1;
+    else {
+      const d = editDistance(wanted, p);
+      if (d > allowed) continue;
+      score = 1 + d;
+    }
+    scored.push({ name, score });
+  }
+  return scored
+    .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+    .slice(0, limit)
+    .map((s) => s.name);
+}

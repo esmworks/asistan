@@ -12,6 +12,36 @@ import { desktop } from './desktop';
  */
 export type DictationState = 'idle' | 'recording' | 'working';
 
+/** A microphone problem the person can fix; `key` is its guidance in the translation catalogs. */
+export type DictationError = {
+  key?: 'chat.micDenied' | 'chat.micDeniedDesktop' | 'chat.micMissing' | 'chat.micBusy';
+  message: string;
+};
+
+/**
+ * Turns what the browser says when the microphone cannot be opened (a DOMException name, or the
+ * speech recognition's error code) into guidance, since the raw text ("Permission denied") does
+ * not say what to do. Anything unknown keeps the browser's own message.
+ */
+export function dictationError(name: string, message: string, inDesktopApp = !!desktop): DictationError {
+  switch (name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return { key: inDesktopApp ? 'chat.micDeniedDesktop' : 'chat.micDenied', message };
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return { key: 'chat.micMissing', message };
+    case 'NotReadableError':
+    case 'AbortError':
+    case 'audio-capture':
+      return { key: 'chat.micBusy', message };
+    default:
+      return { message };
+  }
+}
+
 interface Recognition {
   lang: string;
   continuous: boolean;
@@ -54,7 +84,7 @@ export function useDictation(opts: {
   locale: Locale;
   /** Text to add to the message box: each finished phrase, or the whole recording at once. */
   onText(text: string): void;
-  onError(message: string): void;
+  onError(error: DictationError): void;
 }) {
   const { data } = useQuery({ queryKey: ['transcribe'], queryFn: api.transcribeStatus, staleTime: 60_000 });
   const server = !!data?.available && canRecord();
@@ -74,7 +104,7 @@ export function useDictation(opts: {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      latest.current.onError((e as Error).message);
+      latest.current.onError(dictationError((e as Error).name, (e as Error).message));
       return;
     }
     const type = recordingType();
@@ -93,7 +123,7 @@ export function useDictation(opts: {
         const { text } = await api.transcribe(blob, latest.current.locale);
         if (text) latest.current.onText(text);
       } catch (e) {
-        latest.current.onError((e as Error).message);
+        latest.current.onError({ message: (e as Error).message });
       } finally {
         setState('idle');
       }
@@ -117,7 +147,8 @@ export function useDictation(opts: {
       }
     };
     r.onerror = (e) => {
-      if (e.error !== 'no-speech' && e.error !== 'aborted') latest.current.onError(e.error);
+      if (e.error !== 'no-speech' && e.error !== 'aborted')
+        latest.current.onError(dictationError(e.error, e.error));
     };
     r.onend = () => {
       stopRef.current = null;

@@ -528,7 +528,9 @@ export const routineRuns = pgTable(
       .references(() => routines.id, { onDelete: 'cascade' }),
     occurrence: text('occurrence').notNull(),
     // `queued`: outside text that arrived while another run was going, kept until that one ends.
-    status: text('status', { enum: ['running', 'done', 'error', 'skipped', 'waiting', 'queued'] }).notNull(),
+    status: text('status', {
+      enum: ['running', 'done', 'error', 'stopped', 'skipped', 'waiting', 'queued'],
+    }).notNull(),
     reason: text('reason'),
     threadId: text('thread_id'),
     /** What a queued run carries in, kept until it starts. */
@@ -1084,6 +1086,8 @@ export const whatsappChats = pgTable('whatsapp_chats', {
   jid: text('jid').primaryKey(),
   kind: text('kind', { enum: ['person', 'group'] }).notNull(),
   name: sealedText('name').notNull().default(''),
+  /** The name the person saved for the contact in their phone book; it wins over the name the contact gave. */
+  savedName: sealedText('saved_name').notNull().default(''),
   batchedSeq: bigint('batched_seq', { mode: 'number' }).notNull().default(0),
   /**
    * The end of a batch a busy routine did not take: the next hand-over offers that same batch
@@ -1146,6 +1150,8 @@ export const whatsappDrafts = pgTable('whatsapp_drafts', {
     .notNull()
     .default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** When it went out: the card may be answered long after it was drafted. */
+  sentAt: timestamp('sent_at', { withTimezone: true }),
 });
 
 /**
