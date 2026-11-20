@@ -32,6 +32,7 @@ import { TableService } from './tables';
 import { ContentSealService } from './content-seal';
 import { DoctorService } from './doctor';
 import { TitleService } from './titles';
+import { LinkPreviews } from './link-preview';
 import { OfferService } from './offers';
 import { JobService } from './jobs';
 import { MemoryService } from './memory';
@@ -109,6 +110,7 @@ export class Services {
   readonly doctor: DoctorService;
   readonly titles: TitleService;
   readonly offers: OfferService;
+  readonly linkPreviews = new LinkPreviews();
   readonly telegram: TelegramChannels;
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;

@@ -4,7 +4,7 @@ import { get as httpsGet } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import { blockedAddress } from '@yumakbot/shared/egress';
 import { HttpError } from '../util';
-import { BodyTooLarge, readCapped } from './read-capped';
+import { BodyTooLarge, readCapped, readStart } from './read-capped';
 
 /** The largest skill file a link may bring in. */
 export const SKILL_LINK_MAX = 256 * 1024;
@@ -102,6 +102,8 @@ export interface PublicFetchOptions {
   userAgent?: string;
   /** What the request asks for (`accept`); anything by default. */
   accept?: string;
+  /** Only the start of the body is wanted: a longer one is cut at `max` instead of refused. */
+  start?: boolean;
 }
 
 /** What an https address served: the body, its stated type, and the address it came from. */
@@ -165,6 +167,15 @@ export async function fetchPublic(
   if (status < 200 || status >= 300) {
     res.destroy();
     throw new HttpError(400, 'error.skillLinkStatus', { status: String(status) });
+  }
+  if (o.start) {
+    try {
+      const body = await readStart(res, max);
+      res.destroy();
+      return { body, contentType: String(res.headers['content-type'] ?? ''), url };
+    } catch {
+      throw unreachable();
+    }
   }
   if (Number(res.headers['content-length'] ?? 0) > max) {
     res.destroy();

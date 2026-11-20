@@ -1207,6 +1207,12 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // The person's answer on a work offer: taken sends its task as their message; or turned down.
+  // What a web link in a conversation shows on a hover; none when the page gives nothing.
+  app.get('/api/link-preview', async (req) => {
+    const { url } = z.object({ url: z.string().min(1).max(2048) }).parse(req.query);
+    return { preview: await s.linkPreviews.get(url) };
+  });
+
   app.post('/api/messages/:id/offer', async (req) => {
     const { take } = z.object({ take: z.boolean() }).parse(req.body);
     return s.offers.answer(IdParams.parse(req.params).id, take, me(req).userId);

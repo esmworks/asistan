@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
@@ -200,12 +201,16 @@ describe('leftover bold', () => {
   });
 
   it('shows no player for media outside the bot folders or without a file context', () => {
+    // A web link asks the server what the page is, which needs the app's query client.
     const files = renderToStaticMarkup(
-      <FileLinks.Provider value={{ botId: 'b1', base: 'threads/t1' }}>
-        <Markdown text="[x](https://example.com/a.mp3)" />
-      </FileLinks.Provider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <FileLinks.Provider value={{ botId: 'b1', base: 'threads/t1' }}>
+          <Markdown text="[x](https://example.com/a.mp3)" />
+        </FileLinks.Provider>
+      </QueryClientProvider>,
     );
     expect(files).not.toContain('<audio');
+    expect(files).toContain('target="_blank"');
     expect(renderToStaticMarkup(<Markdown text="[x](a.mp3)" />)).not.toContain('<audio');
   });
 });

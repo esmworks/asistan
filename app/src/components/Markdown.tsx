@@ -31,6 +31,7 @@ import { previewKind } from '@/lib/preview';
 import { FileLinks, localFilePath, localFolderPath } from '@/lib/fileLink';
 import { useUi } from '@/lib/store';
 import { sameServerThread } from '@/lib/threadLink';
+import { WebLink } from './LinkPreview';
 
 /**
  * Math is typeset from `$$…$$` (inline when on one line with text, display on its own lines),
@@ -547,6 +548,7 @@ function Link({ href, children }: { href?: string; children: ReactNode }) {
       </a>
     );
   }
+  if (href && /^https?:\/\//i.test(href)) return <WebLink href={href}>{children}</WebLink>;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer">
       {children}

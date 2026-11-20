@@ -7,6 +7,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Link previews: holding the pointer on a web link in a conversation shows the page's title, description and site,
+  and a GitHub pull request or issue also shows its state (open, draft, merged, closed) as an icon beside the link
+  and its author. The server reads the page (only its start, private addresses refused, kept for ten minutes) and no
+  picture from it is loaded, so the site cannot tell who read the message or when. GitHub is asked without a
+  sign-in, so only public repositories are previewed.
 - An emoji button next to the message box: every emoji in sections, the ones picked lately first, and a search by
   English name or keyword; the pick goes where the caret was, and Shift-click adds more without closing. The data
   comes with the app, so it works offline. Phones keep their own emoji keyboard.

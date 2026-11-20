@@ -60,6 +60,7 @@ export const ROUTE_RULES: Record<string, Rule> = {
 
   // The server's own settings and the AI services it uses.
   'GET /api/settings': 'signedIn',
+  'GET /api/link-preview': 'signedIn',
   'PATCH /api/settings': 'self',
   'GET /api/claude/auth': 'signedIn',
   'PUT /api/claude/auth': 'admin',

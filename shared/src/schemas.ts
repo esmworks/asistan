@@ -1444,6 +1444,24 @@ const UsageTotals = z.object({
   unpriced: z.number().int(),
 });
 
+/** What a web link shows on a hover; a GitHub pull request or issue also gives its state. */
+export const LinkPreview = z.object({
+  url: z.string(),
+  site: z.string(),
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  github: z
+    .object({
+      kind: z.enum(['pr', 'issue']),
+      repo: z.string(),
+      number: z.number(),
+      state: z.enum(['open', 'draft', 'merged', 'closed', 'notPlanned']),
+      author: z.string().nullable(),
+    })
+    .optional(),
+});
+export type LinkPreview = z.infer<typeof LinkPreview>;
+
 export const UsageReport = z.object({
   days: z.number().int(),
   timezone: z.string(),

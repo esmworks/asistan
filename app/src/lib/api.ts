@@ -1,5 +1,6 @@
 import type {
   BotAction,
+  LinkPreview,
   Pledge,
   TurnChanges,
   RoutineSuggestion,
@@ -532,6 +533,8 @@ export const api = {
   editMessage: (id: string, text: string) => http.patch<Message>(`/api/messages/${id}`, { text }),
   removeMessage: (id: string) => http.del<{ ok: true }>(`/api/messages/${id}`),
   retryMessage: (id: string) => http.post<{ ok: true; turnId: string }>(`/api/messages/${id}/retry`),
+  linkPreview: (url: string) =>
+    http.get<{ preview: LinkPreview | null }>(`/api/link-preview?url=${encodeURIComponent(url)}`),
   answerOffer: (id: string, take: boolean) => http.post<Message>(`/api/messages/${id}/offer`, { take }),
   /** A tool call an MCP app's view makes, through the server to its own connection. */
   appCall: (messageId: string, name: string, args: Record<string, unknown>) =>

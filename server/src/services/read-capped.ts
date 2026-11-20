@@ -25,3 +25,19 @@ export async function readCapped(
   }
   return Buffer.concat(chunks);
 }
+
+/** The first `max` bytes of a response body, or all of it when shorter; the rest is not read. */
+export async function readStart(
+  body: AsyncIterable<Uint8Array> | null | undefined,
+  max: number,
+): Promise<Buffer> {
+  if (!body) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of body) {
+    chunks.push(chunk);
+    size += chunk.length;
+    if (size >= max) break;
+  }
+  return Buffer.concat(chunks).subarray(0, max);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BodyTooLarge, readCapped } from '../src/services/read-capped';
+import { BodyTooLarge, readCapped, readStart } from '../src/services/read-capped';
 import {
   fetchPublicText,
   fetchSkillFile,
@@ -100,6 +100,19 @@ describe('bağlantıdan beceri', () => {
     await expect(readCapped(endless, 10 * 1024)).rejects.toBeInstanceOf(BodyTooLarge);
     expect(pulled).toBeLessThan(20 * 1024);
     expect((await readCapped(new Response('kısa').body, 100)).toString()).toBe('kısa');
+  });
+
+  it('reads only the start of a body when that is all that is wanted', async () => {
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulled += 1024;
+        c.enqueue(new Uint8Array(1024).fill(65));
+      },
+    });
+    expect((await readStart(endless, 1500)).length).toBe(1500);
+    expect(pulled).toBeLessThan(5 * 1024);
+    expect((await readStart(new Response('kısa').body, 100)).toString()).toBe('kısa');
   });
 
   it('yerel adrese giden bağlantıyı reddeder', async () => {
