@@ -155,6 +155,8 @@ function refresh(qc: QueryClient, e: RefreshScope) {
       inv('slack');
       inv('slack-link');
       inv('discord');
+      inv('teams');
+      inv('teams-link');
       break;
     case 'tickets':
       inv('tickets');

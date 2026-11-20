@@ -7,6 +7,13 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Microsoft Teams (Settings → Chat apps, for those who look after the server): a single-tenant Azure Bot's app ID,
+  tenant ID and client secret connect it. People in that Microsoft 365 organization link their Teams account under
+  Profile with a code, then write to their bots in a one-to-one Teams chat and get the replies there; a step that asks
+  first comes as a card with buttons, answered as in the app. Teams sends messages to the server, so it needs a
+  public HTTPS address; each request must carry a token signed with the Bot Framework's published keys for this bot
+  and this Teams service, or it is refused before it is read. Files, group chats and channels stay in the app for
+  now.
 - Reaching the server from your other devices over Tailscale (Settings → Connection, for the owner, off by default):
   turning it on runs `tailscale serve` so the server gets an https address that only the devices on your Tailscale
   network reach, without opening it to the internet; signing in is still needed there. Nothing runs until it is

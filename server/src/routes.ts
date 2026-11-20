@@ -67,6 +67,8 @@ import {
   DiscordConnect,
   DiscordUpdate,
   SlackConnect,
+  TeamsConnect,
+  TeamsUpdate,
   SlackUpdate,
   TelegramConnect,
   TelegramUpdate,
@@ -141,6 +143,7 @@ import { replaySteps } from './browser/replay';
 import { stepsText } from './browser/teach';
 import { findLinkedFile, workspacePaths } from './workspace';
 import { uniqueName, zip } from './zip';
+import { TEAMS_PATH } from './channels/teams';
 
 /** Where services start routines by their secret address; needs no access key. */
 export const WEBHOOK_PATH = '/api/hooks/routines';
@@ -148,6 +151,8 @@ export const WEBHOOK_PATH = '/api/hooks/routines';
 export const EMAIL_INBOUND_PATH = '/api/email/inbound';
 /** Where a shared page opens, outside /api so it needs no sign-in. */
 export const SHARE_PATH = '/p';
+/** The largest request Teams may deliver; a message with a card is a few kilobytes. */
+const TEAMS_BODY_MAX = 256 * 1024;
 /** Longest text a script may hand a routine run. */
 const MAX_PAYLOAD = 50_000;
 /** The largest webhook body read; GitHub sends up to 25 MB, but what a bot reads is cut far shorter. */
@@ -1948,6 +1953,24 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   app.get('/api/slack/me', async (req) => s.slack.link(me(req).userId));
   app.post('/api/slack/me/code', async (req) => s.slack.newCode(me(req).userId));
   app.delete('/api/slack/me', async (req) => s.slack.unlink(me(req).userId));
+  // The server's Teams bot, set up by those who look after the server; each person links their own
+  // Teams account to it with a code.
+  app.get('/api/teams', async () => s.teams.status());
+  app.put('/api/teams', async (req) => s.teams.connect(TeamsConnect.parse(req.body)));
+  app.patch('/api/teams', async (req) => s.teams.update(TeamsUpdate.parse(req.body)));
+  app.delete('/api/teams', async () => {
+    await s.teams.disconnect();
+    return { ok: true };
+  });
+  app.get('/api/teams/me', async (req) => s.teams.link(me(req).userId));
+  app.post('/api/teams/me/code', async (req) => s.teams.newCode(me(req).userId));
+  app.delete('/api/teams/me', async (req) => s.teams.unlink(me(req).userId));
+  // What Teams delivers: no access key, each request carries the Bot Framework's signed token,
+  // which the channel checks before it reads anything.
+  app.post(TEAMS_PATH, { bodyLimit: TEAMS_BODY_MAX }, async (req, reply) => {
+    const status = await s.teams.receive(req.headers.authorization, req.body);
+    return reply.code(status).send(status === 200 ? {} : { ok: false });
+  });
   // The server's Discord bot, set up by those who look after the server. People in the Discord
   // servers it is in have no account here and link nothing.
   app.get('/api/discord', async () => s.discord.status());

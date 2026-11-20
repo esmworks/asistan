@@ -24,6 +24,7 @@ import { Card } from './SettingsDialog';
 import { EmailCard } from './EmailCard';
 import { DiscordCard } from './DiscordCard';
 import { SlackCard } from './SlackCards';
+import { TeamsCard } from './TeamsCards';
 
 const ERRORS: Record<string, MessageKey> = {
   expired: 'whatsapp.error.expired',
@@ -37,7 +38,7 @@ const ERRORS: Record<string, MessageKey> = {
 };
 
 /**
- * Chat apps: WhatsApp for the chosen bot and the server's Slack app and Discord bot here; each bot's
+ * Chat apps: WhatsApp for the chosen bot and the server's Slack app, Teams bot and Discord bot here; each bot's
  * Telegram is in that bot's settings.
  */
 export function ChannelsTab() {
@@ -46,6 +47,7 @@ export function ChannelsTab() {
     <>
       <WhatsAppCard />
       <SlackCard />
+      <TeamsCard />
       <DiscordCard />
       <Card title={t('channels.telegram')}>
         <p className="px-4 py-3 text-sm text-muted-foreground">{t('channels.telegramHint')}</p>

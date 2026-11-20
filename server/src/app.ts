@@ -53,6 +53,7 @@ import { FakeEngine } from './engine/fake';
 import { PiEngine } from './engine/pi';
 import type { AccountStatus, Engine, ModelTest } from './engine/types';
 import { registerMcpServer } from './mcp-server';
+import { TEAMS_PATH } from './channels/teams';
 import { EMAIL_INBOUND_PATH, registerRoutes, WEBHOOK_PATH } from './routes';
 import { OAUTH_CALLBACK_PATH } from './services/connections';
 import { dropAllClients, OAUTH_CLIENT_PATH, setToolCallTimeout } from './connections/client';
@@ -110,6 +111,8 @@ const PUBLIC_API = new Set([
   OAUTH_CLIENT_PATH,
   // A mail relay signs in with the mail secret, checked by the route itself.
   EMAIL_INBOUND_PATH,
+  // Teams signs each delivery with the Bot Framework's keys, checked by the channel itself.
+  TEAMS_PATH,
 ]);
 /** Routes (as registered, not as a URL spells them) that need no access key or session. */
 const openRoute = (route: string) => PUBLIC_API.has(route) || route.startsWith(`${WEBHOOK_PATH}/`);
@@ -741,6 +744,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     await services.whatsapp.start();
     await services.slack.start();
     await services.discord.start();
+    services.teams.start();
   }
 
   return {
@@ -763,6 +767,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
       await services.whatsapp.stop();
       await services.slack.stop();
       await services.discord.stop();
+      await services.teams.stop();
       await services.reactions.stop();
       services.push.stop();
       services.subscriptions.stop();

@@ -101,6 +101,12 @@ export interface Config {
   slackApi: string;
   /** Discord's REST API with its version; tests put a stand-in here. */
   discordApi: string;
+  /**
+   * Microsoft's sign-in service, where a Teams bot gets the token it replies with, and the Bot
+   * Framework's description of the keys that sign what Teams sends; tests put stand-ins here.
+   */
+  teamsLogin: string;
+  teamsOpenId: string;
   /** Whether chat apps (Telegram, WhatsApp) connect at all; tests that do not use them leave them off. */
   channelsEnabled: boolean;
   /**
@@ -210,6 +216,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     telegramPollSeconds: 50,
     slackApi: (env.YUMAKBOT_SLACK_API || 'https://slack.com/api').replace(/\/+$/, ''),
     discordApi: (env.YUMAKBOT_DISCORD_API || 'https://discord.com/api/v10').replace(/\/+$/, ''),
+    teamsLogin: (env.YUMAKBOT_TEAMS_LOGIN || 'https://login.microsoftonline.com').replace(/\/+$/, ''),
+    teamsOpenId:
+      env.YUMAKBOT_TEAMS_OPENID || 'https://login.botframework.com/v1/.well-known/openidconfiguration',
     channelsEnabled: true,
     modelCatalogUrl: modelCatalogUrl(env.YUMAKBOT_MODEL_CATALOG_URL),
     aiEndpoints: aiEndpointsFrom(env),

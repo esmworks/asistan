@@ -1057,7 +1057,7 @@ export const channels = pgTable(
   'channels',
   {
     id: text('id').primaryKey(),
-    kind: text('kind', { enum: ['telegram', 'whatsapp', 'slack', 'discord'] }).notNull(),
+    kind: text('kind', { enum: ['telegram', 'whatsapp', 'slack', 'discord', 'teams'] }).notNull(),
     botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
     /** Telegram: the bot token, sealed. */
     secret: text('secret'),
@@ -1095,6 +1095,9 @@ export const channels = pgTable(
     uniqueIndex('channels_discord_uq')
       .on(t.kind)
       .where(sql`${t.kind} = 'discord'`),
+    uniqueIndex('channels_teams_uq')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'teams'`),
   ],
 );
 
@@ -1119,6 +1122,31 @@ export const slackPeople = pgTable(
     createdAt: created(),
   },
   (t) => [uniqueIndex('slack_people_user_uq').on(t.userId)],
+);
+
+/**
+ * A Teams account linked to a person here: what it writes runs as theirs, and nobody else's
+ * messages are read. Linked with a code the person gets in the app and sends to the Teams bot.
+ */
+export const teamsPeople = pgTable(
+  'teams_people',
+  {
+    /** The account's id in the bot's conversations (`from.id`). */
+    teamsUserId: text('teams_user_id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** How Teams names them, for the app to show. */
+    name: text('name').notNull().default(''),
+    /** Where replies go: the service Teams named and their personal chat with the bot. */
+    serviceUrl: text('service_url'),
+    conversationId: text('conversation_id'),
+    /** The bot their messages go to, the last one they named. */
+    botId: text('bot_id').references(() => bots.id, { onDelete: 'set null' }),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex('teams_people_user_uq').on(t.userId)],
 );
 
 /** Which Slack thread a team conversation is, so its replies and later lines find each other. */

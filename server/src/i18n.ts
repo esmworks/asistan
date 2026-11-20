@@ -314,6 +314,16 @@ const tr = {
   'error.slackRefused': 'Slack anahtarı kabul etmedi ({reason})',
   'error.slackUnreachable': "Slack'e ulaşılamadı",
   'error.slackNotConnected': 'Slack bağlı değil',
+  'error.teamsRefused':
+    'Microsoft bu bilgileri kabul etmedi ({reason}); uygulama kimliğini, kiracı kimliğini ve gizli anahtarı denetle',
+  'error.teamsUnreachable': "Microsoft'a ulaşılamadı",
+  'error.teamsNotConnected': 'Teams bağlı değil',
+  'teams.linkFirst':
+    "Seni henüz tanımıyorum. Yumak Bot'ta Profil → Teams hesabım bölümünden bir bağlantı kodu al ve bana `link KOD` yaz.",
+  'teams.personalOnly': 'Şimdilik yalnızca benimle birebir sohbette konuşabiliyorum; bana doğrudan yaz.',
+  'teams.filesInApp': "Teams'ten gelen dosyaları henüz okuyamıyorum; dosyayı Yumak Bot uygulamasından ekle.",
+  'teams.filesLeftOut': "(Mesajdaki dosyalar Teams'ten okunamadı.)",
+  'teams.notDelivered': "Bir cevap Teams'e iletilemedi; bağlantı bilgilerini ve botun kaydını denetle.",
   'error.discordToken':
     'Bu bir Discord bot anahtarına benzemiyor; geliştirici portalında Bot > Reset Token ile al.',
   'error.discordRefused': 'Discord anahtarı kabul etmedi ({reason})',
@@ -2037,6 +2047,17 @@ const en: Catalog<ServerKey> = {
   'error.slackRefused': 'Slack did not accept the token ({reason})',
   'error.slackUnreachable': 'Could not reach Slack',
   'error.slackNotConnected': 'Slack is not connected',
+  'error.teamsRefused':
+    'Microsoft did not accept these details ({reason}); check the app ID, tenant ID and client secret',
+  'error.teamsUnreachable': 'Could not reach Microsoft',
+  'error.teamsNotConnected': 'Teams is not connected',
+  'teams.linkFirst':
+    "I don't know you yet. Get a link code in Yumak Bot under Profile → My Teams account and send me `link CODE`.",
+  'teams.personalOnly': 'For now I can only talk in a one-to-one chat; write to me directly.',
+  'teams.filesInApp': "I can't read files from Teams yet; add the file in the Yumak Bot app.",
+  'teams.filesLeftOut': '(The files in this message could not be read from Teams.)',
+  'teams.notDelivered':
+    'A reply could not be delivered to Teams; check the connection details and the bot registration.',
   'error.discordToken':
     'This does not look like a Discord bot token; get one under Bot > Reset Token in the developer portal.',
   'error.discordRefused': 'Discord did not accept the token ({reason})',

@@ -9,6 +9,7 @@ import { useSettings } from '@/lib/queries';
 import { Chip } from './onboarding/Chip';
 import { Card, Row, useSaveSettings } from './SettingsDialog';
 import { SlackLinkCard } from './SlackCards';
+import { TeamsLinkCard } from './TeamsCards';
 
 /** What the person told YumakBot about themselves; every bot reads it. */
 export function ProfileTab() {
@@ -121,6 +122,7 @@ export function ProfileTab() {
         </>
       )}
       <SlackLinkCard />
+      <TeamsLinkCard />
     </>
   );
 }

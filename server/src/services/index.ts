@@ -13,6 +13,7 @@ import { BotService } from './bots';
 import { ClaudeAuthService } from './claude-auth';
 import { ConnectionService } from './connections';
 import { DiscordChannel } from '../channels/discord';
+import { TeamsChannel } from '../channels/teams';
 import { SlackChannel } from '../channels/slack';
 import { TelegramChannels } from '../channels/telegram';
 import { WhatsAppChannel } from '../channels/whatsapp';
@@ -119,6 +120,7 @@ export class Services {
   readonly whatsapp: WhatsAppChannel;
   readonly slack: SlackChannel;
   readonly discord: DiscordChannel;
+  readonly teams: TeamsChannel;
 
   constructor(
     readonly ctx: Ctx,
@@ -199,5 +201,6 @@ export class Services {
     this.turns.onFinished((t, o) => this.whatsapp.onTurnFinished(t, o));
     this.slack = new SlackChannel(ctx, this, this.vault);
     this.discord = new DiscordChannel(ctx, this, this.vault);
+    this.teams = new TeamsChannel(ctx, this, this.vault);
   }
 }

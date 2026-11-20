@@ -16,7 +16,7 @@ import { redactSecrets } from '../services/secrets';
 import { truncate } from '../util';
 
 /** A chat app a message can come from; kept on the person's message as `via`. */
-export type Via = 'telegram' | 'whatsapp' | 'slack' | 'discord';
+export type Via = 'telegram' | 'whatsapp' | 'slack' | 'discord' | 'teams';
 
 /** The most of a step's detail a chat app's card shows; the app shows the rest. */
 const DETAIL_MAX = 700;

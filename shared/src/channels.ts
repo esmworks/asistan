@@ -162,6 +162,50 @@ export interface SlackLink {
   optionalMissing: string[];
 }
 
+/**
+ * The server's Teams bot, registered in Azure as a single-tenant bot: its app (client) id, the
+ * directory (tenant) it belongs to, and a client secret.
+ */
+export const TeamsConnect = z.object({
+  appId: z.string().trim().uuid(),
+  tenantId: z.string().trim().uuid(),
+  secret: z.string().trim().min(1).max(500),
+  /** The bot that answers when a message names none. */
+  botId: z.string().min(1).nullable(),
+});
+export type TeamsConnect = z.infer<typeof TeamsConnect>;
+
+export const TeamsUpdate = z.object({ botId: z.string().min(1).nullable() });
+
+/** The server's Teams bot, as those who look after the server see it. Never the secret. */
+export interface TeamsStatus {
+  /** Microsoft accepted the secret and messages are read. */
+  connected: boolean;
+  appId: string | null;
+  tenantId: string | null;
+  botId: string | null;
+  /**
+   * The address to give the bot's registration as its messaging endpoint; null while the server
+   * has no public HTTPS address, which Teams needs to reach it.
+   */
+  endpoint: string | null;
+  /** The people linked to a Teams account. */
+  people: { userId: string; name: string; teamsName: string }[];
+  /** Why it stopped working, in Microsoft's words; null while it works. */
+  error: string | null;
+}
+
+/** One person's link to Teams. */
+export interface TeamsLink {
+  /** The server has a Teams bot. */
+  available: boolean;
+  /** The Teams account linked to them; null when none. */
+  linked: { name: string } | null;
+  /** The code to send the Teams bot as `link <code>`; null when none is waiting. */
+  code: string | null;
+  codeUntil: string | null;
+}
+
 /** The permissions the Slack app's bot token needs; the manifest asks for them and the server checks them. */
 export const SLACK_BOT_SCOPES = [
   'app_mentions:read',
