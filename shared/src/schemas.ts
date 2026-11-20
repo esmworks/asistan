@@ -1444,6 +1444,17 @@ const UsageTotals = z.object({
   unpriced: z.number().int(),
 });
 
+/** Whether this server is shared on the person's Tailscale network, and where. */
+export const TailscaleState = z.object({
+  installed: z.boolean(),
+  running: z.boolean(),
+  /** This machine's name on the tailnet (`laptop.tail1234.ts.net`). */
+  name: z.string().nullable(),
+  sharing: z.boolean(),
+  url: z.string().nullable(),
+});
+export type TailscaleState = z.infer<typeof TailscaleState>;
+
 /** What a web link shows on a hover; a GitHub pull request or issue also gives its state. */
 export const LinkPreview = z.object({
   url: z.string(),

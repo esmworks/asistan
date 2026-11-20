@@ -105,6 +105,8 @@ export const ROUTE_RULES: Record<string, Rule> = {
   'GET /api/setup-import/projects': 'owner',
   'POST /api/setup-import': 'owner',
   'POST /api/backup': 'owner',
+  'GET /api/tailscale': 'owner',
+  'POST /api/tailscale': 'owner',
   'GET /api/backup/:id': 'owner',
   'POST /api/backup/restore': 'owner',
   'GET /api/export/bots': 'admin',

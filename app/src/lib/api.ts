@@ -1,6 +1,7 @@
 import type {
   BotAction,
   LinkPreview,
+  TailscaleState,
   Pledge,
   TurnChanges,
   RoutineSuggestion,
@@ -536,6 +537,8 @@ export const api = {
   editMessage: (id: string, text: string) => http.patch<Message>(`/api/messages/${id}`, { text }),
   removeMessage: (id: string) => http.del<{ ok: true }>(`/api/messages/${id}`),
   retryMessage: (id: string) => http.post<{ ok: true; turnId: string }>(`/api/messages/${id}/retry`),
+  tailscale: () => http.get<TailscaleState>('/api/tailscale'),
+  setTailscale: (on: boolean) => http.post<TailscaleState>('/api/tailscale', { on }),
   linkPreview: (url: string) =>
     http.get<{ preview: LinkPreview | null }>(`/api/link-preview?url=${encodeURIComponent(url)}`),
   answerOffer: (id: string, take: boolean) => http.post<Message>(`/api/messages/${id}/offer`, { take }),

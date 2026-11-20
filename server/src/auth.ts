@@ -117,7 +117,12 @@ export interface RequestMeta {
  * Host and Origin checks against DNS rebinding and cross-site requests.
  * Returns the error to send (403), or null if the request may proceed.
  */
-export function checkHostOrigin(meta: RequestMeta, config: Config): HttpError | null {
+export function checkHostOrigin(
+  meta: RequestMeta,
+  config: Config,
+  /** Addresses the server is reached at for now (its Tailscale address while shared there). */
+  extraHosts: readonly string[] = [],
+): HttpError | null {
   const refuse = (key: ServerKey, params?: Params) => new HttpError(403, key, params);
   const host = meta.host?.toLowerCase();
   if (!host) return refuse('error.hostMissing');
@@ -127,6 +132,7 @@ export function checkHostOrigin(meta: RequestMeta, config: Config): HttpError | 
     ...LOOPBACK_HOSTS,
     ...config.allowedHosts.map((h) => h.toLowerCase()),
     ...publicHost,
+    ...extraHosts,
   ]);
   if (!allowedHosts.has(hostName(host)) && !allowedHosts.has(host))
     return refuse('error.hostNotAllowed', { host });

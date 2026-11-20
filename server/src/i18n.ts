@@ -244,6 +244,11 @@ const tr = {
   'error.payloadTooLarge': 'Gönderilen metin çok uzun (en çok {max} karakter)',
   'error.notOffer': 'Bu bir iş önerisi değil',
   'error.offerAnswered': 'Bu öneri zaten cevaplandı',
+  'error.tailscaleMissing':
+    'Bu bilgisayarda Tailscale kurulu değil. Önce tailscale.com adresinden kurup giriş yapın.',
+  'error.tailscaleStopped':
+    'Tailscale çalışmıyor ya da giriş yapılmamış. Tailscale uygulamasını açıp bağlanın.',
+  'error.tailscaleFailed': 'Tailscale paylaşımı açamadı: {message}',
   'offer.person': 'Kişi',
   'offer.source': 'konuşma',
   'offer.system':
@@ -1962,6 +1967,10 @@ const en: Catalog<ServerKey> = {
   'error.payloadTooLarge': 'The text sent is too long (at most {max} characters)',
   'error.notOffer': 'This is not a work offer',
   'error.offerAnswered': 'This offer has already been answered',
+  'error.tailscaleMissing':
+    'Tailscale is not installed on this computer. Install it from tailscale.com and sign in first.',
+  'error.tailscaleStopped': 'Tailscale is not running or not signed in. Open the Tailscale app and connect.',
+  'error.tailscaleFailed': 'Tailscale could not turn sharing on: {message}',
   'offer.person': 'Person',
   'offer.source': 'conversation',
   'offer.system':

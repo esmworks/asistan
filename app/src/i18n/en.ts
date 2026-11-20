@@ -913,6 +913,16 @@ export const en: Catalog<MessageKey> = {
   'chat.messageBroken': 'This message could not be shown.',
   'chat.loadOlder': 'Load older messages',
   'chat.attach': 'Attach files',
+  'tailscale.title': 'Tailscale',
+  'tailscale.share': 'Reach from my devices on Tailscale',
+  'tailscale.hint':
+    'Gives this server an https address that only the devices on your Tailscale network reach, without opening it to the internet. Signing in is still needed there. This computer is {name}.',
+  'tailscale.missing':
+    "Tailscale is not installed on the server's computer. With it, your phone and other computers reach this server from anywhere without opening it to the internet.",
+  'tailscale.stopped': 'Tailscale is installed but not connected. Open the Tailscale app and sign in.',
+  'tailscale.address': 'Address on your tailnet',
+  'tailscale.copy': 'Copy',
+  'tailscale.copied': 'Address copied',
   'markup.open': 'Draw on {name}',
   'markup.title': 'Draw on {name}',
   'markup.tools': 'Drawing tools',

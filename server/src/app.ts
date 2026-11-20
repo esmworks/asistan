@@ -393,6 +393,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
     const problem = checkHostOrigin(
       { host: req.headers.host, origin: req.headers.origin, method: req.method },
       config,
+      services.tailscale.hosts(),
     );
     if (problem) return sendError(req, reply, problem);
     // Judged by the route matched, not the URL as written: the router undoes percent escapes, so
@@ -500,6 +501,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
         const problem = checkHostOrigin(
           { host: req.headers.host, origin: req.headers.origin, method: 'GET' },
           config,
+          services.tailscale.hosts(),
         );
         if (problem) return refuse(problem);
         const cookie = parseCookie(req.headers.cookie, SESSION_COOKIE);

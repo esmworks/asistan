@@ -1207,6 +1207,13 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
   });
 
   // The person's answer on a work offer: taken sends its task as their message; or turned down.
+  // Sharing this server on the person's Tailscale network.
+  app.get('/api/tailscale', async () => s.tailscale.state());
+  app.post('/api/tailscale', async (req) => {
+    const { on } = z.object({ on: z.boolean() }).parse(req.body);
+    return s.tailscale.share(on);
+  });
+
   // What a web link in a conversation shows on a hover; none when the page gives nothing.
   app.get('/api/link-preview', async (req) => {
     const { url } = z.object({ url: z.string().min(1).max(2048) }).parse(req.query);

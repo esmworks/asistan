@@ -879,6 +879,16 @@ export const tr = {
   'chat.messageBroken': 'Bu mesaj gösterilemedi.',
   'chat.loadOlder': 'Daha eski mesajları yükle',
   'chat.attach': 'Dosya ekle',
+  'tailscale.title': 'Tailscale',
+  'tailscale.share': 'Tailscale ağımdaki cihazlardan eriş',
+  'tailscale.hint':
+    'Bu sunucuya yalnızca Tailscale ağınızdaki cihazların ulaşabildiği bir https adresi verir; sunucu internete açılmaz. Orada da giriş yapmak gerekir. Bu bilgisayar: {name}.',
+  'tailscale.missing':
+    'Sunucunun bilgisayarında Tailscale kurulu değil. Kurulursa telefonunuz ve diğer bilgisayarlarınız bu sunucuya, internete açmadan her yerden ulaşabilir.',
+  'tailscale.stopped': 'Tailscale kurulu ama bağlı değil. Tailscale uygulamasını açıp giriş yapın.',
+  'tailscale.address': 'Tailnet adresi',
+  'tailscale.copy': 'Kopyala',
+  'tailscale.copied': 'Adres kopyalandı',
   'markup.open': '{name} üzerine çiz',
   'markup.title': '{name} üzerine çiz',
   'markup.tools': 'Çizim araçları',

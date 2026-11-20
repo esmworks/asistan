@@ -7,6 +7,11 @@ version is 0.x, a minor release may change the data format or the API; the serve
 
 ### Added
 
+- Reaching the server from your other devices over Tailscale (Settings → Connection, for the owner, off by default):
+  turning it on runs `tailscale serve` so the server gets an https address that only the devices on your Tailscale
+  network reach, without opening it to the internet; signing in is still needed there. Nothing runs until it is
+  turned on, Tailscale keeps the setting across restarts, and the server answers at that address only while it is
+  shared.
 - Drawing on a picture before sending it: a pen button on an attached PNG, JPEG or WebP opens it to draw on in a
   few colours and to pin numbered notes on it. "Add the marked copy" attaches the picture with the marks drawn in,
   beside the untouched original, and puts the pins' notes in the message as a numbered list, so the bot sees both

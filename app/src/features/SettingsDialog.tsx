@@ -126,6 +126,7 @@ import { AccountForm } from './AccountSetup';
 import { ClaudeConnect } from './ClaudeConnect';
 import { ModelDefaults } from './ModelDefaults';
 import { ApnsCard } from './PhoneSettings';
+import { TailscaleCard } from './TailscaleSettings';
 import { DoctorCard } from './DoctorCard';
 import { Chip } from './onboarding/Chip';
 import {
@@ -769,6 +770,7 @@ function Connection() {
       </Card>
       <PairDevice />
       <Devices />
+      <TailscaleCard />
       {manages && <ApnsCard />}
     </>
   );
