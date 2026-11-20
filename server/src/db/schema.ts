@@ -1683,8 +1683,9 @@ export const turnChanges = pgTable(
 
 /**
  * A routine tried once without doing anything: what the bot would have done is written down, what
- * only reads is done. It works in a conversation of its own (kind `rehearsal`), which goes after a
- * week with its row. Only the person who asked sees it.
+ * only reads is done. It works in a conversation of its own (kind `rehearsal`). After a week the
+ * words of both are let go, but the conversation's turns stay without their words, since money
+ * spent stays spent in the usage page and the monthly limit. Only the person who asked sees it.
  */
 export const routineRehearsals = pgTable(
   'routine_rehearsals',
@@ -1719,6 +1720,8 @@ export const routineRehearsals = pgTable(
     costUsd: real('cost_usd'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
+    /** When its words were let go (the row, its conversation's turns and their cost stay, so usage still adds up). */
+    prunedAt: ts('pruned_at'),
   },
   (t) => [index('routine_rehearsals_routine_idx').on(t.routineId, t.startedAt)],
 );

@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Rehearsal, RehearsalStart, RehearsalStep, ReplayableRun } from '@yumakbot/shared';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Ctx } from '../context';
 import { schema } from '../db';
 import { isSilentReply, type TurnOutcome } from '../engine/types';
@@ -173,7 +173,11 @@ export class RehearsalService {
       .select({ id: schema.routineRehearsals.id })
       .from(schema.routineRehearsals)
       .where(
-        and(eq(schema.routineRehearsals.routineId, routineId), eq(schema.routineRehearsals.userId, userId)),
+        and(
+          eq(schema.routineRehearsals.routineId, routineId),
+          eq(schema.routineRehearsals.userId, userId),
+          isNull(schema.routineRehearsals.prunedAt),
+        ),
       )
       .orderBy(desc(schema.routineRehearsals.startedAt))
       .limit(LIST_MAX);
@@ -227,7 +231,7 @@ export class RehearsalService {
     const [r] = await this.ctx.db
       .select()
       .from(schema.routineRehearsals)
-      .where(eq(schema.routineRehearsals.id, id))
+      .where(and(eq(schema.routineRehearsals.id, id), isNull(schema.routineRehearsals.prunedAt)))
       .limit(1);
     if (!r) return null;
     let replay: Rehearsal['replay'] = null;
@@ -293,26 +297,46 @@ export class RehearsalService {
     this.ctx.bus.refresh({ scope: 'routines' });
   }
 
-  /** Removes the rehearsals older than a week with their conversations and the files made there. */
+  /**
+   * Lets go of the words of rehearsals older than a week: their conversation's lines and files,
+   * the instruction and steps. The turns stay, without their words, and keep their cost: a
+   * rehearsal spent real money, and usage and the monthly limit count it from the turns.
+   */
   async prune(now = this.clock()): Promise<void> {
     const before = new Date(now.getTime() - REHEARSAL_KEEP_DAYS * 86_400_000);
     const old = await this.ctx.db
-      .select({ id: schema.threads.id, botId: schema.threads.botId })
-      .from(schema.threads)
-      .where(and(eq(schema.threads.kind, 'rehearsal'), lt(schema.threads.createdAt, before)));
-    for (const th of old) {
-      await this.services.turns.interrupt(th.id);
-      // The rehearsal's row goes with its conversation.
-      await this.services.threads.remove(th.id);
-      await rm(join(this.ctx.config.dataDir, 'workspaces', 'bots', th.botId, 'threads', th.id), {
-        recursive: true,
-        force: true,
-      }).catch(() => {});
-      await rm(join(this.ctx.config.dataDir, 'uploads', th.id), { recursive: true, force: true }).catch(
-        () => {},
-      );
+      .select({
+        id: schema.routineRehearsals.id,
+        threadId: schema.routineRehearsals.threadId,
+        botId: schema.threads.botId,
+      })
+      .from(schema.routineRehearsals)
+      .leftJoin(schema.threads, eq(schema.threads.id, schema.routineRehearsals.threadId))
+      .where(and(lt(schema.routineRehearsals.startedAt, before), isNull(schema.routineRehearsals.prunedAt)));
+    for (const r of old) {
+      if (r.threadId) {
+        await this.services.turns.interrupt(r.threadId);
+        await this.ctx.db.delete(schema.messages).where(eq(schema.messages.threadId, r.threadId));
+        await this.ctx.db
+          .update(schema.turns)
+          .set({ prompt: '' })
+          .where(eq(schema.turns.threadId, r.threadId));
+        await this.ctx.db.update(schema.threads).set({ title: '' }).where(eq(schema.threads.id, r.threadId));
+        if (r.botId) {
+          await rm(join(this.ctx.config.dataDir, 'workspaces', 'bots', r.botId, 'threads', r.threadId), {
+            recursive: true,
+            force: true,
+          }).catch(() => {});
+        }
+        await rm(join(this.ctx.config.dataDir, 'uploads', r.threadId), {
+          recursive: true,
+          force: true,
+        }).catch(() => {});
+      }
+      await this.ctx.db
+        .update(schema.routineRehearsals)
+        .set({ prompt: '', report: '', steps: [], error: null, prunedAt: now })
+        .where(eq(schema.routineRehearsals.id, r.id));
     }
-    // One whose conversation is already gone.
-    await this.ctx.db.delete(schema.routineRehearsals).where(lt(schema.routineRehearsals.startedAt, before));
   }
 }

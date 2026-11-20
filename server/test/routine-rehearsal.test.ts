@@ -244,12 +244,16 @@ describe('rehearsing a routine', () => {
     ).toEqual([r.id]);
 
     await t.services.rehearsals.prune(new Date(Date.now() + 6 * 86_400_000));
-    expect(await t.db.db.select().from(schema.routineRehearsals)).toHaveLength(1);
+    expect((await t.api<Rehearsal[]>('GET', `/api/routines/${routine.id}/rehearsals`)).body).toHaveLength(1);
     await t.services.rehearsals.prune(new Date(Date.now() + 8 * 86_400_000));
-    expect(await t.db.db.select().from(schema.routineRehearsals)).toHaveLength(0);
-    expect(await t.db.db.select().from(schema.threads).where(eq(schema.threads.id, thread!.id))).toHaveLength(
-      0,
-    );
+    // Its words are gone and it is no longer shown; the turn stays, without its words.
+    expect((await t.api<Rehearsal[]>('GET', `/api/routines/${routine.id}/rehearsals`)).body).toEqual([]);
+    expect(await t.messages(thread!.id)).toHaveLength(0);
+    const [row] = await t.db.db.select().from(schema.routineRehearsals);
+    expect(row).toMatchObject({ prompt: '', report: '', steps: [] });
+    expect(row!.prunedAt).toBeTruthy();
+    const turns = await t.db.db.select().from(schema.turns).where(eq(schema.turns.rehearsalId, r.id));
+    expect(turns.map((x) => x.prompt)).toEqual(['']);
   });
 
   it('is for those who may change the bot, and works for the person who set the routine up', async () => {
@@ -328,6 +332,29 @@ describe('rehearsing a routine', () => {
     ]);
     // It is not counted as a run of the routine.
     expect(usage.routines ?? []).toEqual([]);
+  });
+
+  it('keeps its cost in usage and the monthly sum after its words are removed', async () => {
+    const { routine } = await make('[maliyet:0.25] [araç:memory_search {"query":"a"}]');
+    const r = await rehearse(routine.id);
+    await t.db.db
+      .update(schema.turns)
+      .set({ finishedAt: t.now.value })
+      .where(eq(schema.turns.rehearsalId, r.id));
+    const read = async () => ({
+      usage: (await t.api<UsageReport>('GET', '/api/usage?days=7')).body,
+      month: await t.services.usage.month(),
+      csv: await t.services.usage.csv(7),
+    });
+    const before = await read();
+    expect(before.usage.total.costUsd).toBeCloseTo(0.25);
+    expect(before.month.costUsd).toBeCloseTo(0.25);
+    await t.services.rehearsals.prune(new Date(Date.now() + 8 * 86_400_000));
+    const after = await read();
+    expect(after.usage.total).toEqual(before.usage.total);
+    expect(after.usage.rehearsals).toEqual(before.usage.rehearsals);
+    expect(after.month).toEqual(before.month);
+    expect(after.csv).toEqual(before.csv);
   });
 
   it('refuses a second rehearsal while one is going', async () => {
