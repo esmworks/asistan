@@ -3,7 +3,7 @@
 All notable changes to Yumak Bot are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
-## Unreleased
+## 0.7.0 — 2026-11-21
 
 ### Added
 
@@ -191,6 +191,12 @@ version is 0.x, a minor release may change the data format or the API; the serve
   the Today page counts the ones waiting. A newer suggestion from the same bot for the same person replaces the one
   still waiting. Someone who may only talk with a bot can suggest changes too, but still cannot add skills to it.
 - Skills count how often bots read them, and the skills list shows the count.
+- Bots can take an object avatar (Bot settings → Object): a mug, a lightbulb, a sprout, a game controller, a
+  barbell, a speech bubble or a watering can with eyes, in the bot's colour. The desktop and web app draw it with
+  volume; while the window has the focus it breathes, blinks and looks at the pointer, and it shows what the bot is
+  doing: dots while it thinks, ribbons while it writes or reads a page, an exclamation mark when it needs someone.
+  Avatars off screen rest, and the system's reduced motion setting stops them. The phone app shows the plain plush
+  for these bots for now.
 
 ### Changed
 
