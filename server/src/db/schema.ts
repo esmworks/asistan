@@ -564,6 +564,11 @@ export const routineRuns = pgTable(
     stepsSnapshot: jsonb('steps_snapshot'),
     /** The model the step under way names; null for the routine's own. */
     stepModel: text('step_model'),
+    /**
+     * Values a bot step saved for a later step to wait on (an issue's number, a mail's subject), by
+     * name; a wait step's filter names them as `{{name}}`.
+     */
+    vars: jsonb('vars').$type<Record<string, string>>().notNull().default({}),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },
@@ -598,8 +603,15 @@ export const routineStepRuns = pgTable(
     turnId: text('turn_id'),
     /** The card an approval step asks the person on. */
     approvalId: text('approval_id'),
-    /** When a waiting step gives up. */
+    /** When a waiting step gives up, or, waiting for a time, goes on. */
     waitUntil: ts('wait_until'),
+    /** The filter a step waiting for an event checks, with the run's values put in. */
+    filter: text('filter'),
+    /**
+     * The event that ended a step's wait (a webhook delivery, a mail), kept so the same one sent
+     * again does not start a run as well; what it carried is the step's output.
+     */
+    eventId: text('event_id'),
     startedAt: created(),
     finishedAt: ts('finished_at'),
   },

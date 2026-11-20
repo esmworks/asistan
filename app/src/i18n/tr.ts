@@ -1243,6 +1243,22 @@ export const tr = {
   'routine.addAgentStep': 'Bot adımı ekle',
   'routine.step.approval': 'Onay adımı',
   'routine.addApprovalStep': 'Onay adımı ekle',
+  'routine.addWaitStep': 'Bekleme adımı ekle',
+  'routine.step.wait': 'Bekleme adımı',
+  'routine.waitOn': 'Ne beklesin',
+  'routine.waitOn.time': 'Süre',
+  'routine.waitOn.webhook': 'Webhook çağrısı',
+  'routine.waitOn.email': 'E-posta',
+  'routine.waitMinutes': 'Kaç dakika',
+  'routine.waitFilter': 'Hangi olay',
+  'routine.waitFilterHook': 'Her satır bir koşul, ör. action=closed ve issue.number={{issue}}',
+  'routine.waitFilterMail': 'Her satır bir koşul, ör. subject~=fatura ya da from={{gonderen}}',
+  'routine.waitHookHint':
+    'Rutinin webhook adresi açık olmalı. {{ad}}, önceki bir adımın kaydettiği değerle doldurulur. Webhook bekleyen bir rutin, yeni çalışmayı yalnızca tetikleme filtresine uyan çağrıyla başlatır.',
+  'routine.waitMailHint':
+    'Botun e-posta adresine gelen postayı bekler. {{ad}}, önceki bir adımın kaydettiği değerle doldurulur.',
+  'routine.waitUntil': '{at} tarihine kadar',
+  'routine.endWait': 'Beklemeyi bitir',
   'routine.stepQuestionPlaceholder': 'Size ne sorulsun? Örneğin: Bu e-posta gönderilsin mi?',
   'routine.stepQuestionRequired': 'Onay adımında ne sorulacağını yazın',
   'routine.stepApprovalHint':

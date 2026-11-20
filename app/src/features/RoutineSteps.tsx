@@ -1,4 +1,10 @@
-import { ROUTINE_APPROVAL_MAX_DAYS, type RoutineRun, type RoutineStepRun } from '@yumakbot/shared';
+import {
+  INTL_LOCALE,
+  ROUTINE_APPROVAL_MAX_DAYS,
+  ROUTINE_WAIT_MAX_MINUTES,
+  type RoutineRun,
+  type RoutineStepRun,
+} from '@yumakbot/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
@@ -20,7 +26,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useT, type MessageKey } from '@/i18n';
+import { useLocale, useT, type MessageKey } from '@/i18n';
 import { api } from '@/lib/api';
 import { useApprovals } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -28,7 +34,21 @@ import { cn } from '@/lib/utils';
 /** A step as the routine's window edits it; text fields stay strings while typed. */
 export type StepForm =
   | { id: string; kind: 'agent'; prompt: string; model: string }
-  | { id: string; kind: 'approval'; question: string; timeoutDays: number };
+  | { id: string; kind: 'approval'; question: string; timeoutDays: number }
+  | {
+      id: string;
+      kind: 'wait';
+      on: 'time' | 'webhook' | 'email';
+      minutes: number;
+      filter: string;
+      timeoutDays: number;
+    };
+
+const WAIT_ON = ['time', 'webhook', 'email'] as const;
+
+/** A whole number typed into a field, kept between `min` and `max`. */
+const clamp = (raw: string, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(Number(raw) || min)));
 
 /** A new step's id: short, unique within the routine, and of the letters the server takes. */
 function newStepId(): string {
@@ -41,6 +61,10 @@ export function newAgentStep(): StepForm {
 
 function newApprovalStep(): StepForm {
   return { id: newStepId(), kind: 'approval', question: '', timeoutDays: 7 };
+}
+
+function newWaitStep(): StepForm {
+  return { id: newStepId(), kind: 'wait', on: 'time', minutes: 60, filter: '', timeoutDays: 7 };
 }
 
 /**
@@ -81,6 +105,8 @@ export function StepsEditor({
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {s.kind === 'approval' ? (
               <UserCheck className="size-3.5" aria-hidden />
+            ) : s.kind === 'wait' ? (
+              <Hourglass className="size-3.5" aria-hidden />
             ) : (
               <BotIcon className="size-3.5" aria-hidden />
             )}
@@ -138,6 +164,8 @@ export function StepsEditor({
                 aria-label={t('routine.stepModel')}
               />
             </>
+          ) : s.kind === 'wait' ? (
+            <WaitFields step={s} onChange={(next) => set(i, next)} />
           ) : (
             <>
               <Textarea
@@ -159,13 +187,7 @@ export function StepsEditor({
                   max={ROUTINE_APPROVAL_MAX_DAYS}
                   value={s.timeoutDays}
                   onChange={(e) =>
-                    set(i, {
-                      ...s,
-                      timeoutDays: Math.min(
-                        ROUTINE_APPROVAL_MAX_DAYS,
-                        Math.max(1, Math.round(Number(e.target.value) || 1)),
-                      ),
-                    })
+                    set(i, { ...s, timeoutDays: clamp(e.target.value, 1, ROUTINE_APPROVAL_MAX_DAYS) })
                   }
                   className="h-8 w-20 rounded-xl text-sm"
                 />
@@ -192,6 +214,15 @@ export function StepsEditor({
           onClick={() => onChange([...steps, newApprovalStep()])}
         >
           <UserCheck /> {t('routine.addApprovalStep')}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="rounded-full"
+          onClick={() => onChange([...steps, newWaitStep()])}
+        >
+          <Hourglass /> {t('routine.addWaitStep')}
         </Button>
       </div>
     </div>
@@ -287,6 +318,102 @@ function ApprovalAnswer({ approvalId, routineId }: { approvalId: string; routine
   );
 }
 
+/** What a wait step waits for: a time, or a call to the routine's webhook or a mail that passes its filter. */
+function WaitFields({
+  step,
+  onChange,
+}: {
+  step: Extract<StepForm, { kind: 'wait' }>;
+  onChange(next: StepForm): void;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t('routine.waitOn')}>
+        {WAIT_ON.map((on) => (
+          <Button
+            key={on}
+            type="button"
+            size="sm"
+            role="radio"
+            aria-checked={step.on === on}
+            variant={step.on === on ? 'default' : 'secondary'}
+            className="h-7 rounded-full px-3 text-xs"
+            onClick={() => onChange({ ...step, on })}
+          >
+            {t(`routine.waitOn.${on}`)}
+          </Button>
+        ))}
+      </div>
+      {step.on === 'time' ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex-1">{t('routine.waitMinutes')}</span>
+          <Input
+            type="number"
+            min={1}
+            max={ROUTINE_WAIT_MAX_MINUTES}
+            value={step.minutes}
+            onChange={(e) =>
+              onChange({ ...step, minutes: clamp(e.target.value, 1, ROUTINE_WAIT_MAX_MINUTES) })
+            }
+            className="h-8 w-24 rounded-xl text-sm"
+          />
+        </label>
+      ) : (
+        <>
+          <Textarea
+            value={step.filter}
+            onChange={(e) => onChange({ ...step, filter: e.target.value })}
+            rows={2}
+            placeholder={t(step.on === 'webhook' ? 'routine.waitFilterHook' : 'routine.waitFilterMail')}
+            className="scroll-thin max-h-40 overflow-y-auto rounded-xl text-sm"
+            aria-label={t('routine.waitFilter')}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(step.on === 'webhook' ? 'routine.waitHookHint' : 'routine.waitMailHint')}
+          </p>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="flex-1">{t('routine.stepTimeoutDays')}</span>
+            <Input
+              type="number"
+              min={1}
+              max={ROUTINE_APPROVAL_MAX_DAYS}
+              value={step.timeoutDays}
+              onChange={(e) =>
+                onChange({ ...step, timeoutDays: clamp(e.target.value, 1, ROUTINE_APPROVAL_MAX_DAYS) })
+              }
+              className="h-8 w-20 rounded-xl text-sm"
+            />
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Ends a run's wait now; the run goes on as if its time had come. */
+function EndWait({ run }: { run: RoutineRun }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const end = useMutation({
+    mutationFn: () => api.endRoutineWait(run.routineId, run.id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['routine-runs', run.routineId] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      className="mt-1 h-7 rounded-full px-3 text-xs"
+      disabled={end.isPending}
+      onClick={() => end.mutate()}
+    >
+      {t('routine.endWait')}
+    </Button>
+  );
+}
+
 const STEP_ICON: Record<RoutineStepRun['status'], typeof CircleCheck> = {
   pending: CircleDashed,
   running: LoaderCircle,
@@ -309,6 +436,7 @@ function stepLabel(s: RoutineStepRun, t: ReturnType<typeof useT>): string {
  */
 export function RunSteps({ run }: { run: RoutineRun }) {
   const t = useT();
+  const locale = useLocale((x) => x.locale);
   const qc = useQueryClient();
   const retry = useMutation({
     mutationFn: () => api.retryRoutineRun(run.routineId, run.id),
@@ -351,6 +479,21 @@ export function RunSteps({ run }: { run: RoutineRun }) {
               )}
               {s.status === 'waiting' && s.approvalId && (
                 <ApprovalAnswer approvalId={s.approvalId} routineId={run.routineId} />
+              )}
+              {s.status === 'waiting' && s.kind === 'wait' && (
+                <>
+                  {s.waitUntil && (
+                    <span className="block text-muted-foreground">
+                      {t('routine.waitUntil', {
+                        at: new Date(s.waitUntil).toLocaleString(INTL_LOCALE[locale], {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }),
+                      })}
+                    </span>
+                  )}
+                  <EndWait run={run} />
+                </>
               )}
             </span>
           </div>

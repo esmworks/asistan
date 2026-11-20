@@ -1,5 +1,5 @@
 import type { RoutineStep, RoutineStepRun } from '@yumakbot/shared';
-import { RoutineStep as StepSchema } from '@yumakbot/shared';
+import { filterVars, RoutineStep as StepSchema } from '@yumakbot/shared';
 import type { schema } from '../db';
 import { iso } from '../util';
 
@@ -27,27 +27,50 @@ export function kindAt(steps: readonly RoutineStep[], position: number): string 
   return position === 0 ? 'prompt' : (steps[position - 1]?.kind ?? 'agent');
 }
 
+/** Whether the run's step at `position` is the bot's work: its own instruction or a bot step. */
+export function isBotStep(steps: readonly RoutineStep[], position: number): boolean {
+  const kind = kindAt(steps, position);
+  return kind === 'prompt' || kind === 'agent';
+}
+
 /**
- * The output the step before `position` handed on: that of the nearest bot step before it, as an
- * approval step only lets through what came before it.
+ * What reaches the step at `position`: the output of the nearest bot step before it, and after it,
+ * what each wait step in between brought in (a webhook's body, a mail). An approval step lets
+ * through what came before it and adds nothing.
  */
 export function handedOn(
   steps: readonly RoutineStep[],
   rows: readonly StepRow[],
   position: number,
 ): string | null {
+  const parts: string[] = [];
   for (let p = position - 1; p >= 0; p--) {
-    if (kindAt(steps, p) === 'approval') continue;
-    return rows.find((r) => r.position === p)?.output ?? null;
+    const output = rows.find((r) => r.position === p)?.output?.trim() || null;
+    if (isBotStep(steps, p)) {
+      if (output) parts.unshift(output);
+      break;
+    }
+    if (kindAt(steps, p) === 'wait' && output) parts.unshift(output);
   }
-  return null;
+  return parts.length ? parts.join('\n\n') : null;
 }
 
 /** The nearest bot step at or before `position`: the one a written correction sends back to. */
 export function botStepAt(steps: readonly RoutineStep[], position: number): number {
   let p = position;
-  while (p > 0 && kindAt(steps, p) === 'approval') p--;
+  while (p > 0 && !isBotStep(steps, p)) p--;
   return p;
+}
+
+/** The names of the values the wait steps after `position` put in their filter. */
+export function varsWanted(steps: readonly RoutineStep[], position: number): string[] {
+  return [
+    ...new Set(
+      steps
+        .slice(position)
+        .flatMap((s) => (s.kind === 'wait' && s.on !== 'time' ? filterVars(s.filter) : [])),
+    ),
+  ];
 }
 
 /** Every step of a run, with the ones that have not started as `pending`. */

@@ -2039,6 +2039,10 @@ export function registerRoutes(app: FastifyInstance, d: Deps) {
     const p = RunParams.parse(req.params);
     return s.routines.retryRun(p.id, p.runId);
   });
+  app.post('/api/routines/:id/runs/:runId/end-wait', async (req) => {
+    const p = RunParams.parse(req.params);
+    return s.routines.endWait(p.id, p.runId);
+  });
   app.get('/api/routines/:id/revisions', async (req) => s.routines.revisions(IdParams.parse(req.params).id));
 
   // Library: files in the bot's folders (read-only listing and download).

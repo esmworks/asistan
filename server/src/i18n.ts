@@ -344,6 +344,7 @@ const tr = {
   'validation.timezone': 'Geçersiz saat dilimi',
   'validation.stepPrompt': 'Adımın ne yapacağını yazın',
   'validation.stepQuestion': 'Onay adımında ne sorulacağını yazın',
+  'error.routineRunNotWaiting': 'Bu çalışma bir bekleme adımında beklemiyor.',
   'validation.stepIds': 'İki adımın kimliği aynı olamaz',
   'validation.usageRange': 'Dönem 7, 30 ya da 90 gün olmalı',
   'validation.avatar': 'Geçersiz avatar',
@@ -496,6 +497,13 @@ const tr = {
   'routine.waitingForPerson': 'Onayınızı bekliyor.',
   'routine.approvalRejected': 'Onay adımında reddedildi.',
   'routine.approvalTimedOut': 'Onay adımı zamanında cevaplanmadı.',
+  'routine.waitingForTime': 'Bekleme adımında, zamanı gelince devam edecek.',
+  'routine.waitingForEvent': 'Bekleme adımında, beklenen olayı bekliyor.',
+  'routine.waitTimedOut': 'Beklenen olay zamanında gelmedi.',
+  'routine.waitMissingValue': 'Bekleme adımının filtresindeki değer kaydedilmemiş: {names}.',
+  'routine.waitNoWebhook': 'Bekleme adımı webhook bekliyor ama rutinin webhook adresi kapalı.',
+  'routine.saveValues':
+    'Sonraki bir bekleme adımı şu değerleri bekliyor: {names}. Bulduğunda her birini routine_set ile bu adla kaydet.',
   'routine.reviseNote':
     'Kişi bu adımın sonucunu onaylamadı, şu düzeltmeyi istedi:\n{answer}\n\nAdımı bu düzeltmeyle yeniden yap.',
   'routine.stepsSkippedSilent':
@@ -851,6 +859,10 @@ const tr = {
   'tool.routine_stop':
     'Bu rutinin işi tamamen bittiyse (ör. "cevap verene kadar hatırlat" ve kullanıcı cevap verdi) rutini durdur; kullanıcı istediğinde yeniden açabilir.',
   'tool.routineStopped': '"{name}" rutini durduruldu.',
+  'tool.routine_set':
+    'Bu rutinin sonraki bir bekleme adımı bir değer bekliyorsa (ör. açtığın issue numarası) onu adıyla kaydet; bekleme adımının filtresi {{ad}} olarak kullanır. Değer tek satır olmalı.',
+  'tool.routineValueSaved': '"{name}" kaydedildi.',
+  'tool.routineValuesFull': 'Bu çalışma en fazla {max} değer tutabilir.',
   'tool.routineGone': 'Rutin artık yok.',
   'tool.routineWebhook': 'Webhook adresi (sunucunun adresinin sonuna eklenir, gizli tutulmalı): {path}',
   'tool.routineExists':
@@ -1834,6 +1846,7 @@ const en: Catalog<ServerKey> = {
   'validation.timezone': 'Invalid time zone',
   'validation.stepPrompt': 'Write what the step should do',
   'validation.stepQuestion': 'Write what the approval step asks',
+  'error.routineRunNotWaiting': 'This run is not held at a wait step.',
   'validation.stepIds': 'Two steps cannot have the same id',
   'validation.usageRange': 'The period must be 7, 30 or 90 days',
   'validation.avatar': 'Invalid avatar',
@@ -1982,6 +1995,13 @@ const en: Catalog<ServerKey> = {
   'routine.waitingForPerson': 'Waiting for your approval.',
   'routine.approvalRejected': 'Rejected at the approval step.',
   'routine.approvalTimedOut': 'The approval step was not answered in time.',
+  'routine.waitingForTime': 'At a wait step; goes on when its time comes.',
+  'routine.waitingForEvent': 'At a wait step, waiting for the event.',
+  'routine.waitTimedOut': 'The event it waited for did not come in time.',
+  'routine.waitMissingValue': "A value the wait step's filter names was never saved: {names}.",
+  'routine.waitNoWebhook': "The wait step waits for the webhook, but the routine's webhook address is off.",
+  'routine.saveValues':
+    'A later wait step needs these values: {names}. When you find each, save it with routine_set under that name.',
   'routine.reviseNote':
     'The person did not approve what this step ended with and asked for this change:\n{answer}\n\nDo the step again with it.',
   'routine.stepsSkippedSilent':
@@ -2336,6 +2356,10 @@ const en: Catalog<ServerKey> = {
   'tool.routine_stop':
     'When the work of this routine is done for good (e.g. "remind me until I answer" and the user answered), stop the routine; the user can turn it on again.',
   'tool.routineStopped': 'The routine "{name}" is stopped.',
+  'tool.routine_set':
+    "When a later wait step of this routine waits on a value (the number of the issue you opened, say), save it under its name; the wait step's filter uses it as {{name}}. The value must be one line.",
+  'tool.routineValueSaved': '"{name}" is saved.',
+  'tool.routineValuesFull': 'A run keeps at most {max} values.',
   'tool.routineGone': 'The routine no longer exists.',
   'tool.routineWebhook': 'Webhook address (goes after the server address; keep it secret): {path}',
   'tool.routineExists':

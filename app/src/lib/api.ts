@@ -603,6 +603,8 @@ export const api = {
   routineRuns: (id: string) => http.get<RoutineRun[]>(`/api/routines/${id}/runs`),
   retryRoutineRun: (id: string, runId: string) =>
     http.post<RoutineRun>(`/api/routines/${id}/runs/${runId}/retry`),
+  endRoutineWait: (id: string, runId: string) =>
+    http.post<RoutineRun>(`/api/routines/${id}/runs/${runId}/end-wait`),
   routineRevisions: (id: string) => http.get<RoutineRevision[]>(`/api/routines/${id}/revisions`),
 
   library: (botId: string) => http.get<LibraryFile[]>(`/api/bots/${botId}/library`),

@@ -3,9 +3,12 @@ import type { Bot, BotEmail, OutsideTrigger, RoutineUpdate } from '@yumakbot/sha
 import {
   APPROVAL_TIMED_OUT,
   cronTooOften,
+  fillFilter,
+  filterVars,
   INTL_LOCALE,
   MIN_RUN_GAP_MINUTES,
   ROUTINE_APPROVAL_TOOL,
+  ROUTINE_VARS_MAX,
   nextRun,
   zonedTime,
   occurrenceKey,
@@ -45,7 +48,7 @@ import type { Engine, GateRequest, GateVerdict, TurnOutcome } from '../engine/ty
 import type { TurnRow } from '../runtime/turns';
 import { cutAt, errorText, HttpError, isUniqueViolation, newId, notFound, truncate } from '../util';
 import { toRoutine, toRun } from './mappers';
-import { botStepAt, handedOn, snapshotSteps, stepList } from './routine-steps';
+import { botStepAt, handedOn, snapshotSteps, stepList, varsWanted } from './routine-steps';
 import { fetchPublicText } from './skill-link';
 import { mailText } from './email';
 import type { Services } from '.';
@@ -769,6 +772,7 @@ export class RoutineService {
         enabled: schema.routines.enabled,
         filter: schema.routines.webhookFilter,
         post: schema.routines.webhookPost,
+        steps: schema.routines.steps,
       })
       .from(schema.routines)
       .where(eq(schema.routines.id, id))
@@ -782,15 +786,30 @@ export class RoutineService {
       return 'signature';
     // GitHub's first call only checks that the address answers.
     if (via.event === 'ping') return 'ping';
+    // A run waiting for this call takes it first, whatever the routine's own filter starts runs on:
+    // a routine started on `action=opened` may wait for the `closed` that follows.
+    const delivery = deliveryId?.trim() ? `hook:${deliveryId.trim().slice(0, 200)}` : null;
+    if (delivery && (await this.eventTaken(id, delivery))) return 'duplicate';
+    const fields = withEvent(payload ?? '', via.event);
+    const shown =
+      via.event && payload
+        ? `${(await this.services.settings.translator())('routine.webhookEvent', { event: via.event })}\n\n${payload}`
+        : (payload ?? '');
+    const taken = await this.offerEvent([id], 'webhook', fields, shown, delivery ?? `hook:${newId()}`);
+    const took = taken.get(id);
+    if (took) {
+      const run = (await this.runs(id)).find((r) => r.id === took);
+      if (run) return run;
+    }
     // A call the filter turns away starts nothing and costs nothing. The kind of event comes in a
     // header, so the filter reads it as `event`.
-    if (row.filter.trim() && !passesFilter(row.filter, withEvent(payload ?? '', via.event)))
-      return 'filtered';
-    if (via.event && payload) {
-      const t = await this.services.settings.translator();
-      payload = `${t('routine.webhookEvent', { event: via.event })}\n\n${payload}`;
-    }
-    const occurrence = deliveryId?.trim() ? `hook:${deliveryId.trim().slice(0, 200)}` : null;
+    if (row.filter.trim() && !passesFilter(row.filter, fields)) return 'filtered';
+    // A routine whose runs wait for its webhook starts a run on a call only when its filter says
+    // which calls do: otherwise every call no run waited for (a push, a comment) would start one.
+    const waitsOnHook = (snapshotSteps(row.steps) ?? []).some((s) => s.kind === 'wait' && s.on === 'webhook');
+    if (waitsOnHook && !row.filter.trim()) return 'filtered';
+    payload = via.event && payload ? shown : payload;
+    const occurrence = delivery;
     if (occurrence) {
       const [seen] = await this.ctx.db
         .select({ id: schema.routineRuns.id })
@@ -832,13 +851,7 @@ export class RoutineService {
     const rows = await this.ctx.db
       .select()
       .from(schema.routines)
-      .where(
-        and(
-          eq(schema.routines.botId, botId),
-          eq(schema.routines.emailTrigger, true),
-          eq(schema.routines.enabled, true),
-        ),
-      );
+      .where(and(eq(schema.routines.botId, botId), eq(schema.routines.enabled, true)));
     if (!rows.length) return [];
     const t = await this.services.settings.translator();
     const fields = JSON.stringify({ from: mail.from, to: mail.to, subject: mail.subject, text: mail.text });
@@ -849,8 +862,21 @@ export class RoutineService {
       date: t('email.date'),
       files: t('email.files'),
     });
+    // A run waiting for a mail takes it first, whether or not its routine starts on mail; the
+    // routine whose run took it does not start another run on it.
+    const eventId = `mail:${mail.id}`;
+    const fresh: typeof rows = [];
+    for (const r of rows) if (!(await this.eventTaken(r.id, eventId))) fresh.push(r);
+    const taken = await this.offerEvent(
+      fresh.map((r) => r.id),
+      'email',
+      fields,
+      payload,
+      eventId,
+    );
     const runs: (RoutineRun | null)[] = [];
-    for (const r of rows) {
+    for (const r of fresh) {
+      if (taken.has(r.id) || !r.emailTrigger) continue;
       if (r.emailFilter.trim() && !passesFilter(r.emailFilter, fields)) continue;
       runs.push(
         await this.fire(toRoutine(r), `mail:${mail.id}`, payload, false, {
@@ -1080,6 +1106,16 @@ export class RoutineService {
     return this.services.threads.routineThread(botId, routine.name, last?.threadId ?? null, person);
   }
 
+  /** Makes the conversation a recorded run works in, and keeps it on the run. */
+  private async ownThread(routine: Routine, botId: string, runId: string): Promise<string> {
+    const made = await this.threadFor(routine, botId);
+    await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ threadId: made.id })
+      .where(eq(schema.routineRuns.id, runId));
+    return made.id;
+  }
+
   /**
    * What a run wrote in the routine's own conversation reaches the bot's main one: the person reads
    * every report in one place, and the bot knows of it when they talk there next. The run's steps
@@ -1158,9 +1194,14 @@ export class RoutineService {
     const t = await this.services.settings.translator();
     const bot = await this.services.bots.get(routine.botId).catch(() => null);
     if (!bot || bot.archivedAt) return this.record(routine, occurrence, 'skipped', t('routine.botMissing'));
+    // A routine whose runs each get a conversation of their own makes it once the run is recorded:
+    // a slot skipped as busy or a mail delivered twice leaves no empty conversation behind.
+    const own = !threadId && holdsRuns(routine);
     const thread = threadId
       ? await this.services.threads.row(threadId)
-      : await this.threadFor(routine, bot.id);
+      : own
+        ? null
+        : await this.threadFor(routine, bot.id);
     let run: typeof schema.routineRuns.$inferSelect;
     try {
       [run] = (await this.ctx.db
@@ -1170,7 +1211,7 @@ export class RoutineService {
           routineId: routine.id,
           occurrence,
           status: 'running',
-          threadId: thread.id,
+          threadId: thread?.id ?? null,
           promptSnapshot: routine.prompt,
           stepsSnapshot: stepsOf(routine),
           // Text from outside starts it: its turns change nothing without a card.
@@ -1194,9 +1235,11 @@ export class RoutineService {
       // A mail or a changed page does not come again: it waits for the run going now to end. A
       // webhook caller is told to send it again instead.
       if (check && !occurrence.startsWith('hook:'))
-        return this.queue(routine, thread.id, occurrence, payload, check.trigger, t);
+        return this.queue(routine, thread?.id ?? null, occurrence, payload, check.trigger, t);
       return this.recordBusy(routine, retriable(occurrence), t);
     }
+    const threadOf = thread?.id ?? (await this.ownThread(routine, bot.id, run.id));
+    run.threadId = threadOf;
     await this.ctx.db
       .update(schema.routines)
       .set({ lastRunAt: this.clock() })
@@ -1205,7 +1248,7 @@ export class RoutineService {
     const engine = mode !== 'off' ? this.engineFor(bot) : undefined;
     if (check && engine?.gate) {
       const checked = this.checkThenStart(engine, mode === 'on', routine, run, bot.model, check, () =>
-        this.startRun(routine, bot.id, thread.id, run, payload, t),
+        this.startRun(routine, bot.id, threadOf, run, payload, t),
       ).catch(async (err) => {
         console.error(`Pre-check of routine ${routine.id} failed`, err);
         await this.startFailed(routine.id, run.id, err, t).catch(() => {});
@@ -1214,7 +1257,7 @@ export class RoutineService {
       void checked.finally(() => this.checking.delete(checked));
       return toRun(run);
     }
-    if (await this.startRun(routine, bot.id, thread.id, run, payload, t)) return toRun(run);
+    if (await this.startRun(routine, bot.id, threadOf, run, payload, t)) return toRun(run);
     // It ended as failed: the caller is told so, not that it runs.
     const [ended] = await this.ctx.db
       .select()
@@ -1306,7 +1349,7 @@ export class RoutineService {
    */
   private async queue(
     routine: Routine,
-    threadId: string,
+    threadId: string | null,
     occurrence: string,
     payload: string | undefined,
     trigger: OutsideTrigger,
@@ -1386,7 +1429,7 @@ export class RoutineService {
       .update(schema.routines)
       .set({ lastRunAt: this.clock() })
       .where(eq(schema.routines.id, routineId));
-    const threadId = started.threadId ?? (await this.threadFor(routine, bot.id)).id;
+    const threadId = started.threadId ?? (await this.ownThread(routine, bot.id, started.id));
     await this.startRun(routine, bot.id, threadId, started, next.payload ?? undefined, t);
     this.ctx.bus.refresh({ scope: 'routines' });
   }
@@ -1500,7 +1543,10 @@ export class RoutineService {
         ...(outside ? { outside } : {}),
       },
     });
-    const base = t('routine.prompt', { name: routine.name, prompt: routine.prompt, silent: SILENT_REPLY });
+    const base = [
+      t('routine.prompt', { name: routine.name, prompt: routine.prompt, silent: SILENT_REPLY }),
+      ...saveHint(snapshotSteps(run.stepsSnapshot) ?? [], 0, t),
+    ].join('\n\n');
     const prompt = report
       ? `${base}\n\n${t('routine.lastReport', { at: report.at, report: fence(report.text) })}`
       : base;
@@ -1545,6 +1591,7 @@ export class RoutineService {
   ) {
     const step = steps[position - 1]!;
     if (step.kind === 'approval') return this.askApproval(run, step, position, before, t);
+    if (step.kind === 'wait') return this.holdForWait(run, step, position, t);
     await this.ctx.db
       .update(schema.routineRuns)
       .set({ stepModel: step.model || null })
@@ -1566,6 +1613,7 @@ export class RoutineService {
         silent: SILENT_REPLY,
       }),
       ...(before?.trim() ? [t('routine.stepBefore', { text: fence(cutAt(before.trim(), REPORT_MAX)) })] : []),
+      ...saveHint(steps, position, t),
     ];
     const turn = await this.services.turns.enqueue({
       threadId: run.threadId,
@@ -1661,6 +1709,181 @@ export class RoutineService {
   }
 
   /**
+   * Holds the run at a wait step: for a time, or until the routine's webhook is called or a mail
+   * comes to the bot whose content passes the step's filter, with the values the run saved put in.
+   * The run gives up the routine's slot meanwhile. A filter that names a value the run never saved
+   * ends the run at once: left empty, it could match every event.
+   */
+  private async holdForWait(
+    run: StepRun,
+    step: Extract<RoutineStep, { kind: 'wait' }>,
+    position: number,
+    t: T,
+  ) {
+    const now = this.clock();
+    const [row] = await this.ctx.db
+      .select({ vars: schema.routineRuns.vars, webhookToken: schema.routines.webhookToken })
+      .from(schema.routineRuns)
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(eq(schema.routineRuns.id, run.id));
+    const vars = row?.vars ?? {};
+    let filter: string | null = null;
+    let refusal: string | null = null;
+    if (step.on !== 'time') {
+      filter = fillFilter(step.filter, vars);
+      if (filter === null) {
+        const missing = filterVars(step.filter).filter((n) => !vars[n]?.trim());
+        refusal = t('routine.waitMissingValue', { names: missing.join(', ') });
+      } else if (step.on === 'webhook' && !row?.webhookToken) refusal = t('routine.waitNoWebhook');
+    }
+    const held = {
+      status: refusal ? ('error' as const) : ('waiting' as const),
+      reason: refusal,
+      waitUntil: new Date(
+        now.getTime() + (step.on === 'time' ? step.minutes * 60_000 : step.timeoutDays * DAY_MS),
+      ),
+      filter,
+      eventId: null,
+      approvalId: null,
+      turnId: null,
+      output: null,
+      startedAt: now,
+      finishedAt: refusal ? now : null,
+    };
+    await this.ctx.db
+      .insert(schema.routineStepRuns)
+      .values({ id: newId(), runId: run.id, position, kind: step.kind, ...held })
+      .onConflictDoUpdate({
+        target: [schema.routineStepRuns.runId, schema.routineStepRuns.position],
+        set: held,
+      });
+    await this.ctx.db
+      .update(schema.routineRuns)
+      .set(
+        refusal
+          ? { status: 'error', reason: refusal, stepModel: null, finishedAt: now }
+          : {
+              status: 'paused',
+              reason: t(step.on === 'time' ? 'routine.waitingForTime' : 'routine.waitingForEvent'),
+              stepModel: null,
+            },
+      )
+      .where(eq(schema.routineRuns.id, run.id));
+    this.ctx.bus.refresh({ scope: 'routines' });
+    await this.startQueued(run.routineId);
+  }
+
+  /** A bot step saves a value for a later wait step to put in its filter. */
+  async setVar(runId: string, name: string, value: string): Promise<'saved' | 'full' | 'gone'> {
+    const [run] = await this.ctx.db
+      .select({ vars: schema.routineRuns.vars })
+      .from(schema.routineRuns)
+      .where(eq(schema.routineRuns.id, runId));
+    if (!run) return 'gone';
+    if (!(name in run.vars) && Object.keys(run.vars).length >= ROUTINE_VARS_MAX) return 'full';
+    await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ vars: { ...run.vars, [name]: value } })
+      .where(eq(schema.routineRuns.id, runId));
+    return 'saved';
+  }
+
+  /**
+   * Offers an event to the runs of these routines held at a wait step for it: the oldest whose
+   * filter it passes takes it, one run per routine, and goes on at the next pass over held steps.
+   * Taking it is written first, so an event that comes while another run holds the routine's slot
+   * is not lost. The runs that took it, by routine.
+   */
+  private async offerEvent(
+    routineIds: string[],
+    on: 'webhook' | 'email',
+    fields: string,
+    payload: string,
+    eventId: string,
+  ): Promise<Map<string, string>> {
+    const taken = new Map<string, string>();
+    if (!routineIds.length) return taken;
+    const held = await this.ctx.db
+      .select({ step: schema.routineStepRuns, run: schema.routineRuns })
+      .from(schema.routineStepRuns)
+      .innerJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.routineStepRuns.runId))
+      .where(
+        and(
+          inArray(schema.routineRuns.routineId, routineIds),
+          eq(schema.routineRuns.status, 'paused'),
+          eq(schema.routineStepRuns.status, 'waiting'),
+          eq(schema.routineStepRuns.kind, 'wait'),
+          isNull(schema.routineStepRuns.eventId),
+        ),
+      )
+      .orderBy(asc(schema.routineStepRuns.startedAt));
+    for (const { step, run } of held) {
+      if (taken.has(run.routineId)) continue;
+      const def = (snapshotSteps(run.stepsSnapshot) ?? [])[step.position - 1];
+      if (def?.kind !== 'wait' || def.on !== on || step.filter === null) continue;
+      if (step.filter.trim() && !passesFilter(step.filter, fields)) continue;
+      const [took] = await this.ctx.db
+        .update(schema.routineStepRuns)
+        .set({ eventId, output: cutAt(payload, POST_MAX) })
+        .where(
+          and(
+            eq(schema.routineStepRuns.id, step.id),
+            eq(schema.routineStepRuns.status, 'waiting'),
+            isNull(schema.routineStepRuns.eventId),
+          ),
+        )
+        .returning({ id: schema.routineStepRuns.id });
+      if (took) taken.set(run.routineId, run.id);
+    }
+    if (taken.size) await this.settleSteps();
+    return taken;
+  }
+
+  /** Whether a run of the routine already took this event at a wait step. */
+  private async eventTaken(routineId: string, eventId: string): Promise<boolean> {
+    const [seen] = await this.ctx.db
+      .select({ id: schema.routineStepRuns.id })
+      .from(schema.routineStepRuns)
+      .innerJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.routineStepRuns.runId))
+      .where(and(eq(schema.routineRuns.routineId, routineId), eq(schema.routineStepRuns.eventId, eventId)))
+      .limit(1);
+    return !!seen;
+  }
+
+  /** The person ends a run's wait now: the run goes on as if its time had come. */
+  async endWait(routineId: string, runId: string): Promise<RoutineRun> {
+    const [run] = await this.ctx.db
+      .select({ id: schema.routineRuns.id })
+      .from(schema.routineRuns)
+      .where(
+        and(
+          eq(schema.routineRuns.id, runId),
+          eq(schema.routineRuns.routineId, routineId),
+          eq(schema.routineRuns.status, 'paused'),
+        ),
+      );
+    const [held] = run
+      ? await this.ctx.db
+          .update(schema.routineStepRuns)
+          .set({ eventId: `person:${newId()}` })
+          .where(
+            and(
+              eq(schema.routineStepRuns.runId, runId),
+              eq(schema.routineStepRuns.status, 'waiting'),
+              eq(schema.routineStepRuns.kind, 'wait'),
+              isNull(schema.routineStepRuns.eventId),
+            ),
+          )
+          .returning({ id: schema.routineStepRuns.id })
+      : [];
+    if (!held) throw new HttpError(409, 'error.routineRunNotWaiting');
+    await this.settleSteps();
+    const shown = (await this.runs(routineId)).find((r) => r.id === runId);
+    if (!shown) throw notFound('routine');
+    return shown;
+  }
+
+  /**
    * Lets the runs held at an approval step go on once the card is answered: approved, the next
    * step starts with what the step before the card ended with; rejected, or not answered in time,
    * the run ends there; answered in words, the bot step before the card does its work again with
@@ -1684,7 +1907,13 @@ export class RoutineService {
   }
 
   private async settleOnce() {
-    const rows = await this.ctx.db
+    const routine = {
+      name: schema.routines.name,
+      botId: schema.routines.botId,
+      userId: schema.routines.createdByUserId,
+      slackChannel: schema.routines.slackChannel,
+    };
+    const answered = await this.ctx.db
       .select({
         step: schema.routineStepRuns,
         run: schema.routineRuns,
@@ -1693,12 +1922,7 @@ export class RoutineService {
           answer: schema.approvals.answer,
           options: schema.approvals.options,
         },
-        routine: {
-          name: schema.routines.name,
-          botId: schema.routines.botId,
-          userId: schema.routines.createdByUserId,
-          slackChannel: schema.routines.slackChannel,
-        },
+        routine,
       })
       .from(schema.routineStepRuns)
       .innerJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.routineStepRuns.runId))
@@ -1712,60 +1936,101 @@ export class RoutineService {
         ),
       )
       .orderBy(asc(schema.approvals.decidedAt));
-    if (!rows.length) return;
+    // Waits that came to an end: their event came, their time is up, or the person ended them.
+    const ended = await this.ctx.db
+      .select({ step: schema.routineStepRuns, run: schema.routineRuns, routine })
+      .from(schema.routineStepRuns)
+      .innerJoin(schema.routineRuns, eq(schema.routineRuns.id, schema.routineStepRuns.runId))
+      .innerJoin(schema.routines, eq(schema.routines.id, schema.routineRuns.routineId))
+      .where(
+        and(
+          eq(schema.routineStepRuns.status, 'waiting'),
+          eq(schema.routineStepRuns.kind, 'wait'),
+          eq(schema.routineRuns.status, 'paused'),
+          or(isNotNull(schema.routineStepRuns.eventId), lte(schema.routineStepRuns.waitUntil, this.clock())),
+        ),
+      )
+      .orderBy(asc(schema.routineStepRuns.waitUntil));
+    if (!answered.length && !ended.length) return;
     const t = await this.services.settings.translator();
-    for (const r of rows) {
+    for (const r of answered) {
       if (this.stopped) return;
-      await this.settleOne(r, t).catch((err: unknown) =>
+      await this.settleApproval(r, t).catch((err: unknown) =>
         console.error(`Approval step of routine run ${r.run.id}`, err),
+      );
+    }
+    for (const r of ended) {
+      if (this.stopped) return;
+      await this.settleWait(r, t).catch((err: unknown) =>
+        console.error(`Wait step of routine run ${r.run.id}`, err),
       );
     }
   }
 
-  private async settleOne(
-    r: {
-      step: typeof schema.routineStepRuns.$inferSelect;
-      run: RunRow;
-      card: { status: string; answer: string | null; options: string[] };
-      routine: { name: string; botId: string; userId: string | null; slackChannel: string | null };
-    },
+  private async settleApproval(
+    r: HeldStep & { card: { status: string; answer: string | null; options: string[] } },
     t: T,
   ) {
-    const { step, run, card } = r;
-    const steps = snapshotSteps(run.stepsSnapshot) ?? [];
+    const { card } = r;
     const answer = card.answer?.trim() ?? '';
     const [approve, reject] = card.options;
-    const now = this.clock();
-    const end = async (status: 'stopped' | 'error', reason: string) => {
-      const [ended] = await this.ctx.db
-        .update(schema.routineRuns)
-        .set({ status, reason, stepModel: null, finishedAt: now })
-        .where(and(eq(schema.routineRuns.id, run.id), eq(schema.routineRuns.status, 'paused')))
-        .returning({ id: schema.routineRuns.id });
-      if (!ended) return;
-      await this.ctx.db
-        .update(schema.routineStepRuns)
-        .set({
-          status,
-          reason,
-          output: answer && answer !== APPROVAL_TIMED_OUT ? answer : null,
-          finishedAt: now,
-        })
-        .where(and(eq(schema.routineStepRuns.id, step.id), eq(schema.routineStepRuns.status, 'waiting')));
-      this.ctx.bus.refresh({ scope: 'routines' });
-    };
-    if (card.status === 'expired') return end('error', t('routine.approvalTimedOut'));
+    const kept = answer && answer !== APPROVAL_TIMED_OUT ? answer : null;
+    if (card.status === 'expired') return this.endHeldRun(r, 'error', t('routine.approvalTimedOut'), kept);
     if (card.status === 'denied' || (reject !== undefined && answer === reject))
-      return end('stopped', t('routine.approvalRejected'));
+      return this.endHeldRun(r, 'stopped', t('routine.approvalRejected'), kept);
+    // An answer in words is a correction: the bot step before the card does its work again with it.
+    return this.goOn(r, t, { output: kept, ...(answer && answer !== approve && { revise: answer }) });
+  }
+
+  private async settleWait(r: HeldStep, t: T) {
+    const step = (snapshotSteps(r.run.stepsSnapshot) ?? [])[r.step.position - 1];
+    const on = step?.kind === 'wait' ? step.on : 'time';
+    if (r.step.eventId) {
+      // What came in is outside text: the run's later turns read it as such.
+      const trigger = r.step.output && on !== 'time' ? on : undefined;
+      return this.goOn(r, t, trigger ? { trigger } : {});
+    }
+    if (on === 'time') return this.goOn(r, t, {});
+    return this.endHeldRun(r, 'error', t('routine.waitTimedOut'));
+  }
+
+  /** Ends a run held at a step, and the step with it, with why. */
+  private async endHeldRun(r: HeldStep, status: 'stopped' | 'error', reason: string, output?: string | null) {
+    const now = this.clock();
+    const [ended] = await this.ctx.db
+      .update(schema.routineRuns)
+      .set({ status, reason, stepModel: null, finishedAt: now })
+      .where(and(eq(schema.routineRuns.id, r.run.id), eq(schema.routineRuns.status, 'paused')))
+      .returning({ id: schema.routineRuns.id });
+    if (!ended) return;
+    await this.ctx.db
+      .update(schema.routineStepRuns)
+      .set({ status, reason, finishedAt: now, ...(output !== undefined && { output }) })
+      .where(and(eq(schema.routineStepRuns.id, r.step.id), eq(schema.routineStepRuns.status, 'waiting')));
+    this.ctx.bus.refresh({ scope: 'routines' });
+  }
+
+  /**
+   * A run held at a step goes on: it takes the routine's slot again, and the step after the held
+   * one starts with what reached it; the run ends when the held step was its last. With `revise`,
+   * the bot step before it is done again with that correction instead. While another run of the
+   * routine holds the slot, it stays held, and goes on at a later pass.
+   */
+  private async goOn(
+    r: HeldStep,
+    t: T,
+    o: { output?: string | null; revise?: string; trigger?: OutsideTrigger },
+  ) {
+    const { step, run } = r;
+    const steps = snapshotSteps(run.stepsSnapshot) ?? [];
+    const now = this.clock();
     const bot = await this.services.bots.get(r.routine.botId).catch(() => null);
-    if (!bot || bot.archivedAt || !run.threadId) return end('error', t('routine.botMissing'));
-    // The run takes the routine's slot again. While another run of it holds the slot, this one
-    // goes on when that one ends.
+    if (!bot || bot.archivedAt || !run.threadId) return this.endHeldRun(r, 'error', t('routine.botMissing'));
     let resumed: RunRow | undefined;
     try {
       [resumed] = await this.ctx.db
         .update(schema.routineRuns)
-        .set({ status: 'running', reason: null })
+        .set({ status: 'running', reason: null, ...(o.trigger && !run.trigger && { trigger: o.trigger }) })
         .where(and(eq(schema.routineRuns.id, run.id), eq(schema.routineRuns.status, 'paused')))
         .returning();
     } catch (err) {
@@ -1775,8 +2040,18 @@ export class RoutineService {
     if (!resumed) return;
     await this.ctx.db
       .update(schema.routineStepRuns)
-      .set({ status: 'done', output: answer || null, finishedAt: now })
+      .set({ status: 'done', finishedAt: now, ...(o.output !== undefined && { output: o.output }) })
       .where(eq(schema.routineStepRuns.id, step.id));
+    if (o.trigger && step.output) {
+      // What came in shows in the run's conversation, marked as outside text.
+      await this.services.threads.addMessage({
+        threadId: run.threadId,
+        role: 'user',
+        author: `routine:${run.routineId}`,
+        text: t('routine.payloadShown', { payload: step.output }),
+        props: { routineRunId: run.id, routineName: r.routine.name, payload: true, outside: o.trigger },
+      });
+    }
     const rows = await this.ctx.db
       .select()
       .from(schema.routineStepRuns)
@@ -1789,8 +2064,7 @@ export class RoutineService {
       userId: r.routine.userId,
     };
     try {
-      if (answer && answer !== approve) {
-        // A correction in words: the bot step before the card does its work again with it.
+      if (o.revise) {
         await this.restartStep(
           at,
           r.routine.name,
@@ -1798,7 +2072,7 @@ export class RoutineService {
           steps,
           botStepAt(steps, step.position - 1),
           rows,
-          t('routine.reviseNote', { answer }),
+          t('routine.reviseNote', { answer: o.revise }),
           t,
         );
       } else if (step.position < steps.length) {
@@ -1811,21 +2085,21 @@ export class RoutineService {
           t,
         );
       } else {
-        // The card was the last step: what it let through is the run's report.
+        // The held step was the last: what reached it is the run's report.
         await this.ctx.db
           .update(schema.routineRuns)
           .set({ status: 'done', finishedAt: now })
           .where(eq(schema.routineRuns.id, run.id));
-        await this.deliver(bot.id, run.threadId, handedOn(steps, rows, step.position) ?? '', {
+        await this.deliver(bot.id, run.threadId, handedOn(steps, rows, step.position + 1) ?? '', {
           id: run.id,
           routineName: r.routine.name,
-          outside: run.trigger,
+          outside: resumed.trigger,
           slackChannel: r.routine.slackChannel,
         });
         await this.startQueued(run.routineId);
       }
     } catch (err) {
-      console.error(`Run ${run.id} could not go on after its approval step`, err);
+      console.error(`Run ${run.id} could not go on after a held step`, err);
       await this.startFailed(run.routineId, run.id, err, t);
     }
     this.ctx.bus.refresh({ scope: 'routines' });
@@ -1891,7 +2165,10 @@ export class RoutineService {
       await this.startStep(run, routineName, steps, position, handedOn(steps, rows, position), t, note);
       return;
     }
-    const prompt = t('routine.prompt', { name: routineName, prompt: promptSnapshot, silent: SILENT_REPLY });
+    const prompt = [
+      t('routine.prompt', { name: routineName, prompt: promptSnapshot, silent: SILENT_REPLY }),
+      ...saveHint(steps, 0, t),
+    ].join('\n\n');
     await this.ctx.db
       .update(schema.routineRuns)
       .set({ stepModel: null })
@@ -2420,6 +2697,13 @@ function sameSecret(a: string, b: string): boolean {
 }
 
 /** The steps a run of the routine starts with; null for a routine with none. */
+/** A run held at a step, with the step and what of the routine it goes on with. */
+interface HeldStep {
+  step: typeof schema.routineStepRuns.$inferSelect;
+  run: RunRow;
+  routine: { name: string; botId: string; userId: string | null; slackChannel: string | null };
+}
+
 /** Where a run's step works, and for whom. */
 interface StepRun {
   id: string;
@@ -2431,9 +2715,18 @@ interface StepRun {
 
 const DAY_MS = 24 * 60 * 60_000;
 
-/** Whether a routine's runs may stop part way for the person. */
+/**
+ * Tells a bot step which values the wait steps after it need saved, so a wait on "the issue it
+ * opened" does not hang on the person knowing the tool's name.
+ */
+function saveHint(steps: readonly RoutineStep[], position: number, t: T): string[] {
+  const names = varsWanted(steps, position);
+  return names.length ? [t('routine.saveValues', { names: names.join(', ') })] : [];
+}
+
+/** Whether a routine's runs may stop part way for the person or for something to happen. */
 function holdsRuns(routine: Routine): boolean {
-  return !!routine.steps?.some((s) => s.kind === 'approval');
+  return !!routine.steps?.some((s) => s.kind === 'approval' || s.kind === 'wait');
 }
 
 function stepsOf(routine: Routine): RoutineStep[] | null {

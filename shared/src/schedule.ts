@@ -75,6 +75,32 @@ export const ROUTINE_APPROVAL_TOOL = 'routine_approval';
 
 /** The longest an approval step waits for the person, in days. */
 export const ROUTINE_APPROVAL_MAX_DAYS = 30;
+/** The longest a step waits for a time, in minutes: as long as the longest wait for the person. */
+export const ROUTINE_WAIT_MAX_MINUTES = ROUTINE_APPROVAL_MAX_DAYS * 24 * 60;
+/** How many values a run keeps for its wait steps, and how long each may be. */
+export const ROUTINE_VARS_MAX = 20;
+export const ROUTINE_VAR_MAX = 500;
+/** A value's name, as a wait step's filter writes it between `{{` and `}}`. */
+export const ROUTINE_VAR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+
+/** The names of the values a filter puts in, each once, in order. */
+export function filterVars(filter: string): string[] {
+  return [...new Set([...filter.matchAll(/\{\{\s*([A-Za-z][A-Za-z0-9_]{0,39})\s*\}\}/g)].map((m) => m[1]!))];
+}
+
+/**
+ * A wait step's filter with the run's values put in. Null when one it names has none: an empty
+ * value would make a line such as `title~={{x}}` match every event, so the wait never starts.
+ */
+export function fillFilter(filter: string, vars: Readonly<Record<string, string>>): string | null {
+  let missing = false;
+  const filled = filter.replace(/\{\{\s*([A-Za-z][A-Za-z0-9_]{0,39})\s*\}\}/g, (_, name: string) => {
+    const v = vars[name]?.trim();
+    if (!v) missing = true;
+    return v ?? '';
+  });
+  return missing ? null : filled;
+}
 
 /**
  * A step of a routine after its own instruction, done once the step before it ended well.
@@ -82,7 +108,10 @@ export const ROUTINE_APPROVAL_MAX_DAYS = 30;
  * model of its own when one is named (empty for the routine's). `approval`: the run waits for the
  * person to answer `question` about what the step before it ended with; they let it go on, turn it
  * down (the run stops), or write what to change (the step before it is done again with that). Left
- * unanswered for `timeoutDays`, the run ends.
+ * unanswered for `timeoutDays`, the run ends. `wait`: the run waits `minutes`, or for the routine's
+ * webhook to be called or a mail to come to the bot whose content passes `filter` (the run's saved
+ * values put in for `{{name}}`); what came is handed to the next step. No event in `timeoutDays`
+ * ends the run.
  */
 export const RoutineStep = z.discriminatedUnion('kind', [
   z.object({
@@ -95,6 +124,14 @@ export const RoutineStep = z.discriminatedUnion('kind', [
     id: stepId,
     kind: z.literal('approval'),
     question: z.string().trim().min(1, 'validation.stepQuestion').max(2000),
+    timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
+  }),
+  z.object({
+    id: stepId,
+    kind: z.literal('wait'),
+    on: z.enum(['time', 'webhook', 'email']),
+    minutes: z.number().int().min(1).max(ROUTINE_WAIT_MAX_MINUTES).default(60),
+    filter: z.string().max(2000).default(''),
     timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS).default(7),
   }),
 ]);

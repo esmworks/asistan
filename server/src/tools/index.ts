@@ -8,6 +8,9 @@ import {
   Schedule,
   parseAnswers,
   PERMISSION_MODES,
+  ROUTINE_VAR_MAX,
+  ROUTINE_VAR_NAME,
+  ROUTINE_VARS_MAX,
   type RoutineCheck,
   type RoutineUpdate,
   searchCatalog,
@@ -230,6 +233,7 @@ export type ToolName =
   | 'routine_update'
   | 'routine_delete'
   | 'routine_failed'
+  | 'routine_set'
   | 'routine_stop'
   | 'app_suggest'
   | 'quick_replies'
@@ -844,6 +848,26 @@ export class ToolFactory {
               async ({ reason }) => {
                 await s.routines.markFailed(turn.routineRunId!, reason);
                 return t('tool.routineMarkedFailed');
+              },
+              'internal',
+            ),
+            def(
+              'routine_set',
+              {
+                name: z.string().regex(ROUTINE_VAR_NAME),
+                // One line: a wait step's filter is read line by line, so a value may not add one.
+                value: z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(ROUTINE_VAR_MAX)
+                  .refine((v) => !/[\r\n]/.test(v)),
+              },
+              async ({ name, value }) => {
+                const saved = await s.routines.setVar(turn.routineRunId!, name, value);
+                if (saved === 'gone') return t('tool.routineGone');
+                if (saved === 'full') return t('tool.routineValuesFull', { max: ROUTINE_VARS_MAX });
+                return t('tool.routineValueSaved', { name });
               },
               'internal',
             ),

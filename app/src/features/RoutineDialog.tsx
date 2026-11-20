@@ -2,6 +2,7 @@ import {
   describeSchedule,
   parseCron,
   ROUTINE_APPROVAL_MAX_DAYS,
+  ROUTINE_WAIT_MAX_MINUTES,
   SHORT_DAY_NAMES,
   type Routine,
   type Schedule,
@@ -74,6 +75,14 @@ const Form = z.object({
         id: z.string(),
         kind: z.literal('approval'),
         question: z.string().trim().min(1, 'routine.stepQuestionRequired').max(2000),
+        timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS),
+      }),
+      z.object({
+        id: z.string(),
+        kind: z.literal('wait'),
+        on: z.enum(['time', 'webhook', 'email']),
+        minutes: z.number().int().min(1).max(ROUTINE_WAIT_MAX_MINUTES),
+        filter: z.string().max(2000),
         timeoutDays: z.number().int().min(1).max(ROUTINE_APPROVAL_MAX_DAYS),
       }),
     ]),
@@ -154,7 +163,9 @@ function fromRoutine(r?: Routine): Form {
     steps: (r?.steps ?? []).map((x): StepForm =>
       x.kind === 'agent'
         ? { id: x.id, kind: x.kind, prompt: x.prompt, model: x.model ?? '' }
-        : { id: x.id, kind: x.kind, question: x.question, timeoutDays: x.timeoutDays },
+        : x.kind === 'approval'
+          ? { id: x.id, kind: x.kind, question: x.question, timeoutDays: x.timeoutDays }
+          : { ...x },
     ),
     type: s?.type ?? 'weekdays',
     time: s && 'time' in s ? s.time : '09:00',
@@ -224,7 +235,9 @@ export function RoutineDialog({
         steps: f.steps.map((x) =>
           x.kind === 'agent'
             ? { ...x, prompt: x.prompt.trim(), model: x.model.trim() }
-            : { ...x, question: x.question.trim() },
+            : x.kind === 'approval'
+              ? { ...x, question: x.question.trim() }
+              : { ...x, filter: x.filter.trim() },
         ),
         schedule: toSchedule(f),
         missed: f.missed,
