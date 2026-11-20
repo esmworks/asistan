@@ -189,7 +189,12 @@ export class CanaryService {
       if (trap) return { wire: 'key', keyName: trap.name };
     }
     // Anything that goes to a trap key's address, whichever way (a command, a page, a request).
-    if (o.toolName === 'SandboxNetworkAccess' || reachesOut(o.toolName, o.input, o.tool)) {
+    // A command on the bot's desktop is a shell command like any other.
+    const shell = o.toolName === 'mcp__yumakbot__run_command';
+    const reach = shell
+      ? reachesOut('Bash', { command: o.input.command })
+      : reachesOut(o.toolName, o.input, o.tool);
+    if (o.toolName === 'SandboxNetworkAccess' || reach) {
       const text = strings(o.input).flatMap((s) => [s, decoded(s)]);
       for (const trap of traps) {
         const host = new URL(trap.origin).hostname;

@@ -982,10 +982,14 @@ export class TurnManager {
       // Set before anything is awaited, so steps running side by side see it at once.
       tripped = { hit, tool: toolName };
       controller.abort();
-      const sources = [...new Set([...(reads ? [t(`outside.trigger.${reads}`)] : []), ...readFrom])].slice(
-        0,
-        MAX_SOURCES,
-      );
+      // What the turn began with or read in an earlier turn of its session, unless a more exact
+      // line below already names it.
+      const earlier = reads ? t(`outside.trigger.${reads}`) : null;
+      const exact = [...readFrom];
+      const sources = [
+        ...(earlier && !exact.some((x) => x.startsWith(earlier)) ? [earlier] : []),
+        ...exact,
+      ].slice(0, MAX_SOURCES);
       tripping = this.services.canary
         .trip({
           bot,
