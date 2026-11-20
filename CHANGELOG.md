@@ -55,6 +55,17 @@ version is 0.x, a minor release may change the data format or the API; the serve
 - A skill a bot saves for someone belongs to that person, who may then change or delete it like one they wrote.
   Before, only the admins could.
 
+### Fixed
+
+- A bot whose model the provider retired, or whose model name it does not know, goes on with the backup model when
+  one is set, and the chat says to pick another model for the bot. Before, each message ended with the provider's
+  error.
+- A one-time routine whose run failed for a passing reason (a spent usage limit, a busy or unreachable provider) is
+  tried again, as a repeating routine is. A scheduled run that a server stop cut short is tried again too, once and
+  a little later, when it had let through no step that changes something.
+- A WhatsApp message that first arrives undecryptable reaches the bot once WhatsApp gets it again from the sender's
+  phone. It was taken for a repeat of the empty stand-in and dropped.
+
 ## 0.6.1 — 2026-11-20
 
 ### Added

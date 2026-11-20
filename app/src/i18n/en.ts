@@ -2067,7 +2067,7 @@ export const en: Catalog<MessageKey> = {
     'When a long conversation nears this size and has been quiet for half an hour, the bot summarises it while nobody waits, so the next message is answered without waiting for a summary. Summarising uses the model and counts toward spending; it starts off because after a pause the model reads the conversation again without its cache.',
   'model.backup': 'Backup model',
   'model.backupHint':
-    'When the usage limit is used up or the model cannot answer, the work goes on with this model instead of waiting; it gets the recent conversation. While this is off no other model is used: the work waits and is sent again by itself once the limit resets.',
+    'When the usage limit is used up, the model cannot answer or it is no longer offered, the work goes on with this model instead of waiting; it gets the recent conversation. While this is off no other model is used: the work waits and is sent again by itself once the limit resets.',
   'onboarding.noAi':
     'No AI is connected yet. The bots are created but cannot answer until you connect one under Settings → Connection.',
   'apps.open': 'Apps',
