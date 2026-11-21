@@ -379,9 +379,15 @@ function mcpServer(tools: AppTool[]) {
     name: APP_SERVER,
     version: '0.7.1',
     tools: tools.map((t) =>
-      tool(t.name, t.description, t.input, async (args) => ({
-        content: toContent(await fitResult(await t.handler(args as Record<string, unknown>))),
-      })),
+      tool(
+        t.name,
+        t.description,
+        t.input,
+        async (args) => ({
+          content: toContent(await fitResult(await t.handler(args as Record<string, unknown>))),
+        }),
+        t.alwaysLoad ? { alwaysLoad: true } : undefined,
+      ),
     ),
   });
 }

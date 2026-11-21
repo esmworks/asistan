@@ -1246,6 +1246,19 @@ export class TurnManager {
       : toolPicker(bot.toolSelection);
     // Whether it can look earlier talk up, which the prompts point it to.
     const recall = pickTool(toolPermName({ name: 'conversations_search' }));
+    // The board is offered where the bot may open tickets: in a person's own conversation, to
+    // someone with an account here, with the board's tools in its tool selection.
+    const board =
+      own && !turn.guest && pickTool(toolPermName({ name: 'ticket_create' }))
+        ? {
+            open: (
+              await this.services.tickets.list({
+                status: ['todo', 'in_progress', 'blocked'],
+                assigneeBotId: bot.id,
+              })
+            ).sort((a, b) => a.number - b.number),
+          }
+        : undefined;
     // The bot's private line; the same every turn.
     const canaryToken = this.services.canary.token(bot.id);
     const systemPrompt = buildSystemPrompt({
@@ -1276,6 +1289,7 @@ export class TurnManager {
       room: inRoom ? await this.services.rooms.context(thread.id, bot, settings.userName, t) : undefined,
       email,
       recall,
+      board,
       canary: canaryToken,
     });
     const allTools = [
