@@ -8,8 +8,10 @@ import {
   headFor,
   headToward,
   lidAt,
+  lookTarget,
   pointerIn,
   saccadeSeconds,
+  swayAt,
   workingFaceAt,
   type Spot,
 } from './gaze';
@@ -63,6 +65,20 @@ describe('head', () => {
     for (let i = 0; i < 60; i++) h = headToward(h, target, 1 / 30);
     expect(h.tilt).toBeCloseTo(target.tilt, 2);
     expect(h.y).toBeCloseTo(target.y, 4);
+  });
+});
+
+describe('object avatar look', () => {
+  it('looks down at a page, up to ponder and stays within reach', () => {
+    expect(lookTarget({ yaw: 0, pitch: -8 }).y).toBe(1);
+    expect(lookTarget({ yaw: 0, pitch: 16 }).y).toBeLessThan(0);
+    expect(lookTarget(AT_YOU)).toEqual({ x: 0, y: -0 });
+    expect(lookTarget({ yaw: 30, pitch: 0 }).x).toBe(1);
+  });
+
+  it('sways its head while it works', () => {
+    const yaws = [0, 0.7, 1.4, 2.1].map((t) => swayAt(t).yaw);
+    expect(Math.max(...yaws) - Math.min(...yaws)).toBeGreaterThan(0.05);
   });
 });
 

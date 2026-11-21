@@ -363,6 +363,19 @@ export function headToward(head: HeadPose, target: HeadPose, dt: number): HeadPo
   };
 }
 
+/**
+ * A look as an object avatar takes it: -1 to 1 each way, right and down positive. Its engine turns the
+ * body to face the spot and moves the eyes a share of the way on top.
+ */
+export function lookTarget(at: Spot) {
+  return { x: clamp(at.yaw / 12, -1, 1), y: clamp(-(at.pitch - AT_YOU.pitch) / 14, -1, 1) };
+}
+
+/** The sway and bob a working object avatar adds to its turn, in radians, on the shared clock. */
+export function swayAt(t: number) {
+  return { yaw: 0.08 * Math.sin(t * 1.1 + 0.6), pitch: 0.04 * Math.sin(t * 2.3) };
+}
+
 /** Seconds on the clock every avatar shares. */
 export const sharedClock = () => performance.now() / 1000;
 

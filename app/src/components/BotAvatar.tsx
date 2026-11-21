@@ -19,8 +19,10 @@ import {
   HEAD_REST,
   headFor,
   headToward,
+  lookTarget,
   pointerIn,
   sharedClock,
+  swayAt,
   workingFaceAt,
   type HeadPose,
 } from '@/lib/gaze';
@@ -313,14 +315,16 @@ export function ShapeArt({
 }
 
 /**
- * How each activity shows on an object avatar. The engine's own states fit what the bot does: three
- * dots while it thinks, ribbons sweeping round it while it writes or reads a page, an exclamation
- * mark when it needs someone, and a quiet wait while its turn has not come.
+ * How each activity shows on an object avatar: ribbons sweeping round it while it writes or reads a
+ * page, an exclamation mark when it needs someone, and a quiet wait while its turn has not come.
+ * Thinking, which is also when it runs its tools, is not the engine's own: that one hides the body
+ * behind three dots for as long as a tool runs. The bot keeps its face instead and is steered like the
+ * plush, looking up to one side, then going over the page line by line, its head swaying all along.
  */
 const OBJECT_STATES: Record<BotActivity, AvatarState> = {
   idle: 'idle',
   queued: 'waiting',
-  thinking: 'thinking',
+  thinking: 'idle',
   writing: 'working',
   browsing: 'working',
   waiting: 'blocked',
@@ -337,17 +341,24 @@ export function ObjectArt({
   color,
   activity = 'idle',
   motion = 'still',
+  seed,
 }: {
   id: ObjectAvatar;
   color: string;
   activity?: BotActivity;
   motion?: AvatarMotion;
+  /** The bot's id: its avatars share one gaze, so they look the same way at once. */
+  seed?: string;
 }) {
   const host = useRef<HTMLSpanElement>(null);
   const avatar = useRef<MountedAvatar | null>(null);
   const [focused, setFocused] = useState(true);
+  const [gaze] = useState(() => gazeOf(seed, activity));
   const moving = motion !== 'still' && focused;
   const definition = getExample(id);
+  const steered = moving && activity === 'thinking';
+
+  useEffect(() => gaze.setActivity(activity), [gaze, activity]);
 
   // It rests while another app has the focus.
   useEffect(() => {
@@ -377,9 +388,25 @@ export function ObjectArt({
       color: hexColor(color),
       state: OBJECT_STATES[activity],
       still: !moving,
-      followPointer: moving,
+      followPointer: moving && !steered,
     });
   });
+
+  // A thinking bot's look and sway, frame by frame, from the gaze its other avatars share.
+  useEffect(() => {
+    if (!steered || reducedMotion()) return;
+    let frame = 0;
+    const step = () => {
+      const t = sharedClock();
+      avatar.current?.update({ lookAt: lookTarget(gaze.look(t)), view: swayAt(t) });
+      frame = requestAnimationFrame(step);
+    };
+    step();
+    return () => {
+      cancelAnimationFrame(frame);
+      avatar.current?.update({ lookAt: null, view: { yaw: 0, pitch: 0 } });
+    };
+  }, [steered, gaze]);
 
   return <span ref={host} className="block size-full" aria-hidden />;
 }
@@ -426,6 +453,7 @@ export function BotAvatar({
           color={color}
           activity={activity}
           motion={lively ? motion : 'still'}
+          seed={seed}
         />
       ) : (
         <ShapeArt
