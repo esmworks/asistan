@@ -3,6 +3,34 @@
 All notable changes to Leaf Bot (called Yumak Bot before 0.7.0) are listed here. Versions follow [Semantic Versioning](https://semver.org/). While the
 version is 0.x, a minor release may change the data format or the API; the server migrates its database on start.
 
+## 0.7.1 — 2026-11-21
+
+### Added
+
+- Object avatars act out what their bot does. While it thinks or runs a tool, its face stays in view: it looks up to
+  one side, then goes over the page line by line with its head swaying, instead of hiding behind three dots. When it
+  finishes it smiles with its eyes and hops for a moment. It follows the pointer anywhere on the page, briskly even
+  as a small avatar in the list, and the large one in the bot's panel can be turned round by dragging it, settling
+  back to face the person when let go.
+- Plain shapes among the object avatars: circle, square, triangle, pill, diamond, hexagon, heart, cloud, leaf, drop
+  and star, all with white eyes.
+
+### Changed
+
+- The felt plush avatars are gone, and the Shape tab with them: the objects now offer the same plain shapes, with
+  more life in them. Every bot that had a shape becomes the round object, which is also what a new bot starts with.
+  An older phone app or a bot file made before still sends shape names; the server keeps taking them and stores the
+  round object. The starter bots and the welcome conversation use objects.
+- A new logo: a smooth round green bot with two tall eyes, coming in from the corner of the dark green tile. The
+  desktop, web and phone icons, the menu bar icon and the mascot on the first screens are drawn from it. The phone
+  app draws its bots with the same smooth round body in the bot's colour; it reaches phones with the next phone
+  release.
+
+### Fixed
+
+- A manager bot shows its shield, and a paused bot its pause mark, in the unfolded sidebar list too, not only in the
+  folded one.
+
 ## 0.7.0 — 2026-11-21
 
 ### Added

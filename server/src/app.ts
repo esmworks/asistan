@@ -368,7 +368,7 @@ export async function createServer(config: Config, opts: ServerOptions = {}): Pr
 
   const info = (): ServerInfo => ({
     name: 'leafbot',
-    version: '0.7.0',
+    version: '0.7.1',
     bootId,
     buildId,
     claude: claudeStatus,
