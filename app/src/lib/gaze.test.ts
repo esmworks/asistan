@@ -119,7 +119,7 @@ describe('gaze director', () => {
 
   it('looks up while thinking, then reads the page line by line, there and back', () => {
     const frames = run(new GazeDirector('thinking', seeded(7)), 0, 12);
-    for (const f of frames.filter((f) => f.t < 1.1)) expect(f.pitch).toBeGreaterThanOrEqual(15);
+    for (const f of frames.filter((f) => f.t < 0.75)) expect(f.pitch).toBeGreaterThanOrEqual(15);
     const reading = rests(frames).filter((s) => s.pitch < 0);
     expect(reading.slice(0, 7).map((s) => s.yaw)).toEqual([-9, -3, 3, 9, 4, -2, -8]);
     for (const s of reading) expect(Math.abs(s.yaw)).toBeLessThanOrEqual(12);

@@ -73,14 +73,14 @@ const HABITS: Record<BotActivity, Habit> = {
   },
   thinking: {
     spots: [
-      { yaw: 10, pitch: 16, hold: [1.2, 2.4] },
+      { yaw: 10, pitch: 16, hold: [0.8, 1.5] },
       ...READ_LINES,
       ...READ_LINES,
-      { yaw: -10, pitch: 16, hold: [1, 2] },
+      { yaw: -10, pitch: 16, hold: [0.7, 1.3] },
       ...READ_LINES,
     ],
     inOrder: true,
-    hold: [0.3, 0.6],
+    hold: [0.12, 0.24],
     drift: 0,
     blink: [3, 6],
   },
@@ -92,7 +92,7 @@ const HABITS: Record<BotActivity, Habit> = {
       { yaw: 8, pitch: -5 },
     ],
     inOrder: true,
-    hold: [0.35, 0.75],
+    hold: [0.15, 0.3],
     drift: 0,
     blink: [2.5, 5],
   },
@@ -106,7 +106,7 @@ const HABITS: Record<BotActivity, Habit> = {
       { yaw: -12, pitch: -1 },
       { yaw: 12, pitch: -1 },
     ],
-    hold: [0.5, 1.4],
+    hold: [0.25, 0.7],
     drift: 0,
     blink: [2.5, 5],
   },
@@ -134,9 +134,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 const between = (range: readonly [number, number], r: number) => range[0] + r * (range[1] - range[0]);
 
-/** A quick jump from one spot to the next; a longer jump takes a little longer, as an eye does. */
+/**
+ * A quick jump from one spot to the next; a longer jump takes a little longer, as an eye does. Kept
+ * short so a bot reading a page skims it briskly rather than drifting from word to word.
+ */
 export const saccadeSeconds = (from: Spot, to: Spot) =>
-  0.1 + Math.hypot(to.yaw - from.yaw, to.pitch - from.pitch) * 0.004;
+  0.06 + Math.hypot(to.yaw - from.yaw, to.pitch - from.pitch) * 0.003;
 
 /** How open the lids are `s` seconds into a blink: 1 open, 0 shut. */
 export function lidAt(s: number) {
