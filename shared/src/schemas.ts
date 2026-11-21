@@ -135,8 +135,12 @@ export type Bot = z.infer<typeof Bot>;
 
 const botName = z.string().trim().min(1).max(60);
 
-/** Built-in avatar shapes offered for new bots; drawn by the app. `blob` is the circle. */
-export const AVATAR_SHAPES = [
+/**
+ * Shapes bots could once take, as `shape:<name>`, drawn as felt plushes. They are no longer offered or
+ * drawn: each is read as `DEFAULT_AVATAR`, so a bot that had one, an older phone app that still sends
+ * one and an export made before keep working and get the round object.
+ */
+export const OLD_AVATAR_SHAPES = [
   'blob',
   'pebble',
   'squircle',
@@ -148,16 +152,23 @@ export const AVATAR_SHAPES = [
   'pentagon',
   'triangle',
   'cloud',
+  'clover',
+  'star',
+  'shield',
+  'leaf',
+  'bolt',
+  'moon',
 ] as const;
-/** Shapes no longer offered; bots that have one keep it and are drawn with the nearest shape. */
-export const OLD_AVATAR_SHAPES = ['clover', 'star', 'shield', 'leaf', 'bolt', 'moon'] as const;
-export type AvatarShape = (typeof AVATAR_SHAPES)[number] | (typeof OLD_AVATAR_SHAPES)[number];
-const KNOWN_SHAPES: readonly string[] = [...AVATAR_SHAPES, ...OLD_AVATAR_SHAPES];
+export type AvatarShape = (typeof OLD_AVATAR_SHAPES)[number];
+const KNOWN_SHAPES: readonly string[] = OLD_AVATAR_SHAPES;
+
+/** The avatar a bot gets when none is chosen, and the one every old shape becomes. */
+export const DEFAULT_AVATAR = 'object:circle';
 
 /**
  * Object avatars a bot can take, as `object:<id>`: things with eyes (a mug, a lightbulb), drawn
  * with volume by the app. Only ids the app ships a drawing for are accepted, so a stored value
- * always names something it can draw; where it cannot (the phone app), it falls back to `blob`.
+ * always names something it can draw; where it cannot (the phone app), it draws a round body.
  */
 export const OBJECT_AVATARS = [
   'circle',
@@ -182,7 +193,10 @@ export const OBJECT_AVATARS = [
 export type ObjectAvatar = (typeof OBJECT_AVATARS)[number];
 const KNOWN_OBJECTS: readonly string[] = OBJECT_AVATARS;
 
-/** `shape:<name>`, `object:<id>` or an uploaded raster image as a data URL (SVG is not accepted). */
+/**
+ * `object:<id>` or an uploaded raster image as a data URL (SVG is not accepted). An old `shape:<name>`
+ * is still accepted and comes out as `DEFAULT_AVATAR`.
+ */
 export const Avatar = z
   .string()
   .max(400_000)
@@ -192,7 +206,8 @@ export const Avatar = z
       (v.startsWith('object:') && KNOWN_OBJECTS.includes(v.slice(7))) ||
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v),
     'validation.avatar',
-  );
+  )
+  .transform((v) => (v.startsWith('shape:') ? DEFAULT_AVATAR : v));
 /** A spending limit in US dollars, to the cent; 0 for none. */
 const SpendLimit = z.number().min(0).max(1_000_000);
 
@@ -208,7 +223,7 @@ export const BotCreate = z.object({
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
     .default(BRAND_COLOR),
-  avatar: Avatar.default('shape:blob'),
+  avatar: Avatar.default(DEFAULT_AVATAR),
   permissionMode: PermissionMode.default('auto'),
   internet: z.boolean().default(true),
   projectDir: z.string().max(1000).nullable().default(null),

@@ -1,5 +1,6 @@
 import {
   BRAND_COLOR,
+  DEFAULT_AVATAR,
   ALL_TOOLS,
   catalogEntry,
   CONNECTION_CATALOG,
@@ -2034,7 +2035,7 @@ export class ToolFactory {
               // Without a group named, the new bot joins the manager's own section.
               groupId: a.group !== undefined ? ((await groupId(a.group)) ?? null) : manager.groupId,
               color: a.color ?? BRAND_COLOR,
-              avatar: 'shape:blob',
+              avatar: DEFAULT_AVATAR,
               // The level a bot the person creates starts at, as one made in the app.
               permissionMode: 'auto',
               internet: false,

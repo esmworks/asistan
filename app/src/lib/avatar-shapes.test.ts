@@ -1,19 +1,17 @@
-import { Avatar, AVATAR_SHAPES, OBJECT_AVATARS, OLD_AVATAR_SHAPES } from '@leafbot/shared';
+import { Avatar, DEFAULT_AVATAR, OBJECT_AVATARS, OLD_AVATAR_SHAPES } from '@leafbot/shared';
 import { validateAvatar } from 'open-bot-avatar';
 import { objectDefinition } from './object-avatars';
 import { describe, expect, it } from 'vitest';
 
-describe('avatar shapes', () => {
-  it('accepts every offered shape and keeps accepting the ones no longer offered', () => {
-    for (const s of [...AVATAR_SHAPES, ...OLD_AVATAR_SHAPES]) {
-      expect(Avatar.safeParse(`shape:${s}`).success).toBe(true);
-    }
+describe('old shape avatars', () => {
+  it('still takes every old shape and gives the round object for it', () => {
+    for (const s of OLD_AVATAR_SHAPES) expect(Avatar.parse(`shape:${s}`)).toBe(DEFAULT_AVATAR);
     expect(Avatar.safeParse('shape:unicorn').success).toBe(false);
   });
 
-  it('offers no shape twice', () => {
-    expect(new Set(AVATAR_SHAPES).size).toBe(AVATAR_SHAPES.length);
-    expect(AVATAR_SHAPES.some((s) => (OLD_AVATAR_SHAPES as readonly string[]).includes(s))).toBe(false);
+  it('gives a new bot an avatar that is offered', () => {
+    expect(OBJECT_AVATARS.map((o) => `object:${o}`)).toContain(DEFAULT_AVATAR);
+    expect(Avatar.parse(DEFAULT_AVATAR)).toBe(DEFAULT_AVATAR);
   });
 });
 

@@ -64,6 +64,13 @@ describe('bot içe aktarma', () => {
     expect(r.body.bots).toHaveLength(2);
   });
 
+  it('eski bir dışa aktarımdaki şekil avatarı yuvarlak nesne olarak gelir', async () => {
+    const r = await send<BotImportResult>(doc({ bots: [{ ...keeper, avatar: 'shape:pebble' }], groups: [] }));
+    expect(r.status).toBe(200);
+    const [bot] = await list<Bot>('/api/bots');
+    expect(bot!.avatar).toBe('object:circle');
+  });
+
   it('önizleme yalnızca planı gösterir, veritabanına dokunmaz', async () => {
     const r = await send<BotImportPlan>(doc(), true);
     expect(r.status).toBe(200);
@@ -96,7 +103,7 @@ describe('bot içe aktarma', () => {
       avatar: planner.avatar,
       groupId: group!.id,
     });
-    expect(second).toMatchObject({ name: 'Bookkeeper', avatar: 'shape:blob', groupId: group!.id });
+    expect(second).toMatchObject({ name: 'Bookkeeper', avatar: 'object:circle', groupId: group!.id });
     expect(await list<Routine>('/api/routines')).toEqual([
       expect.objectContaining({
         botId: first!.id,
@@ -314,7 +321,7 @@ describe('bot içe aktarma', () => {
 
   it('dışa aktarılan botlar içe aktarıcıyla geri gelir: avatar, rutin, hafıza, beceri ve grup', async () => {
     const group = (await t.api<Group>('POST', '/api/groups', { name: 'Ofis' })).body;
-    const bot = await t.bot({ name: 'Çağrı Asistanı', avatar: 'shape:pebble', instructions: 'Kısa yaz.' });
+    const bot = await t.bot({ name: 'Çağrı Asistanı', avatar: 'object:mug', instructions: 'Kısa yaz.' });
     await t.api('PATCH', `/api/bots/${bot.id}`, { groupId: group.id });
     await t.bot({ name: 'Başka' });
     await t.api('POST', '/api/routines', {
@@ -354,7 +361,7 @@ describe('bot içe aktarma', () => {
     expect(file.bots).toHaveLength(1);
     expect(file.bots[0]).toMatchObject({
       ref: 'cagri-asistani',
-      avatar: 'shape:pebble',
+      avatar: 'object:mug',
       memories: ['Toplantılar salı.'],
     });
     expect(file.groups).toEqual([{ name: 'Ofis', members: ['cagri-asistani'] }]);
@@ -373,7 +380,7 @@ describe('bot içe aktarma', () => {
     ]);
     const done = (await send<BotImportResult>(file)).body;
     const copy = (await list<Bot>('/api/bots')).find((b) => b.id === done.botIds[0])!;
-    expect(copy.avatar).toBe('shape:pebble');
+    expect(copy.avatar).toBe('object:mug');
     expect(copy.instructions).toBe('Kısa yaz.');
     const skills = await list<{ id: string; name: string; body: string; botIds: string[] }>('/api/skills');
     expect(skills.find((k) => k.id === kept.id)!.botIds).toContain(copy.id);

@@ -13,7 +13,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { AppMascot, MASCOT_COLOR } from '@/components/AppMascot';
-import { BotAvatar, ShapeArt } from '@/components/BotAvatar';
+import { BotAvatar, ObjectArt } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -678,7 +678,7 @@ function BotSays({ children }: { children: ReactNode }) {
     <Appear>
       <div className="flex items-end gap-3">
         <div className="size-8 shrink-0">
-          <ShapeArt shape="blob" color={MASCOT_COLOR} seed="leafbot" />
+          <ObjectArt id="circle" color={MASCOT_COLOR} seed="leafbot" />
         </div>
         <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-secondary px-4 py-2.5 text-[15px] leading-relaxed">
           {children}
@@ -715,7 +715,7 @@ function Typing() {
     <Appear>
       <div className="flex items-end gap-3">
         <div className="size-8 shrink-0">
-          <ShapeArt shape="blob" color={MASCOT_COLOR} activity="thinking" motion="always" seed="leafbot" />
+          <ObjectArt id="circle" color={MASCOT_COLOR} activity="thinking" motion="always" seed="leafbot" />
         </div>
         <div className="flex gap-1 rounded-2xl rounded-bl-md bg-secondary px-4 py-3.5" aria-hidden>
           {[0, 1, 2].map((i) => (

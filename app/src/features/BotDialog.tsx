@@ -1,6 +1,6 @@
 import {
   BRAND_COLOR,
-  AVATAR_SHAPES,
+  DEFAULT_AVATAR,
   EFFORTS,
   OBJECT_AVATARS,
   PERMISSION_MODES,
@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { BotAvatar, ObjectArt, ShapeArt } from '@/components/BotAvatar';
+import { BotAvatar, ObjectArt } from '@/components/BotAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -119,7 +119,7 @@ function initial(bot?: Bot, start: BotEngine = { engine: 'claude', model: '' }):
     groupId: bot?.groupId ?? NO_GROUP,
     newGroup: '',
     color: bot?.color ?? COLORS[0]!,
-    avatar: bot?.avatar ?? 'shape:blob',
+    avatar: bot?.avatar ?? DEFAULT_AVATAR,
     permissionMode: bot ? shownMode(bot.permissionMode) : 'auto',
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
@@ -742,16 +742,8 @@ function AvatarEditor({
       <div className="flex shrink-0 items-center justify-center sm:w-36">
         <BotAvatar avatar={avatar} color={color} size={96} activity="idle" motion="always" />
       </div>
-      <Tabs
-        defaultValue={
-          avatar.startsWith('data:') ? 'upload' : avatar.startsWith('object:') ? 'object' : 'shape'
-        }
-        className="flex-1"
-      >
+      <Tabs defaultValue={avatar.startsWith('data:') ? 'upload' : 'object'} className="flex-1">
         <TabsList className="rounded-full">
-          <TabsTrigger value="shape" className="rounded-full">
-            {t('bot.shape')}
-          </TabsTrigger>
           <TabsTrigger value="object" className="rounded-full">
             {t('bot.object')}
           </TabsTrigger>
@@ -759,25 +751,6 @@ function AvatarEditor({
             {t('bot.upload')}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="shape" className="space-y-3">
-          <div className="grid grid-cols-6 gap-1.5">
-            {AVATAR_SHAPES.map((s) => (
-              <button
-                type="button"
-                key={s}
-                onClick={() => onAvatar(`shape:${s}`)}
-                className={cn(
-                  'aspect-square rounded-xl p-1.5 transition-colors hover:bg-accent',
-                  avatar === `shape:${s}` && 'bg-accent ring-2 ring-ring/40',
-                )}
-                aria-label={s}
-              >
-                <ShapeArt shape={s} color={color} />
-              </button>
-            ))}
-          </div>
-          <ColorRow color={color} onColor={onColor} />
-        </TabsContent>
         <TabsContent value="object" className="space-y-3">
           <div className="grid grid-cols-7 gap-1.5">
             {OBJECT_AVATARS.map((o) => (
@@ -820,7 +793,7 @@ function AvatarEditor({
                 type="button"
                 variant="ghost"
                 className="rounded-full"
-                onClick={() => onAvatar('shape:blob')}
+                onClick={() => onAvatar(DEFAULT_AVATAR)}
               >
                 {t('bot.reset')}
               </Button>

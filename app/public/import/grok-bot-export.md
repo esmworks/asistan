@@ -71,9 +71,9 @@ strictly; a file that does not match the shape below is rejected as a whole.
   keeping every rule, and list what you cut under `notImported`.
 - `avatar`: `null`, the agent's picture as a base64 data URL of type `image/png`,
   `image/jpeg` or `image/webp` no larger than 290 KB (SVG is not accepted), or, for an agent
-  drawn as a coloured shape rather than a picture, the nearest Leaf Bot shape: `shape:drop`
-  for a teardrop or drop, `shape:blob`, `shape:pebble`, `shape:squircle`, `shape:capsule` or
-  `shape:square`. The colour is not carried.
+  drawn as a coloured shape rather than a picture, the nearest Leaf Bot shape: `object:drop`
+  for a teardrop or drop, `object:circle`, `object:square`, `object:pill`, `object:hexagon` or
+  `object:cloud`. The colour is not carried.
 - `routines`: up to 32 timed tasks (see below).
 - `memories`: the facts the agent has saved in its memory, at most 50 (see below).
 - `skills`: the agent's skills, at most 32 (see below).

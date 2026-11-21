@@ -1633,7 +1633,6 @@ export const en: Catalog<MessageKey> = {
   'bot.claudeLoggedOut': 'Claude is not signed in; connect it under Settings → Connection.',
   'bot.imageType': 'Choose a PNG, JPEG or WebP image',
   'bot.imageUnreadable': 'Could not read the image',
-  'bot.shape': 'Shape',
   'bot.object': 'Object',
   'bot.object.circle': 'Circle',
   'bot.object.square': 'Square',

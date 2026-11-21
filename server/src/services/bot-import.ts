@@ -1,5 +1,6 @@
 import {
   Avatar,
+  DEFAULT_AVATAR,
   BOT_IMPORT_FORMAT,
   OLD_BOT_IMPORT_FORMAT,
   BOT_IMPORT_LIMITS,
@@ -36,17 +37,18 @@ const MAGIC: Record<string, (b: Buffer) => boolean> = {
 };
 
 /**
- * One of the app's own avatar shapes or objects, or a data URL whose bytes are the image type it
- * names.
+ * One of the app's own objects, or a data URL whose bytes are the image type it names. An old shape,
+ * from an export made before shapes were dropped, comes back as the round object.
  */
 function validAvatar(value: unknown): string | null {
-  if (typeof value !== 'string' || !Avatar.safeParse(value).success) return null;
-  if (value.startsWith('shape:') || value.startsWith('object:')) return value;
-  if (!value.startsWith('data:')) return null;
-  const type = /^data:image\/(png|jpeg|webp);base64,/.exec(value)?.[1];
+  const parsed = Avatar.safeParse(value);
+  if (!parsed.success) return null;
+  const avatar = parsed.data;
+  if (avatar.startsWith('object:')) return avatar;
+  const type = /^data:image\/(png|jpeg|webp);base64,/.exec(avatar)?.[1];
   if (!type) return null;
-  const bytes = Buffer.from(value.slice(value.indexOf(',') + 1), 'base64');
-  return MAGIC[type]!(bytes) ? value : null;
+  const bytes = Buffer.from(avatar.slice(avatar.indexOf(',') + 1), 'base64');
+  return MAGIC[type]!(bytes) ? avatar : null;
 }
 
 /** `name`, or `name (2)`, `name (3)`, … the first one not in `taken`, within the name limit. */
@@ -229,7 +231,7 @@ export class BotImportService {
           description: bot.description,
           instructions: bot.instructions,
           ...engine,
-          avatar: avatars[i] ?? 'shape:blob',
+          avatar: avatars[i] ?? DEFAULT_AVATAR,
           groupId: bot.group ? groupIds.get(bot.group)! : null,
           position: position++,
           // Set here, never read from the file.

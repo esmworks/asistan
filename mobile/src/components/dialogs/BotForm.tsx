@@ -1,5 +1,4 @@
 import {
-  AVATAR_SHAPES,
   EFFORTS,
   PERMISSION_MODES,
   shownMode,
@@ -76,6 +75,8 @@ function initial(bot: Bot | undefined, start: { engine: 'claude' | 'pi'; model: 
     groupId: bot?.groupId ?? NO_GROUP,
     newGroup: '',
     color: bot?.color ?? COLORS[0]!,
+    // Avatars are chosen in the app, where they are drawn. The old shape name is what every server
+    // takes: a current one stores it as the round object, an older one as the round body.
     avatar: bot?.avatar ?? 'shape:blob',
     permissionMode: bot ? shownMode(bot.permissionMode) : 'auto',
     isManager: bot?.isManager ?? false,
@@ -287,23 +288,6 @@ function BotFormPage({ bot }: { bot?: Bot }) {
         <Pad gap={16}>
           <View style={styles.preview}>
             <Avatar name={v.name || t('common.bot')} color={v.color} avatar={v.avatar} size={72} />
-          </View>
-          <View style={styles.swatches} accessibilityLabel={t('bot.shape')}>
-            {AVATAR_SHAPES.map((s) => {
-              const on = v.avatar === `shape:${s}`;
-              return (
-                <Pressable
-                  key={s}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={s}
-                  onPress={() => set('avatar', `shape:${s}`)}
-                  style={[styles.shape, on && { backgroundColor: c.accent, borderColor: c.brand }]}
-                >
-                  <Avatar name={s} color={v.color} avatar={`shape:${s}`} size={32} />
-                </Pressable>
-              );
-            })}
           </View>
           <View style={styles.swatches}>
             {COLORS.map((col) => (
@@ -524,15 +508,6 @@ const styles = StyleSheet.create({
   starterText: { fontSize: 16 },
   preview: { alignItems: 'center' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
-  shape: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   color: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { fontSize: 17, fontWeight: '500' },
 });

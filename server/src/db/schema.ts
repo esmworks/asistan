@@ -49,7 +49,7 @@ export const bots = pgTable('bots', {
   position: integer('position').notNull().default(0),
   groupId: text('group_id').references(() => groups.id, { onDelete: 'set null' }),
   color: text('color').notNull().default('#4f6bed'),
-  avatar: text('avatar').notNull().default('shape:blob'),
+  avatar: text('avatar').notNull().default('object:circle'),
   permissionMode: text('permission_mode', { enum: ['ask', 'review', 'auto', 'readonly'] })
     .notNull()
     .default('ask'),

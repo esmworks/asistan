@@ -15,7 +15,7 @@ const bot = (name: string, extra: Partial<Bot> = {}): Bot => ({
   position: n,
   groupId: null,
   color: '#000000',
-  avatar: 'shape:blob',
+  avatar: 'object:circle',
   permissionMode: 'ask',
   internet: true,
   projectDir: null,

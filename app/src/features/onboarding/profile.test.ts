@@ -1,4 +1,4 @@
-import { createTranslator, LOCALES, PROFILE_HELP } from '@leafbot/shared';
+import { Avatar, createTranslator, LOCALES, PROFILE_HELP } from '@leafbot/shared';
 import { describe, expect, it } from 'vitest';
 import { en } from '@/i18n/en';
 import { tr } from '@/i18n/tr';
@@ -19,7 +19,8 @@ describe('starter bots', () => {
           expect(text).not.toMatch(/^starter\./);
           expect(text.length).toBeGreaterThan(1);
         }
-        expect(bot.avatar).toMatch(/^shape:/);
+        expect(Avatar.parse(bot.avatar)).toBe(bot.avatar);
+        expect(bot.avatar).toMatch(/^object:/);
         expect(bot.color).toMatch(/^#[0-9a-f]{6}$/);
       }
     }
