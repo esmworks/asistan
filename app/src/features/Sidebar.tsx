@@ -606,24 +606,42 @@ function UnreadDot({ summary, className }: { summary?: BotSummary; className?: s
   );
 }
 
-/** A manager's shield and the live state, drawn on the avatar. */
-function Badges({ bot, summary }: { bot: Bot; summary?: BotSummary }) {
+/**
+ * A manager's shield and the live state, drawn on the avatar. A list row writes the unread dot beside the name, so it
+ * leaves it off the avatar; a small avatar gets smaller marks so they do not cover its face.
+ */
+function Badges({
+  bot,
+  summary,
+  unread = true,
+  small = false,
+}: {
+  bot: Bot;
+  summary?: BotSummary;
+  unread?: boolean;
+  small?: boolean;
+}) {
   return (
     <>
-      <UnreadDot summary={summary} className="absolute -top-0.5 -left-0.5 ring-2 ring-sidebar" />
+      {unread && <UnreadDot summary={summary} className="absolute -top-0.5 -left-0.5 ring-2 ring-sidebar" />}
       {bot.isManager && (
-        <span className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-background ring-1 ring-border">
-          <ShieldCheck className="size-3" style={{ color: bot.color }} />
+        <span
+          className={cn(
+            'absolute -top-1 -right-1 flex items-center justify-center rounded-full bg-background ring-1 ring-border',
+            small ? 'size-4' : 'size-5',
+          )}
+        >
+          <ShieldCheck className={small ? 'size-2.5' : 'size-3'} style={{ color: bot.color }} />
         </span>
       )}
       <StateDot summary={summary} />
-      <PausedBadge bot={bot} />
+      <PausedBadge bot={bot} small={small} />
     </>
   );
 }
 
 /** A pause mark on a bot that starts no work now, itself or with its group. */
-function PausedBadge({ bot }: { bot: Bot }) {
+function PausedBadge({ bot, small = false }: { bot: Bot; small?: boolean }) {
   const t = useT();
   const { paused } = usePaused(bot);
   if (!paused) return null;
@@ -632,9 +650,12 @@ function PausedBadge({ bot }: { bot: Bot }) {
       role="img"
       aria-label={t('pause.badge')}
       title={t('pause.badge')}
-      className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-full bg-background ring-1 ring-border"
+      className={cn(
+        'absolute -bottom-1 -left-1 flex items-center justify-center rounded-full bg-background ring-1 ring-border',
+        small ? 'size-4' : 'size-5',
+      )}
     >
-      <Pause className="size-3 fill-current text-muted-foreground" />
+      <Pause className={cn('fill-current text-muted-foreground', small ? 'size-2.5' : 'size-3')} />
     </span>
   );
 }
@@ -753,7 +774,7 @@ function BotRow({ bot, summary }: { bot: Bot; summary?: BotSummary }) {
               size={compact ? 26 : 38}
               activity={activity}
               motion={selected ? 'always' : 'hover'}
-              badge={<StateDot summary={summary} />}
+              badge={<Badges bot={bot} summary={summary} unread={false} small />}
             />
           </span>
           <div className="min-w-0 flex-1">
