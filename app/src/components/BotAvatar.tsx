@@ -94,7 +94,7 @@ const CELEBRATING: Mood = { state: 'idle', expression: 'hilare', busy: true };
 /** Activities that end in a finished piece of work; a bot that goes from one of them to rest is done. */
 const WORKING: ReadonlySet<BotActivity> = new Set(['thinking', 'writing', 'browsing']);
 
-/** How long a bot shows it is done: about one turn of the object engine's own celebration. */
+/** How long a bot shows it is done: a few hops, then it rests. */
 const CELEBRATE_MS = 4000;
 
 /**
@@ -577,8 +577,9 @@ export function ObjectArt({
     avatar.current?.update({
       color: hexColor(color),
       eyeColor: OBJECT_EYES,
-      // Just done: it turns with its ribbons flying and smiles with its eyes, then rests.
-      state: celebrating ? 'done' : OBJECT_STATES[activity],
+      // Just done: it smiles with its eyes and hops, the engine's happy mood at rest, then rests.
+      // The engine's own `done` turns it round with ribbons flying, more than a finished task asks.
+      state: celebrating ? 'idle' : OBJECT_STATES[activity],
       mood: celebrating ? 'happy' : 'neutral',
       still: !moving,
       // Followed by `useFollowPointer`, which reaches further for a small avatar.
