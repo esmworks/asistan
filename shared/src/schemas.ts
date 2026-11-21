@@ -168,7 +168,7 @@ export const DEFAULT_AVATAR = 'object:circle';
 /**
  * Object avatars a bot can take, as `object:<id>`: things with eyes (a mug, a lightbulb), drawn
  * with volume by the app. Only ids the app ships a drawing for are accepted, so a stored value
- * always names something it can draw; where it cannot (the phone app), it draws a round body.
+ * always names something the web app and the phone can draw.
  */
 export const OBJECT_AVATARS = [
   'circle',

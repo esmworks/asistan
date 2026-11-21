@@ -1,28 +1,22 @@
 import { BRAND_COLOR, DEFAULT_AVATAR, type ObjectAvatar } from '@leafbot/shared';
-import type { AvatarDefinition, AvatarState } from 'open-bot-avatar';
+import type { AvatarDefinition } from 'open-bot-avatar';
 import { mountAvatar, type MountedAvatar } from 'open-bot-avatar/dom';
 import { useEffect, useRef, useState } from 'react';
 import type { BotActivity } from '@/lib/botActivity';
 import { gazeOf, lookTarget, pointerLook, sharedClock, swayAt } from '@/lib/gaze';
 import { objectDefinition } from '@/lib/object-avatars';
+import { CELEBRATE_MS, finishes, OBJECT_EYES, objectLook, steered } from '@/lib/object-motion';
 import { cn } from '@/lib/utils';
 
-/** Activities that end in a finished piece of work; a bot that goes from one of them to rest is done. */
-const WORKING: ReadonlySet<BotActivity> = new Set(['thinking', 'writing', 'browsing']);
-
-/** How long a bot shows it is done: a few hops, then it rests. */
-const CELEBRATE_MS = 4000;
-
 /**
- * True for a moment after the bot finishes its work, while it shows it is done. Only the move from
- * working to rest counts: a bot that stops to ask someone, or was only queued, is not done yet.
+ * True for a moment after the bot finishes its work, while it shows it is done (see `finishes`).
  */
 function useCelebration(activity: BotActivity) {
   const [previous, setPrevious] = useState(activity);
   const [celebrating, setCelebrating] = useState(false);
   if (previous !== activity) {
     setPrevious(activity);
-    setCelebrating(WORKING.has(previous) && activity === 'idle');
+    setCelebrating(finishes(previous, activity));
   }
   useEffect(() => {
     if (!celebrating) return;
@@ -47,22 +41,6 @@ function hexColor(color: string) {
 }
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/**
- * How each activity shows on an object avatar: ribbons sweeping round it while it writes or reads a
- * page, an exclamation mark when it needs someone, and a quiet wait while its turn has not come.
- * Thinking, which is also when it runs its tools, is not the engine's own: that one hides the body
- * behind three dots for as long as a tool runs. The bot keeps its face instead and is steered, looking
- * up to one side, then going over the page line by line, its head swaying all along.
- */
-const OBJECT_STATES: Record<BotActivity, AvatarState> = {
-  idle: 'idle',
-  queued: 'waiting',
-  thinking: 'idle',
-  writing: 'working',
-  browsing: 'working',
-  waiting: 'blocked',
-};
 
 /** Radians an object avatar turns for each pixel it is dragged. */
 const TURN_PER_PX = 0.012;
@@ -211,9 +189,6 @@ function useFollowPointer(
   }, [host, avatar, on, drawing]);
 }
 
-/** White eyes: on a coloured body they read as a face rather than as holes. */
-const OBJECT_EYES = '#ffffff';
-
 /**
  * A bot drawn as a thing with eyes (a circle, a mug, a lightbulb), with volume. It does not wait to be
  * pointed at: while the window has the focus it breathes, blinks and looks at the pointer wherever it
@@ -243,9 +218,9 @@ export function ObjectArt({
   const [gaze] = useState(() => gazeOf(seed, activity));
   const moving = motion !== 'still' && focused;
   const definition = objectDefinition(id);
-  const steered = moving && activity === 'thinking';
+  const steering = moving && steered(activity);
   const celebrating = useCelebration(activity);
-  const turning = turnable && moving && !steered;
+  const turning = turnable && moving && !steering;
 
   useEffect(() => gaze.setActivity(activity), [gaze, activity]);
 
@@ -274,16 +249,13 @@ export function ObjectArt({
 
   // After the mount above, so the avatar it turns is there.
   useTurnByHand(host, avatar, turning, definition);
-  useFollowPointer(host, avatar, moving && !steered, definition);
+  useFollowPointer(host, avatar, moving && !steering, definition);
 
   useEffect(() => {
     avatar.current?.update({
       color: hexColor(color),
       eyeColor: OBJECT_EYES,
-      // Just done: it smiles with its eyes and hops, the engine's happy mood at rest, then rests.
-      // The engine's own `done` turns it round with ribbons flying, more than a finished task asks.
-      state: celebrating ? 'idle' : OBJECT_STATES[activity],
-      mood: celebrating ? 'happy' : 'neutral',
+      ...objectLook(activity, celebrating),
       still: !moving,
       // Followed by `useFollowPointer`, which reaches further for a small avatar.
       followPointer: false,
@@ -292,7 +264,7 @@ export function ObjectArt({
 
   // A thinking bot's look and sway, frame by frame, from the gaze its other avatars share.
   useEffect(() => {
-    if (!steered || reducedMotion()) return;
+    if (!steering || reducedMotion()) return;
     let frame = 0;
     const step = () => {
       const t = sharedClock();
@@ -304,7 +276,7 @@ export function ObjectArt({
       cancelAnimationFrame(frame);
       avatar.current?.update({ lookAt: null, view: { yaw: 0, pitch: 0 } });
     };
-  }, [steered, gaze]);
+  }, [steering, gaze]);
 
   return (
     <span

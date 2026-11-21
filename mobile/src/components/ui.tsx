@@ -11,10 +11,11 @@ import {
   View,
   type TextInputProps,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Avatar } from '@/components/Avatar';
 import { CARD_AREA, CARD_FIELD, useInCard } from '@/components/card';
 import { CONTROL_HEIGHT, useColors } from '@/lib/theme';
+import LOGO from '../../assets/logo.png';
 
 /** A centered, keyboard-aware column for the connect and sign-in forms. */
 export function FormScreen({ children }: { children: ReactNode }) {
@@ -30,15 +31,13 @@ export function FormScreen({ children }: { children: ReactNode }) {
   );
 }
 
-/** The app's mark: a disc in the brand color. */
-/** The app's mascot: the brand-colored round bot with its eyes. */
+/**
+ * Leaf Bot itself, drawn as its icon, as the web app's sign-in shows it: the round green bot on a dark
+ * green tile. Its own colours rather than the brand colour, which is the interface's accent; and the
+ * icon's picture rather than a live avatar, whose eyes sit in the middle of its body, outside the tile.
+ */
 export function Mark() {
-  const c = useColors();
-  return (
-    <View style={styles.mark}>
-      <Avatar name="" color={c.brand} avatar="shape:blob" size={64} motion="always" />
-    </View>
-  );
+  return <Image source={LOGO} style={[styles.mark, styles.logo]} accessible={false} />;
 }
 
 export function Title({ children }: { children: ReactNode }) {
@@ -121,6 +120,8 @@ const styles = StyleSheet.create({
   formContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   formColumn: { width: '100%', maxWidth: 384, alignSelf: 'center', gap: 12 },
   mark: { alignSelf: 'center', marginBottom: 8 },
+  // The rounding of the app's icon: about a fifth of its side.
+  logo: { width: 64, height: 64, borderRadius: 14 },
   title: { fontSize: 26, fontWeight: '600', textAlign: 'center' },
   hint: { fontSize: 16, lineHeight: 22, textAlign: 'center', marginBottom: 4 },
   error: { fontSize: 16, paddingHorizontal: 16 },
