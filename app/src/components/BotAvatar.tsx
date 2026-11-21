@@ -360,6 +360,102 @@ const OBJECT_STATES: Record<BotActivity, AvatarState> = {
   waiting: 'blocked',
 };
 
+/** Radians an object avatar turns for each pixel it is dragged. */
+const TURN_PER_PX = 0.012;
+/** How far it tips up or down by hand: past this it would show its underside. */
+const TIP_LIMIT = 1.1;
+/** How long a let-go avatar takes to turn back to the person. */
+const SETTLE_MS = 700;
+
+/**
+ * Lets a large object avatar be turned round by dragging it, as a thing in the hand: it follows the
+ * pointer in 3D and, let go, turns back to face the person the short way round. A drag does not count
+ * as a click on the button the avatar sits in.
+ */
+function useTurnByHand(
+  host: React.RefObject<HTMLSpanElement | null>,
+  avatar: React.RefObject<MountedAvatar | null>,
+  on: boolean,
+  /** What the avatar is drawn from: a new drawing mounts a new avatar to turn. */
+  drawing: unknown,
+) {
+  useEffect(() => {
+    const el = host.current;
+    const mounted = avatar.current;
+    if (!on || !el || !mounted) return;
+    let view = { yaw: 0, pitch: 0 };
+    let drag: { x: number; y: number; yaw: number; pitch: number; moved: boolean } | null = null;
+    let settling = 0;
+    const show = (next: typeof view, holding: boolean) => {
+      view = next;
+      mounted.update({ view: next, holdGaze: holding });
+    };
+    const swallow = (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const settle = () => {
+      // The short way back: a few turns round count as none.
+      const from = { yaw: Math.atan2(Math.sin(view.yaw), Math.cos(view.yaw)), pitch: view.pitch };
+      const start = performance.now();
+      const step = (now: number) => {
+        const p = reducedMotion() ? 1 : Math.min(1, (now - start) / SETTLE_MS);
+        const left = (1 - p) ** 3;
+        show({ yaw: from.yaw * left, pitch: from.pitch * left }, false);
+        if (p < 1) settling = requestAnimationFrame(step);
+      };
+      settling = requestAnimationFrame(step);
+    };
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      cancelAnimationFrame(settling);
+      drag = { x: e.clientX, y: e.clientY, yaw: view.yaw, pitch: view.pitch, moved: false };
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // A pointer the page no longer knows; the drag still works while it stays over the avatar.
+      }
+    };
+    const move = (e: PointerEvent) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      drag.moved = true;
+      show(
+        {
+          yaw: drag.yaw + dx * TURN_PER_PX,
+          pitch: Math.min(TIP_LIMIT, Math.max(-TIP_LIMIT, drag.pitch - dy * TURN_PER_PX)),
+        },
+        true,
+      );
+    };
+    const up = () => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      if (!moved) return;
+      el.addEventListener('click', swallow, { capture: true, once: true });
+      // A drag that ends off the avatar brings no click to swallow.
+      window.setTimeout(() => el.removeEventListener('click', swallow, { capture: true }), 0);
+      settle();
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    return () => {
+      cancelAnimationFrame(settling);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      mounted.update({ view: { yaw: 0, pitch: 0 }, holdGaze: false });
+    };
+    // `drawing` stands for the avatar mounted from it.
+  }, [host, avatar, on, drawing]);
+}
+
 /** White eyes, as the plush has: on a coloured body they read as a face rather than as holes. */
 const OBJECT_EYES = '#ffffff';
 
@@ -375,6 +471,7 @@ export function ObjectArt({
   activity = 'idle',
   motion = 'still',
   seed,
+  turnable = false,
 }: {
   id: ObjectAvatar;
   color: string;
@@ -382,6 +479,8 @@ export function ObjectArt({
   motion?: AvatarMotion;
   /** The bot's id: its avatars share one gaze, so they look the same way at once. */
   seed?: string;
+  /** Can be turned round by dragging it; for a large avatar. */
+  turnable?: boolean;
 }) {
   const host = useRef<HTMLSpanElement>(null);
   const avatar = useRef<MountedAvatar | null>(null);
@@ -391,6 +490,7 @@ export function ObjectArt({
   const definition = objectDefinition(id);
   const steered = moving && activity === 'thinking';
   const celebrating = useCelebration(activity);
+  const turning = turnable && moving && !steered;
 
   useEffect(() => gaze.setActivity(activity), [gaze, activity]);
 
@@ -416,6 +516,9 @@ export function ObjectArt({
       avatar.current = null;
     };
   }, [definition]);
+
+  // After the mount above, so the avatar it turns is there.
+  useTurnByHand(host, avatar, turning, definition);
 
   useEffect(() => {
     avatar.current?.update({
@@ -445,7 +548,13 @@ export function ObjectArt({
     };
   }, [steered, gaze]);
 
-  return <span ref={host} className="block size-full" aria-hidden />;
+  return (
+    <span
+      ref={host}
+      className={cn('block size-full', turning && 'cursor-grab touch-none active:cursor-grabbing')}
+      aria-hidden
+    />
+  );
 }
 
 export function BotAvatar({
@@ -491,6 +600,7 @@ export function BotAvatar({
           activity={activity}
           motion={lively ? motion : 'still'}
           seed={seed}
+          turnable={lively && motion === 'always'}
         />
       ) : (
         <ShapeArt
