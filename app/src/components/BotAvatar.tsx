@@ -13,7 +13,17 @@ import { createComponent, createSignal, flush } from 'solid-js';
 import { useEffect, useRef, useState } from 'react';
 import type { BotActivity } from '@/lib/botActivity';
 import { uprightFace } from '@/lib/faces';
-import { FACE_MS, gazeOf, pointerIn, sharedClock, workingFaceAt } from '@/lib/gaze';
+import {
+  FACE_MS,
+  gazeOf,
+  HEAD_REST,
+  headFor,
+  headToward,
+  pointerIn,
+  sharedClock,
+  workingFaceAt,
+  type HeadPose,
+} from '@/lib/gaze';
 import { cn } from '@/lib/utils';
 
 /** The plush body each shape is drawn with. Shapes no longer offered take the nearest one. */
@@ -59,14 +69,16 @@ interface Mood {
 }
 
 /**
- * How each activity shows. The body is the bot's identity and keeps still; the eyes and the plush's
- * felt pieces act it out: three felt dots while it thinks, wide eyes at a page, a felt dot when it
- * needs someone, sleepy eyes while it waits its turn.
+ * How each activity shows. The body is the bot's identity and keeps its shape; the eyes, the head's
+ * turn and the plush's felt pieces act it out: eyes that look up and then read while it thinks or
+ * runs its tools, wide eyes at a page, a felt dot when it needs someone, sleepy eyes while it waits
+ * its turn. Thinking keeps the eyes rather than the engine's three felt dots: covered by the dots the
+ * face went still for as long as a tool ran.
  */
 const MOODS: Record<BotActivity, Mood> = {
   idle: { state: 'idle', expression: null, busy: false },
   queued: { state: 'idle', expression: 'somnolent', busy: false },
-  thinking: { state: 'thinking', expression: 'attentif', busy: true },
+  thinking: { state: 'idle', expression: 'attentif', busy: true },
   writing: { state: 'idle', expression: 'excite', busy: true },
   browsing: { state: 'wide', expression: null, busy: true },
   waiting: { state: 'notify', expression: 'attentif', busy: false },
@@ -137,6 +149,12 @@ export function ShapeArt({
   const still = motion === 'still';
   const faces = WORK_FACES[activity];
   const cycling = mood.busy && !still && !!faces;
+  // Read by the frame callback, which is set up once.
+  const busy = useRef(mood.busy);
+  useEffect(() => {
+    busy.current = mood.busy;
+  }, [mood.busy]);
+  const head = useRef<{ pose: HeadPose; at: number | null }>({ pose: HEAD_REST, at: null });
 
   useEffect(() => gaze.setActivity(activity), [gaze, activity]);
 
@@ -239,8 +257,21 @@ export function ShapeArt({
           },
           // A picture draws the resting pose and starts no clock.
           frozenAt: still ? POSES.idle : undefined,
-          // The shared clock, not the avatar's own: its avatars look and blink together.
-          gaze: still ? undefined : () => gaze.look(sharedClock()),
+          // The shared clock, not the avatar's own: its avatars look and blink together. The head
+          // turns after the eyes on every frame the engine draws.
+          gaze: still
+            ? undefined
+            : () => {
+                const t = sharedClock();
+                const look = gaze.look(t);
+                const h = head.current;
+                h.pose = headToward(h.pose, headFor(look, busy.current, t), h.at === null ? 0 : t - h.at);
+                h.at = t;
+                const { x, y, tilt } = h.pose;
+                el.style.transition = '';
+                el.style.transform = `translate(${(x * 100).toFixed(2)}%, ${(y * 100).toFixed(2)}%) rotate(${tilt.toFixed(2)}deg)`;
+                return look;
+              },
           // The engine stops an avatar that is off screen or in a hidden window.
           autoPause: true,
           eyeScale: 1,
@@ -267,7 +298,15 @@ export function ShapeArt({
   }, [still]);
 
   useEffect(() => {
-    update.current?.(live());
+    const v = live();
+    update.current?.(v);
+    // A stopped avatar's head eases back upright rather than staying turned where it stopped.
+    const el = host.current;
+    if (v.paused && el && head.current.at !== null) {
+      head.current = { pose: HEAD_REST, at: null };
+      el.style.transition = 'transform 0.4s ease-out';
+      el.style.transform = '';
+    }
   });
 
   return <span ref={host} className="block size-full" aria-hidden />;

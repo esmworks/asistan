@@ -4,10 +4,14 @@ import {
   FACE_MS,
   GazeDirector,
   gazeOf,
+  HEAD_REST,
+  headFor,
+  headToward,
   lidAt,
   pointerIn,
   saccadeSeconds,
   workingFaceAt,
+  type Spot,
 } from './gaze';
 
 /** The same numbers every run. */
@@ -33,6 +37,35 @@ function run(g: GazeDirector, from: number, to: number) {
 const moved = (a: { yaw: number; pitch: number }, b: { yaw: number; pitch: number }, by = 3) =>
   Math.hypot(a.yaw - b.yaw, a.pitch - b.pitch) > by;
 
+describe('head', () => {
+  it('leans down over a page, up to ponder and towards the side it looks at', () => {
+    expect(headFor({ yaw: 0, pitch: -8 }, true, 0).y).toBeGreaterThan(headFor(AT_YOU, true, 0).y);
+    expect(headFor({ yaw: 0, pitch: 16 }, true, 0).y).toBeLessThan(headFor(AT_YOU, true, 0).y);
+    const right = headFor({ yaw: 9, pitch: AT_YOU.pitch }, false, 0);
+    expect(right.x).toBeGreaterThan(0);
+    expect(right.tilt).toBeGreaterThan(0);
+  });
+
+  it('keeps moving while it works, and at rest only follows its eyes, by less', () => {
+    const tilts = [0, 0.7, 1.4, 2.1].map((t) => headFor(AT_YOU, true, t).tilt);
+    expect(Math.max(...tilts) - Math.min(...tilts)).toBeGreaterThan(1);
+    expect(headFor(AT_YOU, false, 1.3)).toEqual({ x: 0, y: 0, tilt: 0 });
+    const look = { yaw: 10, pitch: AT_YOU.pitch };
+    expect(Math.abs(headFor(look, false, 0).x)).toBeLessThan(Math.abs(headFor(look, true, 0).x));
+  });
+
+  it('turns after the eyes and settles where they look', () => {
+    const target = headFor({ yaw: 10, pitch: -8 }, false, 0);
+    let h = HEAD_REST;
+    h = headToward(h, target, 1 / 30);
+    expect(h.tilt).toBeGreaterThan(0);
+    expect(h.tilt).toBeLessThan(target.tilt / 2);
+    for (let i = 0; i < 60; i++) h = headToward(h, target, 1 / 30);
+    expect(h.tilt).toBeCloseTo(target.tilt, 2);
+    expect(h.y).toBeCloseTo(target.y, 4);
+  });
+});
+
 describe('gaze director', () => {
   it('holds each look for a while and jumps quickly between looks', () => {
     const frames = run(new GazeDirector('idle', seeded()), 0, 30);
@@ -50,21 +83,30 @@ describe('gaze director', () => {
     for (const h of holds.slice(0, -1)) expect(h).toBeGreaterThan(2);
   });
 
-  it('reads its line from left to right while writing', () => {
-    const g = new GazeDirector('writing', seeded());
-    // Where the eyes rest for a few frames, not the frames they pass on the way.
-    const frames = run(g, 0, 6).map((f) => Math.round(f.yaw * 10) / 10);
-    const yaws: number[] = [];
-    for (let i = 2; i < frames.length; i++) {
-      const y = frames[i]!;
-      if (y === frames[i - 1] && y === frames[i - 2] && yaws[yaws.length - 1] !== y) yaws.push(y);
+  /** Where the eyes rest for a few frames, not the frames they pass on the way. */
+  function rests(frames: { yaw: number; pitch: number }[]) {
+    const r = frames.map((f) => ({ yaw: Math.round(f.yaw * 10) / 10, pitch: Math.round(f.pitch * 10) / 10 }));
+    const same = (a: Spot, b: Spot) => a.yaw === b.yaw && a.pitch === b.pitch;
+    const out: Spot[] = [];
+    for (let i = 2; i < r.length; i++) {
+      const s = r[i]!;
+      if (same(s, r[i - 1]!) && same(s, r[i - 2]!) && !(out.length && same(out[out.length - 1]!, s)))
+        out.push(s);
     }
+    return out;
+  }
+
+  it('reads its line from left to right while writing', () => {
+    const yaws = rests(run(new GazeDirector('writing', seeded()), 0, 6)).map((s) => s.yaw);
     expect(yaws.slice(0, 5)).toEqual([-8, -3, 3, 8, -8]);
   });
 
-  it('looks up while thinking', () => {
-    const frames = run(new GazeDirector('thinking', seeded(7)), 0, 20);
-    for (const f of frames) expect(f.pitch).toBeGreaterThanOrEqual(15);
+  it('looks up while thinking, then reads the page line by line, there and back', () => {
+    const frames = run(new GazeDirector('thinking', seeded(7)), 0, 12);
+    for (const f of frames.filter((f) => f.t < 1.1)) expect(f.pitch).toBeGreaterThanOrEqual(15);
+    const reading = rests(frames).filter((s) => s.pitch < 0);
+    expect(reading.slice(0, 7).map((s) => s.yaw)).toEqual([-9, -3, 3, 9, 4, -2, -8]);
+    for (const s of reading) expect(Math.abs(s.yaw)).toBeLessThanOrEqual(12);
   });
 
   it('turns to a new activity at once', () => {

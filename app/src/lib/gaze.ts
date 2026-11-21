@@ -15,8 +15,8 @@ export interface Spot {
 export const AT_YOU: Spot = { yaw: 0, pitch: 8 };
 
 interface Habit {
-  /** Where it looks, with how often it looks there. */
-  spots: readonly (Spot & { weight?: number })[];
+  /** Where it looks, with how often it looks there and, for a look held longer or shorter, how long. */
+  spots: readonly (Spot & { weight?: number; hold?: readonly [number, number] })[];
   /** Looks at the spots one after another, back to the first after the last, as if reading a line. */
   inOrder?: boolean;
   /** Seconds a look is held, at random in this range. */
@@ -27,10 +27,22 @@ interface Habit {
   blink: readonly [number, number];
 }
 
+/** A line read from left to right and back again, a little lower each way, as eyes go over a page. */
+const READ_LINES: readonly Spot[] = [
+  { yaw: -9, pitch: -8 },
+  { yaw: -3, pitch: -8 },
+  { yaw: 3, pitch: -8 },
+  { yaw: 9, pitch: -8 },
+  { yaw: 4, pitch: -10 },
+  { yaw: -2, pitch: -10 },
+  { yaw: -8, pitch: -10 },
+];
+
 /**
  * How the eyes behave for each activity. A bot at rest mostly looks at the person and now and then
- * glances away; thinking, it looks up to one side; writing, it reads its line from left to right;
- * browsing, it scans the page; asking, it looks at the person and glances down at the card.
+ * glances away; thinking (which is also when it runs its tools and reads what they return), it looks
+ * up to one side, then goes over the page, line by line; writing, it reads its line from left to
+ * right; browsing, it scans the page; asking, it looks at the person and glances down at the card.
  */
 const HABITS: Record<BotActivity, Habit> = {
   idle: {
@@ -61,13 +73,16 @@ const HABITS: Record<BotActivity, Habit> = {
   },
   thinking: {
     spots: [
-      { yaw: 10, pitch: 16, weight: 3 },
-      { yaw: -10, pitch: 16, weight: 2 },
-      { yaw: 0, pitch: 18 },
+      { yaw: 10, pitch: 16, hold: [1.2, 2.4] },
+      ...READ_LINES,
+      ...READ_LINES,
+      { yaw: -10, pitch: 16, hold: [1, 2] },
+      ...READ_LINES,
     ],
-    hold: [1.6, 3.8],
-    drift: 0.8,
-    blink: [3, 7],
+    inOrder: true,
+    hold: [0.3, 0.6],
+    drift: 0,
+    blink: [3, 6],
   },
   writing: {
     spots: [
@@ -155,7 +170,7 @@ export class GazeDirector {
   ) {
     this.habit = HABITS[activity];
     this.now = this.from = this.to = this.choose();
-    this.holdUntil = between(this.habit.hold, this.random());
+    this.holdUntil = between(this.holdOf(this.now), this.random());
     this.nextBlink = between(this.habit.blink, this.random());
   }
 
@@ -187,7 +202,7 @@ export class GazeDirector {
     if (t < this.last) {
       this.from = this.to = this.now;
       this.moveFor = 0;
-      this.holdUntil = t + between(this.habit.hold, this.random());
+      this.holdUntil = t + between(this.holdOf(this.now), this.random());
       this.nextBlink = t + between(this.habit.blink, this.random());
       this.blinkAt = -1;
     }
@@ -221,7 +236,7 @@ export class GazeDirector {
       this.to = this.choose();
       this.moveAt = t;
       this.moveFor = saccadeSeconds(this.from, this.to);
-      this.holdUntil = t + this.moveFor + between(this.habit.hold, this.random());
+      this.holdUntil = t + this.moveFor + between(this.holdOf(this.to), this.random());
     }
     const p = this.moveFor > 0 ? clamp((t - this.moveAt) / this.moveFor, 0, 1) : 1;
     const e = easeOut(p);
@@ -244,6 +259,12 @@ export class GazeDirector {
   /** The engine's own drift and blinks are off: they run on each avatar's own clock. */
   private result(at: Spot, lid: number): Look {
     return { yaw: at.yaw, pitch: at.pitch, mix: 1, spin: 0, wander: 0, blink: 0, lid };
+  }
+
+  /** How long a look at `spot` is held: its own range, or its habit's. */
+  private holdOf(spot: Spot): readonly [number, number] {
+    const own = this.habit.spots.find((s) => s.yaw === spot.yaw && s.pitch === spot.pitch);
+    return own?.hold ?? this.habit.hold;
   }
 
   /** The next spot: the next one in line, or one at random by weight that is not the current one. */
@@ -301,6 +322,44 @@ export function pointerIn(x: number, y: number, avatar: Box, row: Box) {
   return {
     nx: share(x - cx, cx - row.left, row.right - cx),
     ny: share(y - cy, cy - row.top, row.bottom - cy),
+  };
+}
+
+/** Where the head sits: shifted by a share of the avatar's size, right and down positive, and tilted. */
+export interface HeadPose {
+  x: number;
+  y: number;
+  /** Degrees, clockwise. */
+  tilt: number;
+}
+
+export const HEAD_REST: HeadPose = { x: 0, y: 0, tilt: 0 };
+
+/** Seconds for the head to catch most of the way up with the eyes; it turns after them. */
+export const HEAD_LAG = 0.22;
+
+/**
+ * Where the head goes for a look. It turns and leans the way the eyes look: down over a page, up while
+ * it ponders, to the side it glances at. A working bot's head also sways and bobs the whole time; one
+ * at rest only follows its eyes, by half as much. Worked out from the shared clock, like the eyes.
+ */
+export function headFor(look: Spot, busy: boolean, t: number): HeadPose {
+  const k = busy ? 1 : 0.45;
+  const sway = busy ? 1 : 0;
+  return {
+    x: k * look.yaw * 0.0035,
+    y: -k * (look.pitch - AT_YOU.pitch) * 0.003 + sway * 0.012 * Math.sin(t * 2.3),
+    tilt: k * look.yaw * 0.45 + sway * 2.4 * Math.sin(t * 1.1 + 0.6),
+  };
+}
+
+/** One step of the head towards `target`, `dt` seconds after the last. */
+export function headToward(head: HeadPose, target: HeadPose, dt: number): HeadPose {
+  const k = 1 - Math.exp(-clamp(dt, 0, 0.1) / HEAD_LAG);
+  return {
+    x: head.x + (target.x - head.x) * k,
+    y: head.y + (target.y - head.y) * k,
+    tilt: head.tilt + (target.tilt - head.tilt) * k,
   };
 }
 
