@@ -8,6 +8,7 @@ import {
   type ProfileFocus,
   type Routine,
   type Skill,
+  type Ticket,
 } from '@leafbot/shared';
 import { SILENT_REPLY } from '../engine/types';
 import { translator, type T } from '../i18n';
@@ -51,6 +52,9 @@ export function listed(text: string, max = 200): string {
   return truncate(text.replace(/\s+/g, ' ').trim(), max);
 }
 
+/** Open tickets of the bot's listed in its prompt; the rest are counted. */
+export const MAX_PROMPT_TICKETS = 20;
+
 export function buildSystemPrompt(opts: {
   bot: Bot;
   paths: WorkspacePaths;
@@ -84,6 +88,12 @@ export function buildSystemPrompt(opts: {
   contact?: 'route' | 'door';
   /** The bot can look earlier talk up (`conversations_search`); unset counts as yes. */
   recall?: boolean;
+  /**
+   * The bot can open and update tickets on the board, and the open tickets it has. Without the
+   * board's place in the prompt a bot never thinks of it: it hands work to bots by message and
+   * keeps its steps in its own to-do list, and the person's board stays empty.
+   */
+  board?: { open: Pick<Ticket, 'number' | 'title'>[] };
   /**
    * The bot's private token: a line it is told never to repeat or write anywhere. Seeing it in a
    * tool's input or a reply means text the bot read is making it copy its prompt out. The same
@@ -191,6 +201,20 @@ export function buildSystemPrompt(opts: {
         `- ${listed(p.name, 80)}${p.isManager ? t('bot.managerTag') : ''}${near(p) === 0 ? t('prompt.sameGroup') : ''}${p.description ? `: ${listed(p.description)}` : ''}`,
       );
     lines.push(t('prompt.peersHow'));
+    if (opts.board) lines.push(t('prompt.peersBoard'));
+  }
+
+  if (opts.board) {
+    lines.push('', t('prompt.board'), t('prompt.boardHow'));
+    // Only the number and title: a status in the prompt would change it at every step of the work
+    // and void the model's cache of the conversation; the bot reads the rest with ticket_read.
+    const open = opts.board.open.slice(0, MAX_PROMPT_TICKETS);
+    if (open.length) {
+      lines.push('', t('prompt.boardOpen'));
+      for (const k of open) lines.push(`- #${k.number} ${listed(k.title, 120)}`);
+      if (opts.board.open.length > open.length)
+        lines.push(t('prompt.boardMore', { count: opts.board.open.length - open.length }));
+    }
   }
 
   lines.push(

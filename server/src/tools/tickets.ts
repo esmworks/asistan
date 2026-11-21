@@ -12,6 +12,7 @@ import type { Define } from './index';
  * The board, for bots: list tickets, open new ones (for itself, another bot or the person) and
  * update them with a status and a comment. A ticket a bot opens while working on a ticket waits
  * for the person instead of starting its assignee, so tickets cannot keep starting each other.
+ * The prompt says when to use them (`prompt.boardHow`).
  */
 export function ticketTools(opts: {
   def: Define;
@@ -35,7 +36,7 @@ export function ticketTools(opts: {
     if (!ref.trim()) return null;
     return (await opts.reach(ref)).id;
   };
-  return [
+  const tools = [
     def(
       'tickets_list',
       { status: z.array(z.enum(TICKET_STATUSES)).optional(), mine: z.boolean().optional() },
@@ -142,4 +143,8 @@ export function ticketTools(opts: {
       'internal',
     ),
   ];
+  // Among a hundred tools the model would see the board's only by name behind a tool search, and
+  // has no reason to look them up.
+  for (const x of tools) x.alwaysLoad = true;
+  return tools;
 }

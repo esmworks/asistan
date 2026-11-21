@@ -713,6 +713,13 @@ const tr = {
   'prompt.sameGroup': ' (senin grubundan; işi önce bunlara ver)',
   'prompt.peersHow':
     'Bir bota iş vermek için `bot_send` aracını kullan; cevabı sana yeni bir mesaj olarak gelir, beklemene gerek yok. Gönderdiğin isteklerin durumunu `bot_requests` ile görebilirsin.',
+  'prompt.peersBoard':
+    '`bot_send` hızlı bir soru ya da cevabını hemen beklediğin kısa bir istek içindir. Sonucu takip edilecek bir işi bir bota panodan ver: `ticket_create` ile `assign_to`.',
+  'prompt.board': '## Pano',
+  'prompt.boardHow':
+    'Pano, kullanıcının kendisi için yapılan işleri takip ettiği yer: görevler durumlarına göre sütunlarda (yapılacak, sürüyor, incelemede, takıldı, bitti). Kullanıcı panoyu uygulamada görür; sen onu `tickets_list`, `ticket_read`, `ticket_create` ve `ticket_update` ile kullanırsın.\n- Kullanıcı bu cevapta bitmeyecek bir iş istediğinde (birkaç adım ya da zaman alıyor, birini bekliyor, takip edilmesi gerekiyor) ya da "listeye ekle", "panoya yaz" dediğinde `ticket_create` ile görev aç. Açmadan önce `tickets_list` ile aynı iş için bir görev var mı bak.\n- Sonucu takip edilecek bir işi bir bota verirken görevi `assign_to` ile aç: o bot hemen, göreve ait ayrı bir konuşmada işe başlar ve sonucu göreve yazılır.\n- Bir görev üzerinde onun kendi konuşmasının dışında çalışıyorsan onu `ticket_update` ile güncel tut: durumu değiştikçe, ne yapıldığını ya da neyin eksik olduğunu kısa bir yorumla. Görevin kendi konuşmasında son cevabın göreve yazılır ve görev kendiliğinden incelemeye geçer; durumu bitti yapma. Sürdüremiyorsan durumu blocked yap ve nedenini yaz.\n- Bir cevabın içindeki kendi yapılacaklar listen yalnız o cevabın adımları içindir; kullanıcı onu panoda görmez.\n- Hemen cevapladığın bir soru ya da tek adımda biten bir iş için görev açma.',
+  'prompt.boardOpen': 'Sana verilmiş açık görevler (ayrıntısı için `ticket_read`):',
+  'prompt.boardMore': '…ve {count} görev daha; hepsi için `tickets_list` ile mine: true.',
   'prompt.room': '## Oda',
   'prompt.roomIntro':
     'Şu an "{room}" adlı bir odadasın: kullanıcıyla ({user}) ve başka botlarla aynı sohbettesin. Odadakiler:',
@@ -841,12 +848,12 @@ const tr = {
   'tool.apiParams': 'parametreler',
   'tool.apiOperationsMore': '…ve {count} işlem daha; query ile daralt.',
   'tool.tickets_list':
-    'Panodaki görevleri listele: numara, durum, başlık, öncelik ve kime verildiği. status ile durumlara göre süz (todo, in_progress, in_review, blocked, done, wont_do); mine: true yalnız sana verilenleri getirir.',
+    'Panodaki görevleri listele: numara, durum, başlık, öncelik ve kime verildiği. status ile durumlara göre süz (todo, in_progress, in_review, blocked, done, wont_do); mine: true yalnız sana verilenleri getirir. Yeni bir görev açmadan önce aynı iş için açılmış bir görev var mı buradan bak.',
   'tool.ticket_read': 'Bir görevi açıklaması ve yorumlarıyla oku (ticket: numarası, ör. 12).',
   'tool.ticket_create':
-    'Panoya yeni bir görev ekle: title, description, priority (low, normal, high, urgent), assign_to (bir botun adı; verilirse o bot hemen işe başlar). Kullanıcı panodan görür.',
+    'Panoya yeni bir görev ekle; bu cevapta bitmeyecek ya da takip edilmesi gereken bir iş için: title, description, priority (low, normal, high, urgent), assign_to (bir botun adı; verilirse o bot hemen, göreve ait ayrı bir konuşmada işe başlar ve sonucu göreve yazılır; sonucu takip edilecek bir işi bir bota vermenin yolu budur). Kullanıcı panodan görür.',
   'tool.ticket_update':
-    'Bir görevi güncelle (ticket: numarası): status, comment (göreve yorum), assign_to (bir botun adı; boş bırakmak için ""), priority, title, description. Yalnız değişecek alanları ver.',
+    'Bir görevi işi ilerledikçe güncelle (ticket: numarası): status, comment (göreve yorum: ne yapıldı ya da ne eksik), assign_to (bir botun adı; boş bırakmak için ""), priority, title, description. Yalnız değişecek alanları ver.',
   'tool.tables_list':
     'Kendi tablolarını listele: adı, satır sayısı ve sütunları (türleriyle). Tablolar, takip ettiğin kayıtları (müşteri adayları, fiyatlar, siparişler) satır satır tuttuğun yerdir; kullanıcı da görür, düzeltir ve dışa aktarır.',
   'tool.table_define':
@@ -2446,6 +2453,13 @@ const en: Catalog<ServerKey> = {
   'prompt.sameGroup': ' (your group; give work to these first)',
   'prompt.peersHow':
     "To give a bot work, use the `bot_send` tool; its reply comes to you as a new message, so you don't need to wait. See the state of the requests you sent with `bot_requests`.",
+  'prompt.peersBoard':
+    '`bot_send` is for a quick question or a short request whose answer you need now. Give a bot work whose result should be followed through the board: `ticket_create` with `assign_to`.',
+  'prompt.board': '## Board',
+  'prompt.boardHow':
+    'The board is where the user follows the work done for them: tickets in columns by status (to do, in progress, in review, blocked, done). The user sees it in the app; you use it with `tickets_list`, `ticket_read`, `ticket_create` and `ticket_update`.\n- When the user asks for work that will not be finished in this reply (it takes several steps or a while, waits on someone, or should be followed up), or says "add it to the list" or "put it on the board", open a ticket with `ticket_create`. Before you open one, check `tickets_list` for a ticket about the same work.\n- When you give a bot work whose result should be followed, open the ticket with `assign_to`: that bot starts at once in the ticket\'s own conversation, and its result is written on the ticket.\n- When you work on a ticket outside its own conversation, keep it current with `ticket_update`: its status as it changes, and a short comment on what was done or what is missing. In a ticket\'s own conversation your last reply is written on it and it moves to review by itself; do not set it to done. If you cannot go on, set it to blocked and say why.\n- Your own to-do list inside a reply is for the steps of that reply only; the user does not see it on the board.\n- A question you answer at once, or work done in one step, needs no ticket.',
+  'prompt.boardOpen': 'Open tickets given to you (read one with `ticket_read`):',
+  'prompt.boardMore': '…and {count} more; list them all with `tickets_list` and mine: true.',
   'prompt.room': '## Room',
   'prompt.roomIntro':
     'You are in a room called "{room}": one conversation with the user ({user}) and other bots. In the room:',
@@ -2574,12 +2588,12 @@ const en: Catalog<ServerKey> = {
   'tool.apiParams': 'parameters',
   'tool.apiOperationsMore': '…and {count} more operations; narrow with query.',
   'tool.tickets_list':
-    'List the tickets of the board: number, status, title, priority and who has it. Filter by status (todo, in_progress, in_review, blocked, done, wont_do); mine: true lists only yours.',
+    'List the tickets of the board: number, status, title, priority and who has it. Filter by status (todo, in_progress, in_review, blocked, done, wont_do); mine: true lists only yours. Before opening a ticket, look here for one about the same work.',
   'tool.ticket_read': 'Read a ticket with its description and comments (ticket: its number, e.g. 12).',
   'tool.ticket_create':
-    "Add a ticket to the board: title, description, priority (low, normal, high, urgent), assign_to (a bot's name; if given, that bot starts on it at once). The user sees it on the board.",
+    "Add a ticket to the board, for work that will not be finished in this reply or should be followed: title, description, priority (low, normal, high, urgent), assign_to (a bot's name; if given, that bot starts on it at once in the ticket's own conversation and its result is written on the ticket; this is how to give a bot work whose result should be followed). The user sees it on the board.",
   'tool.ticket_update':
-    'Update a ticket (ticket: its number): status, comment (a comment on it), assign_to (a bot\'s name; "" to clear), priority, title, description. Give only the fields that change.',
+    'Update a ticket as its work moves (ticket: its number): status, comment (a comment on it: what was done or what is missing), assign_to (a bot\'s name; "" to clear), priority, title, description. Give only the fields that change.',
   'tool.tables_list':
     'List your tables: name, row count and columns (with their types). Tables are where you keep records you track (leads, prices, orders) row by row; the person sees, corrects and exports them too.',
   'tool.table_define':
