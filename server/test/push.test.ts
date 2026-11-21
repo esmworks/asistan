@@ -2,7 +2,7 @@ import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { schema } from '../src/db';
 import type { ApnsRequest, ApnsResponse } from '../src/services/apns';
-import { KEY, testServer, type TestServer } from './helpers';
+import { KEY, testServer, waitFor, type TestServer } from './helpers';
 
 const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const P8 = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -146,6 +146,47 @@ describe('telefon bildirimleri', () => {
     await notice('reply', bot.id);
     expect(sent).toHaveLength(1);
     expect(await t.db.db.select().from(schema.pushDevices)).toHaveLength(0);
+  });
+
+  it('telefonla giren kişiye turu bitince ve onay beklerken bildirim gider', async () => {
+    await t.api('PUT', '/api/push/apns', APNS);
+    const ayse = await t.person('ayse');
+    const bot = await t.bot({ name: 'Katip' });
+    await t.api('PUT', `/api/bots/${bot.id}/access`, { everyone: 'chat', people: {} });
+    const other = 'cd'.repeat(32);
+    // The owner's phone, signed in with the access key, and Ayşe's phone, signed in with her account.
+    expect((await device()).status).toBe(200);
+    expect(
+      (
+        await ayse.api('PUT', '/api/push/device', {
+          token: other,
+          platform: 'ios',
+          locale: 'en',
+          level: 'all',
+        })
+      ).status,
+    ).toBe(200);
+    const thread = (await ayse.api<{ id: string }>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    let n = 0;
+    const send = async (text: string) => {
+      const clientId = `c-phone-${String(++n).padStart(4, '0')}`;
+      const r = await ayse.api('POST', `/api/threads/${thread.id}/messages`, { clientId, text });
+      expect(r.status).toBeLessThan(300);
+    };
+
+    await send('merhaba');
+    await t.services.turns.idle();
+    await waitFor(async () => sent.length > 0);
+    expect(sent.map((r) => r.token)).toEqual([other]);
+    expect(JSON.parse(sent[0]!.body)).toMatchObject({ kind: 'reply', botId: bot.id, threadId: thread.id });
+
+    await send('[izin:Write {"file_path":"/tmp/x"}]');
+    await waitFor(async () => sent.some((r) => JSON.parse(r.body).kind === 'needsYou'));
+    const card = JSON.parse(sent.find((r) => JSON.parse(r.body).kind === 'needsYou')!.body);
+    expect(card.aps.alert.title).toBe('Katip needs you');
+    expect(sent.every((r) => r.token === other)).toBe(true);
+    await ayse.api('POST', `/api/threads/${thread.id}/stop`);
+    await t.services.turns.idle();
   });
 
   it('deneme bildirimi anahtar yoksa bunu söyler', async () => {
