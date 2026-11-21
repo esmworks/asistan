@@ -123,7 +123,12 @@ type Props = {
  * chosen, so it reads nothing from one.
  */
 export function ObjectAvatar(props: Props) {
-  return props.seed ? <BotObject {...props} /> : <Body {...props} activity={props.activity ?? 'idle'} />;
+  // Only a moving avatar acts out what its bot is doing; one that only names the bot rests, as on the web.
+  return props.seed && props.motion ? (
+    <BotObject {...props} />
+  ) : (
+    <Body {...props} activity={props.activity ?? 'idle'} />
+  );
 }
 
 function BotObject(props: Props) {
