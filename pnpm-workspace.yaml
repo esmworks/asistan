@@ -20,8 +20,6 @@ minimumReleaseAgeExclude:
   - motion@14.13.0
   - open-bot-avatar@0.3.0
   - prettier@3.10.1
-patchedDependencies:
-  '@norbert_bodziony/bloub@0.6.4': patches/@norbert_bodziony__bloub@0.6.4.patch
 # Dependencies of dependencies moved past versions with published advisories, until the packages that
 # pull them in ask for fixed versions themselves:
 #   katex (rehype-katex, remark-math): prototype pollution could bypass the `trust` option. The app

@@ -132,7 +132,7 @@ function Eyes({ seed, activity, motion, span, eye, left, right }: EyesProps & { 
       const at = eyeShift(look, span);
       values.x.setValue(at.x);
       values.y.setValue(at.y);
-      values.lid.setValue(Math.max(SHUT, look.lid ?? 1));
+      values.lid.setValue(Math.max(SHUT, look.lid));
     });
   }, [moving, gaze, span, values]);
 

@@ -11,9 +11,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "7.0.6",
-    "@norbert_bodziony/bloub": "0.6.4",
     "@novnc/novnc": "1.7.0",
-    "@solidjs/web": "2.0.0-rc.18",
     "@tanstack/react-query": "5.107.1",
     "@leafbot/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
@@ -34,7 +32,6 @@
     "remark-math": "6.0.0",
     "shiki": "4.5.0",
     "socket.io-client": "4.8.4",
-    "solid-js": "2.0.0-rc.18",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.3.1",
     "zod": "4.6.7",

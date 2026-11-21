@@ -1,19 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   AT_YOU,
-  FACE_MS,
   GazeDirector,
   gazeOf,
-  HEAD_REST,
-  headFor,
-  headToward,
   lidAt,
   lookTarget,
-  pointerIn,
   pointerLook,
   saccadeSeconds,
   swayAt,
-  workingFaceAt,
   type Spot,
 } from './gaze';
 
@@ -39,35 +33,6 @@ function run(g: GazeDirector, from: number, to: number) {
 /** Further apart than the slow drift goes: the eyes jumped. */
 const moved = (a: { yaw: number; pitch: number }, b: { yaw: number; pitch: number }, by = 3) =>
   Math.hypot(a.yaw - b.yaw, a.pitch - b.pitch) > by;
-
-describe('head', () => {
-  it('leans down over a page, up to ponder and towards the side it looks at', () => {
-    expect(headFor({ yaw: 0, pitch: -8 }, true, 0).y).toBeGreaterThan(headFor(AT_YOU, true, 0).y);
-    expect(headFor({ yaw: 0, pitch: 16 }, true, 0).y).toBeLessThan(headFor(AT_YOU, true, 0).y);
-    const right = headFor({ yaw: 9, pitch: AT_YOU.pitch }, false, 0);
-    expect(right.x).toBeGreaterThan(0);
-    expect(right.tilt).toBeGreaterThan(0);
-  });
-
-  it('keeps moving while it works, and at rest only follows its eyes, by less', () => {
-    const tilts = [0, 0.7, 1.4, 2.1].map((t) => headFor(AT_YOU, true, t).tilt);
-    expect(Math.max(...tilts) - Math.min(...tilts)).toBeGreaterThan(1);
-    expect(headFor(AT_YOU, false, 1.3)).toEqual({ x: 0, y: 0, tilt: 0 });
-    const look = { yaw: 10, pitch: AT_YOU.pitch };
-    expect(Math.abs(headFor(look, false, 0).x)).toBeLessThan(Math.abs(headFor(look, true, 0).x));
-  });
-
-  it('turns after the eyes and settles where they look', () => {
-    const target = headFor({ yaw: 10, pitch: -8 }, false, 0);
-    let h = HEAD_REST;
-    h = headToward(h, target, 1 / 30);
-    expect(h.tilt).toBeGreaterThan(0);
-    expect(h.tilt).toBeLessThan(target.tilt / 2);
-    for (let i = 0; i < 60; i++) h = headToward(h, target, 1 / 30);
-    expect(h.tilt).toBeCloseTo(target.tilt, 2);
-    expect(h.y).toBeCloseTo(target.y, 4);
-  });
-});
 
 describe('object avatar look', () => {
   it('looks down at a page, up to ponder and stays within reach', () => {
@@ -151,18 +116,6 @@ describe('gaze director', () => {
     expect(after[after.length - 1]!.pitch).toBeGreaterThanOrEqual(15);
   });
 
-  it('follows the pointer and goes back to its own looks when it leaves', () => {
-    const g = new GazeDirector('idle', seeded());
-    run(g, 0, 1);
-    g.setPointer({ nx: 1, ny: 1 });
-    const end = run(g, 1, 1.6).at(-1)!;
-    expect(end.yaw).toBeCloseTo(18, 0);
-    expect(end.pitch).toBeCloseTo(AT_YOU.pitch - 16, 0);
-    g.setPointer(null);
-    const back = run(g, 1.6, 2.4).at(-1)!;
-    expect(moved(back, end)).toBe(true);
-  });
-
   it('carries on when its clock starts again', () => {
     const g = new GazeDirector('browsing', seeded());
     run(g, 0, 5);
@@ -173,20 +126,12 @@ describe('gaze director', () => {
     }
   });
 
-  it('always overrides the face and leaves no drift or blinks to the engine', () => {
-    const l = new GazeDirector('waiting', seeded()).look(0);
-    expect(l.mix).toBe(1);
-    expect(l.spin).toBe(0);
-    expect(l.wander).toBe(0);
-    expect(l.blink).toBe(0);
-  });
-
   it('blinks every few seconds, shutting the lids for a moment', () => {
     const g = new GazeDirector('idle', seeded(3));
     let blinks = 0;
     let open = true;
     for (let t = 100; t < 130; t += 1 / 120) {
-      const lid = g.look(t).lid ?? 1;
+      const lid = g.look(t).lid;
       if (open && lid < 0.2) {
         blinks++;
         open = false;
@@ -221,44 +166,9 @@ describe('gaze director', () => {
     expect(Math.min(...pitches)).toBeLessThan(-10);
   });
 
-  it('looks all the way to each edge of the row the pointer is in', () => {
-    // A 28 px avatar at the start of a 260 by 44 px row.
-    const avatar = { left: 8, top: 8, right: 36, bottom: 36 };
-    const row = { left: 0, top: 0, right: 260, bottom: 44 };
-    expect(pointerIn(22, 22, avatar, row)).toEqual({ nx: 0, ny: 0 });
-    expect(pointerIn(259, 22, avatar, row).nx).toBeCloseTo(1, 1);
-    expect(pointerIn(0, 22, avatar, row).nx).toBe(-1);
-    expect(pointerIn(22, 0, avatar, row).ny).toBe(-1);
-    expect(pointerIn(22, 44, avatar, row).ny).toBe(1);
-    // Halfway along the row is about halfway round.
-    expect(pointerIn(141, 22, avatar, row).nx).toBeCloseTo(0.5, 1);
-  });
-
   it('takes longer for a longer jump', () => {
     expect(saccadeSeconds(AT_YOU, { yaw: 18, pitch: 8 })).toBeGreaterThan(
       saccadeSeconds(AT_YOU, { yaw: 4, pitch: 8 }),
     );
-  });
-});
-
-describe('working faces', () => {
-  const faces = ['attentif', 'curieux', 'confus', 'mefiant'] as const;
-
-  it('are the same for the same bot at the same time', () => {
-    expect(workingFaceAt('bot-1', faces, 12_345)).toBe(workingFaceAt('bot-1', faces, 12_999));
-  });
-
-  it('change every few seconds', () => {
-    const seen = new Set<string>();
-    let changes = 0;
-    let last = workingFaceAt('bot-1', faces, 0);
-    for (let ms = 0; ms < FACE_MS * 40; ms += FACE_MS) {
-      const f = workingFaceAt('bot-1', faces, ms);
-      seen.add(f);
-      if (f !== last) changes++;
-      last = f;
-    }
-    expect(seen.size).toBe(faces.length);
-    expect(changes).toBeGreaterThan(30);
   });
 });

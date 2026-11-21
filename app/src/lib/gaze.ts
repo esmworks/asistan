@@ -1,15 +1,17 @@
-import type { ExpressionId, Look } from '@norbert_bodziony/bloub';
 import type { BotActivity } from './activity';
 
 /**
- * A direction in degrees: right and up are positive. `AT_YOU` is looking at the person. Its own looks
- * stay within about 12 degrees of it and following the pointer within 18: further out the eyes slide
- * towards the edge of the sphere they sit on, skew, and on a narrow body such as the cloud or the
- * triangle run off its edge.
+ * A direction in degrees: right and up are positive. `AT_YOU` is looking at the person. The looks stay
+ * within about 12 degrees of it.
  */
 export interface Spot {
   yaw: number;
   pitch: number;
+}
+
+/** A look, with how open the lids are: 1 open, 0 shut. */
+export interface Look extends Spot {
+  lid: number;
 }
 
 export const AT_YOU: Spot = { yaw: 0, pitch: 8 };
@@ -121,10 +123,6 @@ const HABITS: Record<BotActivity, Habit> = {
   },
 };
 
-/** How far the eyes turn towards a pointer at the edge of the row or button the avatar sits in. */
-const FOLLOW = { yaw: 18, pitch: 16 };
-/** Seconds for the eyes to catch most of the way up with a moving pointer. */
-const FOLLOW_LAG = 0.07;
 /** Seconds a blink takes; the lids close a little faster than they open. */
 const BLINK_SECONDS = 0.18;
 /** How often a blink comes twice in a row. */
@@ -149,9 +147,9 @@ export function lidAt(s: number) {
 }
 
 /**
- * Decides where a bot's eyes look and when they blink. It holds a look, jumps quickly to the next one
- * its activity calls for, and follows the pointer while one is over an avatar of the bot. `look(t)`
- * takes seconds on a clock every avatar of the bot shares, so they all look and blink together.
+ * Decides where a bot's eyes look and when they blink. It holds a look and jumps quickly to the next
+ * one its activity calls for. `look(t)` takes seconds on a clock every avatar of the bot shares, so
+ * they all look and blink together.
  */
 export class GazeDirector {
   private habit: Habit;
@@ -165,7 +163,6 @@ export class GazeDirector {
   private nextBlink: number;
   private index = 0;
   private last: number | null = null;
-  private pointer: { nx: number; ny: number } | null = null;
 
   constructor(
     activity: BotActivity,
@@ -186,15 +183,6 @@ export class GazeDirector {
     if (this.last !== null) this.holdUntil = this.last;
   }
 
-  /**
-   * The pointer, from the avatar's centre, in half the window: -1 to 1, right and down positive.
-   * Null when it leaves; the eyes go back to their own looks.
-   */
-  setPointer(pointer: { nx: number; ny: number } | null) {
-    if (!pointer && this.pointer && this.last !== null) this.holdUntil = this.last;
-    this.pointer = pointer;
-  }
-
   look(t: number): Look {
     if (this.last === null) {
       // The first look starts the timetable; until then it is counted from zero.
@@ -209,7 +197,6 @@ export class GazeDirector {
       this.nextBlink = t + between(this.habit.blink, this.random());
       this.blinkAt = -1;
     }
-    const dt = clamp(t - this.last, 0, 0.1);
     this.last = t;
 
     if (t >= this.nextBlink) {
@@ -220,19 +207,6 @@ export class GazeDirector {
           : t + between(this.habit.blink, this.random());
     }
     const lid = this.blinkAt >= 0 ? lidAt(t - this.blinkAt) : 1;
-
-    if (this.pointer) {
-      const target = {
-        yaw: clamp(this.pointer.nx, -1, 1) * FOLLOW.yaw,
-        pitch: AT_YOU.pitch - clamp(this.pointer.ny, -1, 1) * FOLLOW.pitch,
-      };
-      const k = 1 - Math.exp(-dt / FOLLOW_LAG);
-      this.now = {
-        yaw: this.now.yaw + (target.yaw - this.now.yaw) * k,
-        pitch: this.now.pitch + (target.pitch - this.now.pitch) * k,
-      };
-      return this.result(this.now, lid);
-    }
 
     if (t >= this.holdUntil) {
       this.from = this.now;
@@ -259,9 +233,8 @@ export class GazeDirector {
     );
   }
 
-  /** The engine's own drift and blinks are off: they run on each avatar's own clock. */
   private result(at: Spot, lid: number): Look {
-    return { yaw: at.yaw, pitch: at.pitch, mix: 1, spin: 0, wander: 0, blink: 0, lid };
+    return { yaw: at.yaw, pitch: at.pitch, lid };
   }
 
   /** How long a look at `spot` is held: its own range, or its habit's. */
@@ -302,70 +275,6 @@ export function gazeOf(key: string | undefined, activity: BotActivity): GazeDire
   return d;
 }
 
-interface Box {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
-
-/**
- * Where a pointer is, for `setPointer`, as a share of the way from the avatar's centre to the edge of
- * the row or button it sits in, each way on its own. The eyes follow only while the pointer is over
- * that row, so its edges are as far as the pointer goes: at the top edge of a low row the eyes already
- * look all the way up, and an avatar at the start of a row still looks back to its left.
- */
-export function pointerIn(x: number, y: number, avatar: Box, row: Box) {
-  const cx = (avatar.left + avatar.right) / 2;
-  const cy = (avatar.top + avatar.bottom) / 2;
-  // A pointer this close to the centre is not yet all the way to one side.
-  const least = (avatar.right - avatar.left) / 2 + 8;
-  const share = (d: number, before: number, after: number) =>
-    clamp(d / Math.max(least, d < 0 ? before : after), -1, 1);
-  return {
-    nx: share(x - cx, cx - row.left, row.right - cx),
-    ny: share(y - cy, cy - row.top, row.bottom - cy),
-  };
-}
-
-/** Where the head sits: shifted by a share of the avatar's size, right and down positive, and tilted. */
-export interface HeadPose {
-  x: number;
-  y: number;
-  /** Degrees, clockwise. */
-  tilt: number;
-}
-
-export const HEAD_REST: HeadPose = { x: 0, y: 0, tilt: 0 };
-
-/** Seconds for the head to catch most of the way up with the eyes; it turns after them. */
-export const HEAD_LAG = 0.22;
-
-/**
- * Where the head goes for a look. It turns and leans the way the eyes look: down over a page, up while
- * it ponders, to the side it glances at. A working bot's head also sways and bobs the whole time; one
- * at rest only follows its eyes, by half as much. Worked out from the shared clock, like the eyes.
- */
-export function headFor(look: Spot, busy: boolean, t: number): HeadPose {
-  const k = busy ? 1 : 0.45;
-  const sway = busy ? 1 : 0;
-  return {
-    x: k * look.yaw * 0.0035,
-    y: -k * (look.pitch - AT_YOU.pitch) * 0.003 + sway * 0.012 * Math.sin(t * 2.3),
-    tilt: k * look.yaw * 0.45 + sway * 2.4 * Math.sin(t * 1.1 + 0.6),
-  };
-}
-
-/** One step of the head towards `target`, `dt` seconds after the last. */
-export function headToward(head: HeadPose, target: HeadPose, dt: number): HeadPose {
-  const k = 1 - Math.exp(-clamp(dt, 0, 0.1) / HEAD_LAG);
-  return {
-    x: head.x + (target.x - head.x) * k,
-    y: head.y + (target.y - head.y) * k,
-    tilt: head.tilt + (target.tilt - head.tilt) * k,
-  };
-}
-
 /**
  * A look as an object avatar takes it: -1 to 1 each way, right and down positive. Its engine turns the
  * body to face the spot and moves the eyes a share of the way on top.
@@ -404,25 +313,3 @@ export function swayAt(t: number) {
 
 /** Seconds on the clock every avatar shares. */
 export const sharedClock = () => performance.now() / 1000;
-
-/** How long a working bot keeps one face. */
-export const FACE_MS = 5000;
-
-function hash(s: string) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
-
-/**
- * The face a working bot has at `ms` on the shared clock. It is worked out from the time alone, so
- * every avatar of the bot shows the same face and changes it at the same moment, almost never to the
- * face it just had.
- */
-export function workingFaceAt(key: string, faces: readonly ExpressionId[], ms: number): ExpressionId {
-  const slot = Math.floor(ms / FACE_MS);
-  const pick = (n: number) => hash(`${key}:${n}`) % faces.length;
-  let i = pick(slot);
-  if (faces.length > 1 && i === pick(slot - 1)) i = (i + 1) % faces.length;
-  return faces[i]!;
-}

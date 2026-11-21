@@ -10,9 +10,6 @@ overrides:
   minimatch@>=7.0.0 <11.0.1: 11.0.8
   '@anthropic-ai/sandbox-runtime>zod': 4.6.7
 
-patchedDependencies:
-  '@norbert_bodziony/bloub@0.6.4': 1cc07233470f665d666a9f340ad263a5f5ee93ec8f5c1b08160386386440df09
-
 importers:
 
   .:
@@ -56,15 +53,9 @@ importers:
       '@leafbot/shared':
         specifier: workspace:*
         version: link:../shared
-      '@norbert_bodziony/bloub':
-        specifier: 0.6.4
-        version: 0.6.4(patch_hash=1cc07233470f665d666a9f340ad263a5f5ee93ec8f5c1b08160386386440df09)(@solidjs/web@2.0.0-rc.18(solid-js@2.0.0-rc.18))(solid-js@2.0.0-rc.18)
       '@novnc/novnc':
         specifier: 1.7.0
         version: 1.7.0
-      '@solidjs/web':
-        specifier: 2.0.0-rc.18
-        version: 2.0.0-rc.18(solid-js@2.0.0-rc.18)
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
@@ -122,9 +113,6 @@ importers:
       socket.io-client:
         specifier: 4.8.4
         version: 4.8.4
-      solid-js:
-        specifier: 2.0.0-rc.18
-        version: 2.0.0-rc.18
       sonner:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2118,12 +2106,6 @@ packages:
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
 
-  '@norbert_bodziony/bloub@0.6.4':
-    resolution: {integrity: sha512-hTM+ObqsM0crCdbxU/uDIhFZj0AQPhHRlavqolZR4NmFibdyK/Z/8Z1Wdak5nJYSBW/7k047KfGkzAbhpFNZxg==}
-    peerDependencies:
-      '@solidjs/web': ^2.0.0-rc.0
-      solid-js: ^2.0.0-rc.0
-
   '@novnc/novnc@1.7.0':
     resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
@@ -3186,16 +3168,6 @@ packages:
 
   '@socket.io/component-emitter@3.1.2':
     resolution: {integrity: sha512-9BCxFwvbGg/RsZK9tjXd8s4UcwR0MWeFQ1XEKIQVVvAGJyINdrqKMcTRyLoK8Rse1GjzLV9cwjWV1olXRWEXVA==}
-
-  '@solidjs/signals@2.0.0-rc.21':
-    resolution: {integrity: sha512-F1TUMO/nd1XC//+tcaWxibOOgXBHQGmNQnAeiDnpLh+1smnlwIgKF6pc20evlyfQwqf0gP6rH4sNEqCPBNcpgg==}
-    engines: {node: '>=22.12.0'}
-
-  '@solidjs/web@2.0.0-rc.18':
-    resolution: {integrity: sha512-qtxuskii4N/gMipmg94yfPSJ0djwVWF+Elrdhtdb/8ZThvPc6RI/edY6guEMwdx7OADa1f9cQ0MwQe7kDW+Vwg==}
-    engines: {node: '>=22.12.0'}
-    peerDependencies:
-      solid-js: ^2.0.0-rc.18
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -7197,16 +7169,6 @@ packages:
     resolution: {integrity: sha512-8I8TjW5KMOKsZQTvoxjuSIa7foAwPWGOts+6o7sgjz41/qMD9VQHEDxi6PBvK2l0MXUmqZyNpUK+T2tQaaElvw==}
     engines: {node: '>=10'}
 
-  seroval-plugins@1.7.0:
-    resolution: {integrity: sha512-WM4rArfPtLZriTuxC5DBvNulEwAaRcjNe/dkMOEesOcuvXf5nEwKf5Bw3AT92WHohqcc45+57GdtsCuBTI0mjw==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      seroval: ^1.0
-
-  seroval@1.7.0:
-    resolution: {integrity: sha512-FU+LUkmDzWNsJ6oubZFN3dGPKny53DRhPJG6nftEaXDL8MIn19+kEE1Gvc+63Go+qPOwVUlKIdKhsu2HN6tksw==}
-    engines: {node: '>=20'}
-
   serve-static@1.16.3:
     resolution: {integrity: sha512-x0RTqQel6g5SY7Lg6ZreMmsOzncHFU7nhnRWkKgWuMTu5NN0DR5oruckMqRvacAN9d5w6ARnRBXl9xhDCgfMeA==}
     engines: {node: '>= 0.8.0'}
@@ -7309,10 +7271,6 @@ packages:
   socket.io@4.8.4:
     resolution: {integrity: sha512-9ZV9zg8vN8hO3Y25DhR7nUkJ1VDnBhq5O/JrXhFT9s6+F0gqytSASTHVfCFc2mJXaTfARroErplXlzFWwETZqQ==}
     engines: {node: '>=10.2.0'}
-
-  solid-js@2.0.0-rc.18:
-    resolution: {integrity: sha512-g4KjUQUjfqvqHYnBddN5nVAF7DFcDjtuH+NeDu/26vx6SlSDiqBJS8jsNag6VpdKAnfK8oLfphogEhXtM4UOyw==}
-    engines: {node: '>=22.12.0'}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -9995,11 +9953,6 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
-  '@norbert_bodziony/bloub@0.6.4(patch_hash=1cc07233470f665d666a9f340ad263a5f5ee93ec8f5c1b08160386386440df09)(@solidjs/web@2.0.0-rc.18(solid-js@2.0.0-rc.18))(solid-js@2.0.0-rc.18)':
-    dependencies:
-      '@solidjs/web': 2.0.0-rc.18(solid-js@2.0.0-rc.18)
-      solid-js: 2.0.0-rc.18
-
   '@novnc/novnc@1.7.0': {}
 
   '@noxcturnal/noxcturnal-darwin-arm64@0.1.13':
@@ -11248,14 +11201,6 @@ snapshots:
       tslib: 2.9.1
 
   '@socket.io/component-emitter@3.1.2': {}
-
-  '@solidjs/signals@2.0.0-rc.21': {}
-
-  '@solidjs/web@2.0.0-rc.18(solid-js@2.0.0-rc.18)':
-    dependencies:
-      seroval: 1.7.0
-      seroval-plugins: 1.7.0(seroval@1.7.0)
-      solid-js: 2.0.0-rc.18
 
   '@stablelib/base64@1.0.1': {}
 
@@ -16152,12 +16097,6 @@ snapshots:
       type-fest: 0.13.1
     optional: true
 
-  seroval-plugins@1.7.0(seroval@1.7.0):
-    dependencies:
-      seroval: 1.7.0
-
-  seroval@1.7.0: {}
-
   serve-static@1.16.3:
     dependencies:
       encodeurl: 2.0.1
@@ -16327,13 +16266,6 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
-
-  solid-js@2.0.0-rc.18:
-    dependencies:
-      '@solidjs/signals': 2.0.0-rc.21
-      csstype: 3.2.3
-      seroval: 1.7.0
-      seroval-plugins: 1.7.0(seroval@1.7.0)
 
   sonic-boom@4.2.1:
     dependencies:
