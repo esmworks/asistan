@@ -1,5 +1,8 @@
 import type { Thread, Ticket } from '@leafbot/shared';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mcpServers } from '../src/engine/claude';
 import { testServer, type TestServer } from './helpers';
 
 describe('görev panosu', () => {
@@ -113,5 +116,57 @@ describe('görev panosu', () => {
     expect(['queued', 'running']).toContain((await ticket(slow.id)).turnState);
     await t.services.turns.idle();
     expect((await ticket(slow.id)).turnState).toBe('idle');
+  });
+
+  it('istem panoyu ve botun açık görevlerini anlatır; pano araçları araç aramasının ardında kalmaz', async () => {
+    const bot = await t.bot({ name: 'Yazar' });
+    const thread = (await t.api<Thread>('GET', `/api/bots/${bot.id}/main-thread`)).body;
+    const blocked = (
+      await t.api<Ticket>('POST', '/api/tickets', { title: 'Fiyatları topla', assigneeBotId: bot.id })
+    ).body;
+    const reviewed = (
+      await t.api<Ticket>('POST', '/api/tickets', { title: 'Bülteni yaz', assigneeBotId: bot.id })
+    ).body;
+    await t.services.turns.idle();
+    await t.api('PATCH', `/api/tickets/${blocked.id}`, { status: 'blocked' });
+
+    await t.send(thread.id, 'merhaba');
+    await t.services.turns.idle();
+    const req = t.engine.requests.at(-1)!;
+    expect(req.systemPrompt).toContain('## Pano');
+    expect(req.systemPrompt).toContain('görevi `assign_to` ile aç');
+    // The open ticket is listed; one waiting for review is not the bot's to do.
+    expect(req.systemPrompt).toContain(`#${blocked.number} Fiyatları topla`);
+    expect(req.systemPrompt).not.toContain(`#${reviewed.number} Bülteni yaz`);
+
+    const board = req.tools.filter((x) => x.name.startsWith('ticket'));
+    expect(board.map((x) => x.name).sort()).toEqual([
+      'ticket_create',
+      'ticket_read',
+      'ticket_update',
+      'tickets_list',
+    ]);
+    const servers = mcpServers(board);
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await servers.leafbot!.instance.connect(serverSide);
+    const client = new Client({ name: 'test', version: '1' });
+    await client.connect(clientSide);
+    const { tools } = await client.listTools();
+    expect(tools.map((x) => x._meta?.['anthropic/alwaysLoad'])).toEqual([true, true, true, true]);
+    await client.close();
+
+    // With a bot to write to, work to follow goes to it through the board, not by message.
+    await t.bot({ name: 'Yardımcı' });
+    await t.send(thread.id, 'bir bot daha var');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).toContain('`ticket_create` ile `assign_to`');
+
+    // A bot whose tool selection leaves the board out is not pointed to it.
+    await t.api('PATCH', `/api/bots/${bot.id}`, {
+      toolSelection: { only: false, allow: [], exclude: ['mcp__leafbot__ticket_*'] },
+    });
+    await t.send(thread.id, 'yine merhaba');
+    await t.services.turns.idle();
+    expect(t.engine.requests.at(-1)!.systemPrompt).not.toContain('## Pano');
   });
 });

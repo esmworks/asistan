@@ -44,6 +44,11 @@ export interface AppTool {
    * its tools; unset for the app's own tools (`leafbot`).
    */
   server?: string;
+  /**
+   * Shown to the model with its whole description from the start, never only by name behind a
+   * tool search: a tool the bot should reach for unasked, which it would not look up by itself.
+   */
+  alwaysLoad?: boolean;
   /** The input as JSON Schema, for tools another server describes; `input` is then unused. */
   jsonSchema?: Record<string, unknown>;
   handler(args: Record<string, unknown>): Promise<ToolResult>;
