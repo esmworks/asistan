@@ -1,5 +1,5 @@
 import { BRAND_COLOR, type AvatarShape, type ObjectAvatar } from '@leafbot/shared';
-import { getExample, type AvatarState } from 'open-bot-avatar';
+import type { AvatarState } from 'open-bot-avatar';
 import { mountAvatar, type MountedAvatar } from 'open-bot-avatar/dom';
 import { POSES, type ExpressionId } from '@norbert_bodziony/bloub';
 import {
@@ -26,6 +26,7 @@ import {
   workingFaceAt,
   type HeadPose,
 } from '@/lib/gaze';
+import { objectDefinition } from '@/lib/object-avatars';
 import { cn } from '@/lib/utils';
 
 /** The plush body each shape is drawn with. Shapes no longer offered take the nearest one. */
@@ -330,6 +331,9 @@ const OBJECT_STATES: Record<BotActivity, AvatarState> = {
   waiting: 'blocked',
 };
 
+/** White eyes, as the plush has: on a coloured body they read as a face rather than as holes. */
+const OBJECT_EYES = '#ffffff';
+
 /**
  * An object bot (a mug, a lightbulb with eyes), drawn with volume. Unlike the plush it does not wait
  * to be pointed at: while the window has the focus it breathes, blinks and looks at the pointer
@@ -355,7 +359,7 @@ export function ObjectArt({
   const [focused, setFocused] = useState(true);
   const [gaze] = useState(() => gazeOf(seed, activity));
   const moving = motion !== 'still' && focused;
-  const definition = getExample(id);
+  const definition = objectDefinition(id);
   const steered = moving && activity === 'thinking';
 
   useEffect(() => gaze.setActivity(activity), [gaze, activity]);
@@ -376,7 +380,7 @@ export function ObjectArt({
   useEffect(() => {
     const el = host.current;
     if (!el || !definition) return;
-    avatar.current = mountAvatar(el, { definition, label: '' });
+    avatar.current = mountAvatar(el, { definition, eyeColor: OBJECT_EYES, label: '' });
     return () => {
       avatar.current?.destroy();
       avatar.current = null;
@@ -386,6 +390,7 @@ export function ObjectArt({
   useEffect(() => {
     avatar.current?.update({
       color: hexColor(color),
+      eyeColor: OBJECT_EYES,
       state: OBJECT_STATES[activity],
       still: !moving,
       followPointer: moving && !steered,

@@ -160,6 +160,9 @@ const KNOWN_SHAPES: readonly string[] = [...AVATAR_SHAPES, ...OLD_AVATAR_SHAPES]
  * always names something it can draw; where it cannot (the phone app), it falls back to `blob`.
  */
 export const OBJECT_AVATARS = [
+  'circle',
+  'square',
+  'triangle',
   'controller',
   'barbell',
   'mug',

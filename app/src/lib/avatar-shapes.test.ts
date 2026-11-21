@@ -1,5 +1,6 @@
 import { Avatar, AVATAR_SHAPES, OBJECT_AVATARS, OLD_AVATAR_SHAPES } from '@leafbot/shared';
-import { getExample, validateAvatar } from 'open-bot-avatar';
+import { validateAvatar } from 'open-bot-avatar';
+import { objectDefinition } from './object-avatars';
 import { describe, expect, it } from 'vitest';
 
 describe('avatar shapes', () => {
@@ -25,9 +26,10 @@ describe('object avatars', () => {
 
   it('ships a valid drawing for every offered object', () => {
     for (const o of OBJECT_AVATARS) {
-      const definition = getExample(o);
+      const definition = objectDefinition(o);
       expect(definition, o).toBeDefined();
-      expect(validateAvatar(definition).ok, o).toBe(true);
+      const result = validateAvatar(definition);
+      expect(result.ok, `${o}: ${JSON.stringify(result)}`).toBe(true);
     }
   });
 });
