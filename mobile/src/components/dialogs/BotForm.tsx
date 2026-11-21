@@ -23,6 +23,7 @@ import { ModelDefaults } from '@/components/settings/connect/ModelDefaults';
 import { PiModelPicker } from '@/components/settings/connect/ProviderConnect';
 import { TelegramSection } from '@/components/settings/TelegramSection';
 import { t, type MessageKey } from '@/i18n';
+import { avatarFor, objectsFor, SAFE_AVATAR } from '@/lib/avatars';
 import { nav } from '@/lib/nav';
 import { useBots, useGroups, useInfo, useProviders, useSettings } from '@/lib/queries';
 import { useApi, useServer } from '@/lib/server';
@@ -75,9 +76,8 @@ function initial(bot: Bot | undefined, start: { engine: 'claude' | 'pi'; model: 
     groupId: bot?.groupId ?? NO_GROUP,
     newGroup: '',
     color: bot?.color ?? COLORS[0]!,
-    // Avatars are chosen in the app, where they are drawn. The old shape name is what every server
-    // takes: a current one stores it as the round object, an older one as the round body.
-    avatar: bot?.avatar ?? 'shape:blob',
+    // The old shape name is what every server takes: a current one stores it as the round object.
+    avatar: bot?.avatar ?? SAFE_AVATAR,
     permissionMode: bot ? shownMode(bot.permissionMode) : 'auto',
     isManager: bot?.isManager ?? false,
     memory: bot?.memory ?? true,
@@ -181,7 +181,9 @@ function BotFormPage({ bot }: { bot?: Bot }) {
         instructions: v.instructions,
         groupId,
         color: v.color,
-        avatar: v.avatar,
+        // A newly chosen object the server would not know (a starter's, on an older server) goes as
+        // the round shape; a bot's own avatar goes back as it came.
+        avatar: v.avatar === start.avatar ? v.avatar : avatarFor(v.avatar, info?.version),
         permissionMode: v.permissionMode,
         isManager: v.isManager,
         memory: v.memory,
@@ -238,6 +240,14 @@ function BotFormPage({ bot }: { bot?: Bot }) {
       return;
     back();
   };
+
+  // The objects this server takes; an old shape shows as the circle it is drawn as.
+  const objects = objectsFor(info?.version);
+  const chosenObject = v.avatar.startsWith('object:')
+    ? v.avatar.slice('object:'.length)
+    : v.avatar.startsWith('shape:')
+      ? 'circle'
+      : null;
 
   const efforts: { value: string; label: string }[] = [
     { value: DEFAULT_EFFORT, label: t(pi ? 'bot.effortModelDefault' : 'bot.effortDefault') },
@@ -303,6 +313,29 @@ function BotFormPage({ bot }: { bot?: Bot }) {
               </Pressable>
             ))}
           </View>
+          {objects.length > 0 ? (
+            <View style={styles.objects} accessibilityLabel={t('bot.object')}>
+              {objects.map((o) => {
+                const on = o === chosenObject;
+                return (
+                  <Pressable
+                    key={o}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(`bot.object.${o}` as MessageKey)}
+                    accessibilityState={{ selected: on }}
+                    onPress={() => set('avatar', `object:${o}`)}
+                    style={({ pressed }) => [
+                      styles.object,
+                      { borderColor: on ? c.brand : 'transparent' },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Avatar name="" color={v.color} avatar={`object:${o}`} size={36} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
         </Pad>
       </Section>
 
@@ -509,5 +542,7 @@ const styles = StyleSheet.create({
   preview: { alignItems: 'center' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
   color: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  objects: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
+  object: { padding: 4, borderRadius: 12, borderWidth: 2 },
   sectionLabel: { fontSize: 17, fontWeight: '500' },
 });
