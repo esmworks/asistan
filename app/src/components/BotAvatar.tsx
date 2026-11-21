@@ -1,5 +1,5 @@
 import { BRAND_COLOR, type AvatarShape, type ObjectAvatar } from '@leafbot/shared';
-import type { AvatarState } from 'open-bot-avatar';
+import type { AvatarDefinition, AvatarState } from 'open-bot-avatar';
 import { mountAvatar, type MountedAvatar } from 'open-bot-avatar/dom';
 import { POSES, type ExpressionId } from '@norbert_bodziony/bloub';
 import {
@@ -21,6 +21,7 @@ import {
   headToward,
   lookTarget,
   pointerIn,
+  pointerLook,
   sharedClock,
   swayAt,
   workingFaceAt,
@@ -456,6 +457,57 @@ function useTurnByHand(
   }, [host, avatar, on, drawing]);
 }
 
+/**
+ * Points an object avatar's eyes and body at the pointer anywhere on the page, the way its engine's own
+ * following does, but measured against the avatar's own size (see `pointerLook`). It hands the engine a
+ * look on each pointer move, at most once a frame; the engine eases towards it. When the pointer leaves
+ * the window the avatar goes back to its own idle looks.
+ */
+function useFollowPointer(
+  host: React.RefObject<HTMLSpanElement | null>,
+  avatar: React.RefObject<MountedAvatar | null>,
+  on: boolean,
+  drawing: AvatarDefinition | undefined,
+) {
+  useEffect(() => {
+    const el = host.current;
+    const mounted = avatar.current;
+    if (!on || !el || !mounted || !drawing) return;
+    const eyes = { x: drawing.eyes.x / 100, y: drawing.eyes.y / 100 };
+    let pointer: { x: number; y: number } | null = null;
+    let frame = 0;
+    const aim = () => {
+      frame = 0;
+      if (!pointer) return;
+      mounted.update({ lookAt: pointerLook(pointer, el.getBoundingClientRect(), eyes) });
+    };
+    const move = (e: PointerEvent) => {
+      pointer = { x: e.clientX, y: e.clientY };
+      if (!frame) frame = requestAnimationFrame(aim);
+    };
+    const leave = () => {
+      pointer = null;
+      mounted.update({ lookAt: null });
+    };
+    // Leaving the window shows up as an `out` with no related target.
+    const out = (e: PointerEvent) => {
+      if (!e.relatedTarget) leave();
+    };
+    window.addEventListener('pointermove', move, { passive: true });
+    window.addEventListener('pointerdown', move, { passive: true });
+    window.addEventListener('pointerout', out);
+    window.addEventListener('blur', leave);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerdown', move);
+      window.removeEventListener('pointerout', out);
+      window.removeEventListener('blur', leave);
+      mounted.update({ lookAt: null });
+    };
+  }, [host, avatar, on, drawing]);
+}
+
 /** White eyes, as the plush has: on a coloured body they read as a face rather than as holes. */
 const OBJECT_EYES = '#ffffff';
 
@@ -519,6 +571,7 @@ export function ObjectArt({
 
   // After the mount above, so the avatar it turns is there.
   useTurnByHand(host, avatar, turning, definition);
+  useFollowPointer(host, avatar, moving && !steered, definition);
 
   useEffect(() => {
     avatar.current?.update({
@@ -528,7 +581,8 @@ export function ObjectArt({
       state: celebrating ? 'done' : OBJECT_STATES[activity],
       mood: celebrating ? 'happy' : 'neutral',
       still: !moving,
-      followPointer: moving && !steered,
+      // Followed by `useFollowPointer`, which reaches further for a small avatar.
+      followPointer: false,
     });
   });
 

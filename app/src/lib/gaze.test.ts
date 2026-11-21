@@ -10,6 +10,7 @@ import {
   lidAt,
   lookTarget,
   pointerIn,
+  pointerLook,
   saccadeSeconds,
   swayAt,
   workingFaceAt,
@@ -74,6 +75,23 @@ describe('object avatar look', () => {
     expect(lookTarget({ yaw: 0, pitch: 16 }).y).toBeLessThan(0);
     expect(lookTarget(AT_YOU)).toEqual({ x: 0, y: -0 });
     expect(lookTarget({ yaw: 30, pitch: 0 }).x).toBe(1);
+  });
+
+  it('turns well towards a pointer right beside a small avatar', () => {
+    const box = { left: 0, top: 0, width: 38, height: 38 };
+    const eyes = { x: 0.5, y: 0.5 };
+    // 40 px to the right of a list avatar: most of the way, where the engine's own reach gave a quarter.
+    expect(pointerLook({ x: 59, y: 19 }, box, eyes).x).toBeGreaterThan(0.5);
+    // Far away it saturates softly and never passes the edge.
+    const far = pointerLook({ x: 2000, y: 19 }, box, eyes);
+    expect(far.x).toBeLessThanOrEqual(1);
+    expect(far.x).toBeGreaterThan(0.95);
+    expect(pointerLook({ x: 19, y: 19 }, box, eyes)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('measures from the eyes, so a pointer level with them looks level', () => {
+    const box = { left: 0, top: 0, width: 96, height: 96 };
+    expect(pointerLook({ x: 300, y: 40 }, box, { x: 0.5, y: 40 / 96 }).y).toBeCloseTo(0, 5);
   });
 
   it('sways its head while it works', () => {

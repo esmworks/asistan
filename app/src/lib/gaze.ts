@@ -374,6 +374,29 @@ export function lookTarget(at: Spot) {
   return { x: clamp(at.yaw / 12, -1, 1), y: clamp(-(at.pitch - AT_YOU.pitch) / 14, -1, 1) };
 }
 
+/** The least distance, in CSS px, over which an object avatar's look reaches about three quarters. */
+const OBJECT_REACH = 56;
+
+/**
+ * Where an object avatar looks for a pointer, as `lookTarget` takes it: from its eyes, measured
+ * against its own size rather than the engine's 160 px floor. With that floor a small avatar in a
+ * list barely turned for a pointer right beside it, and seemed slow just where it was watched most.
+ * The look saturates softly further out, as the engine's does.
+ */
+export function pointerLook(
+  pointer: { x: number; y: number },
+  box: { left: number; top: number; width: number; height: number },
+  eyes: { x: number; y: number },
+) {
+  const reach = Math.max(box.width, box.height, OBJECT_REACH);
+  const dx = (pointer.x - (box.left + box.width * eyes.x)) / reach;
+  const dy = (pointer.y - (box.top + box.height * eyes.y)) / reach;
+  const m = Math.hypot(dx, dy);
+  if (!Number.isFinite(m) || m < 1e-9) return { x: 0, y: 0 };
+  const k = Math.tanh(m) / m;
+  return { x: dx * k, y: dy * k };
+}
+
 /** The sway and bob a working object avatar adds to its turn, in radians, on the shared clock. */
 export function swayAt(t: number) {
   return { yaw: 0.08 * Math.sin(t * 1.1 + 0.6), pitch: 0.04 * Math.sin(t * 2.3) };
