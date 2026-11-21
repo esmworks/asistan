@@ -779,7 +779,7 @@ function AvatarEditor({
           <ColorRow color={color} onColor={onColor} />
         </TabsContent>
         <TabsContent value="object" className="space-y-3">
-          <div className="grid grid-cols-6 gap-1.5">
+          <div className="grid grid-cols-7 gap-1.5">
             {OBJECT_AVATARS.map((o) => (
               <button
                 type="button"

@@ -87,6 +87,34 @@ const MOODS: Record<BotActivity, Mood> = {
   waiting: { state: 'notify', expression: 'attentif', busy: false },
 };
 
+/** A bot that has just finished laughs, with its head going, for a moment. */
+const CELEBRATING: Mood = { state: 'idle', expression: 'hilare', busy: true };
+
+/** Activities that end in a finished piece of work; a bot that goes from one of them to rest is done. */
+const WORKING: ReadonlySet<BotActivity> = new Set(['thinking', 'writing', 'browsing']);
+
+/** How long a bot shows it is done: about one turn of the object engine's own celebration. */
+const CELEBRATE_MS = 4000;
+
+/**
+ * True for a moment after the bot finishes its work, while it shows it is done. Only the move from
+ * working to rest counts: a bot that stops to ask someone, or was only queued, is not done yet.
+ */
+function useCelebration(activity: BotActivity) {
+  const [previous, setPrevious] = useState(activity);
+  const [celebrating, setCelebrating] = useState(false);
+  if (previous !== activity) {
+    setPrevious(activity);
+    setCelebrating(WORKING.has(previous) && activity === 'idle');
+  }
+  useEffect(() => {
+    if (!celebrating) return;
+    const timer = window.setTimeout(() => setCelebrating(false), CELEBRATE_MS);
+    return () => window.clearTimeout(timer);
+  }, [celebrating]);
+  return celebrating;
+}
+
 /** Frames per second: plenty at avatar size, and a list of avatars stays cheap. */
 const FPS = 30;
 /**
@@ -146,7 +174,8 @@ export function ShapeArt({
   const [focused, setFocused] = useState(true);
   const [faceSlot, setFaceSlot] = useState(() => Math.floor((sharedClock() * 1000) / FACE_MS));
   const [gaze] = useState(() => gazeOf(seed, activity));
-  const mood = MOODS[activity];
+  const celebrating = useCelebration(activity);
+  const mood = celebrating ? CELEBRATING : MOODS[activity];
   const key = seed ?? shape;
   const resting = RESTING[hash(key) % RESTING.length]!;
   const still = motion === 'still';
@@ -361,6 +390,7 @@ export function ObjectArt({
   const moving = motion !== 'still' && focused;
   const definition = objectDefinition(id);
   const steered = moving && activity === 'thinking';
+  const celebrating = useCelebration(activity);
 
   useEffect(() => gaze.setActivity(activity), [gaze, activity]);
 
@@ -391,7 +421,9 @@ export function ObjectArt({
     avatar.current?.update({
       color: hexColor(color),
       eyeColor: OBJECT_EYES,
-      state: OBJECT_STATES[activity],
+      // Just done: it turns with its ribbons flying and smiles with its eyes, then rests.
+      state: celebrating ? 'done' : OBJECT_STATES[activity],
+      mood: celebrating ? 'happy' : 'neutral',
       still: !moving,
       followPointer: moving && !steered,
     });
