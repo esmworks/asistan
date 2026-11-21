@@ -16,16 +16,14 @@ use by or for a business, needs a separate commercial license. This summary
 does not change the license; where they differ, the LICENSE file governs.
 
 The license grants no rights to the names "Leaf Bot", "LeafBot" or "esmworks" or to
-their logos. The plush art those logos are drawn from stays available under its own
-license, given below.
+their logos.
 
 --------------------------------------------------------------------------------
 
 Third-party material
 
-The plush character art (mobile/assets/plush) and the app icons and mascot drawn
-from it (desktop/assets/icon.icon, desktop/assets/icon.png, app/public,
-app/src/assets/mascot.webp, mobile/assets) carry this notice:
+The plush character art the phone app draws its bots with (mobile/assets/plush)
+carries this notice:
 
   MIT License
 

@@ -183,7 +183,7 @@ function registerLinks() {
 
 async function boot() {
   // A packaged app takes its Dock icon from the bundle; one run from source would show Electron's.
-  // icon.png is assets/icon.icon as macOS draws it, glass included.
+  // icon.png is the tile of assets/icon.icon drawn flat, without the glass macOS adds to the real one.
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(assets(), 'icon.png'));
   loadLocale(userData, app.getPreferredSystemLanguages());
   hardenSessions();

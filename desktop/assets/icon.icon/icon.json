@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "srgb:0.16078,0.32549,0.22745,1.00000",
-      "srgb:0.08235,0.21569,0.15294,1.00000"
+      "srgb:0.16863,0.32549,0.23922,1.00000",
+      "srgb:0.15686,0.31373,0.23137,1.00000"
     ]
   },
   "groups" : [
@@ -10,8 +10,8 @@
       "layers" : [
         {
           "glass" : false,
-          "image-name" : "plush.png",
-          "name" : "plush"
+          "image-name" : "bot.png",
+          "name" : "bot"
         }
       ],
       "shadow" : {

@@ -6,13 +6,13 @@ import { cn } from '@/lib/utils';
  * the interface and turns into the selected bot's colour, while the app keeps one face. The picture brings
  * its own background; the tile behind it only shows until the picture has loaded.
  */
-const TILE = 'linear-gradient(180deg, #29533a 0%, #153727 100%)';
-export const MASCOT_COLOR = '#468864';
+const TILE = 'linear-gradient(180deg, #2b533d 0%, #28503b 100%)';
+export const MASCOT_COLOR = '#56b47f';
 
 /**
- * Leaf Bot itself, drawn as its icon: the green plush coming in from the bottom right corner of a dark
- * green tile. A picture of the icon's own art rather than a live plush: the live one keeps its eyes in the
- * middle of its body, which here lies outside the tile.
+ * Leaf Bot itself, drawn as its icon: the round green bot coming in from the bottom right corner of a
+ * dark green tile. A picture of the icon's own art rather than a live avatar: the live one keeps its eyes
+ * in the middle of its body, which here lies outside the tile.
  */
 export function AppMascot({ className }: { className?: string }) {
   return (
